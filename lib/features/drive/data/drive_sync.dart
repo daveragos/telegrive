@@ -1,0 +1,237 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:handy_tdlib/api.dart' as td;
+
+import '../../../infrastructure/storage/preferences.dart';
+import '../../../infrastructure/telegram/telegram_client.dart';
+import '../../../infrastructure/telegram/telegram_exception.dart';
+import 'drive_repository.dart';
+import 'drive_session.dart';
+
+@immutable
+class SyncState {
+  const SyncState({
+    this.running = false,
+    this.scanned = 0,
+    this.error,
+    this.lastSynced,
+  });
+
+  final bool running;
+
+  /// Messages read so far in the current pass.
+  final int scanned;
+  final String? error;
+  final DateTime? lastSynced;
+
+  SyncState copyWith({
+    bool? running,
+    int? scanned,
+    String? error,
+    bool clearError = false,
+    DateTime? lastSynced,
+  }) => SyncState(
+    running: running ?? this.running,
+    scanned: scanned ?? this.scanned,
+    error: clearError ? null : (error ?? this.error),
+    lastSynced: lastSynced ?? this.lastSynced,
+  );
+}
+
+/// Keeps the local index in step with the channel.
+///
+/// * **Live** — while the drive is open, new, edited and deleted channel
+///   messages flow straight into the index, so a file sent from Telegram on
+///   another device appears within a second.
+/// * **Incremental** — on open and on pull-to-refresh, reads back from the
+///   newest message to the last one already indexed.
+/// * **Full** — reads the whole channel and drops anything the index has
+///   that the channel no longer does. Runs on first open, daily, and from
+///   Settings → Rebuild index.
+class DriveSync extends Notifier<SyncState> {
+  StreamSubscription<td.TdObject>? _live;
+  int? _openChatId;
+  Future<void>? _inFlight;
+
+  static const Duration _fullSyncInterval = Duration(hours: 24);
+
+  TelegramClient get _client => ref.read(telegramClientProvider);
+  DriveRepository get _repository => ref.read(driveRepositoryProvider);
+  Preferences get _prefs => ref.read(preferencesProvider);
+
+  @override
+  SyncState build() {
+    ref.listen<DriveSession?>(driveSessionProvider, (previous, next) {
+      if (previous?.chatId == next?.chatId) return;
+      _stopLive();
+      if (next != null) _startLive(next.chatId);
+    }, fireImmediately: true);
+    ref.onDispose(_stopLive);
+    return const SyncState();
+  }
+
+  /// The sync that runs when the drive opens.
+  Future<void> syncOnOpen() {
+    final chatId = ref.read(driveSessionProvider)?.chatId;
+    if (chatId == null) return Future.value();
+    final lastFull = _prefs.lastFullSync(chatId);
+    final stale =
+        lastFull == null ||
+        DateTime.now().difference(lastFull) > _fullSyncInterval;
+    return stale ? fullSync() : refresh();
+  }
+
+  /// Completes once no sync is running. Photo backup waits on this so it
+  /// judges "already in the drive" against a complete index.
+  Future<void> whenIdle() async {
+    while (_inFlight != null) {
+      try {
+        await _inFlight;
+      } catch (_) {}
+    }
+  }
+
+  /// Pulls in anything newer than the last sync.
+  Future<void> refresh() => _run(full: false);
+
+  /// Re-reads the whole channel.
+  Future<void> fullSync() => _run(full: true);
+
+  Future<void> _run({required bool full}) {
+    final existing = _inFlight;
+    if (existing != null) return existing;
+    final future = _sync(full: full).whenComplete(() => _inFlight = null);
+    _inFlight = future;
+    return future;
+  }
+
+  Future<void> _sync({required bool full}) async {
+    final chatId = ref.read(driveSessionProvider)?.chatId;
+    if (chatId == null) return;
+    state = state.copyWith(running: true, scanned: 0, clearError: true);
+
+    try {
+      final stopAt = full ? 0 : _prefs.lastSyncedMessageId(chatId);
+      final seen = <int>{};
+      var newest = 0;
+      var from = 0;
+
+      // TDLib's history paging can return short pages (the first often has
+      // a single message from its cache); only an empty page means the end.
+      while (true) {
+        final page = await _client.send<td.Messages>(
+          td.GetChatHistory(
+            chatId: chatId,
+            fromMessageId: from,
+            offset: 0,
+            limit: 100,
+            onlyLocal: false,
+          ),
+          timeout: const Duration(seconds: 60),
+        );
+        if (page.messages.isEmpty) break;
+
+        var reachedKnown = false;
+        for (final message in page.messages) {
+          if (message.id <= stopAt) {
+            reachedKnown = true;
+            break;
+          }
+          if (message.sendingState != null) continue;
+          seen.add(message.id);
+          if (message.id > newest) newest = message.id;
+          await _repository.ingest(message);
+        }
+        state = state.copyWith(scanned: seen.length);
+        if (reachedKnown) break;
+        from = page.messages.last.id;
+      }
+
+      if (full) {
+        // Anything indexed that the channel no longer has was deleted while
+        // we weren't watching. Only messages older than the newest one read
+        // are judged, so an upload finishing mid-sync is not mistaken for a
+        // deletion.
+        final known = await _repository.knownMessageIds();
+        final gone = known.where((id) => id <= newest && !seen.contains(id));
+        await _repository.forget(gone);
+        await _prefs.setLastFullSync(chatId, DateTime.now());
+      }
+      if (newest > 0) await _prefs.setLastSyncedMessageId(chatId, newest);
+
+      state = state.copyWith(running: false, lastSynced: DateTime.now());
+    } on TelegramException catch (e) {
+      state = state.copyWith(running: false, error: e.friendlyMessage);
+    } catch (e) {
+      debugPrint('[DriveSync] $e');
+      state = state.copyWith(running: false, error: 'Sync failed: $e');
+    }
+  }
+
+  /// Forgets sync progress and reads everything again.
+  Future<void> rebuildIndex() async {
+    final chatId = ref.read(driveSessionProvider)?.chatId;
+    if (chatId == null) return;
+    await _prefs.clearSyncState(chatId);
+    await fullSync();
+  }
+
+  void _startLive(int chatId) {
+    // TDLib only receives a channel's updates — including edits and deletes
+    // made on another device — while the chat is open. Opening it also makes
+    // TDLib catch up on what changed while this device was away.
+    _openChatId = chatId;
+    unawaited(
+      _client
+          .send<td.Ok>(td.OpenChat(chatId: chatId))
+          .then<void>((_) {}, onError: (Object e) => debugPrint('[DriveSync] openChat: $e')),
+    );
+    _live = _client.updates.listen((update) async {
+      try {
+        switch (update) {
+          case td.UpdateNewMessage(:final message) when message.chatId == chatId:
+            await _repository.ingest(message);
+          case td.UpdateMessageSendSucceeded(:final message)
+              when message.chatId == chatId:
+            await _repository.ingest(message);
+          case td.UpdateMessageContent(chatId: final id, :final messageId)
+              when id == chatId:
+            final message = await _client.send<td.Message>(
+              td.GetMessage(chatId: chatId, messageId: messageId),
+            );
+            await _repository.ingest(message);
+          case td.UpdateDeleteMessages(
+                chatId: final id,
+                :final messageIds,
+                :final isPermanent,
+                :final fromCache,
+              )
+              when id == chatId && isPermanent && !fromCache:
+            await _repository.forget(messageIds);
+          default:
+            break;
+        }
+      } catch (e) {
+        debugPrint('[DriveSync] live update failed: $e');
+      }
+    });
+  }
+
+  void _stopLive() {
+    _live?.cancel();
+    _live = null;
+    final open = _openChatId;
+    _openChatId = null;
+    if (open != null) {
+      unawaited(
+        _client
+            .send<td.Ok>(td.CloseChat(chatId: open))
+            .then<void>((_) {}, onError: (Object _) {}),
+      );
+    }
+  }
+}
+
+final driveSyncProvider = NotifierProvider<DriveSync, SyncState>(DriveSync.new);

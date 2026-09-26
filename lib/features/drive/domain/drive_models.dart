@@ -1,0 +1,220 @@
+import 'dart:convert';
+
+import 'package:flutter/foundation.dart';
+import 'package:path/path.dart' as p;
+
+import '../../../core/files/file_kind.dart';
+import '../../../infrastructure/database/app_database.dart';
+
+@immutable
+class DriveFolder {
+  const DriveFolder({
+    required this.id,
+    required this.parentId,
+    required this.name,
+    required this.createdAt,
+    required this.modifiedAt,
+  });
+
+  factory DriveFolder.fromRow(FolderRow row) => DriveFolder(
+    id: row.id,
+    parentId: row.parentId,
+    name: row.name,
+    createdAt: row.createdAt,
+    modifiedAt: row.modifiedAt,
+  );
+
+  final String id;
+  final String? parentId;
+  final String name;
+  final DateTime createdAt;
+  final DateTime modifiedAt;
+
+  @override
+  bool operator ==(Object other) =>
+      other is DriveFolder &&
+      other.id == id &&
+      other.name == name &&
+      other.parentId == parentId &&
+      other.modifiedAt == modifiedAt;
+
+  @override
+  int get hashCode => Object.hash(id, name, parentId, modifiedAt);
+}
+
+@immutable
+class DriveFile {
+  const DriveFile({
+    required this.id,
+    required this.folderId,
+    required this.name,
+    required this.mimeType,
+    required this.kind,
+    required this.size,
+    required this.createdAt,
+    required this.modifiedAt,
+    required this.partCount,
+    required this.starred,
+    this.minithumbnail,
+    this.thumbnailFileId,
+    this.takenAt,
+  });
+
+  factory DriveFile.fromRow(FileRow row) => DriveFile(
+    id: row.id,
+    folderId: row.folderId,
+    name: row.name,
+    mimeType: row.mimeType,
+    kind: row.kind,
+    size: row.size,
+    createdAt: row.createdAt,
+    modifiedAt: row.modifiedAt,
+    partCount: row.partCount,
+    starred: row.starred,
+    minithumbnail: _decodeThumb(row.minithumbnail),
+    thumbnailFileId: row.thumbnailFileId,
+    takenAt: row.takenAt,
+  );
+
+  final String id;
+  final String? folderId;
+  final String name;
+  final String mimeType;
+  final FileKind kind;
+  final int size;
+  final DateTime createdAt;
+  final DateTime modifiedAt;
+  final int partCount;
+  final bool starred;
+
+  /// Tiny blurred JPEG Telegram inlines with the message; free to show.
+  final Uint8List? minithumbnail;
+
+  /// TDLib id of the real thumbnail, fetched lazily.
+  final int? thumbnailFileId;
+
+  /// Capture time, for photos and videos that came from a camera roll.
+  final DateTime? takenAt;
+
+  /// When the moment happened, as far as we know — what the Photos
+  /// timeline sorts and groups by.
+  DateTime get momentAt => takenAt ?? createdAt;
+
+  String get extension =>
+      p.extension(name).replaceFirst('.', '').toUpperCase();
+
+  bool get isSplit => partCount > 1;
+
+  bool get hasPreview => minithumbnail != null || thumbnailFileId != null;
+
+  static Uint8List? _decodeThumb(String? data) {
+    if (data == null || data.isEmpty) return null;
+    try {
+      return base64Decode(data);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is DriveFile &&
+      other.id == id &&
+      other.name == name &&
+      other.folderId == folderId &&
+      other.starred == starred &&
+      other.modifiedAt == modifiedAt &&
+      other.thumbnailFileId == thumbnailFileId;
+
+  @override
+  int get hashCode =>
+      Object.hash(id, name, folderId, starred, modifiedAt, thumbnailFileId);
+}
+
+enum SortField {
+  name('Name'),
+  modified('Last modified'),
+  size('Size'),
+  type('Type');
+
+  const SortField(this.label);
+
+  final String label;
+
+  static SortField fromName(String? name) =>
+      values.firstWhere((s) => s.name == name, orElse: () => SortField.name);
+}
+
+@immutable
+class SortOrder {
+  const SortOrder(this.field, {this.descending = false});
+
+  final SortField field;
+  final bool descending;
+
+  int compareFiles(DriveFile a, DriveFile b) {
+    final result = switch (field) {
+      SortField.name => _byName(a.name, b.name),
+      SortField.modified => a.modifiedAt.compareTo(b.modifiedAt),
+      SortField.size => a.size.compareTo(b.size),
+      SortField.type => a.extension.compareTo(b.extension) != 0
+          ? a.extension.compareTo(b.extension)
+          : _byName(a.name, b.name),
+    };
+    return descending ? -result : result;
+  }
+
+  /// Folders have no size or type, so those orders fall back to name.
+  int compareFolders(DriveFolder a, DriveFolder b) {
+    final result = field == SortField.modified
+        ? a.modifiedAt.compareTo(b.modifiedAt)
+        : _byName(a.name, b.name);
+    return descending ? -result : result;
+  }
+
+  static int _byName(String a, String b) =>
+      a.toLowerCase().compareTo(b.toLowerCase());
+
+  @override
+  bool operator ==(Object other) =>
+      other is SortOrder &&
+      other.field == field &&
+      other.descending == descending;
+
+  @override
+  int get hashCode => Object.hash(field, descending);
+}
+
+@immutable
+class FolderContents {
+  const FolderContents({required this.folders, required this.files});
+
+  static const empty = FolderContents(folders: [], files: []);
+
+  final List<DriveFolder> folders;
+  final List<DriveFile> files;
+
+  bool get isEmpty => folders.isEmpty && files.isEmpty;
+
+  int get totalBytes => files.fold(0, (sum, f) => sum + f.size);
+
+  FolderContents sorted(SortOrder order) => FolderContents(
+    folders: [...folders]..sort(order.compareFolders),
+    files: [...files]..sort(order.compareFiles),
+  );
+}
+
+@immutable
+class StorageSummary {
+  const StorageSummary({required this.totals});
+
+  final List<KindTotal> totals;
+
+  int get fileCount => totals.fold(0, (sum, t) => sum + t.count);
+  int get bytes => totals.fold(0, (sum, t) => sum + t.bytes);
+
+  KindTotal totalFor(FileKind kind) => totals.firstWhere(
+    (t) => t.kind == kind,
+    orElse: () => KindTotal(kind, 0, 0),
+  );
+}
