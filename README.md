@@ -1,0 +1,182 @@
+# Telegrive
+
+Your Telegram account as an unlimited drive, with automatic photo backup.
+Telegrive stores files in a private Telegram channel on your own account
+and gives you a proper file manager on top: folders, search, previews,
+stars, a photo timeline, and uploads of any size. There is no Telegrive
+server and no account to create — people just sign in with their Telegram
+phone number.
+
+<p>
+<img src="tool/screenshots/out/home_light.png" width="23%" alt="Home">
+<img src="tool/screenshots/out/files_list.png" width="23%" alt="Files">
+<img src="tool/screenshots/out/photos.png" width="23%" alt="Photos">
+<img src="tool/screenshots/out/backup_settings.png" width="23%" alt="Photo backup">
+</p>
+
+## Features
+
+- **Unlimited storage.** Every file is a message in a private channel that
+  Telegrive creates (or finds again) on your account.
+- **Any size.** Telegram caps a message at 2000 MiB (4000 MiB with Premium).
+  Bigger files are split into 512 MiB parts and joined back on download.
+- **Photo backup.** Turn it on once and the whole camera
+  roll goes up in full quality — then every new photo and video follows on
+  its own. Choose device folders, videos on or off, Wi-Fi only or mobile
+  data. A Photos tab shows everything as a timeline grouped by month, with a
+  swipeable full-screen viewer.
+- **Real folders.** Create, rename, move and delete folders; breadcrumbs;
+  list and grid views; sort by name, date, size or type.
+- **Fast and offline-friendly.** A local index (SQLite) makes browsing and
+  search instant; the channel stays the source of truth.
+- **Syncs itself.** New, edited or deleted messages flow in live. Anything you
+  **forward into the channel from Telegram** (documents, videos, audio, photos)
+  shows up in the drive with no re-upload.
+- **Rebuildable.** Names, folders and stars live in each message's caption.
+  Reinstall or sign in on another phone and the whole drive comes back.
+- **Tidy in Telegram too.** Captions lead with the plain file name; the
+  machine-readable part sits in a spoiler, so the channel still reads like a
+  file list.
+- **Transfers that survive.** A queue with live speed and ETA, cancel and
+  retry. On Android a foreground service keeps uploads going in the
+  background, and interrupted split uploads resume at the last finished part.
+- **Previews.** Thumbnails in lists and grids, and a zoomable photo viewer.
+  Everything else opens in the right app on your phone, or goes to the share
+  sheet.
+- **Private by default.** API credentials and the local-database key live in
+  the platform keystore. TDLib's cache is encrypted from the first launch.
+  Telegrive never shows you as "online" to your contacts.
+
+## Getting started
+
+1. The app's Telegram API credentials live in the git-ignored
+   `lib/core/config/telegram_api.dart`. On a fresh clone, copy the template
+   and fill in an `api_id` / `api_hash` from
+   [my.telegram.org](https://my.telegram.org/apps) → API development tools:
+
+   ```bash
+   cp lib/core/config/telegram_api.example.dart lib/core/config/telegram_api.dart
+   ```
+
+2. Run it on an Android device or emulator:
+
+   ```bash
+   flutter pub get
+   flutter run
+   ```
+
+3. Sign in with your phone number (or a QR code from another device). The
+   first time, Telegrive creates a private channel called **Telegrive** with
+   the app icon as its photo (archived in Telegram so it stays out of your
+   chat list) and offers to back up your photos.
+
+## Platform support
+
+| Platform | Status |
+| --- | --- |
+| Android (arm64, armv7, x86, x86_64) | ✅ |
+| iOS / macOS | Not yet. The UI is ready, but the TDLib binding (`handy_tdlib`) ships Android binaries only. See the roadmap. |
+
+## Photo backup
+
+- **Scope.** Every photo (and, optionally, video) on the phone, minus any
+  device folders you switch off. Folders that appear later are included.
+- **Where it goes.** `My Drive › Photo backup › <device folder>`, originals
+  in full quality with their capture date and GPS data intact, plus a
+  preview thumbnail so videos have posters too.
+- **Exactly once.** Each photo's device id is remembered, and anything
+  already in the drive with the same name and size (after a reinstall, or
+  from an old phone) is recognised and skipped.
+- **Keeps going.** A pass runs when the drive opens, when the app comes back
+  to the foreground, and whenever the photo library changes while the app is
+  alive; a foreground service keeps it running in the background.
+- **When the app is closed**, Android wakes a tiny job the moment new photos
+  land (a MediaStore content trigger) and every few hours as a fallback. It
+  posts "N new photos to back up"; tapping it opens the app, which backs
+  them up.
+
+## How it works
+
+```text
+Telegram (source of truth)                 This device
+┌──────────────────────────────┐    sync    ┌─────────────────────────────┐
+│ private channel "Telegrive"   │ ─────────▶ │ index (Drift/SQLite)        │
+│  • file message              │  live +    │  folders · files · parts    │
+│    caption: name + gr1:{…}   │  catch-up  │                             │
+│  • folder message            │ ◀───────── │ transfer queue (persisted)  │
+│    text: 📁 name + grf1:{…}  │  changes   │  uploads · downloads         │
+└──────────────────────────────┘            └─────────────────────────────┘
+```
+
+- **Files** carry a manifest in their caption: id, name, folder, MIME type,
+  size, dates, star, and `partIndex`/`partCount` for split files.
+- **Folders** are small text messages carrying their own id, name and parent,
+  so renames and moves are a single edit and two devices never overwrite each
+  other's folder tree.
+- **Changes go to Telegram first.** The index is written from the message
+  Telegram sends back, so it never claims something the channel doesn't have.
+- **Sync** runs live while the app is open, catches up incrementally on launch
+  and on pull-to-refresh, and does a full reconciliation daily (or from
+  Settings → Rebuild index).
+
+## Project layout
+
+```text
+lib/
+├── app/               # app root, router (phase-driven), shell, theme
+├── core/              # config, formatting, file kinds, shared widgets
+├── infrastructure/
+│   ├── telegram/      # TDLib client, background receiver, secure storage
+│   ├── database/      # Drift schema and queries (the local index)
+│   └── storage/       # small preferences
+└── features/
+    ├── auth/          # welcome, credentials, phone/code/password/QR
+    ├── setup/         # splash, find-or-create (and brand) the drive channel
+    ├── drive/         # manifest format, indexer, repository, sync
+    ├── transfers/     # upload/download queue, background keep-alive
+    ├── backup/        # photo backup: controller, worker, notification, UI
+    ├── files/ home/ photos/ search/ settings/ viewer/
+```
+
+Riverpod 3 for state, go_router for navigation (sign-in screens follow the
+TDLib authorization state instead of being pushed by hand), and Drift for the
+index. TDLib types stay inside `infrastructure/` and `features/*/data`.
+
+## Development
+
+```bash
+flutter test                                              # unit + DB tests
+dart run build_runner build                               # after schema changes
+flutter test tool/screenshots/screens_test.dart --update-goldens  # UI renders with sample data
+flutter test tool/icon/icon_test.dart --update-goldens && dart run flutter_launcher_icons
+```
+
+The screenshot harness renders the signed-in screens with fake data, so UI
+work doesn't need a Telegram account.
+
+## Roadmap
+
+- **Newer TDLib and 16 KB page support.** `handy_tdlib` bundles TDLib 1.8.36,
+  and its binaries aren't 16 KB-page aligned. Android 15+ devices with 16 KB
+  pages run the app in compatibility mode, and Play Store uploads need
+  alignment. The plan is to vendor current `libtdjson` builds.
+- **iOS and macOS**, using prebuilt TDLib xcframeworks through the same FFI
+  binding.
+- **End-to-end encryption** of file bodies and captions with a recovery
+  passphrase.
+- **Share-sheet intake** (send to Telegrive from any app).
+- **Fully unattended background backup** with the app closed. Today the
+  closed-app job notifies and the app does the upload; running TDLib inside
+  the background job would remove that tap.
+- **Streaming playback** for video and audio without a full download.
+- **Trash** with undo, instead of immediate deletion.
+
+## Good to know
+
+- Keep the **Telegrive** channel. Deleting it deletes your drive. Deleting or
+  editing its messages in Telegram changes the drive accordingly.
+- Split files appear in Telegram as numbered parts (`movie.mkv.001`, …). Only
+  Telegrive joins them back.
+- Forwarded files land at the root; move them into folders from the app.
+
+Telegrive is an independent project, not affiliated with Telegram.
