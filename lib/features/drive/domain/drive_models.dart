@@ -14,6 +14,7 @@ class DriveFolder {
     required this.name,
     required this.createdAt,
     required this.modifiedAt,
+    this.trashedAt,
   });
 
   factory DriveFolder.fromRow(FolderRow row) => DriveFolder(
@@ -22,6 +23,7 @@ class DriveFolder {
     name: row.name,
     createdAt: row.createdAt,
     modifiedAt: row.modifiedAt,
+    trashedAt: row.trashedAt,
   );
 
   final String id;
@@ -29,6 +31,9 @@ class DriveFolder {
   final String name;
   final DateTime createdAt;
   final DateTime modifiedAt;
+
+  /// When it was moved to the trash, for items listed in Trash.
+  final DateTime? trashedAt;
 
   @override
   bool operator ==(Object other) =>
@@ -58,6 +63,7 @@ class DriveFile {
     this.minithumbnail,
     this.thumbnailFileId,
     this.takenAt,
+    this.trashedAt,
   });
 
   factory DriveFile.fromRow(FileRow row) => DriveFile(
@@ -74,6 +80,7 @@ class DriveFile {
     minithumbnail: _decodeThumb(row.minithumbnail),
     thumbnailFileId: row.thumbnailFileId,
     takenAt: row.takenAt,
+    trashedAt: row.trashedAt,
   );
 
   final String id;
@@ -95,6 +102,9 @@ class DriveFile {
 
   /// Capture time, for photos and videos that came from a camera roll.
   final DateTime? takenAt;
+
+  /// When it was moved to the trash, for items listed in Trash.
+  final DateTime? trashedAt;
 
   /// When the moment happened, as far as we know — what the Photos
   /// timeline sorts and groups by.
@@ -183,6 +193,47 @@ class SortOrder {
 
   @override
   int get hashCode => Object.hash(field, descending);
+}
+
+/// A photo album, with how many photos and videos it holds and the newest
+/// one, for its cover.
+@immutable
+class DriveAlbum {
+  const DriveAlbum({
+    required this.id,
+    required this.name,
+    required this.count,
+    this.coverFileId,
+  });
+
+  final String id;
+  final String name;
+  final int count;
+  final String? coverFileId;
+
+  @override
+  bool operator ==(Object other) =>
+      other is DriveAlbum &&
+      other.id == id &&
+      other.name == name &&
+      other.count == count &&
+      other.coverFileId == coverFileId;
+
+  @override
+  int get hashCode => Object.hash(id, name, count, coverFileId);
+}
+
+/// What is in the trash: the files and folders put there, not everything
+/// inside a trashed folder.
+@immutable
+class TrashContents {
+  const TrashContents({required this.folders, required this.files});
+
+  final List<DriveFolder> folders;
+  final List<DriveFile> files;
+
+  bool get isEmpty => folders.isEmpty && files.isEmpty;
+  int get count => folders.length + files.length;
 }
 
 /// A file to download to the phone, with the names of the folders leading

@@ -91,6 +91,12 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
                     tooltip: prefs.viewMode == ViewMode.list ? 'Grid view' : 'List view',
                   ),
                   _SortButton(sort: prefs.sort),
+                  if (widget.folderId == null)
+                    IconButton(
+                      onPressed: () => context.push('/trash'),
+                      icon: const Icon(Icons.delete_outline_rounded),
+                      tooltip: 'Trash',
+                    ),
                   const SizedBox(width: 4),
                 ],
               ),
@@ -312,7 +318,7 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
             if (deleted) _clearSelection();
           },
           icon: const Icon(Icons.delete_outline_rounded),
-          tooltip: 'Delete',
+          tooltip: 'Move to Trash',
         ),
         IconButton(
           onPressed: data == null

@@ -207,4 +207,50 @@ void main() {
       expect(SplitPolicy.partName('movie.mkv', 10), 'movie.mkv.011');
     });
   });
+
+  group('trash and albums', () {
+    test('a file keeps its trash time and albums, and restores clean', () {
+      final trashed = file().copyWith(
+        trashedAt: DateTime.fromMillisecondsSinceEpoch(1_700_000_500_000),
+        albums: ['a1b2c3', 'd4e5f6'],
+      );
+      final decoded = ManifestCodec.decodeFile(ManifestCodec.encodeFile(trashed).text)!;
+      expect(decoded.trashedAt, trashed.trashedAt);
+      expect(decoded.albums, ['a1b2c3', 'd4e5f6']);
+
+      final restored = decoded.copyWith(restore: true);
+      final again = ManifestCodec.decodeFile(ManifestCodec.encodeFile(restored).text)!;
+      expect(again.trashedAt, isNull);
+      expect(again.albums, ['a1b2c3', 'd4e5f6']);
+    });
+
+    test('a folder keeps its trash time', () {
+      final folder = FolderManifest(
+        id: 'folder-1',
+        name: 'Taxes',
+        parentId: null,
+        createdAt: created,
+        modifiedAt: created,
+        trashedAt: created,
+      );
+      final text = ManifestCodec.encodeFolder(folder).text;
+      expect(ManifestCodec.decodeFolder(text)!.trashedAt, created);
+    });
+
+    test('albums are their own message kind', () {
+      final album = AlbumManifest(
+        id: 'a1b2c3',
+        name: 'Lalibela 2026',
+        createdAt: created,
+        modifiedAt: created,
+      );
+      final text = ManifestCodec.encodeAlbum(album).text;
+      expect(text.split('\n').first, '🖼 Lalibela 2026');
+      expect(ManifestCodec.decodeAlbum(text)!.name, 'Lalibela 2026');
+      expect(ManifestCodec.decodeFolder(text), isNull);
+      expect(ManifestCodec.decodeAlbum(ManifestCodec.encodeFolder(
+        FolderManifest(id: 'f', name: 'x', parentId: null, createdAt: created, modifiedAt: created),
+      ).text), isNull);
+    });
+  });
 }

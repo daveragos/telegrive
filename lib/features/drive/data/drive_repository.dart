@@ -59,11 +59,14 @@ class DriveRepository {
 
   Future<void> ingest(td.Message message) async {
     switch (MessageIndexer.entryFor(message)) {
-      case FilePartEntry(:final file, :final part):
+      case FilePartEntry(:final file, :final part, :final albums):
         await _db.upsertFilePart(file, part);
+        await _db.setFileAlbums(part.fileId.value, albums);
         _ingested.add(part.fileId.value);
       case FolderEntry(:final folder):
         await _db.upsertFolder(folder);
+      case AlbumEntry(:final album):
+        await _db.upsertAlbum(album);
       case null:
         break;
     }
@@ -87,6 +90,30 @@ class DriveRepository {
     ),
   );
 
+  Stream<TrashContents> watchTrash() => combineLatest2(
+    _db.watchTrashedFolders(),
+    _db.watchTrashedFiles(),
+    (folders, files) => TrashContents(
+      folders: folders.map(DriveFolder.fromRow).toList(),
+      files: files.map(DriveFile.fromRow).toList(),
+    ),
+  );
+
+  Stream<List<DriveAlbum>> watchAlbums() => _db.watchAlbums().map(
+    (rows) => [
+      for (final row in rows)
+        DriveAlbum(
+          id: row.album.id,
+          name: row.album.name,
+          count: row.count,
+          coverFileId: row.coverFileId,
+        ),
+    ],
+  );
+
+  Stream<List<DriveFile>> watchAlbumFiles(String albumId) =>
+      _db.watchAlbumFiles(albumId).map(_files);
+
   Stream<DriveFolder?> watchFolderInfo(String id) =>
       _db.watchFolder(id).map((r) => r == null ? null : DriveFolder.fromRow(r));
 
@@ -105,8 +132,11 @@ class DriveRepository {
   Stream<List<DriveFile>> watchKind(FileKind kind) =>
       _db.watchKind(kind).map(_files);
 
-  Stream<List<DriveFile>> watchSearch(String query, {FileKind? kind}) =>
-      _db.watchSearch(query, kind: kind).map(_files);
+  Stream<List<DriveFile>> watchSearch(
+    String query, {
+    FileKind? kind,
+    (DateTime, DateTime)? range,
+  }) => _db.watchSearch(query, kind: kind, range: range).map(_files);
 
   Stream<List<DriveFolder>> watchFolderSearch(String query) => _db
       .watchFolderSearch(query)
@@ -275,6 +305,8 @@ class DriveRepository {
     DriveFolder folder, {
     required String name,
     required String? parentId,
+    DateTime? trashedAt,
+    bool restore = false,
   }) async {
     final row = await _db.folderById(folder.id);
     if (row == null) return;
@@ -284,6 +316,7 @@ class DriveRepository {
       parentId: parentId,
       createdAt: folder.createdAt,
       modifiedAt: DateTime.now(),
+      trashedAt: restore ? null : (trashedAt ?? row.trashedAt),
     );
     final message = await _ignoreUnchanged(
       () => _messenger.editText(
@@ -383,24 +416,29 @@ class DriveRepository {
     }
   }
 
-  /// Rewrites the manifest on every part of [file].
+  /// Rewrites the manifest on every part of [file], starting from what the
+  /// index holds so nothing the caller doesn't touch is lost.
   Future<void> _rewriteFile(
     DriveFile file,
     FileManifest Function(FileManifest current) change,
   ) async {
+    final row = await _db.fileById(file.id);
+    if (row == null) return;
     final parts = await _db.partsOf(file.id);
     final base = change(
       FileManifest(
-        id: file.id,
-        name: file.name,
-        folderId: file.folderId,
-        mimeType: file.mimeType,
-        size: file.size,
-        createdAt: file.createdAt,
-        modifiedAt: file.modifiedAt,
-        partCount: file.partCount,
-        starred: file.starred,
-        takenAt: file.takenAt,
+        id: row.id,
+        name: row.name,
+        folderId: row.folderId,
+        mimeType: row.mimeType,
+        size: row.size,
+        createdAt: row.createdAt,
+        modifiedAt: row.modifiedAt,
+        partCount: row.partCount,
+        starred: row.starred,
+        takenAt: row.takenAt,
+        trashedAt: row.trashedAt,
+        albums: await _db.albumIdsOf(row.id),
       ),
     ).copyWith(modifiedAt: DateTime.now());
 
@@ -417,11 +455,160 @@ class DriveRepository {
   }
 
   // ---------------------------------------------------------------------------
+  // Trash
+  // ---------------------------------------------------------------------------
+
+  /// How long things stay in the trash before they go for good.
+  static const Duration trashKeepsFor = Duration(days: 30);
+
+  /// Moves [files] and [folders] to the trash. A folder goes with everything
+  /// inside it, in one edit; the drive can still be rebuilt from Telegram.
+  Future<void> trash({
+    List<DriveFile> files = const [],
+    List<DriveFolder> folders = const [],
+  }) async {
+    final now = DateTime.now();
+    for (final folder in folders) {
+      await _rewriteFolder(folder, name: folder.name, parentId: folder.parentId, trashedAt: now);
+    }
+    for (final file in files) {
+      await _rewriteFile(file, (m) => m.copyWith(trashedAt: now));
+    }
+  }
+
+  Future<void> restore({
+    List<DriveFile> files = const [],
+    List<DriveFolder> folders = const [],
+  }) async {
+    for (final folder in folders) {
+      await _rewriteFolder(folder, name: folder.name, parentId: folder.parentId, restore: true);
+    }
+    for (final file in files) {
+      await _rewriteFile(file, (m) => m.copyWith(restore: true));
+    }
+  }
+
+  /// Deletes everything in the trash for good. Returns how many files went.
+  Future<int> emptyTrash({DateTime? trashedBefore}) async {
+    final contents = await watchTrash().first;
+    bool due(DateTime? at) =>
+        trashedBefore == null || (at != null && at.isBefore(trashedBefore));
+    return delete(
+      files: contents.files.where((f) => due(f.trashedAt)).toList(),
+      folders: contents.folders.where((f) => due(f.trashedAt)).toList(),
+    );
+  }
+
+  /// Clears out what has been in the trash longer than [trashKeepsFor].
+  Future<void> purgeTrash() =>
+      emptyTrash(trashedBefore: DateTime.now().subtract(trashKeepsFor));
+
+  // ---------------------------------------------------------------------------
+  // Albums
+  // ---------------------------------------------------------------------------
+
+  /// Short ids: every album a photo is in is spelled out in its caption.
+  String _albumId() => newId().replaceAll('-', '').substring(0, 12);
+
+  Future<String> createAlbum(String name) async {
+    final clean = name.trim();
+    if (clean.isEmpty) throw const DriveException('Give the album a name.');
+    final now = DateTime.now();
+    final manifest = AlbumManifest(
+      id: _albumId(),
+      name: clean,
+      createdAt: now,
+      modifiedAt: now,
+    );
+    final message = await _messenger.sendText(
+      _chatId,
+      ManifestCodec.encodeAlbum(manifest),
+    );
+    await ingest(message);
+    return manifest.id;
+  }
+
+  Future<void> renameAlbum(String albumId, String name) async {
+    final clean = name.trim();
+    if (clean.isEmpty) throw const DriveException('Give the album a name.');
+    final row = await _db.albumById(albumId);
+    if (row == null || row.name == clean) return;
+    final message = await _ignoreUnchanged(
+      () => _messenger.editText(
+        _chatId,
+        row.messageId,
+        ManifestCodec.encodeAlbum(
+          AlbumManifest(
+            id: row.id,
+            name: clean,
+            createdAt: row.createdAt,
+            modifiedAt: DateTime.now(),
+          ),
+        ),
+      ),
+    );
+    if (message != null) await ingest(message);
+  }
+
+  /// Deletes the album; its photos stay in the drive.
+  Future<void> deleteAlbum(String albumId) async {
+    final row = await _db.albumById(albumId);
+    if (row == null) return;
+    final members = await _db.watchAlbumFiles(albumId).first;
+    await removeFromAlbum(members.map(DriveFile.fromRow).toList(), albumId);
+    await _messenger.deleteMessages(_chatId, [row.messageId]);
+    await _db.removeMessages([row.messageId]);
+  }
+
+  Future<void> addToAlbum(List<DriveFile> files, String albumId) async {
+    for (final file in files) {
+      final current = await _db.albumIdsOf(file.id);
+      if (current.contains(albumId)) continue;
+      await _rewriteFile(file, (m) => m.copyWith(albums: [...current, albumId]));
+    }
+    await _touchAlbum(albumId);
+  }
+
+  Future<void> removeFromAlbum(List<DriveFile> files, String albumId) async {
+    for (final file in files) {
+      final current = await _db.albumIdsOf(file.id);
+      if (!current.contains(albumId)) continue;
+      await _rewriteFile(
+        file,
+        (m) => m.copyWith(albums: current.where((id) => id != albumId).toList()),
+      );
+    }
+  }
+
+  /// Albums sort by when they last changed, so adding photos lifts one to
+  /// the top.
+  Future<void> _touchAlbum(String albumId) async {
+    final row = await _db.albumById(albumId);
+    if (row == null) return;
+    await _ignoreUnchanged(
+      () => _messenger.editText(
+        _chatId,
+        row.messageId,
+        ManifestCodec.encodeAlbum(
+          AlbumManifest(
+            id: row.id,
+            name: row.name,
+            createdAt: row.createdAt,
+            modifiedAt: DateTime.now(),
+          ),
+        ),
+      ),
+    ).then((message) async {
+      if (message != null) await ingest(message);
+    });
+  }
+
+  // ---------------------------------------------------------------------------
   // Deleting
   // ---------------------------------------------------------------------------
 
   /// Deletes [files] and [folders] (with everything inside them) from
-  /// Telegram and the index. Returns how many files went.
+  /// Telegram and the index for good. Returns how many files went.
   Future<int> delete({
     List<DriveFile> files = const [],
     List<DriveFolder> folders = const [],
@@ -517,6 +704,19 @@ final recentFilesProvider = StreamProvider.autoDispose<List<DriveFile>>(
 final starredFilesProvider = StreamProvider.autoDispose<List<DriveFile>>(
   (ref) => ref.watch(driveRepositoryProvider).watchStarred(),
 );
+
+final trashProvider = StreamProvider.autoDispose<TrashContents>(
+  (ref) => ref.watch(driveRepositoryProvider).watchTrash(),
+);
+
+final albumsProvider = StreamProvider.autoDispose<List<DriveAlbum>>(
+  (ref) => ref.watch(driveRepositoryProvider).watchAlbums(),
+);
+
+final albumFilesProvider = StreamProvider.autoDispose
+    .family<List<DriveFile>, String>(
+      (ref, albumId) => ref.watch(driveRepositoryProvider).watchAlbumFiles(albumId),
+    );
 
 final kindFilesProvider = StreamProvider.autoDispose
     .family<List<DriveFile>, FileKind>(

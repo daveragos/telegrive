@@ -211,5 +211,114 @@ void main() {
     await db.deleteTransfers(rows.take(1100).map((r) => r.id));
     expect(await db.allTransfers(), hasLength(100));
   });
-}
 
+  group('trash', () {
+    Future<void> trashFolder(String id, int messageId, {String? parentId}) =>
+        db.upsertFolder(folder(id, messageId, parentId: parentId).copyWith(trashedAt: Value(now)));
+
+    test('a trashed folder hides everything inside it, and only it is listed', () async {
+      await db.upsertFolder(folder('docs', 1));
+      await db.upsertFolder(folder('inner', 2, parentId: 'docs'));
+      await db.upsertFilePart(file('a', folderId: 'inner'), part('a', 0, 10));
+      await db.upsertFilePart(file('b'), part('b', 0, 11));
+
+      await trashFolder('docs', 1);
+
+      expect((await db.watchChildFolders(null).first).map((f) => f.id), isEmpty);
+      expect((await db.watchRecent().first).map((f) => f.id), ['b']);
+      expect((await db.watchTotals().first).single.count, 1);
+      expect((await db.watchTrashedFolders().first).map((f) => f.id), ['docs']);
+      expect(await db.watchTrashedFiles().first, isEmpty);
+      expect(await db.completeFiles(), hasLength(1));
+
+      // Restoring the folder brings its contents back.
+      await db.upsertFolder(folder('docs', 1).copyWith(trashedAt: const Value(null)));
+      expect((await db.watchRecent().first).map((f) => f.id), unorderedEquals(['a', 'b']));
+      expect(await db.watchTrashedFolders().first, isEmpty);
+    });
+
+    test('a trashed file is listed unless its folder is trashed too', () async {
+      await db.upsertFolder(folder('docs', 1));
+      await db.upsertFilePart(
+        file('a', folderId: 'docs').copyWith(trashedAt: Value(now)),
+        part('a', 0, 10),
+      );
+      expect((await db.watchTrashedFiles().first).map((f) => f.id), ['a']);
+      expect(await db.watchFilesIn('docs').first, isEmpty);
+
+      await trashFolder('docs', 1);
+      expect(await db.watchTrashedFiles().first, isEmpty);
+      expect((await db.watchTrashedFolders().first).map((f) => f.id), ['docs']);
+    });
+
+    test('a file arriving inside a trashed folder is hidden straight away', () async {
+      await trashFolder('docs', 1);
+      await db.upsertFilePart(file('late', folderId: 'docs'), part('late', 0, 10));
+      expect(await db.watchRecent().first, isEmpty);
+    });
+
+    test('trashed photos are not safe to delete from the phone', () async {
+      await db.upsertFilePart(file('p'), part('p', 0, 10));
+      await db.upsertFilePart(file('q').copyWith(trashedAt: Value(now)), part('q', 0, 11));
+      await db.markAssetBackedUp('asset-p', 'p');
+      await db.markAssetBackedUp('asset-q', 'q');
+      expect(await db.safelyBackedUp(), {'asset-p': 100});
+    });
+  });
+
+  test('albums count and cover their shown files', () async {
+    await db.upsertAlbum(
+      AlbumsCompanion.insert(id: 'al', name: 'Trip', messageId: 50, createdAt: now, modifiedAt: now),
+    );
+    await db.upsertFilePart(
+      file('old').copyWith(takenAt: Value(DateTime(2020))),
+      part('old', 0, 10),
+    );
+    await db.upsertFilePart(
+      file('new').copyWith(takenAt: Value(DateTime(2024))),
+      part('new', 0, 11),
+    );
+    await db.upsertFilePart(file('gone').copyWith(trashedAt: Value(now)), part('gone', 0, 12));
+    for (final id in ['old', 'new', 'gone']) {
+      await db.setFileAlbums(id, ['al']);
+    }
+
+    final album = (await db.watchAlbums().first).single;
+    expect(album.album.name, 'Trip');
+    expect(album.count, 2);
+    expect(album.coverFileId, 'new');
+    expect((await db.watchAlbumFiles('al').first).map((f) => f.id), ['new', 'old']);
+
+    await db.setFileAlbums('new', []);
+    expect((await db.watchAlbums().first).single.count, 1);
+
+    await db.removeMessages([50]);
+    expect(await db.watchAlbums().first, isEmpty);
+  });
+
+  test('search finds recognised content and dates', () async {
+    await db.upsertFilePart(
+      file('receipt').copyWith(takenAt: Value(DateTime(2024, 3, 5))),
+      part('receipt', 0, 10),
+    );
+    await db.upsertFilePart(file('other'), part('other', 0, 11));
+    await db.saveContent('receipt', 'total due 42 birr · receipt · paper', 1);
+
+    expect((await db.watchSearch('birr').first).map((f) => f.id), ['receipt']);
+    final march = (DateTime(2024, 3), DateTime(2024, 4));
+    expect((await db.watchSearch('march', range: march).first).map((f) => f.id), ['receipt']);
+    expect(await db.indexedFileIds(1), {'receipt'});
+    expect(await db.indexedFileIds(2), isEmpty);
+  });
+
+  test('offline pins and copies', () async {
+    await db.pinOffline('docs', isFolder: true);
+    await db.saveOfflineCopy('a', '/x/a.pdf', 10);
+    expect(await db.watchOfflinePins().first, {'docs'});
+    expect(await db.watchOfflineCopies().first, {'a': '/x/a.pdf'});
+    await db.unpinOffline('docs');
+    await db.deleteOfflineCopy('a');
+    expect(await db.offlinePinList(), isEmpty);
+    expect(await db.offlineCopyList(), isEmpty);
+  });
+}

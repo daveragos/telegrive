@@ -389,6 +389,8 @@ class TransferQueue extends Notifier<TransfersState> {
 
   /// A path for [file] that already exists on this device, or null.
   Future<String?> localPathIfAvailable(DriveFile file) async {
+    final offline = await _db.offlineCopyOf(file.id);
+    if (offline != null && await File(offline.path).exists()) return offline.path;
     for (final row in _rows.values) {
       if (row.kind == TransferKind.download &&
           row.fileId == file.id &&
@@ -823,6 +825,13 @@ class TransferQueue extends Notifier<TransfersState> {
         // Photos tab can show the phone's sharp copy of it.
         await _db.markAssetBackedUp(assetId, row.fileId);
         return row.copyWith(resultPath: const Value(null));
+      case SaveTarget.offline:
+        final dir = Directory(p.join((await offlineDirectory()).path, row.fileId));
+        await dir.create(recursive: true);
+        final copy = File(p.join(dir.path, DeviceStorage.safeName(row.name)));
+        await File(path).copy(copy.path);
+        await _db.saveOfflineCopy(row.fileId, copy.path, await copy.length());
+        return row.copyWith(resultPath: Value(copy.path));
     }
   }
 
@@ -877,6 +886,12 @@ class TransferQueue extends Notifier<TransfersState> {
   static Future<Directory> downloadsDirectory() async {
     final support = await getApplicationSupportDirectory();
     return Directory(p.join(support.path, 'downloads'));
+  }
+
+  /// Copies kept available offline. Clearing downloaded copies skips it.
+  static Future<Directory> offlineDirectory() async {
+    final support = await getApplicationSupportDirectory();
+    return Directory(p.join(support.path, 'offline'));
   }
 
   // ---------------------------------------------------------------------------
@@ -991,9 +1006,12 @@ class TransferQueue extends Notifier<TransfersState> {
 
   Future<void> _finish(TransferRow row, {Object? error}) async {
     final finished = row.copyWith(finishedAt: Value(DateTime.now()));
-    if (row.origin == TransferOrigin.backup) {
-      // Backup keeps its own record of each photo; finished rows here would
-      // only bury the person's own transfers under thousands of photos.
+    final keptOffline =
+        row.saveTo == SaveTarget.offline && row.status == TransferStatus.completed;
+    if (row.origin == TransferOrigin.backup || keptOffline) {
+      // Backup keeps its own record of each photo, and offline copies are
+      // listed in their own table; finished rows here would only bury the
+      // person's own transfers.
       _rows.remove(row.id);
       await _db.deleteTransfers([row.id]);
     } else {

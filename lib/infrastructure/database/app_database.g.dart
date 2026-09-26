@@ -70,6 +70,30 @@ class $FoldersTable extends Folders with TableInfo<$FoldersTable, FolderRow> {
     type: DriftSqlType.dateTime,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _trashedAtMeta = const VerificationMeta(
+    'trashedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> trashedAt = GeneratedColumn<DateTime>(
+    'trashed_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _hiddenMeta = const VerificationMeta('hidden');
+  @override
+  late final GeneratedColumn<bool> hidden = GeneratedColumn<bool>(
+    'hidden',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("hidden" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -78,6 +102,8 @@ class $FoldersTable extends Folders with TableInfo<$FoldersTable, FolderRow> {
     messageId,
     createdAt,
     modifiedAt,
+    trashedAt,
+    hidden,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -134,6 +160,18 @@ class $FoldersTable extends Folders with TableInfo<$FoldersTable, FolderRow> {
     } else if (isInserting) {
       context.missing(_modifiedAtMeta);
     }
+    if (data.containsKey('trashed_at')) {
+      context.handle(
+        _trashedAtMeta,
+        trashedAt.isAcceptableOrUnknown(data['trashed_at']!, _trashedAtMeta),
+      );
+    }
+    if (data.containsKey('hidden')) {
+      context.handle(
+        _hiddenMeta,
+        hidden.isAcceptableOrUnknown(data['hidden']!, _hiddenMeta),
+      );
+    }
     return context;
   }
 
@@ -167,6 +205,14 @@ class $FoldersTable extends Folders with TableInfo<$FoldersTable, FolderRow> {
         DriftSqlType.dateTime,
         data['${effectivePrefix}modified_at'],
       )!,
+      trashedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}trashed_at'],
+      ),
+      hidden: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}hidden'],
+      )!,
     );
   }
 
@@ -183,6 +229,13 @@ class FolderRow extends DataClass implements Insertable<FolderRow> {
   final int messageId;
   final DateTime createdAt;
   final DateTime modifiedAt;
+
+  /// When it was moved to the trash; everything inside goes with it.
+  final DateTime? trashedAt;
+
+  /// In the trash, or inside a folder that is: shown nowhere but Trash.
+  /// Worked out locally from [trashedAt] up the folder tree.
+  final bool hidden;
   const FolderRow({
     required this.id,
     this.parentId,
@@ -190,6 +243,8 @@ class FolderRow extends DataClass implements Insertable<FolderRow> {
     required this.messageId,
     required this.createdAt,
     required this.modifiedAt,
+    this.trashedAt,
+    required this.hidden,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -202,6 +257,10 @@ class FolderRow extends DataClass implements Insertable<FolderRow> {
     map['message_id'] = Variable<int>(messageId);
     map['created_at'] = Variable<DateTime>(createdAt);
     map['modified_at'] = Variable<DateTime>(modifiedAt);
+    if (!nullToAbsent || trashedAt != null) {
+      map['trashed_at'] = Variable<DateTime>(trashedAt);
+    }
+    map['hidden'] = Variable<bool>(hidden);
     return map;
   }
 
@@ -215,6 +274,10 @@ class FolderRow extends DataClass implements Insertable<FolderRow> {
       messageId: Value(messageId),
       createdAt: Value(createdAt),
       modifiedAt: Value(modifiedAt),
+      trashedAt: trashedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(trashedAt),
+      hidden: Value(hidden),
     );
   }
 
@@ -230,6 +293,8 @@ class FolderRow extends DataClass implements Insertable<FolderRow> {
       messageId: serializer.fromJson<int>(json['messageId']),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
       modifiedAt: serializer.fromJson<DateTime>(json['modifiedAt']),
+      trashedAt: serializer.fromJson<DateTime?>(json['trashedAt']),
+      hidden: serializer.fromJson<bool>(json['hidden']),
     );
   }
   @override
@@ -242,6 +307,8 @@ class FolderRow extends DataClass implements Insertable<FolderRow> {
       'messageId': serializer.toJson<int>(messageId),
       'createdAt': serializer.toJson<DateTime>(createdAt),
       'modifiedAt': serializer.toJson<DateTime>(modifiedAt),
+      'trashedAt': serializer.toJson<DateTime?>(trashedAt),
+      'hidden': serializer.toJson<bool>(hidden),
     };
   }
 
@@ -252,6 +319,8 @@ class FolderRow extends DataClass implements Insertable<FolderRow> {
     int? messageId,
     DateTime? createdAt,
     DateTime? modifiedAt,
+    Value<DateTime?> trashedAt = const Value.absent(),
+    bool? hidden,
   }) => FolderRow(
     id: id ?? this.id,
     parentId: parentId.present ? parentId.value : this.parentId,
@@ -259,6 +328,8 @@ class FolderRow extends DataClass implements Insertable<FolderRow> {
     messageId: messageId ?? this.messageId,
     createdAt: createdAt ?? this.createdAt,
     modifiedAt: modifiedAt ?? this.modifiedAt,
+    trashedAt: trashedAt.present ? trashedAt.value : this.trashedAt,
+    hidden: hidden ?? this.hidden,
   );
   FolderRow copyWithCompanion(FoldersCompanion data) {
     return FolderRow(
@@ -270,6 +341,8 @@ class FolderRow extends DataClass implements Insertable<FolderRow> {
       modifiedAt: data.modifiedAt.present
           ? data.modifiedAt.value
           : this.modifiedAt,
+      trashedAt: data.trashedAt.present ? data.trashedAt.value : this.trashedAt,
+      hidden: data.hidden.present ? data.hidden.value : this.hidden,
     );
   }
 
@@ -281,14 +354,24 @@ class FolderRow extends DataClass implements Insertable<FolderRow> {
           ..write('name: $name, ')
           ..write('messageId: $messageId, ')
           ..write('createdAt: $createdAt, ')
-          ..write('modifiedAt: $modifiedAt')
+          ..write('modifiedAt: $modifiedAt, ')
+          ..write('trashedAt: $trashedAt, ')
+          ..write('hidden: $hidden')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode =>
-      Object.hash(id, parentId, name, messageId, createdAt, modifiedAt);
+  int get hashCode => Object.hash(
+    id,
+    parentId,
+    name,
+    messageId,
+    createdAt,
+    modifiedAt,
+    trashedAt,
+    hidden,
+  );
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -298,7 +381,9 @@ class FolderRow extends DataClass implements Insertable<FolderRow> {
           other.name == this.name &&
           other.messageId == this.messageId &&
           other.createdAt == this.createdAt &&
-          other.modifiedAt == this.modifiedAt);
+          other.modifiedAt == this.modifiedAt &&
+          other.trashedAt == this.trashedAt &&
+          other.hidden == this.hidden);
 }
 
 class FoldersCompanion extends UpdateCompanion<FolderRow> {
@@ -308,6 +393,8 @@ class FoldersCompanion extends UpdateCompanion<FolderRow> {
   final Value<int> messageId;
   final Value<DateTime> createdAt;
   final Value<DateTime> modifiedAt;
+  final Value<DateTime?> trashedAt;
+  final Value<bool> hidden;
   final Value<int> rowid;
   const FoldersCompanion({
     this.id = const Value.absent(),
@@ -316,6 +403,8 @@ class FoldersCompanion extends UpdateCompanion<FolderRow> {
     this.messageId = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.modifiedAt = const Value.absent(),
+    this.trashedAt = const Value.absent(),
+    this.hidden = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   FoldersCompanion.insert({
@@ -325,6 +414,8 @@ class FoldersCompanion extends UpdateCompanion<FolderRow> {
     required int messageId,
     required DateTime createdAt,
     required DateTime modifiedAt,
+    this.trashedAt = const Value.absent(),
+    this.hidden = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        name = Value(name),
@@ -338,6 +429,8 @@ class FoldersCompanion extends UpdateCompanion<FolderRow> {
     Expression<int>? messageId,
     Expression<DateTime>? createdAt,
     Expression<DateTime>? modifiedAt,
+    Expression<DateTime>? trashedAt,
+    Expression<bool>? hidden,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -347,6 +440,8 @@ class FoldersCompanion extends UpdateCompanion<FolderRow> {
       if (messageId != null) 'message_id': messageId,
       if (createdAt != null) 'created_at': createdAt,
       if (modifiedAt != null) 'modified_at': modifiedAt,
+      if (trashedAt != null) 'trashed_at': trashedAt,
+      if (hidden != null) 'hidden': hidden,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -358,6 +453,8 @@ class FoldersCompanion extends UpdateCompanion<FolderRow> {
     Value<int>? messageId,
     Value<DateTime>? createdAt,
     Value<DateTime>? modifiedAt,
+    Value<DateTime?>? trashedAt,
+    Value<bool>? hidden,
     Value<int>? rowid,
   }) {
     return FoldersCompanion(
@@ -367,6 +464,8 @@ class FoldersCompanion extends UpdateCompanion<FolderRow> {
       messageId: messageId ?? this.messageId,
       createdAt: createdAt ?? this.createdAt,
       modifiedAt: modifiedAt ?? this.modifiedAt,
+      trashedAt: trashedAt ?? this.trashedAt,
+      hidden: hidden ?? this.hidden,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -392,6 +491,12 @@ class FoldersCompanion extends UpdateCompanion<FolderRow> {
     if (modifiedAt.present) {
       map['modified_at'] = Variable<DateTime>(modifiedAt.value);
     }
+    if (trashedAt.present) {
+      map['trashed_at'] = Variable<DateTime>(trashedAt.value);
+    }
+    if (hidden.present) {
+      map['hidden'] = Variable<bool>(hidden.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -407,6 +512,8 @@ class FoldersCompanion extends UpdateCompanion<FolderRow> {
           ..write('messageId: $messageId, ')
           ..write('createdAt: $createdAt, ')
           ..write('modifiedAt: $modifiedAt, ')
+          ..write('trashedAt: $trashedAt, ')
+          ..write('hidden: $hidden, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -571,6 +678,30 @@ class $DriveFilesTable extends DriveFiles
     type: DriftSqlType.dateTime,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _trashedAtMeta = const VerificationMeta(
+    'trashedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> trashedAt = GeneratedColumn<DateTime>(
+    'trashed_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _hiddenMeta = const VerificationMeta('hidden');
+  @override
+  late final GeneratedColumn<bool> hidden = GeneratedColumn<bool>(
+    'hidden',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("hidden" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -587,6 +718,8 @@ class $DriveFilesTable extends DriveFiles
     minithumbnail,
     thumbnailFileId,
     takenAt,
+    trashedAt,
+    hidden,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -696,6 +829,18 @@ class $DriveFilesTable extends DriveFiles
         takenAt.isAcceptableOrUnknown(data['taken_at']!, _takenAtMeta),
       );
     }
+    if (data.containsKey('trashed_at')) {
+      context.handle(
+        _trashedAtMeta,
+        trashedAt.isAcceptableOrUnknown(data['trashed_at']!, _trashedAtMeta),
+      );
+    }
+    if (data.containsKey('hidden')) {
+      context.handle(
+        _hiddenMeta,
+        hidden.isAcceptableOrUnknown(data['hidden']!, _hiddenMeta),
+      );
+    }
     return context;
   }
 
@@ -763,6 +908,14 @@ class $DriveFilesTable extends DriveFiles
         DriftSqlType.dateTime,
         data['${effectivePrefix}taken_at'],
       ),
+      trashedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}trashed_at'],
+      ),
+      hidden: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}hidden'],
+      )!,
     );
   }
 
@@ -797,6 +950,12 @@ class FileRow extends DataClass implements Insertable<FileRow> {
   /// When a photo or video was captured, for the Photos timeline. Null for
   /// anything that isn't from the camera roll.
   final DateTime? takenAt;
+
+  /// When it was moved to the trash.
+  final DateTime? trashedAt;
+
+  /// In the trash itself or inside a trashed folder; see [Folders.hidden].
+  final bool hidden;
   const FileRow({
     required this.id,
     this.folderId,
@@ -812,6 +971,8 @@ class FileRow extends DataClass implements Insertable<FileRow> {
     this.minithumbnail,
     this.thumbnailFileId,
     this.takenAt,
+    this.trashedAt,
+    required this.hidden,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -842,6 +1003,10 @@ class FileRow extends DataClass implements Insertable<FileRow> {
     if (!nullToAbsent || takenAt != null) {
       map['taken_at'] = Variable<DateTime>(takenAt);
     }
+    if (!nullToAbsent || trashedAt != null) {
+      map['trashed_at'] = Variable<DateTime>(trashedAt);
+    }
+    map['hidden'] = Variable<bool>(hidden);
     return map;
   }
 
@@ -869,6 +1034,10 @@ class FileRow extends DataClass implements Insertable<FileRow> {
       takenAt: takenAt == null && nullToAbsent
           ? const Value.absent()
           : Value(takenAt),
+      trashedAt: trashedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(trashedAt),
+      hidden: Value(hidden),
     );
   }
 
@@ -894,6 +1063,8 @@ class FileRow extends DataClass implements Insertable<FileRow> {
       minithumbnail: serializer.fromJson<String?>(json['minithumbnail']),
       thumbnailFileId: serializer.fromJson<int?>(json['thumbnailFileId']),
       takenAt: serializer.fromJson<DateTime?>(json['takenAt']),
+      trashedAt: serializer.fromJson<DateTime?>(json['trashedAt']),
+      hidden: serializer.fromJson<bool>(json['hidden']),
     );
   }
   @override
@@ -916,6 +1087,8 @@ class FileRow extends DataClass implements Insertable<FileRow> {
       'minithumbnail': serializer.toJson<String?>(minithumbnail),
       'thumbnailFileId': serializer.toJson<int?>(thumbnailFileId),
       'takenAt': serializer.toJson<DateTime?>(takenAt),
+      'trashedAt': serializer.toJson<DateTime?>(trashedAt),
+      'hidden': serializer.toJson<bool>(hidden),
     };
   }
 
@@ -934,6 +1107,8 @@ class FileRow extends DataClass implements Insertable<FileRow> {
     Value<String?> minithumbnail = const Value.absent(),
     Value<int?> thumbnailFileId = const Value.absent(),
     Value<DateTime?> takenAt = const Value.absent(),
+    Value<DateTime?> trashedAt = const Value.absent(),
+    bool? hidden,
   }) => FileRow(
     id: id ?? this.id,
     folderId: folderId.present ? folderId.value : this.folderId,
@@ -953,6 +1128,8 @@ class FileRow extends DataClass implements Insertable<FileRow> {
         ? thumbnailFileId.value
         : this.thumbnailFileId,
     takenAt: takenAt.present ? takenAt.value : this.takenAt,
+    trashedAt: trashedAt.present ? trashedAt.value : this.trashedAt,
+    hidden: hidden ?? this.hidden,
   );
   FileRow copyWithCompanion(DriveFilesCompanion data) {
     return FileRow(
@@ -978,6 +1155,8 @@ class FileRow extends DataClass implements Insertable<FileRow> {
           ? data.thumbnailFileId.value
           : this.thumbnailFileId,
       takenAt: data.takenAt.present ? data.takenAt.value : this.takenAt,
+      trashedAt: data.trashedAt.present ? data.trashedAt.value : this.trashedAt,
+      hidden: data.hidden.present ? data.hidden.value : this.hidden,
     );
   }
 
@@ -997,7 +1176,9 @@ class FileRow extends DataClass implements Insertable<FileRow> {
           ..write('starred: $starred, ')
           ..write('minithumbnail: $minithumbnail, ')
           ..write('thumbnailFileId: $thumbnailFileId, ')
-          ..write('takenAt: $takenAt')
+          ..write('takenAt: $takenAt, ')
+          ..write('trashedAt: $trashedAt, ')
+          ..write('hidden: $hidden')
           ..write(')'))
         .toString();
   }
@@ -1018,6 +1199,8 @@ class FileRow extends DataClass implements Insertable<FileRow> {
     minithumbnail,
     thumbnailFileId,
     takenAt,
+    trashedAt,
+    hidden,
   );
   @override
   bool operator ==(Object other) =>
@@ -1036,7 +1219,9 @@ class FileRow extends DataClass implements Insertable<FileRow> {
           other.starred == this.starred &&
           other.minithumbnail == this.minithumbnail &&
           other.thumbnailFileId == this.thumbnailFileId &&
-          other.takenAt == this.takenAt);
+          other.takenAt == this.takenAt &&
+          other.trashedAt == this.trashedAt &&
+          other.hidden == this.hidden);
 }
 
 class DriveFilesCompanion extends UpdateCompanion<FileRow> {
@@ -1054,6 +1239,8 @@ class DriveFilesCompanion extends UpdateCompanion<FileRow> {
   final Value<String?> minithumbnail;
   final Value<int?> thumbnailFileId;
   final Value<DateTime?> takenAt;
+  final Value<DateTime?> trashedAt;
+  final Value<bool> hidden;
   final Value<int> rowid;
   const DriveFilesCompanion({
     this.id = const Value.absent(),
@@ -1070,6 +1257,8 @@ class DriveFilesCompanion extends UpdateCompanion<FileRow> {
     this.minithumbnail = const Value.absent(),
     this.thumbnailFileId = const Value.absent(),
     this.takenAt = const Value.absent(),
+    this.trashedAt = const Value.absent(),
+    this.hidden = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   DriveFilesCompanion.insert({
@@ -1087,6 +1276,8 @@ class DriveFilesCompanion extends UpdateCompanion<FileRow> {
     this.minithumbnail = const Value.absent(),
     this.thumbnailFileId = const Value.absent(),
     this.takenAt = const Value.absent(),
+    this.trashedAt = const Value.absent(),
+    this.hidden = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        name = Value(name),
@@ -1110,6 +1301,8 @@ class DriveFilesCompanion extends UpdateCompanion<FileRow> {
     Expression<String>? minithumbnail,
     Expression<int>? thumbnailFileId,
     Expression<DateTime>? takenAt,
+    Expression<DateTime>? trashedAt,
+    Expression<bool>? hidden,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -1127,6 +1320,8 @@ class DriveFilesCompanion extends UpdateCompanion<FileRow> {
       if (minithumbnail != null) 'minithumbnail': minithumbnail,
       if (thumbnailFileId != null) 'thumbnail_file_id': thumbnailFileId,
       if (takenAt != null) 'taken_at': takenAt,
+      if (trashedAt != null) 'trashed_at': trashedAt,
+      if (hidden != null) 'hidden': hidden,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -1146,6 +1341,8 @@ class DriveFilesCompanion extends UpdateCompanion<FileRow> {
     Value<String?>? minithumbnail,
     Value<int?>? thumbnailFileId,
     Value<DateTime?>? takenAt,
+    Value<DateTime?>? trashedAt,
+    Value<bool>? hidden,
     Value<int>? rowid,
   }) {
     return DriveFilesCompanion(
@@ -1163,6 +1360,8 @@ class DriveFilesCompanion extends UpdateCompanion<FileRow> {
       minithumbnail: minithumbnail ?? this.minithumbnail,
       thumbnailFileId: thumbnailFileId ?? this.thumbnailFileId,
       takenAt: takenAt ?? this.takenAt,
+      trashedAt: trashedAt ?? this.trashedAt,
+      hidden: hidden ?? this.hidden,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -1214,6 +1413,12 @@ class DriveFilesCompanion extends UpdateCompanion<FileRow> {
     if (takenAt.present) {
       map['taken_at'] = Variable<DateTime>(takenAt.value);
     }
+    if (trashedAt.present) {
+      map['trashed_at'] = Variable<DateTime>(trashedAt.value);
+    }
+    if (hidden.present) {
+      map['hidden'] = Variable<bool>(hidden.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -1237,6 +1442,8 @@ class DriveFilesCompanion extends UpdateCompanion<FileRow> {
           ..write('minithumbnail: $minithumbnail, ')
           ..write('thumbnailFileId: $thumbnailFileId, ')
           ..write('takenAt: $takenAt, ')
+          ..write('trashedAt: $trashedAt, ')
+          ..write('hidden: $hidden, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -3274,6 +3481,1424 @@ class BackupAssetsCompanion extends UpdateCompanion<BackupAssetRow> {
   }
 }
 
+class $AlbumsTable extends Albums with TableInfo<$AlbumsTable, AlbumRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $AlbumsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _nameMeta = const VerificationMeta('name');
+  @override
+  late final GeneratedColumn<String> name = GeneratedColumn<String>(
+    'name',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _messageIdMeta = const VerificationMeta(
+    'messageId',
+  );
+  @override
+  late final GeneratedColumn<int> messageId = GeneratedColumn<int>(
+    'message_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _modifiedAtMeta = const VerificationMeta(
+    'modifiedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> modifiedAt = GeneratedColumn<DateTime>(
+    'modified_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    name,
+    messageId,
+    createdAt,
+    modifiedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'albums';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<AlbumRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('name')) {
+      context.handle(
+        _nameMeta,
+        name.isAcceptableOrUnknown(data['name']!, _nameMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_nameMeta);
+    }
+    if (data.containsKey('message_id')) {
+      context.handle(
+        _messageIdMeta,
+        messageId.isAcceptableOrUnknown(data['message_id']!, _messageIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_messageIdMeta);
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_createdAtMeta);
+    }
+    if (data.containsKey('modified_at')) {
+      context.handle(
+        _modifiedAtMeta,
+        modifiedAt.isAcceptableOrUnknown(data['modified_at']!, _modifiedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_modifiedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  AlbumRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return AlbumRow(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      name: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}name'],
+      )!,
+      messageId: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}message_id'],
+      )!,
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}created_at'],
+      )!,
+      modifiedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}modified_at'],
+      )!,
+    );
+  }
+
+  @override
+  $AlbumsTable createAlias(String alias) {
+    return $AlbumsTable(attachedDatabase, alias);
+  }
+}
+
+class AlbumRow extends DataClass implements Insertable<AlbumRow> {
+  final String id;
+  final String name;
+  final int messageId;
+  final DateTime createdAt;
+  final DateTime modifiedAt;
+  const AlbumRow({
+    required this.id,
+    required this.name,
+    required this.messageId,
+    required this.createdAt,
+    required this.modifiedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['name'] = Variable<String>(name);
+    map['message_id'] = Variable<int>(messageId);
+    map['created_at'] = Variable<DateTime>(createdAt);
+    map['modified_at'] = Variable<DateTime>(modifiedAt);
+    return map;
+  }
+
+  AlbumsCompanion toCompanion(bool nullToAbsent) {
+    return AlbumsCompanion(
+      id: Value(id),
+      name: Value(name),
+      messageId: Value(messageId),
+      createdAt: Value(createdAt),
+      modifiedAt: Value(modifiedAt),
+    );
+  }
+
+  factory AlbumRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return AlbumRow(
+      id: serializer.fromJson<String>(json['id']),
+      name: serializer.fromJson<String>(json['name']),
+      messageId: serializer.fromJson<int>(json['messageId']),
+      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
+      modifiedAt: serializer.fromJson<DateTime>(json['modifiedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'name': serializer.toJson<String>(name),
+      'messageId': serializer.toJson<int>(messageId),
+      'createdAt': serializer.toJson<DateTime>(createdAt),
+      'modifiedAt': serializer.toJson<DateTime>(modifiedAt),
+    };
+  }
+
+  AlbumRow copyWith({
+    String? id,
+    String? name,
+    int? messageId,
+    DateTime? createdAt,
+    DateTime? modifiedAt,
+  }) => AlbumRow(
+    id: id ?? this.id,
+    name: name ?? this.name,
+    messageId: messageId ?? this.messageId,
+    createdAt: createdAt ?? this.createdAt,
+    modifiedAt: modifiedAt ?? this.modifiedAt,
+  );
+  AlbumRow copyWithCompanion(AlbumsCompanion data) {
+    return AlbumRow(
+      id: data.id.present ? data.id.value : this.id,
+      name: data.name.present ? data.name.value : this.name,
+      messageId: data.messageId.present ? data.messageId.value : this.messageId,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      modifiedAt: data.modifiedAt.present
+          ? data.modifiedAt.value
+          : this.modifiedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('AlbumRow(')
+          ..write('id: $id, ')
+          ..write('name: $name, ')
+          ..write('messageId: $messageId, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('modifiedAt: $modifiedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(id, name, messageId, createdAt, modifiedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is AlbumRow &&
+          other.id == this.id &&
+          other.name == this.name &&
+          other.messageId == this.messageId &&
+          other.createdAt == this.createdAt &&
+          other.modifiedAt == this.modifiedAt);
+}
+
+class AlbumsCompanion extends UpdateCompanion<AlbumRow> {
+  final Value<String> id;
+  final Value<String> name;
+  final Value<int> messageId;
+  final Value<DateTime> createdAt;
+  final Value<DateTime> modifiedAt;
+  final Value<int> rowid;
+  const AlbumsCompanion({
+    this.id = const Value.absent(),
+    this.name = const Value.absent(),
+    this.messageId = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.modifiedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  AlbumsCompanion.insert({
+    required String id,
+    required String name,
+    required int messageId,
+    required DateTime createdAt,
+    required DateTime modifiedAt,
+    this.rowid = const Value.absent(),
+  }) : id = Value(id),
+       name = Value(name),
+       messageId = Value(messageId),
+       createdAt = Value(createdAt),
+       modifiedAt = Value(modifiedAt);
+  static Insertable<AlbumRow> custom({
+    Expression<String>? id,
+    Expression<String>? name,
+    Expression<int>? messageId,
+    Expression<DateTime>? createdAt,
+    Expression<DateTime>? modifiedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (name != null) 'name': name,
+      if (messageId != null) 'message_id': messageId,
+      if (createdAt != null) 'created_at': createdAt,
+      if (modifiedAt != null) 'modified_at': modifiedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  AlbumsCompanion copyWith({
+    Value<String>? id,
+    Value<String>? name,
+    Value<int>? messageId,
+    Value<DateTime>? createdAt,
+    Value<DateTime>? modifiedAt,
+    Value<int>? rowid,
+  }) {
+    return AlbumsCompanion(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      messageId: messageId ?? this.messageId,
+      createdAt: createdAt ?? this.createdAt,
+      modifiedAt: modifiedAt ?? this.modifiedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (name.present) {
+      map['name'] = Variable<String>(name.value);
+    }
+    if (messageId.present) {
+      map['message_id'] = Variable<int>(messageId.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<DateTime>(createdAt.value);
+    }
+    if (modifiedAt.present) {
+      map['modified_at'] = Variable<DateTime>(modifiedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('AlbumsCompanion(')
+          ..write('id: $id, ')
+          ..write('name: $name, ')
+          ..write('messageId: $messageId, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('modifiedAt: $modifiedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $AlbumFilesTable extends AlbumFiles
+    with TableInfo<$AlbumFilesTable, AlbumFileRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $AlbumFilesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _albumIdMeta = const VerificationMeta(
+    'albumId',
+  );
+  @override
+  late final GeneratedColumn<String> albumId = GeneratedColumn<String>(
+    'album_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _fileIdMeta = const VerificationMeta('fileId');
+  @override
+  late final GeneratedColumn<String> fileId = GeneratedColumn<String>(
+    'file_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [albumId, fileId];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'album_files';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<AlbumFileRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('album_id')) {
+      context.handle(
+        _albumIdMeta,
+        albumId.isAcceptableOrUnknown(data['album_id']!, _albumIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_albumIdMeta);
+    }
+    if (data.containsKey('file_id')) {
+      context.handle(
+        _fileIdMeta,
+        fileId.isAcceptableOrUnknown(data['file_id']!, _fileIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_fileIdMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {albumId, fileId};
+  @override
+  AlbumFileRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return AlbumFileRow(
+      albumId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}album_id'],
+      )!,
+      fileId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}file_id'],
+      )!,
+    );
+  }
+
+  @override
+  $AlbumFilesTable createAlias(String alias) {
+    return $AlbumFilesTable(attachedDatabase, alias);
+  }
+}
+
+class AlbumFileRow extends DataClass implements Insertable<AlbumFileRow> {
+  final String albumId;
+  final String fileId;
+  const AlbumFileRow({required this.albumId, required this.fileId});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['album_id'] = Variable<String>(albumId);
+    map['file_id'] = Variable<String>(fileId);
+    return map;
+  }
+
+  AlbumFilesCompanion toCompanion(bool nullToAbsent) {
+    return AlbumFilesCompanion(albumId: Value(albumId), fileId: Value(fileId));
+  }
+
+  factory AlbumFileRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return AlbumFileRow(
+      albumId: serializer.fromJson<String>(json['albumId']),
+      fileId: serializer.fromJson<String>(json['fileId']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'albumId': serializer.toJson<String>(albumId),
+      'fileId': serializer.toJson<String>(fileId),
+    };
+  }
+
+  AlbumFileRow copyWith({String? albumId, String? fileId}) => AlbumFileRow(
+    albumId: albumId ?? this.albumId,
+    fileId: fileId ?? this.fileId,
+  );
+  AlbumFileRow copyWithCompanion(AlbumFilesCompanion data) {
+    return AlbumFileRow(
+      albumId: data.albumId.present ? data.albumId.value : this.albumId,
+      fileId: data.fileId.present ? data.fileId.value : this.fileId,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('AlbumFileRow(')
+          ..write('albumId: $albumId, ')
+          ..write('fileId: $fileId')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(albumId, fileId);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is AlbumFileRow &&
+          other.albumId == this.albumId &&
+          other.fileId == this.fileId);
+}
+
+class AlbumFilesCompanion extends UpdateCompanion<AlbumFileRow> {
+  final Value<String> albumId;
+  final Value<String> fileId;
+  final Value<int> rowid;
+  const AlbumFilesCompanion({
+    this.albumId = const Value.absent(),
+    this.fileId = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  AlbumFilesCompanion.insert({
+    required String albumId,
+    required String fileId,
+    this.rowid = const Value.absent(),
+  }) : albumId = Value(albumId),
+       fileId = Value(fileId);
+  static Insertable<AlbumFileRow> custom({
+    Expression<String>? albumId,
+    Expression<String>? fileId,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (albumId != null) 'album_id': albumId,
+      if (fileId != null) 'file_id': fileId,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  AlbumFilesCompanion copyWith({
+    Value<String>? albumId,
+    Value<String>? fileId,
+    Value<int>? rowid,
+  }) {
+    return AlbumFilesCompanion(
+      albumId: albumId ?? this.albumId,
+      fileId: fileId ?? this.fileId,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (albumId.present) {
+      map['album_id'] = Variable<String>(albumId.value);
+    }
+    if (fileId.present) {
+      map['file_id'] = Variable<String>(fileId.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('AlbumFilesCompanion(')
+          ..write('albumId: $albumId, ')
+          ..write('fileId: $fileId, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $OfflinePinsTable extends OfflinePins
+    with TableInfo<$OfflinePinsTable, OfflinePinRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $OfflinePinsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _itemIdMeta = const VerificationMeta('itemId');
+  @override
+  late final GeneratedColumn<String> itemId = GeneratedColumn<String>(
+    'item_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _isFolderMeta = const VerificationMeta(
+    'isFolder',
+  );
+  @override
+  late final GeneratedColumn<bool> isFolder = GeneratedColumn<bool>(
+    'is_folder',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: true,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("is_folder" IN (0, 1))',
+    ),
+  );
+  static const VerificationMeta _pinnedAtMeta = const VerificationMeta(
+    'pinnedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> pinnedAt = GeneratedColumn<DateTime>(
+    'pinned_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [itemId, isFolder, pinnedAt];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'offline_pins';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<OfflinePinRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('item_id')) {
+      context.handle(
+        _itemIdMeta,
+        itemId.isAcceptableOrUnknown(data['item_id']!, _itemIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_itemIdMeta);
+    }
+    if (data.containsKey('is_folder')) {
+      context.handle(
+        _isFolderMeta,
+        isFolder.isAcceptableOrUnknown(data['is_folder']!, _isFolderMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_isFolderMeta);
+    }
+    if (data.containsKey('pinned_at')) {
+      context.handle(
+        _pinnedAtMeta,
+        pinnedAt.isAcceptableOrUnknown(data['pinned_at']!, _pinnedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_pinnedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {itemId};
+  @override
+  OfflinePinRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return OfflinePinRow(
+      itemId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}item_id'],
+      )!,
+      isFolder: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}is_folder'],
+      )!,
+      pinnedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}pinned_at'],
+      )!,
+    );
+  }
+
+  @override
+  $OfflinePinsTable createAlias(String alias) {
+    return $OfflinePinsTable(attachedDatabase, alias);
+  }
+}
+
+class OfflinePinRow extends DataClass implements Insertable<OfflinePinRow> {
+  final String itemId;
+  final bool isFolder;
+  final DateTime pinnedAt;
+  const OfflinePinRow({
+    required this.itemId,
+    required this.isFolder,
+    required this.pinnedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['item_id'] = Variable<String>(itemId);
+    map['is_folder'] = Variable<bool>(isFolder);
+    map['pinned_at'] = Variable<DateTime>(pinnedAt);
+    return map;
+  }
+
+  OfflinePinsCompanion toCompanion(bool nullToAbsent) {
+    return OfflinePinsCompanion(
+      itemId: Value(itemId),
+      isFolder: Value(isFolder),
+      pinnedAt: Value(pinnedAt),
+    );
+  }
+
+  factory OfflinePinRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return OfflinePinRow(
+      itemId: serializer.fromJson<String>(json['itemId']),
+      isFolder: serializer.fromJson<bool>(json['isFolder']),
+      pinnedAt: serializer.fromJson<DateTime>(json['pinnedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'itemId': serializer.toJson<String>(itemId),
+      'isFolder': serializer.toJson<bool>(isFolder),
+      'pinnedAt': serializer.toJson<DateTime>(pinnedAt),
+    };
+  }
+
+  OfflinePinRow copyWith({
+    String? itemId,
+    bool? isFolder,
+    DateTime? pinnedAt,
+  }) => OfflinePinRow(
+    itemId: itemId ?? this.itemId,
+    isFolder: isFolder ?? this.isFolder,
+    pinnedAt: pinnedAt ?? this.pinnedAt,
+  );
+  OfflinePinRow copyWithCompanion(OfflinePinsCompanion data) {
+    return OfflinePinRow(
+      itemId: data.itemId.present ? data.itemId.value : this.itemId,
+      isFolder: data.isFolder.present ? data.isFolder.value : this.isFolder,
+      pinnedAt: data.pinnedAt.present ? data.pinnedAt.value : this.pinnedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('OfflinePinRow(')
+          ..write('itemId: $itemId, ')
+          ..write('isFolder: $isFolder, ')
+          ..write('pinnedAt: $pinnedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(itemId, isFolder, pinnedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is OfflinePinRow &&
+          other.itemId == this.itemId &&
+          other.isFolder == this.isFolder &&
+          other.pinnedAt == this.pinnedAt);
+}
+
+class OfflinePinsCompanion extends UpdateCompanion<OfflinePinRow> {
+  final Value<String> itemId;
+  final Value<bool> isFolder;
+  final Value<DateTime> pinnedAt;
+  final Value<int> rowid;
+  const OfflinePinsCompanion({
+    this.itemId = const Value.absent(),
+    this.isFolder = const Value.absent(),
+    this.pinnedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  OfflinePinsCompanion.insert({
+    required String itemId,
+    required bool isFolder,
+    required DateTime pinnedAt,
+    this.rowid = const Value.absent(),
+  }) : itemId = Value(itemId),
+       isFolder = Value(isFolder),
+       pinnedAt = Value(pinnedAt);
+  static Insertable<OfflinePinRow> custom({
+    Expression<String>? itemId,
+    Expression<bool>? isFolder,
+    Expression<DateTime>? pinnedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (itemId != null) 'item_id': itemId,
+      if (isFolder != null) 'is_folder': isFolder,
+      if (pinnedAt != null) 'pinned_at': pinnedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  OfflinePinsCompanion copyWith({
+    Value<String>? itemId,
+    Value<bool>? isFolder,
+    Value<DateTime>? pinnedAt,
+    Value<int>? rowid,
+  }) {
+    return OfflinePinsCompanion(
+      itemId: itemId ?? this.itemId,
+      isFolder: isFolder ?? this.isFolder,
+      pinnedAt: pinnedAt ?? this.pinnedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (itemId.present) {
+      map['item_id'] = Variable<String>(itemId.value);
+    }
+    if (isFolder.present) {
+      map['is_folder'] = Variable<bool>(isFolder.value);
+    }
+    if (pinnedAt.present) {
+      map['pinned_at'] = Variable<DateTime>(pinnedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('OfflinePinsCompanion(')
+          ..write('itemId: $itemId, ')
+          ..write('isFolder: $isFolder, ')
+          ..write('pinnedAt: $pinnedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $OfflineCopiesTable extends OfflineCopies
+    with TableInfo<$OfflineCopiesTable, OfflineCopyRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $OfflineCopiesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _fileIdMeta = const VerificationMeta('fileId');
+  @override
+  late final GeneratedColumn<String> fileId = GeneratedColumn<String>(
+    'file_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _pathMeta = const VerificationMeta('path');
+  @override
+  late final GeneratedColumn<String> path = GeneratedColumn<String>(
+    'path',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _sizeMeta = const VerificationMeta('size');
+  @override
+  late final GeneratedColumn<int> size = GeneratedColumn<int>(
+    'size',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [fileId, path, size];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'offline_copies';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<OfflineCopyRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('file_id')) {
+      context.handle(
+        _fileIdMeta,
+        fileId.isAcceptableOrUnknown(data['file_id']!, _fileIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_fileIdMeta);
+    }
+    if (data.containsKey('path')) {
+      context.handle(
+        _pathMeta,
+        path.isAcceptableOrUnknown(data['path']!, _pathMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_pathMeta);
+    }
+    if (data.containsKey('size')) {
+      context.handle(
+        _sizeMeta,
+        size.isAcceptableOrUnknown(data['size']!, _sizeMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_sizeMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {fileId};
+  @override
+  OfflineCopyRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return OfflineCopyRow(
+      fileId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}file_id'],
+      )!,
+      path: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}path'],
+      )!,
+      size: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}size'],
+      )!,
+    );
+  }
+
+  @override
+  $OfflineCopiesTable createAlias(String alias) {
+    return $OfflineCopiesTable(attachedDatabase, alias);
+  }
+}
+
+class OfflineCopyRow extends DataClass implements Insertable<OfflineCopyRow> {
+  final String fileId;
+  final String path;
+  final int size;
+  const OfflineCopyRow({
+    required this.fileId,
+    required this.path,
+    required this.size,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['file_id'] = Variable<String>(fileId);
+    map['path'] = Variable<String>(path);
+    map['size'] = Variable<int>(size);
+    return map;
+  }
+
+  OfflineCopiesCompanion toCompanion(bool nullToAbsent) {
+    return OfflineCopiesCompanion(
+      fileId: Value(fileId),
+      path: Value(path),
+      size: Value(size),
+    );
+  }
+
+  factory OfflineCopyRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return OfflineCopyRow(
+      fileId: serializer.fromJson<String>(json['fileId']),
+      path: serializer.fromJson<String>(json['path']),
+      size: serializer.fromJson<int>(json['size']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'fileId': serializer.toJson<String>(fileId),
+      'path': serializer.toJson<String>(path),
+      'size': serializer.toJson<int>(size),
+    };
+  }
+
+  OfflineCopyRow copyWith({String? fileId, String? path, int? size}) =>
+      OfflineCopyRow(
+        fileId: fileId ?? this.fileId,
+        path: path ?? this.path,
+        size: size ?? this.size,
+      );
+  OfflineCopyRow copyWithCompanion(OfflineCopiesCompanion data) {
+    return OfflineCopyRow(
+      fileId: data.fileId.present ? data.fileId.value : this.fileId,
+      path: data.path.present ? data.path.value : this.path,
+      size: data.size.present ? data.size.value : this.size,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('OfflineCopyRow(')
+          ..write('fileId: $fileId, ')
+          ..write('path: $path, ')
+          ..write('size: $size')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(fileId, path, size);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is OfflineCopyRow &&
+          other.fileId == this.fileId &&
+          other.path == this.path &&
+          other.size == this.size);
+}
+
+class OfflineCopiesCompanion extends UpdateCompanion<OfflineCopyRow> {
+  final Value<String> fileId;
+  final Value<String> path;
+  final Value<int> size;
+  final Value<int> rowid;
+  const OfflineCopiesCompanion({
+    this.fileId = const Value.absent(),
+    this.path = const Value.absent(),
+    this.size = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  OfflineCopiesCompanion.insert({
+    required String fileId,
+    required String path,
+    required int size,
+    this.rowid = const Value.absent(),
+  }) : fileId = Value(fileId),
+       path = Value(path),
+       size = Value(size);
+  static Insertable<OfflineCopyRow> custom({
+    Expression<String>? fileId,
+    Expression<String>? path,
+    Expression<int>? size,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (fileId != null) 'file_id': fileId,
+      if (path != null) 'path': path,
+      if (size != null) 'size': size,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  OfflineCopiesCompanion copyWith({
+    Value<String>? fileId,
+    Value<String>? path,
+    Value<int>? size,
+    Value<int>? rowid,
+  }) {
+    return OfflineCopiesCompanion(
+      fileId: fileId ?? this.fileId,
+      path: path ?? this.path,
+      size: size ?? this.size,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (fileId.present) {
+      map['file_id'] = Variable<String>(fileId.value);
+    }
+    if (path.present) {
+      map['path'] = Variable<String>(path.value);
+    }
+    if (size.present) {
+      map['size'] = Variable<int>(size.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('OfflineCopiesCompanion(')
+          ..write('fileId: $fileId, ')
+          ..write('path: $path, ')
+          ..write('size: $size, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $FileContentsTable extends FileContents
+    with TableInfo<$FileContentsTable, FileContentRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $FileContentsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _fileIdMeta = const VerificationMeta('fileId');
+  @override
+  late final GeneratedColumn<String> fileId = GeneratedColumn<String>(
+    'file_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _contentMeta = const VerificationMeta(
+    'content',
+  );
+  @override
+  late final GeneratedColumn<String> content = GeneratedColumn<String>(
+    'content',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _versionMeta = const VerificationMeta(
+    'version',
+  );
+  @override
+  late final GeneratedColumn<int> version = GeneratedColumn<int>(
+    'version',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _indexedAtMeta = const VerificationMeta(
+    'indexedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> indexedAt = GeneratedColumn<DateTime>(
+    'indexed_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [fileId, content, version, indexedAt];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'file_contents';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<FileContentRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('file_id')) {
+      context.handle(
+        _fileIdMeta,
+        fileId.isAcceptableOrUnknown(data['file_id']!, _fileIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_fileIdMeta);
+    }
+    if (data.containsKey('content')) {
+      context.handle(
+        _contentMeta,
+        content.isAcceptableOrUnknown(data['content']!, _contentMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_contentMeta);
+    }
+    if (data.containsKey('version')) {
+      context.handle(
+        _versionMeta,
+        version.isAcceptableOrUnknown(data['version']!, _versionMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_versionMeta);
+    }
+    if (data.containsKey('indexed_at')) {
+      context.handle(
+        _indexedAtMeta,
+        indexedAt.isAcceptableOrUnknown(data['indexed_at']!, _indexedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_indexedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {fileId};
+  @override
+  FileContentRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return FileContentRow(
+      fileId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}file_id'],
+      )!,
+      content: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}content'],
+      )!,
+      version: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}version'],
+      )!,
+      indexedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}indexed_at'],
+      )!,
+    );
+  }
+
+  @override
+  $FileContentsTable createAlias(String alias) {
+    return $FileContentsTable(attachedDatabase, alias);
+  }
+}
+
+class FileContentRow extends DataClass implements Insertable<FileContentRow> {
+  final String fileId;
+  final String content;
+
+  /// Indexer version that produced it; older entries are redone.
+  final int version;
+  final DateTime indexedAt;
+  const FileContentRow({
+    required this.fileId,
+    required this.content,
+    required this.version,
+    required this.indexedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['file_id'] = Variable<String>(fileId);
+    map['content'] = Variable<String>(content);
+    map['version'] = Variable<int>(version);
+    map['indexed_at'] = Variable<DateTime>(indexedAt);
+    return map;
+  }
+
+  FileContentsCompanion toCompanion(bool nullToAbsent) {
+    return FileContentsCompanion(
+      fileId: Value(fileId),
+      content: Value(content),
+      version: Value(version),
+      indexedAt: Value(indexedAt),
+    );
+  }
+
+  factory FileContentRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return FileContentRow(
+      fileId: serializer.fromJson<String>(json['fileId']),
+      content: serializer.fromJson<String>(json['content']),
+      version: serializer.fromJson<int>(json['version']),
+      indexedAt: serializer.fromJson<DateTime>(json['indexedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'fileId': serializer.toJson<String>(fileId),
+      'content': serializer.toJson<String>(content),
+      'version': serializer.toJson<int>(version),
+      'indexedAt': serializer.toJson<DateTime>(indexedAt),
+    };
+  }
+
+  FileContentRow copyWith({
+    String? fileId,
+    String? content,
+    int? version,
+    DateTime? indexedAt,
+  }) => FileContentRow(
+    fileId: fileId ?? this.fileId,
+    content: content ?? this.content,
+    version: version ?? this.version,
+    indexedAt: indexedAt ?? this.indexedAt,
+  );
+  FileContentRow copyWithCompanion(FileContentsCompanion data) {
+    return FileContentRow(
+      fileId: data.fileId.present ? data.fileId.value : this.fileId,
+      content: data.content.present ? data.content.value : this.content,
+      version: data.version.present ? data.version.value : this.version,
+      indexedAt: data.indexedAt.present ? data.indexedAt.value : this.indexedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('FileContentRow(')
+          ..write('fileId: $fileId, ')
+          ..write('content: $content, ')
+          ..write('version: $version, ')
+          ..write('indexedAt: $indexedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(fileId, content, version, indexedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is FileContentRow &&
+          other.fileId == this.fileId &&
+          other.content == this.content &&
+          other.version == this.version &&
+          other.indexedAt == this.indexedAt);
+}
+
+class FileContentsCompanion extends UpdateCompanion<FileContentRow> {
+  final Value<String> fileId;
+  final Value<String> content;
+  final Value<int> version;
+  final Value<DateTime> indexedAt;
+  final Value<int> rowid;
+  const FileContentsCompanion({
+    this.fileId = const Value.absent(),
+    this.content = const Value.absent(),
+    this.version = const Value.absent(),
+    this.indexedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  FileContentsCompanion.insert({
+    required String fileId,
+    required String content,
+    required int version,
+    required DateTime indexedAt,
+    this.rowid = const Value.absent(),
+  }) : fileId = Value(fileId),
+       content = Value(content),
+       version = Value(version),
+       indexedAt = Value(indexedAt);
+  static Insertable<FileContentRow> custom({
+    Expression<String>? fileId,
+    Expression<String>? content,
+    Expression<int>? version,
+    Expression<DateTime>? indexedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (fileId != null) 'file_id': fileId,
+      if (content != null) 'content': content,
+      if (version != null) 'version': version,
+      if (indexedAt != null) 'indexed_at': indexedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  FileContentsCompanion copyWith({
+    Value<String>? fileId,
+    Value<String>? content,
+    Value<int>? version,
+    Value<DateTime>? indexedAt,
+    Value<int>? rowid,
+  }) {
+    return FileContentsCompanion(
+      fileId: fileId ?? this.fileId,
+      content: content ?? this.content,
+      version: version ?? this.version,
+      indexedAt: indexedAt ?? this.indexedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (fileId.present) {
+      map['file_id'] = Variable<String>(fileId.value);
+    }
+    if (content.present) {
+      map['content'] = Variable<String>(content.value);
+    }
+    if (version.present) {
+      map['version'] = Variable<int>(version.value);
+    }
+    if (indexedAt.present) {
+      map['indexed_at'] = Variable<DateTime>(indexedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('FileContentsCompanion(')
+          ..write('fileId: $fileId, ')
+          ..write('content: $content, ')
+          ..write('version: $version, ')
+          ..write('indexedAt: $indexedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
@@ -3282,6 +4907,11 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $FilePartsTable fileParts = $FilePartsTable(this);
   late final $TransfersTable transfers = $TransfersTable(this);
   late final $BackupAssetsTable backupAssets = $BackupAssetsTable(this);
+  late final $AlbumsTable albums = $AlbumsTable(this);
+  late final $AlbumFilesTable albumFiles = $AlbumFilesTable(this);
+  late final $OfflinePinsTable offlinePins = $OfflinePinsTable(this);
+  late final $OfflineCopiesTable offlineCopies = $OfflineCopiesTable(this);
+  late final $FileContentsTable fileContents = $FileContentsTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -3292,6 +4922,11 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     fileParts,
     transfers,
     backupAssets,
+    albums,
+    albumFiles,
+    offlinePins,
+    offlineCopies,
+    fileContents,
   ];
 }
 
@@ -3302,6 +4937,8 @@ typedef $$FoldersTableCreateCompanionBuilder = FoldersCompanion Function({
   required int messageId,
   required DateTime createdAt,
   required DateTime modifiedAt,
+  Value<DateTime?> trashedAt,
+  Value<bool> hidden,
   Value<int> rowid,
 });
 typedef $$FoldersTableUpdateCompanionBuilder = FoldersCompanion Function({
@@ -3311,6 +4948,8 @@ typedef $$FoldersTableUpdateCompanionBuilder = FoldersCompanion Function({
   Value<int> messageId,
   Value<DateTime> createdAt,
   Value<DateTime> modifiedAt,
+  Value<DateTime?> trashedAt,
+  Value<bool> hidden,
   Value<int> rowid,
 });
 
@@ -3350,6 +4989,16 @@ class $$FoldersTableFilterComposer
 
   ColumnFilters<DateTime> get modifiedAt => $composableBuilder(
     column: $table.modifiedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get trashedAt => $composableBuilder(
+    column: $table.trashedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get hidden => $composableBuilder(
+    column: $table.hidden,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -3392,6 +5041,16 @@ class $$FoldersTableOrderingComposer
     column: $table.modifiedAt,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<DateTime> get trashedAt => $composableBuilder(
+    column: $table.trashedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get hidden => $composableBuilder(
+    column: $table.hidden,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$FoldersTableAnnotationComposer
@@ -3422,6 +5081,12 @@ class $$FoldersTableAnnotationComposer
     column: $table.modifiedAt,
     builder: (column) => column,
   );
+
+  GeneratedColumn<DateTime> get trashedAt =>
+      $composableBuilder(column: $table.trashedAt, builder: (column) => column);
+
+  GeneratedColumn<bool> get hidden =>
+      $composableBuilder(column: $table.hidden, builder: (column) => column);
 }
 
 class $$FoldersTableTableManager
@@ -3458,6 +5123,8 @@ class $$FoldersTableTableManager
                 Value<int> messageId = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime> modifiedAt = const Value.absent(),
+                Value<DateTime?> trashedAt = const Value.absent(),
+                Value<bool> hidden = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => FoldersCompanion(
                 id: id,
@@ -3466,6 +5133,8 @@ class $$FoldersTableTableManager
                 messageId: messageId,
                 createdAt: createdAt,
                 modifiedAt: modifiedAt,
+                trashedAt: trashedAt,
+                hidden: hidden,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -3476,6 +5145,8 @@ class $$FoldersTableTableManager
                 required int messageId,
                 required DateTime createdAt,
                 required DateTime modifiedAt,
+                Value<DateTime?> trashedAt = const Value.absent(),
+                Value<bool> hidden = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => FoldersCompanion.insert(
                 id: id,
@@ -3484,6 +5155,8 @@ class $$FoldersTableTableManager
                 messageId: messageId,
                 createdAt: createdAt,
                 modifiedAt: modifiedAt,
+                trashedAt: trashedAt,
+                hidden: hidden,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
@@ -3532,6 +5205,8 @@ typedef $$DriveFilesTableCreateCompanionBuilder = DriveFilesCompanion Function({
   Value<String?> minithumbnail,
   Value<int?> thumbnailFileId,
   Value<DateTime?> takenAt,
+  Value<DateTime?> trashedAt,
+  Value<bool> hidden,
   Value<int> rowid,
 });
 typedef $$DriveFilesTableUpdateCompanionBuilder = DriveFilesCompanion Function({
@@ -3549,6 +5224,8 @@ typedef $$DriveFilesTableUpdateCompanionBuilder = DriveFilesCompanion Function({
   Value<String?> minithumbnail,
   Value<int?> thumbnailFileId,
   Value<DateTime?> takenAt,
+  Value<DateTime?> trashedAt,
+  Value<bool> hidden,
   Value<int> rowid,
 });
 
@@ -3631,6 +5308,16 @@ class $$DriveFilesTableFilterComposer
     column: $table.takenAt,
     builder: (column) => ColumnFilters(column),
   );
+
+  ColumnFilters<DateTime> get trashedAt => $composableBuilder(
+    column: $table.trashedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get hidden => $composableBuilder(
+    column: $table.hidden,
+    builder: (column) => ColumnFilters(column),
+  );
 }
 
 class $$DriveFilesTableOrderingComposer
@@ -3711,6 +5398,16 @@ class $$DriveFilesTableOrderingComposer
     column: $table.takenAt,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<DateTime> get trashedAt => $composableBuilder(
+    column: $table.trashedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get hidden => $composableBuilder(
+    column: $table.hidden,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$DriveFilesTableAnnotationComposer
@@ -3771,6 +5468,12 @@ class $$DriveFilesTableAnnotationComposer
 
   GeneratedColumn<DateTime> get takenAt =>
       $composableBuilder(column: $table.takenAt, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get trashedAt =>
+      $composableBuilder(column: $table.trashedAt, builder: (column) => column);
+
+  GeneratedColumn<bool> get hidden =>
+      $composableBuilder(column: $table.hidden, builder: (column) => column);
 }
 
 class $$DriveFilesTableTableManager
@@ -3815,6 +5518,8 @@ class $$DriveFilesTableTableManager
                 Value<String?> minithumbnail = const Value.absent(),
                 Value<int?> thumbnailFileId = const Value.absent(),
                 Value<DateTime?> takenAt = const Value.absent(),
+                Value<DateTime?> trashedAt = const Value.absent(),
+                Value<bool> hidden = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => DriveFilesCompanion(
                 id: id,
@@ -3831,6 +5536,8 @@ class $$DriveFilesTableTableManager
                 minithumbnail: minithumbnail,
                 thumbnailFileId: thumbnailFileId,
                 takenAt: takenAt,
+                trashedAt: trashedAt,
+                hidden: hidden,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -3849,6 +5556,8 @@ class $$DriveFilesTableTableManager
                 Value<String?> minithumbnail = const Value.absent(),
                 Value<int?> thumbnailFileId = const Value.absent(),
                 Value<DateTime?> takenAt = const Value.absent(),
+                Value<DateTime?> trashedAt = const Value.absent(),
+                Value<bool> hidden = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => DriveFilesCompanion.insert(
                 id: id,
@@ -3865,6 +5574,8 @@ class $$DriveFilesTableTableManager
                 minithumbnail: minithumbnail,
                 thumbnailFileId: thumbnailFileId,
                 takenAt: takenAt,
+                trashedAt: trashedAt,
+                hidden: hidden,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
@@ -4878,6 +6589,891 @@ typedef $$BackupAssetsTableProcessedTableManager =
       BackupAssetRow,
       PrefetchHooks Function()
     >;
+typedef $$AlbumsTableCreateCompanionBuilder = AlbumsCompanion Function({
+  required String id,
+  required String name,
+  required int messageId,
+  required DateTime createdAt,
+  required DateTime modifiedAt,
+  Value<int> rowid,
+});
+typedef $$AlbumsTableUpdateCompanionBuilder = AlbumsCompanion Function({
+  Value<String> id,
+  Value<String> name,
+  Value<int> messageId,
+  Value<DateTime> createdAt,
+  Value<DateTime> modifiedAt,
+  Value<int> rowid,
+});
+
+class $$AlbumsTableFilterComposer
+    extends Composer<_$AppDatabase, $AlbumsTable> {
+  $$AlbumsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get name => $composableBuilder(
+    column: $table.name,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get messageId => $composableBuilder(
+    column: $table.messageId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get modifiedAt => $composableBuilder(
+    column: $table.modifiedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$AlbumsTableOrderingComposer
+    extends Composer<_$AppDatabase, $AlbumsTable> {
+  $$AlbumsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get name => $composableBuilder(
+    column: $table.name,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get messageId => $composableBuilder(
+    column: $table.messageId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get modifiedAt => $composableBuilder(
+    column: $table.modifiedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$AlbumsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $AlbumsTable> {
+  $$AlbumsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get name =>
+      $composableBuilder(column: $table.name, builder: (column) => column);
+
+  GeneratedColumn<int> get messageId =>
+      $composableBuilder(column: $table.messageId, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get modifiedAt => $composableBuilder(
+    column: $table.modifiedAt,
+    builder: (column) => column,
+  );
+}
+
+class $$AlbumsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $AlbumsTable,
+          AlbumRow,
+          $$AlbumsTableFilterComposer,
+          $$AlbumsTableOrderingComposer,
+          $$AlbumsTableAnnotationComposer,
+          $$AlbumsTableCreateCompanionBuilder,
+          $$AlbumsTableUpdateCompanionBuilder,
+          (AlbumRow, BaseReferences<_$AppDatabase, $AlbumsTable, AlbumRow>),
+          AlbumRow,
+          PrefetchHooks Function()
+        > {
+  $$AlbumsTableTableManager(_$AppDatabase db, $AlbumsTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$AlbumsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$AlbumsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$AlbumsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> id = const Value.absent(),
+                Value<String> name = const Value.absent(),
+                Value<int> messageId = const Value.absent(),
+                Value<DateTime> createdAt = const Value.absent(),
+                Value<DateTime> modifiedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => AlbumsCompanion(
+                id: id,
+                name: name,
+                messageId: messageId,
+                createdAt: createdAt,
+                modifiedAt: modifiedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String id,
+                required String name,
+                required int messageId,
+                required DateTime createdAt,
+                required DateTime modifiedAt,
+                Value<int> rowid = const Value.absent(),
+              }) => AlbumsCompanion.insert(
+                id: id,
+                name: name,
+                messageId: messageId,
+                createdAt: createdAt,
+                modifiedAt: modifiedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable<$AlbumsTable, AlbumRow>(table),
+                  BaseReferences<_$AppDatabase, $AlbumsTable, AlbumRow>(
+                    db,
+                    table,
+                    e,
+                  ),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$AlbumsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $AlbumsTable,
+      AlbumRow,
+      $$AlbumsTableFilterComposer,
+      $$AlbumsTableOrderingComposer,
+      $$AlbumsTableAnnotationComposer,
+      $$AlbumsTableCreateCompanionBuilder,
+      $$AlbumsTableUpdateCompanionBuilder,
+      (AlbumRow, BaseReferences<_$AppDatabase, $AlbumsTable, AlbumRow>),
+      AlbumRow,
+      PrefetchHooks Function()
+    >;
+typedef $$AlbumFilesTableCreateCompanionBuilder = AlbumFilesCompanion Function({
+  required String albumId,
+  required String fileId,
+  Value<int> rowid,
+});
+typedef $$AlbumFilesTableUpdateCompanionBuilder = AlbumFilesCompanion Function({
+  Value<String> albumId,
+  Value<String> fileId,
+  Value<int> rowid,
+});
+
+class $$AlbumFilesTableFilterComposer
+    extends Composer<_$AppDatabase, $AlbumFilesTable> {
+  $$AlbumFilesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get albumId => $composableBuilder(
+    column: $table.albumId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get fileId => $composableBuilder(
+    column: $table.fileId,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$AlbumFilesTableOrderingComposer
+    extends Composer<_$AppDatabase, $AlbumFilesTable> {
+  $$AlbumFilesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get albumId => $composableBuilder(
+    column: $table.albumId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get fileId => $composableBuilder(
+    column: $table.fileId,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$AlbumFilesTableAnnotationComposer
+    extends Composer<_$AppDatabase, $AlbumFilesTable> {
+  $$AlbumFilesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get albumId =>
+      $composableBuilder(column: $table.albumId, builder: (column) => column);
+
+  GeneratedColumn<String> get fileId =>
+      $composableBuilder(column: $table.fileId, builder: (column) => column);
+}
+
+class $$AlbumFilesTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $AlbumFilesTable,
+          AlbumFileRow,
+          $$AlbumFilesTableFilterComposer,
+          $$AlbumFilesTableOrderingComposer,
+          $$AlbumFilesTableAnnotationComposer,
+          $$AlbumFilesTableCreateCompanionBuilder,
+          $$AlbumFilesTableUpdateCompanionBuilder,
+          (
+            AlbumFileRow,
+            BaseReferences<_$AppDatabase, $AlbumFilesTable, AlbumFileRow>,
+          ),
+          AlbumFileRow,
+          PrefetchHooks Function()
+        > {
+  $$AlbumFilesTableTableManager(_$AppDatabase db, $AlbumFilesTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$AlbumFilesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$AlbumFilesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$AlbumFilesTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> albumId = const Value.absent(),
+                Value<String> fileId = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => AlbumFilesCompanion(
+                albumId: albumId,
+                fileId: fileId,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String albumId,
+                required String fileId,
+                Value<int> rowid = const Value.absent(),
+              }) => AlbumFilesCompanion.insert(
+                albumId: albumId,
+                fileId: fileId,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable<$AlbumFilesTable, AlbumFileRow>(table),
+                  BaseReferences<_$AppDatabase, $AlbumFilesTable, AlbumFileRow>(
+                    db,
+                    table,
+                    e,
+                  ),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$AlbumFilesTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $AlbumFilesTable,
+      AlbumFileRow,
+      $$AlbumFilesTableFilterComposer,
+      $$AlbumFilesTableOrderingComposer,
+      $$AlbumFilesTableAnnotationComposer,
+      $$AlbumFilesTableCreateCompanionBuilder,
+      $$AlbumFilesTableUpdateCompanionBuilder,
+      (
+        AlbumFileRow,
+        BaseReferences<_$AppDatabase, $AlbumFilesTable, AlbumFileRow>,
+      ),
+      AlbumFileRow,
+      PrefetchHooks Function()
+    >;
+typedef $$OfflinePinsTableCreateCompanionBuilder =
+    OfflinePinsCompanion Function({
+      required String itemId,
+      required bool isFolder,
+      required DateTime pinnedAt,
+      Value<int> rowid,
+    });
+typedef $$OfflinePinsTableUpdateCompanionBuilder =
+    OfflinePinsCompanion Function({
+      Value<String> itemId,
+      Value<bool> isFolder,
+      Value<DateTime> pinnedAt,
+      Value<int> rowid,
+    });
+
+class $$OfflinePinsTableFilterComposer
+    extends Composer<_$AppDatabase, $OfflinePinsTable> {
+  $$OfflinePinsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get itemId => $composableBuilder(
+    column: $table.itemId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get isFolder => $composableBuilder(
+    column: $table.isFolder,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get pinnedAt => $composableBuilder(
+    column: $table.pinnedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$OfflinePinsTableOrderingComposer
+    extends Composer<_$AppDatabase, $OfflinePinsTable> {
+  $$OfflinePinsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get itemId => $composableBuilder(
+    column: $table.itemId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get isFolder => $composableBuilder(
+    column: $table.isFolder,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get pinnedAt => $composableBuilder(
+    column: $table.pinnedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$OfflinePinsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $OfflinePinsTable> {
+  $$OfflinePinsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get itemId =>
+      $composableBuilder(column: $table.itemId, builder: (column) => column);
+
+  GeneratedColumn<bool> get isFolder =>
+      $composableBuilder(column: $table.isFolder, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get pinnedAt =>
+      $composableBuilder(column: $table.pinnedAt, builder: (column) => column);
+}
+
+class $$OfflinePinsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $OfflinePinsTable,
+          OfflinePinRow,
+          $$OfflinePinsTableFilterComposer,
+          $$OfflinePinsTableOrderingComposer,
+          $$OfflinePinsTableAnnotationComposer,
+          $$OfflinePinsTableCreateCompanionBuilder,
+          $$OfflinePinsTableUpdateCompanionBuilder,
+          (
+            OfflinePinRow,
+            BaseReferences<_$AppDatabase, $OfflinePinsTable, OfflinePinRow>,
+          ),
+          OfflinePinRow,
+          PrefetchHooks Function()
+        > {
+  $$OfflinePinsTableTableManager(_$AppDatabase db, $OfflinePinsTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$OfflinePinsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$OfflinePinsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$OfflinePinsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> itemId = const Value.absent(),
+                Value<bool> isFolder = const Value.absent(),
+                Value<DateTime> pinnedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => OfflinePinsCompanion(
+                itemId: itemId,
+                isFolder: isFolder,
+                pinnedAt: pinnedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String itemId,
+                required bool isFolder,
+                required DateTime pinnedAt,
+                Value<int> rowid = const Value.absent(),
+              }) => OfflinePinsCompanion.insert(
+                itemId: itemId,
+                isFolder: isFolder,
+                pinnedAt: pinnedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable<$OfflinePinsTable, OfflinePinRow>(table),
+                  BaseReferences<
+                    _$AppDatabase,
+                    $OfflinePinsTable,
+                    OfflinePinRow
+                  >(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$OfflinePinsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $OfflinePinsTable,
+      OfflinePinRow,
+      $$OfflinePinsTableFilterComposer,
+      $$OfflinePinsTableOrderingComposer,
+      $$OfflinePinsTableAnnotationComposer,
+      $$OfflinePinsTableCreateCompanionBuilder,
+      $$OfflinePinsTableUpdateCompanionBuilder,
+      (
+        OfflinePinRow,
+        BaseReferences<_$AppDatabase, $OfflinePinsTable, OfflinePinRow>,
+      ),
+      OfflinePinRow,
+      PrefetchHooks Function()
+    >;
+typedef $$OfflineCopiesTableCreateCompanionBuilder =
+    OfflineCopiesCompanion Function({
+      required String fileId,
+      required String path,
+      required int size,
+      Value<int> rowid,
+    });
+typedef $$OfflineCopiesTableUpdateCompanionBuilder =
+    OfflineCopiesCompanion Function({
+      Value<String> fileId,
+      Value<String> path,
+      Value<int> size,
+      Value<int> rowid,
+    });
+
+class $$OfflineCopiesTableFilterComposer
+    extends Composer<_$AppDatabase, $OfflineCopiesTable> {
+  $$OfflineCopiesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get fileId => $composableBuilder(
+    column: $table.fileId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get path => $composableBuilder(
+    column: $table.path,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get size => $composableBuilder(
+    column: $table.size,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$OfflineCopiesTableOrderingComposer
+    extends Composer<_$AppDatabase, $OfflineCopiesTable> {
+  $$OfflineCopiesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get fileId => $composableBuilder(
+    column: $table.fileId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get path => $composableBuilder(
+    column: $table.path,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get size => $composableBuilder(
+    column: $table.size,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$OfflineCopiesTableAnnotationComposer
+    extends Composer<_$AppDatabase, $OfflineCopiesTable> {
+  $$OfflineCopiesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get fileId =>
+      $composableBuilder(column: $table.fileId, builder: (column) => column);
+
+  GeneratedColumn<String> get path =>
+      $composableBuilder(column: $table.path, builder: (column) => column);
+
+  GeneratedColumn<int> get size =>
+      $composableBuilder(column: $table.size, builder: (column) => column);
+}
+
+class $$OfflineCopiesTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $OfflineCopiesTable,
+          OfflineCopyRow,
+          $$OfflineCopiesTableFilterComposer,
+          $$OfflineCopiesTableOrderingComposer,
+          $$OfflineCopiesTableAnnotationComposer,
+          $$OfflineCopiesTableCreateCompanionBuilder,
+          $$OfflineCopiesTableUpdateCompanionBuilder,
+          (
+            OfflineCopyRow,
+            BaseReferences<_$AppDatabase, $OfflineCopiesTable, OfflineCopyRow>,
+          ),
+          OfflineCopyRow,
+          PrefetchHooks Function()
+        > {
+  $$OfflineCopiesTableTableManager(_$AppDatabase db, $OfflineCopiesTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$OfflineCopiesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$OfflineCopiesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$OfflineCopiesTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> fileId = const Value.absent(),
+                Value<String> path = const Value.absent(),
+                Value<int> size = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => OfflineCopiesCompanion(
+                fileId: fileId,
+                path: path,
+                size: size,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String fileId,
+                required String path,
+                required int size,
+                Value<int> rowid = const Value.absent(),
+              }) => OfflineCopiesCompanion.insert(
+                fileId: fileId,
+                path: path,
+                size: size,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable<$OfflineCopiesTable, OfflineCopyRow>(table),
+                  BaseReferences<
+                    _$AppDatabase,
+                    $OfflineCopiesTable,
+                    OfflineCopyRow
+                  >(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$OfflineCopiesTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $OfflineCopiesTable,
+      OfflineCopyRow,
+      $$OfflineCopiesTableFilterComposer,
+      $$OfflineCopiesTableOrderingComposer,
+      $$OfflineCopiesTableAnnotationComposer,
+      $$OfflineCopiesTableCreateCompanionBuilder,
+      $$OfflineCopiesTableUpdateCompanionBuilder,
+      (
+        OfflineCopyRow,
+        BaseReferences<_$AppDatabase, $OfflineCopiesTable, OfflineCopyRow>,
+      ),
+      OfflineCopyRow,
+      PrefetchHooks Function()
+    >;
+typedef $$FileContentsTableCreateCompanionBuilder =
+    FileContentsCompanion Function({
+      required String fileId,
+      required String content,
+      required int version,
+      required DateTime indexedAt,
+      Value<int> rowid,
+    });
+typedef $$FileContentsTableUpdateCompanionBuilder =
+    FileContentsCompanion Function({
+      Value<String> fileId,
+      Value<String> content,
+      Value<int> version,
+      Value<DateTime> indexedAt,
+      Value<int> rowid,
+    });
+
+class $$FileContentsTableFilterComposer
+    extends Composer<_$AppDatabase, $FileContentsTable> {
+  $$FileContentsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get fileId => $composableBuilder(
+    column: $table.fileId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get content => $composableBuilder(
+    column: $table.content,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get version => $composableBuilder(
+    column: $table.version,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get indexedAt => $composableBuilder(
+    column: $table.indexedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$FileContentsTableOrderingComposer
+    extends Composer<_$AppDatabase, $FileContentsTable> {
+  $$FileContentsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get fileId => $composableBuilder(
+    column: $table.fileId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get content => $composableBuilder(
+    column: $table.content,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get version => $composableBuilder(
+    column: $table.version,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get indexedAt => $composableBuilder(
+    column: $table.indexedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$FileContentsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $FileContentsTable> {
+  $$FileContentsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get fileId =>
+      $composableBuilder(column: $table.fileId, builder: (column) => column);
+
+  GeneratedColumn<String> get content =>
+      $composableBuilder(column: $table.content, builder: (column) => column);
+
+  GeneratedColumn<int> get version =>
+      $composableBuilder(column: $table.version, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get indexedAt =>
+      $composableBuilder(column: $table.indexedAt, builder: (column) => column);
+}
+
+class $$FileContentsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $FileContentsTable,
+          FileContentRow,
+          $$FileContentsTableFilterComposer,
+          $$FileContentsTableOrderingComposer,
+          $$FileContentsTableAnnotationComposer,
+          $$FileContentsTableCreateCompanionBuilder,
+          $$FileContentsTableUpdateCompanionBuilder,
+          (
+            FileContentRow,
+            BaseReferences<_$AppDatabase, $FileContentsTable, FileContentRow>,
+          ),
+          FileContentRow,
+          PrefetchHooks Function()
+        > {
+  $$FileContentsTableTableManager(_$AppDatabase db, $FileContentsTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$FileContentsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$FileContentsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$FileContentsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> fileId = const Value.absent(),
+                Value<String> content = const Value.absent(),
+                Value<int> version = const Value.absent(),
+                Value<DateTime> indexedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => FileContentsCompanion(
+                fileId: fileId,
+                content: content,
+                version: version,
+                indexedAt: indexedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String fileId,
+                required String content,
+                required int version,
+                required DateTime indexedAt,
+                Value<int> rowid = const Value.absent(),
+              }) => FileContentsCompanion.insert(
+                fileId: fileId,
+                content: content,
+                version: version,
+                indexedAt: indexedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable<$FileContentsTable, FileContentRow>(table),
+                  BaseReferences<
+                    _$AppDatabase,
+                    $FileContentsTable,
+                    FileContentRow
+                  >(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$FileContentsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $FileContentsTable,
+      FileContentRow,
+      $$FileContentsTableFilterComposer,
+      $$FileContentsTableOrderingComposer,
+      $$FileContentsTableAnnotationComposer,
+      $$FileContentsTableCreateCompanionBuilder,
+      $$FileContentsTableUpdateCompanionBuilder,
+      (
+        FileContentRow,
+        BaseReferences<_$AppDatabase, $FileContentsTable, FileContentRow>,
+      ),
+      FileContentRow,
+      PrefetchHooks Function()
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -4892,4 +7488,14 @@ class $AppDatabaseManager {
       $$TransfersTableTableManager(_db, _db.transfers);
   $$BackupAssetsTableTableManager get backupAssets =>
       $$BackupAssetsTableTableManager(_db, _db.backupAssets);
+  $$AlbumsTableTableManager get albums =>
+      $$AlbumsTableTableManager(_db, _db.albums);
+  $$AlbumFilesTableTableManager get albumFiles =>
+      $$AlbumFilesTableTableManager(_db, _db.albumFiles);
+  $$OfflinePinsTableTableManager get offlinePins =>
+      $$OfflinePinsTableTableManager(_db, _db.offlinePins);
+  $$OfflineCopiesTableTableManager get offlineCopies =>
+      $$OfflineCopiesTableTableManager(_db, _db.offlineCopies);
+  $$FileContentsTableTableManager get fileContents =>
+      $$FileContentsTableTableManager(_db, _db.fileContents);
 }

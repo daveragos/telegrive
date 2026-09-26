@@ -54,9 +54,13 @@ class FolderListTile extends StatelessWidget {
     this.onMore,
     this.selected = false,
     this.selecting = false,
+    this.subtitle,
   });
 
   final DriveFolder folder;
+
+  /// Replaces the default "Folder · date" line.
+  final String? subtitle;
   final VoidCallback onTap;
   final VoidCallback? onLongPress;
   final VoidCallback? onMore;
@@ -71,7 +75,7 @@ class FolderListTile extends StatelessWidget {
       onLongPress: onLongPress,
       slot: _Selectable(selected: selected, child: const FolderIconTile()),
       title: folder.name,
-      meta: 'Folder · ${Formatters.date(folder.modifiedAt)}',
+      meta: subtitle ?? 'Folder · ${Formatters.date(folder.modifiedAt)}',
       onMore: selecting ? null : onMore,
     );
   }

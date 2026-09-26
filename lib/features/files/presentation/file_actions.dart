@@ -374,22 +374,58 @@ abstract final class FileActions {
     );
   }
 
+  /// Moves [files] and [folders] to the trash, with an Undo on the
+  /// snackbar. Returns whether it worked.
   static Future<bool> delete(
     BuildContext context,
     WidgetRef ref, {
     List<DriveFile> files = const [],
     List<DriveFolder> folders = const [],
   }) async {
-    final count = files.length + folders.length;
-    final what = count == 1
-        ? '"${files.isNotEmpty ? files.first.name : folders.first.name}"'
-        : '$count items';
+    final repository = ref.read(driveRepositoryProvider);
+    final what = _describe(files, folders);
+    // Each file is one caption edit, so a big selection takes a moment.
+    if (files.length + folders.length > 20) {
+      showSnack(context, 'Moving $what to Trash…');
+    }
+    final moved = await _guard(
+      context,
+      () => repository.trash(files: files, folders: folders),
+    );
+    if (moved && context.mounted) {
+      showSnack(
+        context,
+        'Moved $what to Trash',
+        actionLabel: 'Undo',
+        onAction: () => repository.restore(files: files, folders: folders),
+      );
+    }
+    return moved;
+  }
+
+  static Future<void> restore(
+    BuildContext context,
+    WidgetRef ref, {
+    List<DriveFile> files = const [],
+    List<DriveFolder> folders = const [],
+  }) => _guard(
+    context,
+    () => ref.read(driveRepositoryProvider).restore(files: files, folders: folders),
+    success: 'Restored ${_describe(files, folders)}',
+  );
+
+  static Future<bool> deleteForever(
+    BuildContext context,
+    WidgetRef ref, {
+    List<DriveFile> files = const [],
+    List<DriveFolder> folders = const [],
+  }) async {
     final confirmed = await showConfirmDialog(
       context,
-      title: 'Delete $what?',
+      title: 'Delete ${_describe(files, folders)} for good?',
       message: folders.isEmpty
           ? 'It will be removed from your Telegram channel. This can\'t be undone.'
-          : 'Folders are deleted with everything inside them. This can\'t be undone.',
+          : 'Folders go with everything inside them. This can\'t be undone.',
       confirmLabel: 'Delete',
       destructive: true,
     );
@@ -397,8 +433,37 @@ abstract final class FileActions {
     return _guard(
       context,
       () => ref.read(driveRepositoryProvider).delete(files: files, folders: folders),
-      success: count == 1 ? 'Deleted' : 'Deleted $count items',
+      success: 'Deleted for good',
     );
+  }
+
+  static Future<void> emptyTrash(
+    BuildContext context,
+    WidgetRef ref,
+    TrashContents contents,
+  ) async {
+    final confirmed = await showConfirmDialog(
+      context,
+      title: 'Empty the trash?',
+      message:
+          '${Formatters.count(contents.count, 'item')} will be removed from your '
+          'Telegram channel for good. This can\'t be undone.',
+      confirmLabel: 'Empty trash',
+      destructive: true,
+    );
+    if (!confirmed || !context.mounted) return;
+    await _guard(
+      context,
+      () => ref.read(driveRepositoryProvider).emptyTrash(),
+      success: 'Trash emptied',
+    );
+  }
+
+  /// `"report.pdf"`, or `3 items`.
+  static String _describe(List<DriveFile> files, List<DriveFolder> folders) {
+    final count = files.length + folders.length;
+    if (count != 1) return Formatters.count(count, 'item');
+    return '"${files.isNotEmpty ? files.first.name : folders.first.name}"';
   }
 
   // ---------------------------------------------------------------------------
@@ -476,7 +541,7 @@ abstract final class FileActions {
                 ),
                 _SheetAction(
                   icon: Icons.delete_outline_rounded,
-                  label: 'Delete',
+                  label: 'Move to Trash',
                   destructive: true,
                   onTap: () => run(() => delete(context, ref, files: [file])),
                 ),
@@ -529,7 +594,7 @@ abstract final class FileActions {
               ),
               _SheetAction(
                 icon: Icons.delete_outline_rounded,
-                label: 'Delete',
+                label: 'Move to Trash',
                 destructive: true,
                 onTap: () => run(() => delete(context, ref, folders: [folder])),
               ),

@@ -16,6 +16,13 @@ class Folders extends Table {
   DateTimeColumn get createdAt => dateTime()();
   DateTimeColumn get modifiedAt => dateTime()();
 
+  /// When it was moved to the trash; everything inside goes with it.
+  DateTimeColumn get trashedAt => dateTime().nullable()();
+
+  /// In the trash, or inside a folder that is: shown nowhere but Trash.
+  /// Worked out locally from [trashedAt] up the folder tree.
+  BoolColumn get hidden => boolean().withDefault(const Constant(false))();
+
   @override
   Set<Column> get primaryKey => {id};
 }
@@ -46,8 +53,78 @@ class DriveFiles extends Table {
   /// anything that isn't from the camera roll.
   DateTimeColumn get takenAt => dateTime().nullable()();
 
+  /// When it was moved to the trash.
+  DateTimeColumn get trashedAt => dateTime().nullable()();
+
+  /// In the trash itself or inside a trashed folder; see [Folders.hidden].
+  BoolColumn get hidden => boolean().withDefault(const Constant(false))();
+
   @override
   Set<Column> get primaryKey => {id};
+}
+
+/// A photo album. Stored in the channel as a small text message, like a
+/// folder; which files are in it lives in each file's own manifest, so a
+/// photo can be in several albums without being copied.
+@DataClassName('AlbumRow')
+class Albums extends Table {
+  TextColumn get id => text()();
+  TextColumn get name => text()();
+  IntColumn get messageId => integer()();
+  DateTimeColumn get createdAt => dateTime()();
+  DateTimeColumn get modifiedAt => dateTime()();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+/// Which files are in which album, as their manifests say.
+@DataClassName('AlbumFileRow')
+class AlbumFiles extends Table {
+  TextColumn get albumId => text()();
+  TextColumn get fileId => text()();
+
+  @override
+  Set<Column> get primaryKey => {albumId, fileId};
+}
+
+/// Files and folders this phone keeps available offline. Per phone, so it
+/// is not in the channel.
+@DataClassName('OfflinePinRow')
+class OfflinePins extends Table {
+  TextColumn get itemId => text()();
+  BoolColumn get isFolder => boolean()();
+  DateTimeColumn get pinnedAt => dateTime()();
+
+  @override
+  Set<Column> get primaryKey => {itemId};
+}
+
+/// The copies this phone keeps for offline use, outside TDLib's cache so
+/// clearing downloaded copies leaves them alone.
+@DataClassName('OfflineCopyRow')
+class OfflineCopies extends Table {
+  TextColumn get fileId => text()();
+  TextColumn get path => text()();
+  IntColumn get size => integer()();
+
+  @override
+  Set<Column> get primaryKey => {fileId};
+}
+
+/// What is in a photo or document, for search: recognised text and what
+/// the picture shows, lower-cased. Worked out on this phone.
+@DataClassName('FileContentRow')
+class FileContents extends Table {
+  TextColumn get fileId => text()();
+  TextColumn get content => text()();
+
+  /// Indexer version that produced it; older entries are redone.
+  IntColumn get version => integer()();
+  DateTimeColumn get indexedAt => dateTime()();
+
+  @override
+  Set<Column> get primaryKey => {fileId};
 }
 
 /// Where each piece of a file lives in the channel.
@@ -73,8 +150,8 @@ enum TransferKind { upload, download }
 enum TransferOrigin { manual, backup, save }
 
 /// Where a saved download ends up: a folder the phone's file manager shows,
-/// or the photo gallery.
-enum SaveTarget { files, gallery }
+/// the photo gallery, or the app's own offline store.
+enum SaveTarget { files, gallery, offline }
 
 enum TransferStatus {
   queued,

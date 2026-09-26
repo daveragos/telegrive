@@ -32,6 +32,7 @@ class SettingsScreen extends ConsumerWidget {
     final viewMode = ref.watch(browsePreferencesProvider.select((p) => p.viewMode));
     final cache = ref.watch(cacheSizeProvider);
     final busyTransfers = ref.watch(transferQueueProvider.select((s) => s.activeCount)) > 0;
+    final trashCount = ref.watch(trashProvider).value?.count ?? 0;
 
     Text trailingValue(String value) => Text(
       value,
@@ -108,6 +109,17 @@ class SettingsScreen extends ConsumerWidget {
                 title: const Text('Transfers'),
                 trailing: Icon(Icons.chevron_right_rounded, color: colors.text3),
                 onTap: () => context.push('/transfers'),
+              ),
+              ListTile(
+                title: const Text('Trash'),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (trashCount > 0) trailingValue(Formatters.count(trashCount, 'item')),
+                    Icon(Icons.chevron_right_rounded, color: colors.text3),
+                  ],
+                ),
+                onTap: () => context.push('/trash'),
               ),
               ListTile(
                 title: const Text('Stored in Telegram'),

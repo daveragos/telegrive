@@ -13,16 +13,25 @@ sealed class IndexEntry {
 }
 
 class FilePartEntry extends IndexEntry {
-  const FilePartEntry(this.file, this.part);
+  const FilePartEntry(this.file, this.part, {this.albums = const []});
 
   final DriveFilesCompanion file;
   final FilePartsCompanion part;
+
+  /// Albums the file is in, as its manifest says.
+  final List<String> albums;
 }
 
 class FolderEntry extends IndexEntry {
   const FolderEntry(this.folder);
 
   final FoldersCompanion folder;
+}
+
+class AlbumEntry extends IndexEntry {
+  const AlbumEntry(this.album);
+
+  final AlbumsCompanion album;
 }
 
 /// The media carried by a message, whatever its Telegram type.
@@ -58,7 +67,19 @@ abstract final class MessageIndexer {
 
     final content = message.content;
     if (content is td.MessageText) {
-      final folder = ManifestCodec.decodeFolder(content.text.text);
+      final text = content.text.text;
+      if (ManifestCodec.decodeAlbum(text) case final album?) {
+        return AlbumEntry(
+          AlbumsCompanion.insert(
+            id: album.id,
+            name: album.name,
+            messageId: message.id,
+            createdAt: album.createdAt,
+            modifiedAt: album.modifiedAt,
+          ),
+        );
+      }
+      final folder = ManifestCodec.decodeFolder(text);
       if (folder == null) return null;
       return FolderEntry(
         FoldersCompanion.insert(
@@ -68,6 +89,7 @@ abstract final class MessageIndexer {
           messageId: message.id,
           createdAt: folder.createdAt,
           modifiedAt: folder.modifiedAt,
+          trashedAt: Value(folder.trashedAt),
         ),
       );
     }
@@ -96,6 +118,7 @@ abstract final class MessageIndexer {
         partCount: Value(manifest.partCount),
         starred: Value(manifest.starred),
         takenAt: Value(manifest.takenAt),
+        trashedAt: Value(manifest.trashedAt),
         // Previews come from the first part only; later parts of a split
         // video have nothing meaningful to show.
         minithumbnail: isFirstPart
@@ -112,6 +135,7 @@ abstract final class MessageIndexer {
         tdFileId: media.file.id,
         size: media.file.size != 0 ? media.file.size : media.file.expectedSize,
       ),
+      albums: manifest.albums,
     );
   }
 

@@ -48,8 +48,9 @@ class SyncState {
 /// * **Incremental** — on open and on pull-to-refresh, reads back from the
 ///   newest message to the last one already indexed.
 /// * **Full** — reads the whole channel and drops anything the index has
-///   that the channel no longer does. Runs on first open, daily, and from
-///   Settings → Rebuild index.
+///   that the channel no longer does, then empties what has been in the
+///   trash for 30 days. Runs on first open, daily, and from Settings →
+///   Rebuild index.
 class DriveSync extends Notifier<SyncState> {
   StreamSubscription<td.TdObject>? _live;
   int? _openChatId;
@@ -158,6 +159,13 @@ class DriveSync extends Notifier<SyncState> {
         final gone = known.where((id) => id <= newest && !seen.contains(id));
         await _repository.forget(gone);
         await _prefs.setLastFullSync(chatId, DateTime.now());
+        // Once a day, like the full read: what has sat in the trash for 30
+        // days goes for good.
+        try {
+          await _repository.purgeTrash();
+        } catch (e) {
+          debugPrint('[DriveSync] Emptying old trash: $e');
+        }
       }
       if (newest > 0) await _prefs.setLastSyncedMessageId(chatId, newest);
 

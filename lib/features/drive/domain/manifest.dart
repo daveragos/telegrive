@@ -19,10 +19,12 @@ import 'package:flutter/foundation.dart';
 /// ```
 ///
 /// Captions written before the rename to Telegrive used `gr1:` / `grf1:`;
-/// those still decode.
+/// those still decode. Albums are text messages like folders, under
+/// `tgra1:`.
 abstract final class ManifestCodec {
   static const String filePrefix = 'tgr1:';
   static const String folderPrefix = 'tgrf1:';
+  static const String albumPrefix = 'tgra1:';
 
   static final RegExp _fileLine = RegExp(
     r'(?:^|\n)(?:tgr1|gr1):(\{[^\n]*\})\s*$',
@@ -30,6 +32,7 @@ abstract final class ManifestCodec {
   static final RegExp _folderLine = RegExp(
     r'(?:^|\n)(?:tgrf1|grf1):(\{[^\n]*\})\s*$',
   );
+  static final RegExp _albumLine = RegExp(r'(?:^|\n)tgra1:(\{[^\n]*\})\s*$');
 
   /// Longest name shown on the human-readable line. The manifest keeps the
   /// full name either way.
@@ -43,6 +46,16 @@ abstract final class ManifestCodec {
   static EncodedText encodeFolder(FolderManifest manifest) {
     final head = '📁 ${_displayName(manifest.name)}';
     return _withMachineLine(head, folderPrefix + jsonEncode(manifest.toJson()));
+  }
+
+  static EncodedText encodeAlbum(AlbumManifest manifest) {
+    final head = '🖼 ${_displayName(manifest.name)}';
+    return _withMachineLine(head, albumPrefix + jsonEncode(manifest.toJson()));
+  }
+
+  static AlbumManifest? decodeAlbum(String text) {
+    final json = _extract(_albumLine, text);
+    return json == null ? null : AlbumManifest.tryFromJson(json);
   }
 
   static FileManifest? decodeFile(String caption) {
@@ -110,12 +123,20 @@ class FileManifest {
     this.partIndex = 0,
     this.starred = false,
     this.takenAt,
+    this.trashedAt,
+    this.albums = const [],
   });
 
   final String id;
   final String name;
   final String? folderId;
   final String mimeType;
+
+  /// When it was moved to the trash; null while it isn't there.
+  final DateTime? trashedAt;
+
+  /// Ids of the albums it is in.
+  final List<String> albums;
 
   /// Capture time of a photo or video from the camera roll.
   final DateTime? takenAt;
@@ -135,6 +156,9 @@ class FileManifest {
     bool? starred,
     int? partIndex,
     DateTime? modifiedAt,
+    DateTime? trashedAt,
+    bool restore = false,
+    List<String>? albums,
   }) => FileManifest(
     id: id,
     name: name ?? this.name,
@@ -147,6 +171,8 @@ class FileManifest {
     partIndex: partIndex ?? this.partIndex,
     starred: starred ?? this.starred,
     takenAt: takenAt,
+    trashedAt: restore ? null : (trashedAt ?? this.trashedAt),
+    albums: albums ?? this.albums,
   );
 
   /// Short keys keep captions well under Telegram's 1024-character limit.
@@ -162,6 +188,8 @@ class FileManifest {
     if (partIndex > 0) 'pi': partIndex,
     if (starred) 'st': 1,
     if (takenAt != null) 'tk': takenAt!.millisecondsSinceEpoch,
+    if (trashedAt != null) 'tr': trashedAt!.millisecondsSinceEpoch,
+    if (albums.isNotEmpty) 'al': albums,
   };
 
   static FileManifest? tryFromJson(Map<String, dynamic> json) {
@@ -184,6 +212,12 @@ class FileManifest {
       partIndex: partIndex,
       starred: json['st'] == 1 || json['st'] == true,
       takenAt: json['tk'] is int ? _time(json['tk']) : null,
+      trashedAt: json['tr'] is int ? _time(json['tr']) : null,
+      albums: [
+        if (json['al'] case final List<dynamic> ids)
+          for (final id in ids)
+            if (id is String) id,
+      ],
     );
   }
 }
@@ -196,6 +230,7 @@ class FolderManifest {
     required this.parentId,
     required this.createdAt,
     required this.modifiedAt,
+    this.trashedAt,
   });
 
   final String id;
@@ -204,12 +239,16 @@ class FolderManifest {
   final DateTime createdAt;
   final DateTime modifiedAt;
 
+  /// When it was moved to the trash, with everything inside it.
+  final DateTime? trashedAt;
+
   Map<String, dynamic> toJson() => {
     'id': id,
     'n': name,
     if (parentId != null) 'p': parentId,
     'ct': createdAt.millisecondsSinceEpoch,
     'mt': modifiedAt.millisecondsSinceEpoch,
+    if (trashedAt != null) 'tr': trashedAt!.millisecondsSinceEpoch,
   };
 
   static FolderManifest? tryFromJson(Map<String, dynamic> json) {
@@ -220,6 +259,42 @@ class FolderManifest {
       id: id,
       name: name,
       parentId: json['p'] as String?,
+      createdAt: _time(json['ct']),
+      modifiedAt: _time(json['mt'] ?? json['ct']),
+      trashedAt: json['tr'] is int ? _time(json['tr']) : null,
+    );
+  }
+}
+
+/// A photo album. Which files are in it is kept in their own manifests.
+@immutable
+class AlbumManifest {
+  const AlbumManifest({
+    required this.id,
+    required this.name,
+    required this.createdAt,
+    required this.modifiedAt,
+  });
+
+  final String id;
+  final String name;
+  final DateTime createdAt;
+  final DateTime modifiedAt;
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'n': name,
+    'ct': createdAt.millisecondsSinceEpoch,
+    'mt': modifiedAt.millisecondsSinceEpoch,
+  };
+
+  static AlbumManifest? tryFromJson(Map<String, dynamic> json) {
+    final id = json['id'];
+    final name = json['n'];
+    if (id is! String || name is! String) return null;
+    return AlbumManifest(
+      id: id,
+      name: name,
       createdAt: _time(json['ct']),
       modifiedAt: _time(json['mt'] ?? json['ct']),
     );

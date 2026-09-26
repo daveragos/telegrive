@@ -113,17 +113,30 @@ void main() {
     });
   });
 
-  test('a version 1 database gains the save columns', () async {
+  test('a version 1 database upgrades to the current schema', () async {
     final dir = await Directory.systemTemp.createTemp('telegrive_migration');
     addTearDown(() => dir.delete(recursive: true));
     final file = File('${dir.path}/telegrive.sqlite');
 
-    // Version 1 is today's schema without the two columns version 2 added.
+    // Version 1 is today's schema without what versions 2 and 3 added.
     var db = AppDatabase(NativeDatabase(file));
     await db.allTransfers();
-    await db.customStatement('ALTER TABLE transfers DROP COLUMN save_to');
-    await db.customStatement('ALTER TABLE transfers DROP COLUMN save_folder');
-    await db.customStatement('PRAGMA user_version = 1');
+    for (final statement in [
+      'ALTER TABLE transfers DROP COLUMN save_to',
+      'ALTER TABLE transfers DROP COLUMN save_folder',
+      'ALTER TABLE folders DROP COLUMN trashed_at',
+      'ALTER TABLE folders DROP COLUMN hidden',
+      'ALTER TABLE drive_files DROP COLUMN trashed_at',
+      'ALTER TABLE drive_files DROP COLUMN hidden',
+      'DROP TABLE albums',
+      'DROP TABLE album_files',
+      'DROP TABLE offline_pins',
+      'DROP TABLE offline_copies',
+      'DROP TABLE file_contents',
+      'PRAGMA user_version = 1',
+    ]) {
+      await db.customStatement(statement);
+    }
     await db.close();
 
     db = AppDatabase(NativeDatabase(file));
@@ -150,6 +163,8 @@ void main() {
     final row = (await db.allTransfers()).single;
     expect(row.saveTo, SaveTarget.gallery);
     expect(row.saveFolder, 'Camera');
+    expect(await db.watchTrashedFiles().first, isEmpty);
+    expect(await db.watchAlbums().first, isEmpty);
   });
 
   group('DeviceStorage names', () {

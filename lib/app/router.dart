@@ -19,6 +19,7 @@ import '../features/settings/presentation/settings_screen.dart';
 import '../features/setup/presentation/setup_screen.dart';
 import '../features/setup/presentation/splash_screen.dart';
 import '../features/transfers/presentation/transfers_screen.dart';
+import '../features/trash/presentation/trash_screen.dart';
 import '../features/viewer/presentation/image_viewer_screen.dart';
 import 'app_phase.dart';
 import 'app_shell.dart';
@@ -102,6 +103,11 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/backup',
         parentNavigatorKey: _rootKey,
         builder: (_, _) => const BackupScreen(),
+      ),
+      GoRoute(
+        path: '/trash',
+        parentNavigatorKey: _rootKey,
+        builder: (_, _) => const TrashScreen(),
       ),
       GoRoute(
         path: '/starred',
