@@ -58,6 +58,23 @@ weight. Numbers that line up (sizes, counts, progress) use tabular figures.
 
 Letter spacing stays at the font's default. Body text is never below 13.
 
+## Mark
+
+A paper plane, the way Telegram sends, folded from three flat facets into
+one rounded triangle. Sky `#4FB2F7` wing, accent
+`#2356E0` body, amber `#FFB020` keel, with thin open creases between them.
+The keel is the only amber anywhere.
+
+- Drawn once, by `BrandPainter` in `lib/core/widgets/brand_mark.dart`;
+  `tool/icon` renders every icon and the channel photo from it.
+- In the app it stands bare, with no tile. The launcher icon puts it on
+  white; the channel photo uses
+  a faint blue so Telegram's circle has an edge.
+- As a one-colour silhouette (notification, themed icon) the creases stay
+  open.
+- Never recoloured, outlined, or set on the accent blue, where the body
+  facet disappears.
+
 ## Shape and depth
 
 Radii: **6** thumbnails in rows, **10** controls (buttons, fields, chips,
