@@ -6,6 +6,7 @@ import '../core/format/formatters.dart';
 import '../core/widgets/common.dart';
 import '../features/backup/data/backup_controller.dart';
 import '../features/backup/presentation/backup_prompt.dart';
+import '../features/offline/data/offline_sync.dart';
 import '../features/share/data/share_intake.dart';
 import '../features/share/presentation/share_sheet.dart';
 import '../features/transfers/data/transfer_queue.dart';
@@ -72,6 +73,8 @@ class _AppShellState extends ConsumerState<AppShell> {
       pendingLaunchActionProvider,
       (_, action) => _carryOut(action),
     );
+    // Keeps pinned files and folders on the phone while the drive is open.
+    ref.watch(offlineSyncProvider);
     // Files shared in from another app, whether it was open or not.
     ref.listen<List<SharedFile>>(shareIntakeProvider, (previous, next) {
       if (next.isNotEmpty && (previous == null || previous.isEmpty)) {

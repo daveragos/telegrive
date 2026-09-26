@@ -89,9 +89,11 @@ class _SaveGroup extends ConsumerWidget {
     final total = saves.where((t) => t.status != TransferStatus.cancelled).length;
     final toGallery = saves.any((t) => t.row.saveTo == SaveTarget.gallery);
     final toFiles = saves.any((t) => t.row.saveTo == SaveTarget.files);
+    final toOffline = saves.any((t) => t.row.saveTo == SaveTarget.offline);
     final where = [
       if (toFiles) DeviceStorage.location,
       if (toGallery) 'your photos',
+      if (toOffline) 'your offline files',
     ].join(' and ');
 
     if (running.isEmpty) {

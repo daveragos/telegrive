@@ -10,12 +10,15 @@ import '../../../core/widgets/common.dart';
 import '../../../infrastructure/storage/preferences.dart';
 import '../../auth/data/auth_controller.dart';
 import '../../backup/data/backup_controller.dart';
+import '../../backup/data/free_up_space.dart';
+import '../../backup/presentation/free_up_space_sheet.dart';
 import '../../drive/data/drive_repository.dart';
 import '../../drive/data/drive_session.dart';
 import '../../drive/data/drive_sync.dart';
 import '../../files/data/browse_preferences.dart';
 import '../../files/presentation/file_actions.dart';
 import '../../lock/data/app_lock.dart';
+import '../../offline/data/offline_sync.dart';
 import '../../transfers/data/transfer_queue.dart';
 import '../data/settings_providers.dart';
 
@@ -35,6 +38,8 @@ class SettingsScreen extends ConsumerWidget {
     final busyTransfers = ref.watch(transferQueueProvider.select((s) => s.activeCount)) > 0;
     final trashCount = ref.watch(trashProvider).value?.count ?? 0;
     final lock = ref.watch(appLockProvider);
+    final freeable = ref.watch(freeableProvider);
+    final offline = ref.watch(offlineUsageProvider);
 
     Text trailingValue(String value) => Text(
       value,
@@ -245,6 +250,41 @@ class SettingsScreen extends ConsumerWidget {
           const SectionHeader('This phone'),
           ListGroup(
             children: [
+              ListTile(
+                title: const Text('Available offline'),
+                subtitle: Text(switch (offline) {
+                  AsyncData(value: (final count, final bytes)) when count > 0 =>
+                    '${Formatters.count(count, 'file')} · ${Formatters.bytes(bytes)}',
+                  _ => 'Nothing yet. Choose files or folders from their menu.',
+                }),
+                trailing: (offline.value?.$1 ?? 0) > 0
+                    ? TextButton(
+                        onPressed: () async {
+                          final ok = await showConfirmDialog(
+                            context,
+                            title: 'Stop keeping files offline?',
+                            message:
+                                'Their copies on this phone are removed. The files stay '
+                                'in your drive.',
+                            confirmLabel: 'Remove',
+                          );
+                          if (ok) await ref.read(offlineSyncProvider.notifier).removeAll();
+                        },
+                        child: const Text('Remove all'),
+                      )
+                    : null,
+              ),
+              ListTile(
+                title: const Text('Free up space'),
+                subtitle: Text(switch (freeable) {
+                  AsyncData(:final value) when value.isEmpty =>
+                    'Delete backed-up photos from this phone',
+                  AsyncData(:final value) =>
+                    '${Formatters.bytes(value.bytes)} of photos and videos are safely backed up',
+                  _ => 'Checking backed-up photos',
+                }),
+                onTap: () => showFreeUpSpace(context, ref),
+              ),
               ListTile(
                 enabled: !busyTransfers,
                 title: const Text('Clear downloaded copies'),

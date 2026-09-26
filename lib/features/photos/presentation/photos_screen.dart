@@ -6,13 +6,14 @@ import '../../../app/theme/tokens.dart';
 import '../../../core/widgets/common.dart';
 import '../../backup/data/backup_controller.dart';
 import '../../backup/presentation/backup_card.dart';
+import '../../backup/presentation/free_up_space_sheet.dart';
 import '../../drive/data/drive_repository.dart';
 import '../../drive/data/drive_sync.dart';
 import '../../files/presentation/file_actions.dart';
 import 'media_grid.dart';
 import 'media_selection_bar.dart';
 
-enum _PhotosMenu { download }
+enum _PhotosMenu { download, freeUp }
 
 /// Every photo and video in the drive as one timeline, newest moment first,
 /// with backup status on top.
@@ -74,20 +75,25 @@ class _PhotosScreenState extends ConsumerState<PhotosScreen> {
                     ),
                     PopupMenuButton<_PhotosMenu>(
                       tooltip: 'More',
-                      enabled: files != null && files.isNotEmpty,
                       onSelected: (choice) => switch (choice) {
                         _PhotosMenu.download => FileActions.saveToDevice(
                           context,
                           ref,
-                          files: files!,
+                          files: files ?? const [],
                           preferGallery: true,
                         ),
+                        _PhotosMenu.freeUp => showFreeUpSpace(context, ref),
                       },
-                      itemBuilder: (_) => const [
-                        PopupMenuItem(
-                          value: _PhotosMenu.download,
-                          child: Text('Download all to this phone'),
+                      itemBuilder: (_) => [
+                        const PopupMenuItem(
+                          value: _PhotosMenu.freeUp,
+                          child: Text('Free up space on this phone'),
                         ),
+                        if (files != null && files.isNotEmpty)
+                          const PopupMenuItem(
+                            value: _PhotosMenu.download,
+                            child: Text('Download all to this phone'),
+                          ),
                       ],
                     ),
                   ],

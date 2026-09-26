@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/theme/tokens.dart';
 import '../../../core/format/formatters.dart';
 import '../../../core/widgets/file_visuals.dart';
 import '../../drive/domain/drive_models.dart';
+import '../../offline/data/offline_sync.dart';
 
 /// A file as a list row: picture slot, name, size and date, and a menu.
-class FileListTile extends StatelessWidget {
+class FileListTile extends ConsumerWidget {
   const FileListTile({
     super.key,
     required this.file,
@@ -29,7 +31,10 @@ class FileListTile extends StatelessWidget {
   final String? subtitle;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final offline = ref.watch(
+      offlineCopiesProvider.select((copies) => copies.value?.containsKey(file.id) ?? false),
+    );
     return _Row(
       selected: selected,
       onTap: onTap,
@@ -39,13 +44,14 @@ class FileListTile extends StatelessWidget {
       meta: subtitle ??
           '${Formatters.bytes(file.size)} · ${Formatters.date(file.modifiedAt)}',
       starred: file.starred,
+      offline: offline,
       onMore: selecting ? null : onMore,
     );
   }
 }
 
 /// A folder as a list row.
-class FolderListTile extends StatelessWidget {
+class FolderListTile extends ConsumerWidget {
   const FolderListTile({
     super.key,
     required this.folder,
@@ -68,11 +74,15 @@ class FolderListTile extends StatelessWidget {
   final bool selecting;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final offline = ref.watch(
+      offlinePinsProvider.select((pins) => pins.value?.contains(folder.id) ?? false),
+    );
     return _Row(
       selected: selected,
       onTap: onTap,
       onLongPress: onLongPress,
+      offline: offline,
       slot: _Selectable(selected: selected, child: const FolderIconTile()),
       title: folder.name,
       meta: subtitle ?? 'Folder · ${Formatters.date(folder.modifiedAt)}',
@@ -91,6 +101,7 @@ class _Row extends StatelessWidget {
     this.onLongPress,
     this.onMore,
     this.starred = false,
+    this.offline = false,
   });
 
   final bool selected;
@@ -101,6 +112,9 @@ class _Row extends StatelessWidget {
   final String meta;
   final VoidCallback? onMore;
   final bool starred;
+
+  /// Kept on this phone for use without a connection.
+  final bool offline;
 
   @override
   Widget build(BuildContext context) {
@@ -136,6 +150,10 @@ class _Row extends StatelessWidget {
                       children: [
                         if (starred) ...[
                           Icon(Icons.star_rounded, size: 14, color: colors.text2),
+                          const SizedBox(width: Space.xs),
+                        ],
+                        if (offline) ...[
+                          Icon(Icons.offline_pin_rounded, size: 14, color: colors.text2),
                           const SizedBox(width: Space.xs),
                         ],
                         Flexible(

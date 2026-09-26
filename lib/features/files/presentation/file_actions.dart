@@ -20,6 +20,7 @@ import '../../../infrastructure/database/app_database.dart'
 import '../../../infrastructure/storage/device_storage.dart';
 import '../../../infrastructure/telegram/telegram_exception.dart';
 import '../../backup/data/backup_controller.dart';
+import '../../offline/data/offline_sync.dart';
 import '../../send/data/telegram_chats.dart';
 import '../../send/presentation/chat_picker.dart';
 import '../../drive/data/drive_repository.dart';
@@ -210,6 +211,32 @@ abstract final class FileActions {
   /// came from, so it goes back there.
   static String? _backupAlbum(List<String> path) =>
       path.length >= 2 && path.first == BackupController.rootFolder ? path[1] : null;
+
+  // ---------------------------------------------------------------------------
+  // Available offline
+  // ---------------------------------------------------------------------------
+
+  /// Keeps [file] or [folder] (with everything in it, now and later) on
+  /// this phone for use without a connection, or stops keeping it.
+  static Future<bool> setOffline(
+    BuildContext context,
+    WidgetRef ref, {
+    DriveFile? file,
+    DriveFolder? folder,
+    required bool keep,
+  }) {
+    final offline = ref.read(offlineSyncProvider.notifier);
+    final name = file?.name ?? folder!.name;
+    return _guard(
+      context,
+      () => keep
+          ? offline.pin(file: file, folder: folder)
+          : offline.unpin(file: file, folder: folder),
+      success: keep
+          ? '"$name" will be available offline'
+          : '"$name" is no longer kept offline',
+    );
+  }
 
   // ---------------------------------------------------------------------------
   // Sending in Telegram
@@ -569,6 +596,10 @@ abstract final class FileActions {
                   label: 'Send in Telegram',
                   onTap: () => run(() => sendToChats(context, ref, [file])),
                 ),
+                _OfflineAction(
+                  itemId: file.id,
+                  onTap: (pinned) => run(() => setOffline(context, ref, file: file, keep: !pinned)),
+                ),
                 _SheetAction(
                   icon: Icons.ios_share_rounded,
                   label: 'Share',
@@ -643,6 +674,12 @@ abstract final class FileActions {
                 icon: Icons.download_rounded,
                 label: 'Download to this phone',
                 onTap: () => run(() => saveToDevice(context, ref, folders: [folder])),
+              ),
+              _OfflineAction(
+                itemId: folder.id,
+                onTap: (pinned) => run(
+                  () => setOffline(context, ref, folder: folder, keep: !pinned),
+                ),
               ),
               _SheetAction(
                 icon: Icons.drive_file_rename_outline_rounded,
@@ -1070,6 +1107,26 @@ class _SheetAction extends StatelessWidget {
       ),
       minVerticalPadding: 14,
       onTap: onTap,
+    );
+  }
+}
+
+/// "Make available offline", or the way back, depending on the pin.
+class _OfflineAction extends ConsumerWidget {
+  const _OfflineAction({required this.itemId, required this.onTap});
+
+  final String itemId;
+  final void Function(bool pinned) onTap;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final pinned = ref.watch(
+      offlinePinsProvider.select((pins) => pins.value?.contains(itemId) ?? false),
+    );
+    return _SheetAction(
+      icon: pinned ? Icons.offline_pin_rounded : Icons.offline_pin_outlined,
+      label: pinned ? 'Stop keeping offline' : 'Make available offline',
+      onTap: () => onTap(pinned),
     );
   }
 }
