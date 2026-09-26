@@ -82,9 +82,9 @@ class _Glimpse extends StatelessWidget {
   const _Glimpse();
 
   static const _files = [
-    ('Tax return 2025.pdf', '2.4 MB', FileKind.document),
-    ('Lalibela sunrise.jpg', '6.3 MB', FileKind.image),
-    ('Wedding film.mp4', '5.6 GB, stored as 12 parts', FileKind.video),
+    ('Passport scan.pdf', '1.8 MB', FileKind.document),
+    ('Beach day.jpg', '4.2 MB', FileKind.image),
+    ('Summer holiday 4K.mp4', '5.6 GB, stored as 12 parts', FileKind.video),
   ];
 
   @override
