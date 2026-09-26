@@ -166,15 +166,14 @@ class AppDatabase extends _$AppDatabase {
         .watch();
   }
 
-  /// `name|size` of every photo and video in the drive, to its file id. How
-  /// backup recognises what is already up there after a reinstall or on a
-  /// new phone, where device media ids mean nothing.
+  /// `name|size` of every file in the drive, to its file id. How backup
+  /// recognises what is already up there after a reinstall or on a new
+  /// phone, where device media ids mean nothing. Every kind counts, so a
+  /// photo uploaded by hand, or one whose type was guessed differently,
+  /// isn't sent again either.
   Future<Map<String, String>> mediaFingerprints() async {
     final rows = await (selectOnly(driveFiles)
-          ..addColumns([driveFiles.id, driveFiles.name, driveFiles.size])
-          ..where(
-            driveFiles.kind.isIn([FileKind.image.name, FileKind.video.name]),
-          ))
+          ..addColumns([driveFiles.id, driveFiles.name, driveFiles.size]))
         .get();
     return {
       for (final row in rows)

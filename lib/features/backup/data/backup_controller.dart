@@ -154,6 +154,16 @@ class BackupController extends Notifier<BackupState> {
       }
     });
 
+    // Backup waits for a complete index; carry on once a sync gets there.
+    ref.listen<SyncState>(driveSyncProvider, (previous, next) {
+      if ((previous?.running ?? false) &&
+          !next.running &&
+          next.error == null &&
+          state.phase == BackupPhase.waitingForDrive) {
+        schedule(immediate: true);
+      }
+    });
+
     _connectivity = Connectivity().onConnectivityChanged.listen((_) {
       if (state.phase == BackupPhase.waitingForWifi) schedule(immediate: true);
     });
@@ -316,6 +326,13 @@ class BackupController extends Notifier<BackupState> {
     final startedAt = DateTime.now();
     state = state.copyWith(phase: BackupPhase.scanning, clearCurrent: true);
     await ref.read(driveSyncProvider.notifier).whenIdle();
+    // "Already in the drive" is judged against the index, so it has to hold
+    // the whole channel. After a reinstall, a first read that stopped short
+    // would make older photos look new and send them up a second time.
+    if (!_indexComplete()) {
+      state = state.copyWith(phase: BackupPhase.waitingForDrive, clearCurrent: true);
+      return;
+    }
     final assets = await _scan();
     final known = await _db.backupAssetMap();
 
@@ -367,6 +384,15 @@ class BackupController extends Notifier<BackupState> {
     await Future.wait([for (var i = 0; i < _parallel; i++) worker()]);
 
     if (!_stopRequested && _prefs.backupEnabled) await _finishPass(startedAt);
+  }
+
+  /// The channel has been read in full at least once on this phone, and
+  /// the latest sync didn't fail.
+  bool _indexComplete() {
+    final chatId = ref.read(driveSessionProvider)?.chatId;
+    return chatId != null &&
+        _prefs.lastFullSync(chatId) != null &&
+        ref.read(driveSyncProvider).error == null;
   }
 
   Future<void> _finishPass(DateTime startedAt) async {

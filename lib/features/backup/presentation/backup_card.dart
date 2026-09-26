@@ -183,7 +183,7 @@ describeBackup(BackupState backup, {double speed = 0}) {
     BackupPhase.waitingForDrive => (
       icon: Icons.cloud_queue_rounded,
       title: 'Backup is starting',
-      detail: null,
+      detail: 'Reading your drive first, so nothing goes up twice.',
       progress: null,
       done: false,
     ),

@@ -58,18 +58,24 @@ class DriveSync extends Notifier<SyncState> {
 
   static const Duration _fullSyncInterval = Duration(hours: 24);
 
-  TelegramClient get _client => ref.read(telegramClientProvider);
+  /// Kept from [build]: closing the chat happens while the provider is
+  /// disposed, when reading other providers is no longer allowed.
+  late TelegramClient _client;
   DriveRepository get _repository => ref.read(driveRepositoryProvider);
   Preferences get _prefs => ref.read(preferencesProvider);
 
   @override
   SyncState build() {
+    _client = ref.watch(telegramClientProvider);
     ref.listen<DriveSession?>(driveSessionProvider, (previous, next) {
       if (previous?.chatId == next?.chatId) return;
       _stopLive();
       if (next != null) _startLive(next.chatId);
     }, fireImmediately: true);
-    ref.onDispose(_stopLive);
+    ref.onDispose(() {
+      _stopLive();
+      _retry?.cancel();
+    });
     return const SyncState();
   }
 
@@ -122,16 +128,7 @@ class DriveSync extends Notifier<SyncState> {
       // TDLib's history paging can return short pages (the first often has
       // a single message from its cache); only an empty page means the end.
       while (true) {
-        final page = await _client.send<td.Messages>(
-          td.GetChatHistory(
-            chatId: chatId,
-            fromMessageId: from,
-            offset: 0,
-            limit: 100,
-            onlyLocal: false,
-          ),
-          timeout: const Duration(seconds: 60),
-        );
+        final page = await _page(chatId, from);
         if (page.messages.isEmpty) break;
 
         var reachedKnown = false;
@@ -169,13 +166,58 @@ class DriveSync extends Notifier<SyncState> {
       }
       if (newest > 0) await _prefs.setLastSyncedMessageId(chatId, newest);
 
+      _failedFullSyncs = 0;
       state = state.copyWith(running: false, lastSynced: DateTime.now());
     } on TelegramException catch (e) {
       state = state.copyWith(running: false, error: e.friendlyMessage);
+      if (full) _retryFullSync();
     } catch (e) {
       debugPrint('[DriveSync] $e');
       state = state.copyWith(running: false, error: 'Sync failed: $e');
+      if (full) _retryFullSync();
     }
+  }
+
+  /// One page of the channel's history. Reading thousands of messages after
+  /// a reinstall is exactly when Telegram rate-limits, so waits it asks for
+  /// are sat out and brief network trouble is retried, rather than leaving
+  /// the index half built.
+  Future<td.Messages> _page(int chatId, int from) async {
+    for (var attempt = 1; ; attempt++) {
+      try {
+        return await _client.send<td.Messages>(
+          td.GetChatHistory(
+            chatId: chatId,
+            fromMessageId: from,
+            offset: 0,
+            limit: 100,
+            onlyLocal: false,
+          ),
+          timeout: const Duration(seconds: 60),
+        );
+      } on TelegramException catch (e) {
+        final wait = e.retryAfterSeconds;
+        if (e.isFloodWait && wait != null && wait <= 600) {
+          await Future<void>.delayed(Duration(seconds: wait + 1));
+          continue;
+        }
+        // Bad requests won't get better; anything else may.
+        if (e.code == 400 || attempt >= 5) rethrow;
+      }
+      await Future<void>.delayed(Duration(seconds: 3 * attempt));
+    }
+  }
+
+  int _failedFullSyncs = 0;
+  Timer? _retry;
+
+  /// A full sync that stopped short leaves the index missing older files,
+  /// so it is tried again on its own, a little later each time.
+  void _retryFullSync() {
+    if (_failedFullSyncs >= 5) return;
+    _failedFullSyncs++;
+    _retry?.cancel();
+    _retry = Timer(Duration(seconds: 30 * _failedFullSyncs), () => unawaited(fullSync()));
   }
 
   /// Forgets sync progress and reads everything again.
