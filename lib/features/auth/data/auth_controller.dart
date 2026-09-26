@@ -1,0 +1,93 @@
+import 'package:flutter/foundation.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:handy_tdlib/api.dart' as td;
+
+import '../../../infrastructure/database/app_database.dart';
+import '../../../infrastructure/telegram/telegram_client.dart';
+import '../../../infrastructure/telegram/telegram_exception.dart';
+import '../../drive/data/drive_session.dart';
+
+/// Choices the person made on the sign-in screens that TDLib's state alone
+/// can't express.
+@immutable
+class AuthUiState {
+  const AuthUiState({this.startedSignIn = false, this.editingPhone = false});
+
+  /// Past the welcome screen in this run of the app.
+  final bool startedSignIn;
+
+  /// Wants to type a phone number even though TDLib is showing a QR code or
+  /// waiting for a code (to fix a typo, say).
+  final bool editingPhone;
+
+  AuthUiState copyWith({bool? startedSignIn, bool? editingPhone}) =>
+      AuthUiState(
+        startedSignIn: startedSignIn ?? this.startedSignIn,
+        editingPhone: editingPhone ?? this.editingPhone,
+      );
+}
+
+/// Sign-in actions. Each throws a [TelegramException] whose
+/// `friendlyMessage` the screen shows as-is.
+class AuthController extends Notifier<AuthUiState> {
+  TelegramClient get _client => ref.read(telegramClientProvider);
+
+  @override
+  AuthUiState build() => const AuthUiState();
+
+  void startSignIn() => state = state.copyWith(startedSignIn: true);
+
+  void editPhone() => state = state.copyWith(editingPhone: true);
+
+  void cancelEditPhone() => state = state.copyWith(editingPhone: false);
+
+  Future<void> submitPhone(String phone) async {
+    final normalized = phone.replaceAll(RegExp(r'[^\d+]'), '');
+    await _client.send<td.Ok>(
+      td.SetAuthenticationPhoneNumber(
+        phoneNumber: normalized,
+        settings: const td.PhoneNumberAuthenticationSettings(
+          allowFlashCall: false,
+          allowMissedCall: false,
+          isCurrentPhoneNumber: false,
+          hasUnknownPhoneNumber: false,
+          allowSmsRetrieverApi: false,
+          authenticationTokens: [],
+        ),
+      ),
+    );
+    state = state.copyWith(editingPhone: false);
+  }
+
+  Future<void> requestQrCode() async {
+    await _client.send<td.Ok>(
+      const td.RequestQrCodeAuthentication(otherUserIds: []),
+    );
+    state = state.copyWith(editingPhone: false);
+  }
+
+  Future<void> submitCode(String code) =>
+      _client.send<td.Ok>(td.CheckAuthenticationCode(code: code.trim()));
+
+  Future<void> resendCode() =>
+      _client.send<td.Ok>(const td.ResendAuthenticationCode());
+
+  Future<void> submitPassword(String password) =>
+      _client.send<td.Ok>(td.CheckAuthenticationPassword(password: password));
+
+  /// Signs out of Telegram and removes every local trace of the drive. The
+  /// files themselves stay safe in the channel.
+  Future<void> signOut() async {
+    // Log out first: once TDLib leaves the ready state the app shows the
+    // splash, so closing the drive afterwards can't bounce it back into
+    // setup for the account that is leaving.
+    await _client.logOut();
+    ref.read(driveSessionProvider.notifier).close();
+    await ref.read(appDatabaseProvider).clearAll();
+    state = const AuthUiState();
+  }
+}
+
+final authControllerProvider = NotifierProvider<AuthController, AuthUiState>(
+  AuthController.new,
+);
