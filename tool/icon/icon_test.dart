@@ -6,8 +6,8 @@
 //   tool/icon/install.sh
 //
 // icon.png is the full-bleed square (iOS, legacy Android); foreground.png is
-// the plane alone inside Android's adaptive-icon safe zone, and doubles as
-// the themed (monochrome) icon.
+// the plane alone for Android's adaptive icon, and doubles as the themed
+// (monochrome) icon.
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -43,12 +43,15 @@ void main() {
   }
 
   testWidgets('full icon', (tester) async {
-    await render(tester, const BrandPainter(scale: 0.6, tile: _tile), 'icon');
+    await render(tester, const BrandPainter(scale: 0.64, tile: _tile), 'icon');
   });
 
   testWidgets('adaptive foreground', (tester) async {
-    // Android shows the middle two thirds of an adaptive icon.
-    await render(tester, const BrandPainter(scale: 0.4), 'foreground');
+    // flutter_launcher_icons insets the foreground by 16% on each side,
+    // which is already Android's visible area, so the plane is drawn at the
+    // same size as on the full icon. Its nose stays inside the 66 dp safe
+    // circle.
+    await render(tester, const BrandPainter(scale: 0.64), 'foreground');
   });
 
   testWidgets('adaptive background', (tester) async {
