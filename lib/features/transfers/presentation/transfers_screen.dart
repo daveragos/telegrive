@@ -21,10 +21,14 @@ class TransfersScreen extends ConsumerWidget {
     final state = ref.watch(transferQueueProvider);
     // Photo backup and downloads to the phone are summarised in a line each
     // rather than listed file by file; only their failures are listed.
-    final active = state.active
+    final active = state.pending
         .where((t) => t.origin == TransferOrigin.manual)
         .toList();
+    final anyRunning = active.any((t) => t.status.isActive);
+    final anyPaused = active.any((t) => t.status == TransferStatus.paused);
     final saves = state.saves;
+    final queue = ref.read(transferQueueProvider.notifier);
+    bool manual(TransferRow r) => r.origin == TransferOrigin.manual;
     final finished = state.finished
         .where(
           (t) => !(t.origin == TransferOrigin.save && t.status == TransferStatus.completed),
@@ -61,7 +65,17 @@ class TransfersScreen extends ConsumerWidget {
                   ListGroup(children: [_SaveGroup(saves: saves)]),
                 ],
                 if (active.isNotEmpty) ...[
-                  SectionHeader('In progress · ${active.length}'),
+                  SectionHeader(
+                    'In progress · ${active.length}',
+                    trailing: active.length < 2
+                        ? null
+                        : TextButton(
+                            onPressed: anyRunning
+                                ? () => queue.pauseAll(manual)
+                                : () => queue.resumeAll(manual),
+                            child: Text(anyRunning || !anyPaused ? 'Pause all' : 'Resume all'),
+                          ),
+                  ),
                   ListGroup(children: [for (final item in active) _ActiveRow(item: item)]),
                 ],
                 if (finished.isNotEmpty) ...[
@@ -84,7 +98,9 @@ class _SaveGroup extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.colors;
+    final queue = ref.read(transferQueueProvider.notifier);
     final running = saves.where((t) => t.status.isActive).toList();
+    final paused = saves.where((t) => t.status == TransferStatus.paused).toList();
     final saved = saves.where((t) => t.status == TransferStatus.completed).toList();
     final total = saves.where((t) => t.status != TransferStatus.cancelled).length;
     final toGallery = saves.any((t) => t.row.saveTo == SaveTarget.gallery);
@@ -95,6 +111,36 @@ class _SaveGroup extends ConsumerWidget {
       if (toGallery) 'your photos',
       if (toOffline) 'your offline files',
     ].join(' and ');
+
+    bool isSave(TransferRow r) => r.origin == TransferOrigin.save;
+    final stop = TextButton(
+      onPressed: () async {
+        final confirmed = await showConfirmDialog(
+          context,
+          title: 'Stop downloading?',
+          message: 'Files already saved stay on this phone.',
+          confirmLabel: 'Stop',
+        );
+        if (confirmed) await queue.cancelSaves();
+      },
+      child: const Text('Stop'),
+    );
+
+    if (running.isEmpty && paused.isNotEmpty) {
+      return StatusLine(
+        icon: Icons.pause_circle_outline_rounded,
+        color: colors.text2,
+        text: 'Paused · ${Formatters.number(saved.length)} of ${Formatters.count(total, 'file')} saved',
+        detail: 'Resume to carry on where it stopped.',
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextButton(onPressed: () => queue.resumeAll(isSave), child: const Text('Resume')),
+            stop,
+          ],
+        ),
+      );
+    }
 
     if (running.isEmpty) {
       return StatusLine(
@@ -108,7 +154,7 @@ class _SaveGroup extends ConsumerWidget {
     var bytes = 0;
     var done = 0;
     var speed = 0.0;
-    for (final item in [...running, ...saved]) {
+    for (final item in [...running, ...paused, ...saved]) {
       bytes += item.row.totalBytes;
       done += item.status == TransferStatus.completed ? item.row.totalBytes : item.row.doneBytes;
       speed += item.bytesPerSecond;
@@ -126,17 +172,12 @@ class _SaveGroup extends ConsumerWidget {
               Formatters.eta(Duration(seconds: (left / speed).ceil())),
             ].join(' · '),
       progress: bytes == 0 ? 0 : done / bytes,
-      trailing: TextButton(
-        onPressed: () async {
-          final stop = await showConfirmDialog(
-            context,
-            title: 'Stop downloading?',
-            message: 'Files already saved stay on this phone.',
-            confirmLabel: 'Stop',
-          );
-          if (stop) await ref.read(transferQueueProvider.notifier).cancelSaves();
-        },
-        child: const Text('Stop'),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextButton(onPressed: () => queue.pauseAll(isSave), child: const Text('Pause')),
+          stop,
+        ],
       ),
     );
   }
@@ -152,6 +193,8 @@ class _ActiveRow extends ConsumerWidget {
     final colors = context.colors;
     final isUpload = item.kind == TransferKind.upload;
     final queued = item.status == TransferStatus.queued;
+    final paused = item.status == TransferStatus.paused;
+    final queue = ref.read(transferQueueProvider.notifier);
     final eta = item.eta;
     final parts = item.row.partCount > 1
         ? 'part ${(item.row.completedParts + 1).clamp(1, item.row.partCount)} '
@@ -161,6 +204,12 @@ class _ActiveRow extends ConsumerWidget {
     final String detail;
     if (item.preparing) {
       detail = 'Preparing the file';
+    } else if (paused) {
+      detail = [
+        'Paused',
+        '${Formatters.bytes(item.row.doneBytes)} of ${Formatters.bytes(item.row.totalBytes)}',
+        ?parts,
+      ].join(' · ');
     } else if (queued) {
       detail = 'Waiting · ${Formatters.bytes(item.row.totalBytes)}';
     } else {
@@ -216,14 +265,25 @@ class _ActiveRow extends ConsumerWidget {
                     builder: (context, value, _) => LinearProgressIndicator(
                       value: item.preparing ? null : value,
                       minHeight: 4,
+                      color: paused ? colors.text3 : null,
                     ),
                   ),
                 ),
               ],
             ),
           ),
+          // Staging a picked file can't stop halfway, so it can't pause.
+          if (!item.preparing)
+            IconButton(
+              onPressed: () => paused ? queue.resume(item.id) : queue.pause(item.id),
+              icon: Icon(
+                paused ? Icons.play_arrow_rounded : Icons.pause_rounded,
+                color: colors.text2,
+              ),
+              tooltip: paused ? 'Resume' : 'Pause',
+            ),
           IconButton(
-            onPressed: () => ref.read(transferQueueProvider.notifier).cancel(item.id),
+            onPressed: () => queue.cancel(item.id),
             icon: Icon(Icons.close_rounded, color: colors.text3),
             tooltip: 'Cancel',
           ),

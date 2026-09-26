@@ -156,12 +156,18 @@ enum SaveTarget { files, gallery, offline }
 enum TransferStatus {
   queued,
   running,
+
+  /// Stopped by the person, to carry on later; neither running nor done.
+  paused,
   failed,
   completed,
   cancelled;
 
   bool get isActive => this == queued || this == running;
-  bool get isFinished => !isActive;
+  bool get isFinished => this == failed || this == completed || this == cancelled;
+
+  /// Still to happen: running, waiting, or paused.
+  bool get isPending => !isFinished;
 }
 
 /// The upload/download queue. Persisted so a transfer interrupted by the

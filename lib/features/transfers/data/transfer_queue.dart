@@ -122,6 +122,13 @@ class TransfersState {
   List<TransferItem> get finished =>
       items.where((t) => t.status.isFinished).toList();
 
+  /// Running, waiting or paused: everything the Transfers list shows as in
+  /// progress.
+  List<TransferItem> get pending =>
+      items.where((t) => t.status.isPending).toList();
+
+  int get pausedCount => items.where((t) => t.status == TransferStatus.paused).length;
+
   int get activeCount => items.where((t) => t.status.isActive).length;
 
   /// Combined progress of everything in flight, for the global indicator.
@@ -176,6 +183,9 @@ class TransferQueue extends Notifier<TransfersState> {
   final Map<String, (int bytes, DateTime at)> _samples = {};
   final Set<String> _running = {};
   final Set<String> _cancelled = {};
+
+  /// Running transfers asked to pause; they stop at the next chance.
+  final Set<String> _pausing = {};
   final Map<int, _Tracked> _tracked = {};
   final Map<String, int> _pendingMessages = {};
   final Map<String, int> _activeDownloads = {};
@@ -288,9 +298,13 @@ class TransferQueue extends Notifier<TransfersState> {
           r.kind == TransferKind.download &&
           r.origin != TransferOrigin.save &&
           r.fileId == file.id &&
-          r.status.isActive,
+          r.status.isPending,
     );
-    if (existing.isNotEmpty) return _completionOf(existing.first.id);
+    if (existing.isNotEmpty) {
+      final row = existing.first;
+      if (row.status == TransferStatus.paused) await resume(row.id);
+      return _completionOf(row.id);
+    }
 
     final row = TransferRow(
       id: _repository.newId(),
@@ -320,7 +334,7 @@ class TransferQueue extends Notifier<TransfersState> {
   Future<int> enqueueSaves(List<SaveRequest> requests) async {
     final inFlight = {
       for (final r in _rows.values)
-        if (r.origin == TransferOrigin.save && r.status.isActive) r.fileId,
+        if (r.origin == TransferOrigin.save && r.status.isPending) r.fileId,
     };
     final now = DateTime.now();
     final rows = <TransferRow>[];
@@ -365,7 +379,7 @@ class TransferQueue extends Notifier<TransfersState> {
   Future<void> cancelSaves() async {
     final ids = [
       for (final r in _rows.values)
-        if (r.origin == TransferOrigin.save && r.status.isActive) r.id,
+        if (r.origin == TransferOrigin.save && r.status.isPending) r.id,
     ];
     // Waiting ones go first, so nothing new starts while the rest stop.
     final running = ids.where(_running.contains).toList();
@@ -414,28 +428,19 @@ class TransferQueue extends Notifier<TransfersState> {
 
   Future<void> cancel(String id) async {
     final row = _rows[id];
-    if (row == null || !row.status.isActive) return;
+    if (row == null || !row.status.isPending) return;
     _cancelled.add(id);
-
-    final chatId = ref.read(driveSessionProvider)?.chatId;
-    if (row.kind == TransferKind.upload) {
-      final pending = _pendingMessages.remove(id);
-      if (pending != null && chatId != null) {
-        await _quietly(() => _messenger.cancel(chatId, pending));
-      }
-      // Parts already delivered are useless without the rest.
-      if (row.completedParts > 0) {
-        await _quietly(() => _repository.deleteFileById(row.fileId));
-      }
-    } else {
-      final fileId = _activeDownloads[id];
-      if (fileId != null) {
-        await _quietly(
-          () => _client.send<td.Ok>(
-            td.CancelDownloadFile(fileId: fileId, onlyIfPending: false),
-          ),
-        );
-      }
+    _pausing.remove(id);
+    await _interrupt(row);
+    // Parts already delivered are useless without the rest.
+    if (row.kind == TransferKind.upload && row.completedParts > 0) {
+      await _quietly(() => _repository.deleteFileById(row.fileId));
+    }
+    // A paused split download has parts stitched together already.
+    if (row.kind == TransferKind.download &&
+        row.partCount > 1 &&
+        !_running.contains(id)) {
+      await _deleteQuietly(Directory(p.join((await downloadsDirectory()).path, row.fileId)));
     }
 
     await _finish(
@@ -448,9 +453,73 @@ class TransferQueue extends Notifier<TransfersState> {
     );
   }
 
+  /// Stops [id] where it is, to carry on with [resume]. A download keeps
+  /// what TDLib has fetched; a split upload keeps its finished parts and
+  /// redoes only the one in flight.
+  Future<void> pause(String id) async {
+    final row = _rows[id];
+    // Copying a picked file into staging can't stop halfway safely.
+    if (row == null || !row.status.isActive || _preparing.contains(id)) return;
+    if (!_running.contains(id)) {
+      await _save(row.copyWith(status: TransferStatus.paused));
+      _emit();
+      return;
+    }
+    _pausing.add(id);
+    await _interrupt(row);
+    // The work stops with an error, which marks it paused; see [_start].
+  }
+
+  Future<void> resume(String id) async {
+    final row = _rows[id];
+    if (row == null || row.status != TransferStatus.paused) return;
+    await _save(row.copyWith(status: TransferStatus.queued));
+    _emit();
+    _pump();
+  }
+
+  /// Pauses, or resumes, every transfer [which] picks out.
+  Future<void> pauseAll(bool Function(TransferRow row) which) async {
+    for (final row in _rows.values.where((r) => r.status.isActive && which(r)).toList()) {
+      await pause(row.id);
+    }
+  }
+
+  Future<void> resumeAll(bool Function(TransferRow row) which) async {
+    final paused = _rows.values
+        .where((r) => r.status == TransferStatus.paused && which(r))
+        .toList();
+    for (final row in paused) {
+      await _save(row.copyWith(status: TransferStatus.queued));
+    }
+    _emit();
+    _pump();
+  }
+
+  /// Stops whatever TDLib is doing for [row]: abandons the message being
+  /// sent, or the file being fetched.
+  Future<void> _interrupt(TransferRow row) async {
+    if (row.kind == TransferKind.upload) {
+      final chatId = ref.read(driveSessionProvider)?.chatId;
+      final pending = _pendingMessages.remove(row.id);
+      if (pending != null && chatId != null) {
+        await _quietly(() => _messenger.cancel(chatId, pending));
+      }
+    } else {
+      final fileId = _activeDownloads[row.id];
+      if (fileId != null) {
+        await _quietly(
+          () => _client.send<td.Ok>(
+            td.CancelDownloadFile(fileId: fileId, onlyIfPending: false),
+          ),
+        );
+      }
+    }
+  }
+
   Future<void> retry(String id) async {
     final row = _rows[id];
-    if (row == null || row.status.isActive) return;
+    if (row == null || !row.status.isFinished) return;
     _cancelled.remove(id);
     await _save(
       row.copyWith(
@@ -531,7 +600,10 @@ class TransferQueue extends Notifier<TransfersState> {
         _emit();
         await work(running);
       } catch (e, stack) {
-        if (!_cancelled.contains(row.id)) {
+        if (_pausing.contains(row.id)) {
+          await _save((_rows[row.id] ?? row).copyWith(status: TransferStatus.paused));
+          _emit();
+        } else if (!_cancelled.contains(row.id)) {
           debugPrint('[Transfers] ${row.name} failed: $e\n$stack');
           final current = _rows[row.id] ?? row;
           await _finish(
@@ -544,6 +616,7 @@ class TransferQueue extends Notifier<TransfersState> {
         }
       } finally {
         _running.remove(row.id);
+        _pausing.remove(row.id);
         _pendingMessages.remove(row.id);
         _activeDownloads.remove(row.id);
         _tracked.removeWhere((_, t) => t.transferId == row.id);
@@ -587,6 +660,7 @@ class TransferQueue extends Notifier<TransfersState> {
 
     for (var index = row.completedParts; index < partCount; index++) {
       if (_cancelled.contains(row.id)) return;
+      _stopIfPausing(row.id);
       final base = partCount == 1 ? 0 : SplitPolicy.offsetOf(index);
       if (landed.contains(index) && !(resume != null && index == row.completedParts)) {
         final partEnd = partCount == 1
@@ -606,6 +680,7 @@ class TransferQueue extends Notifier<TransfersState> {
         final path = partCount == 1
             ? source!.path
             : await _writePart(row, source!, index);
+        _stopIfPausing(row.id);
         final manifest = FileManifest(
           id: row.fileId,
           name: row.name,
@@ -630,6 +705,8 @@ class TransferQueue extends Notifier<TransfersState> {
             onPending: (pending) {
               _pendingMessages[row.id] = pending.id;
               _trackMessage(pending, row.id, base);
+              // Paused in the moment the send was starting.
+              if (_pausing.contains(row.id)) unawaited(_interrupt(row));
             },
           );
         } finally {
@@ -658,6 +735,11 @@ class TransferQueue extends Notifier<TransfersState> {
   }
 
   /// Copies a picked content URI into staging, where TDLib can read it.
+  /// Ends the work for [id] if it was asked to pause.
+  void _stopIfPausing(String id) {
+    if (_pausing.contains(id)) throw const DriveException('Paused.');
+  }
+
   Future<TransferRow> _stage(
     TransferRow row,
     File target,
@@ -761,16 +843,32 @@ class TransferQueue extends Notifier<TransfersState> {
       p.join((await downloadsDirectory()).path, initial.fileId, initial.name),
     );
     await out.parent.create(recursive: true);
-    final sink = out.openWrite();
+    // Parts already stitched in before a pause or a restart are kept.
+    var done = 0;
     var base = 0;
+    if (initial.completedParts > 0 && await out.exists()) {
+      final expected = parts
+          .take(initial.completedParts)
+          .fold<int>(0, (sum, part) => sum + part.size);
+      if (await out.length() == expected) {
+        done = initial.completedParts;
+        base = expected;
+      }
+    }
+    final sink = out.openWrite(mode: done > 0 ? FileMode.append : FileMode.write);
     try {
       for (final (index, part) in parts.indexed) {
+        if (index < done) continue;
         if (_cancelled.contains(initial.id)) break;
+        _stopIfPausing(initial.id);
         final downloaded = await _downloadPart(initial, part, base: base);
         await sink.addStream(File(downloaded.path).openRead());
         base += part.size;
-        _rows[initial.id] = (_rows[initial.id] ?? initial).copyWith(
-          completedParts: index + 1,
+        await _save(
+          (_rows[initial.id] ?? initial).copyWith(
+            completedParts: index + 1,
+            doneBytes: base,
+          ),
         );
         await _quietly(
           () => _client.send<td.Ok>(td.DeleteFile(fileId: part.tdFileId)),

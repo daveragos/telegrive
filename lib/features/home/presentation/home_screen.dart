@@ -203,6 +203,7 @@ class _ActivityState extends ConsumerState<_Activity> {
     final failed = transfers.finished
         .where((t) => t.status == TransferStatus.failed && t.origin != TransferOrigin.backup)
         .length;
+    final paused = transfers.pausedCount;
 
     final showBackup = backup.isWorking ||
         backup.phase == BackupPhase.waitingForWifi ||
@@ -217,6 +218,14 @@ class _ActivityState extends ConsumerState<_Activity> {
           text: '${Formatters.count(active.length, 'transfer')} in progress',
           detail: '${(_progress(active) * 100).round()}% done',
           progress: _progress(active),
+          onTap: () => context.push('/transfers'),
+        ),
+      if (paused > 0 && active.isEmpty)
+        StatusLine(
+          icon: Icons.pause_circle_outline_rounded,
+          color: colors.text2,
+          text: paused == 1 ? '1 transfer paused' : '$paused transfers paused',
+          detail: 'Open Transfers to resume.',
           onTap: () => context.push('/transfers'),
         ),
       if (failed > 0)
