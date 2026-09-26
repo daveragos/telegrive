@@ -6,6 +6,8 @@ import '../core/format/formatters.dart';
 import '../core/widgets/common.dart';
 import '../features/backup/data/backup_controller.dart';
 import '../features/backup/presentation/backup_prompt.dart';
+import '../features/share/data/share_intake.dart';
+import '../features/share/presentation/share_sheet.dart';
 import '../features/transfers/data/transfer_queue.dart';
 import '../infrastructure/database/app_database.dart' show TransferKind, TransferOrigin;
 import 'launch_action.dart';
@@ -44,7 +46,9 @@ class _AppShellState extends ConsumerState<AppShell> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final pending = ref.read(pendingLaunchActionProvider);
-      if (pending != null) {
+      if (ref.read(shareIntakeProvider).isNotEmpty) {
+        showShareSheet(context, ref);
+      } else if (pending != null) {
         _carryOut(pending);
       } else {
         maybeAskToBackUp(context, ref);
@@ -68,6 +72,12 @@ class _AppShellState extends ConsumerState<AppShell> {
       pendingLaunchActionProvider,
       (_, action) => _carryOut(action),
     );
+    // Files shared in from another app, whether it was open or not.
+    ref.listen<List<SharedFile>>(shareIntakeProvider, (previous, next) {
+      if (next.isNotEmpty && (previous == null || previous.isEmpty)) {
+        showShareSheet(context, ref);
+      }
+    });
 
     final colors = context.colors;
     // Backup has its own home on the Photos tab; the strip is for things the

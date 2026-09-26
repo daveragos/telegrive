@@ -34,6 +34,14 @@ class Preferences {
   Future<void> setViewMode(ViewMode mode) =>
       _prefs.setString('view_mode', mode.name);
 
+  bool get appLock => _prefs.getBool('app_lock') ?? false;
+  Future<void> setAppLock(bool on) => _prefs.setBool('app_lock', on);
+
+  /// Name of the app lock's delay, see `LockAfter`.
+  String? get appLockAfter => _prefs.getString('app_lock_after');
+  Future<void> setAppLockAfter(String name) =>
+      _prefs.setString('app_lock_after', name);
+
   /// How many photos across the Photos grid shows; pinch changes it.
   int get photoColumns => _prefs.getInt('photo_columns') ?? 4;
   Future<void> setPhotoColumns(int columns) =>

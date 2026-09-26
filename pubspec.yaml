@@ -23,6 +23,7 @@ dependencies:
   go_router: ^18.0.1
   handy_tdlib: ^2.3.10
   intl: ^0.20.3
+  local_auth: ^3.0.2
   mime: ^2.1.0
   open_filex: ^4.7.0
   path: ^1.9.1

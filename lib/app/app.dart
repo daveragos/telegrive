@@ -16,6 +16,7 @@ import '../features/transfers/data/transfer_queue.dart';
 import '../infrastructure/telegram/telegram_client.dart';
 import 'router.dart';
 import 'theme/app_theme.dart';
+import '../features/lock/presentation/lock_gate.dart';
 
 class TelegriveApp extends ConsumerStatefulWidget {
   const TelegriveApp({super.key});
@@ -83,6 +84,7 @@ class _TelegriveAppState extends ConsumerState<TelegriveApp>
       darkTheme: AppTheme.dark(),
       themeMode: ref.watch(themeModeProvider),
       routerConfig: ref.watch(routerProvider),
+      builder: (context, child) => LockGate(child: child ?? const SizedBox.shrink()),
       localizationsDelegates: GlobalMaterialLocalizations.delegates,
       supportedLocales: const [Locale('en')],
     );

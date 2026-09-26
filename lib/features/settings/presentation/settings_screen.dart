@@ -15,6 +15,7 @@ import '../../drive/data/drive_session.dart';
 import '../../drive/data/drive_sync.dart';
 import '../../files/data/browse_preferences.dart';
 import '../../files/presentation/file_actions.dart';
+import '../../lock/data/app_lock.dart';
 import '../../transfers/data/transfer_queue.dart';
 import '../data/settings_providers.dart';
 
@@ -33,6 +34,7 @@ class SettingsScreen extends ConsumerWidget {
     final cache = ref.watch(cacheSizeProvider);
     final busyTransfers = ref.watch(transferQueueProvider.select((s) => s.activeCount)) > 0;
     final trashCount = ref.watch(trashProvider).value?.count ?? 0;
+    final lock = ref.watch(appLockProvider);
 
     Text trailingValue(String value) => Text(
       value,
@@ -203,6 +205,41 @@ class SettingsScreen extends ConsumerWidget {
                 value: viewMode == ViewMode.grid,
                 onChanged: (_) => ref.read(browsePreferencesProvider.notifier).toggleViewMode(),
               ),
+            ],
+          ),
+          const SectionHeader('Security'),
+          ListGroup(
+            children: [
+              SwitchListTile(
+                title: const Text('App lock'),
+                subtitle: const Text('Ask for your fingerprint, face or screen lock to open Telegrive'),
+                value: lock.enabled,
+                onChanged: (on) async {
+                  final done = await ref.read(appLockProvider.notifier).setEnabled(on);
+                  if (!done && on && context.mounted) {
+                    showSnack(context, 'Set up a screen lock on this phone first, then try again.');
+                  }
+                },
+              ),
+              if (lock.enabled)
+                ListTile(
+                  title: const Text('Lock'),
+                  trailing: PopupMenuButton<LockAfter>(
+                    initialValue: lock.after,
+                    onSelected: (after) => ref.read(appLockProvider.notifier).setAfter(after),
+                    itemBuilder: (_) => [
+                      for (final after in LockAfter.values)
+                        PopupMenuItem(value: after, child: Text(after.label)),
+                    ],
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        trailingValue(lock.after.label),
+                        Icon(Icons.arrow_drop_down_rounded, color: colors.text3),
+                      ],
+                    ),
+                  ),
+                ),
             ],
           ),
           const SectionHeader('This phone'),

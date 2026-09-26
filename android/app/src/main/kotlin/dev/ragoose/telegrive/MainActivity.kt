@@ -2,29 +2,76 @@ package dev.ragoose.telegrive
 
 import android.Manifest
 import android.content.ContentValues
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.MediaScannerConnection
+import android.net.Uri
 import android.os.Build
+import android.os.Bundle
 import android.os.Environment
 import android.os.Handler
 import android.os.Looper
 import android.os.StatFs
 import android.provider.MediaStore
-import io.flutter.embedding.android.FlutterActivity
+import android.provider.OpenableColumns
+import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import java.io.File
 import java.io.IOException
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.concurrent.Executors
 
-class MainActivity : FlutterActivity() {
+// A FragmentActivity, which local_auth needs for the biometric prompt.
+class MainActivity : FlutterFragmentActivity() {
     private val io = Executors.newFixedThreadPool(2)
     private val main = Handler(Looper.getMainLooper())
     private var pendingWriteAccess: MethodChannel.Result? = null
 
+    /** Files other apps shared in, copied into the cache, until Dart takes them. */
+    private val pendingShares = mutableListOf<Map<String, Any>>()
+    private var shareChannel: MethodChannel? = null
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        // A recreated activity has already handled its intent.
+        if (savedInstanceState == null) receiveShare(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        receiveShare(intent)
+    }
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "telegrive/device_storage")
+        val messenger = flutterEngine.dartExecutor.binaryMessenger
+        shareChannel = MethodChannel(messenger, "telegrive/share").apply {
+            setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "takeShared" -> result.success(
+                        synchronized(pendingShares) { pendingShares.toList().also { pendingShares.clear() } },
+                    )
+                    else -> result.notImplemented()
+                }
+            }
+        }
+        MethodChannel(messenger, "telegrive/security").setMethodCallHandler { call, result ->
+            when (call.method) {
+                "setPrivateRecents" -> {
+                    // Keeps the app's content out of the recents screen while the
+                    // app lock is on (Android 13+).
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        setRecentsScreenshotEnabled(call.arguments != true)
+                    }
+                    result.success(null)
+                }
+                else -> result.notImplemented()
+            }
+        }
+        MethodChannel(messenger, "telegrive/device_storage")
             .setMethodCallHandler { call, result ->
                 when (call.method) {
                     "freeBytes" -> result.success(StatFs(filesDir.path).availableBytes)
@@ -117,6 +164,75 @@ class MainActivity : FlutterActivity() {
             if (it.moveToFirst()) it.getString(0)?.let { path -> return path }
         }
         return "$folder$name"
+    }
+
+    /**
+     * Copies what another app shared into the cache, where the upload queue
+     * can read it once the person picks a folder. Plain text becomes a note.
+     */
+    private fun receiveShare(intent: Intent?) {
+        if (intent == null) return
+        val uris: List<Uri> = when (intent.action) {
+            Intent.ACTION_SEND -> listOfNotNull(streamOf(intent))
+            Intent.ACTION_SEND_MULTIPLE -> streamsOf(intent)
+            else -> return
+        }
+        val text = intent.getStringExtra(Intent.EXTRA_TEXT)
+        if (uris.isEmpty() && text.isNullOrBlank()) return
+        io.execute {
+            val copied = if (uris.isNotEmpty()) {
+                uris.mapNotNull { copyShared(it) }
+            } else {
+                listOfNotNull(saveNote(text!!, intent.getStringExtra(Intent.EXTRA_SUBJECT)))
+            }
+            synchronized(pendingShares) { pendingShares.addAll(copied) }
+            main.post { shareChannel?.invokeMethod("sharedAvailable", null) }
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun streamOf(intent: Intent): Uri? =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
+        } else {
+            intent.getParcelableExtra(Intent.EXTRA_STREAM)
+        }
+
+    @Suppress("DEPRECATION")
+    private fun streamsOf(intent: Intent): List<Uri> =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM, Uri::class.java)
+        } else {
+            intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM)
+        } ?: emptyList()
+
+    private fun sharedDir(): File =
+        File(cacheDir, "shared/${System.nanoTime()}").apply { mkdirs() }
+
+    private fun copyShared(uri: Uri): Map<String, Any>? = try {
+        var name: String? = null
+        contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use {
+            if (it.moveToFirst()) name = it.getString(0)
+        }
+        val clean = (name ?: uri.lastPathSegment ?: "Shared file")
+            .replace(Regex("[\\\\/:\\u0000-\\u001f]"), "_")
+            .ifBlank { "Shared file" }
+        val target = File(sharedDir(), clean)
+        val input = contentResolver.openInputStream(uri) ?: throw IOException("Can't read $uri")
+        input.use { source -> target.outputStream().use { source.copyTo(it, 1 shl 20) } }
+        mapOf("path" to target.path, "name" to clean, "size" to target.length())
+    } catch (e: Exception) {
+        null
+    }
+
+    private fun saveNote(text: String, subject: String?): Map<String, Any>? = try {
+        val stamp = SimpleDateFormat("yyyy-MM-dd HH.mm", Locale.US).format(Date())
+        val title = subject?.takeIf { it.isNotBlank() }?.take(60)?.replace(Regex("[\\\\/:]"), "_")
+        val target = File(sharedDir(), "${title ?: "Note $stamp"}.txt")
+        target.writeText(text)
+        mapOf("path" to target.path, "name" to target.name, "size" to target.length())
+    } catch (e: Exception) {
+        null
     }
 
     /** Android 9 and older only write to shared storage with permission. */
