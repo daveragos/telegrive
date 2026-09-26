@@ -260,7 +260,12 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
     final folders = data?.folders.where((f) => _folders.contains(f.id)).toList() ?? [];
     final count = files.length + folders.length;
     final allStarred = files.isNotEmpty && files.every((f) => f.starred);
+    final onlyFiles = files.isNotEmpty && folders.isEmpty;
     final scheme = Theme.of(context).colorScheme;
+
+    Future<void> then(Future<bool> action) async {
+      if (await action) _clearSelection();
+    }
 
     return AppBar(
       backgroundColor: scheme.primaryContainer.withValues(alpha: 0.5),
@@ -269,71 +274,62 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
         icon: const Icon(Icons.close_rounded),
         tooltip: 'Clear selection',
       ),
-      // The count alone: five actions leave no room for "selected".
+      // The count alone: the actions leave no room for "selected".
       title: Text(Formatters.number(count)),
       actions: [
-        if (files.isNotEmpty && folders.isEmpty)
-          IconButton(
-            onPressed: () async {
-              await FileActions.setStarred(context, ref, files, starred: !allStarred);
-              _clearSelection();
-            },
-            icon: Icon(allStarred ? Icons.star_rounded : Icons.star_outline_rounded),
-            tooltip: allStarred ? 'Unstar' : 'Star',
-          ),
         IconButton(
-          onPressed: () async {
-            final saving = await FileActions.saveToDevice(
-              context,
-              ref,
-              files: files,
-              folders: folders,
-            );
-            if (saving) _clearSelection();
-          },
+          onPressed: () => then(
+            FileActions.saveToDevice(context, ref, files: files, folders: folders),
+          ),
           icon: const Icon(Icons.download_rounded),
           tooltip: 'Download to this phone',
         ),
+        if (onlyFiles)
+          IconButton(
+            onPressed: () => then(FileActions.sendToChats(context, ref, files)),
+            icon: const Icon(Icons.send_outlined),
+            tooltip: 'Send in Telegram',
+          ),
         IconButton(
-          onPressed: () async {
-            final moved = await FileActions.move(
-              context,
-              ref,
-              files: files,
-              folders: folders,
-            );
-            if (moved) _clearSelection();
-          },
+          onPressed: () => then(FileActions.move(context, ref, files: files, folders: folders)),
           icon: const Icon(Icons.drive_file_move_outline),
           tooltip: 'Move',
         ),
         IconButton(
-          onPressed: () async {
-            final deleted = await FileActions.delete(
-              context,
-              ref,
-              files: files,
-              folders: folders,
-            );
-            if (deleted) _clearSelection();
-          },
+          onPressed: () => then(FileActions.delete(context, ref, files: files, folders: folders)),
           icon: const Icon(Icons.delete_outline_rounded),
           tooltip: 'Move to Trash',
         ),
-        IconButton(
-          onPressed: data == null
-              ? null
-              : () => setState(() {
+        PopupMenuButton<_SelectionMore>(
+          tooltip: 'More',
+          onSelected: (choice) async {
+            switch (choice) {
+              case _SelectionMore.star:
+                await FileActions.setStarred(context, ref, files, starred: !allStarred);
+                _clearSelection();
+              case _SelectionMore.selectAll:
+                if (data == null) return;
+                setState(() {
                   _files.addAll(data.files.map((f) => f.id));
                   _folders.addAll(data.folders.map((f) => f.id));
-                }),
-          icon: const Icon(Icons.select_all_rounded),
-          tooltip: 'Select all',
+                });
+            }
+          },
+          itemBuilder: (_) => [
+            if (onlyFiles)
+              PopupMenuItem(
+                value: _SelectionMore.star,
+                child: Text(allStarred ? 'Remove from Starred' : 'Add to Starred'),
+              ),
+            const PopupMenuItem(value: _SelectionMore.selectAll, child: Text('Select all')),
+          ],
         ),
       ],
     );
   }
 }
+
+enum _SelectionMore { star, selectAll }
 
 class _Summary extends StatelessWidget {
   const _Summary({required this.contents});

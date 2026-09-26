@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/async/combine.dart';
 import '../../../core/files/file_kind.dart';
+import '../../../core/format/date_query.dart';
 import '../../../core/format/formatters.dart';
 import '../../../core/widgets/common.dart';
 import '../../drive/data/drive_repository.dart';
@@ -13,12 +14,19 @@ import '../../drive/domain/drive_models.dart';
 import '../../files/presentation/file_actions.dart';
 import '../../files/presentation/file_tiles.dart';
 
-typedef _SearchKey = ({String query, FileKind? kind});
+typedef _SearchKey = ({String query, FileKind? kind, DateRange? range});
 
 final _searchResultsProvider = StreamProvider.autoDispose
     .family<(List<DriveFolder>, List<DriveFile>), _SearchKey>((ref, key) {
       final repository = ref.watch(driveRepositoryProvider);
-      final files = repository.watchSearch(key.query, kind: key.kind);
+      final range = key.range;
+      final files = repository.watchSearch(
+        key.query,
+        kind: key.kind,
+        range: range == null
+            ? null
+            : (range.start, range.end.subtract(const Duration(milliseconds: 1))),
+      );
       final folders = key.kind == null
           ? repository.watchFolderSearch(key.query)
           : Stream.value(const <DriveFolder>[]);
@@ -26,7 +34,10 @@ final _searchResultsProvider = StreamProvider.autoDispose
     });
 
 class SearchScreen extends ConsumerStatefulWidget {
-  const SearchScreen({super.key});
+  const SearchScreen({super.key, this.initialKind});
+
+  /// Kind filter to start with, as when searching from the Photos tab.
+  final FileKind? initialKind;
 
   @override
   ConsumerState<SearchScreen> createState() => _SearchScreenState();
@@ -36,7 +47,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   final _controller = TextEditingController();
   Timer? _debounce;
   String _query = '';
-  FileKind? _kind;
+  late FileKind? _kind = widget.initialKind;
 
   @override
   void dispose() {
@@ -57,8 +68,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final active = _query.isNotEmpty || _kind != null;
+    final range = DateQuery.parse(_query);
     final results = active
-        ? ref.watch(_searchResultsProvider((query: _query, kind: _kind)))
+        ? ref.watch(_searchResultsProvider((query: _query, kind: _kind, range: range)))
         : null;
 
     return Scaffold(
@@ -117,11 +129,29 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               ],
             ),
           ),
+          if (range != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+              child: Row(
+                children: [
+                  Icon(Icons.event_outlined, size: 18, color: theme.colorScheme.onSurfaceVariant),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Including everything from ${range.label}',
+                      style: theme.textTheme.bodySmall,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           Expanded(
             child: results == null
                 ? const EmptyState(
                     title: 'Search your drive',
-                    message: 'Type part of a name, or pick a kind above.',
+                    message:
+                        'Type part of a name, words in a photo or PDF, or a date '
+                        'like "march 2024". Or pick a kind above.',
                     compact: true,
                   )
                 : AsyncView(
@@ -133,7 +163,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                           title: 'No matches',
                           message: _query.isEmpty
                               ? 'Nothing of this type yet.'
-                              : 'Nothing is named like "$_query".',
+                              : 'Nothing matches "$_query".',
                           compact: true,
                         );
                       }

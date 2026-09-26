@@ -34,6 +34,11 @@ class Preferences {
   Future<void> setViewMode(ViewMode mode) =>
       _prefs.setString('view_mode', mode.name);
 
+  /// How many photos across the Photos grid shows; pinch changes it.
+  int get photoColumns => _prefs.getInt('photo_columns') ?? 4;
+  Future<void> setPhotoColumns(int columns) =>
+      _prefs.setInt('photo_columns', columns);
+
   String? get sortField => _prefs.getString('sort_field');
   bool get sortDescending => _prefs.getBool('sort_descending') ?? false;
   Future<void> setSort(String field, {required bool descending}) async {

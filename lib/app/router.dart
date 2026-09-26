@@ -13,6 +13,7 @@ import '../features/backup/presentation/backup_screen.dart';
 import '../features/files/presentation/file_list_screen.dart';
 import '../features/files/presentation/files_screen.dart';
 import '../features/home/presentation/home_screen.dart';
+import '../features/photos/presentation/albums_screen.dart';
 import '../features/photos/presentation/photos_screen.dart';
 import '../features/search/presentation/search_screen.dart';
 import '../features/settings/presentation/settings_screen.dart';
@@ -87,7 +88,11 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/search',
         parentNavigatorKey: _rootKey,
-        builder: (_, _) => const SearchScreen(),
+        builder: (_, state) => SearchScreen(
+          initialKind: FileKind.values
+              .where((k) => k.name == state.uri.queryParameters['kind'])
+              .firstOrNull,
+        ),
       ),
       GoRoute(
         path: '/transfers',
@@ -103,6 +108,27 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/backup',
         parentNavigatorKey: _rootKey,
         builder: (_, _) => const BackupScreen(),
+      ),
+      GoRoute(
+        path: '/albums',
+        parentNavigatorKey: _rootKey,
+        builder: (_, _) => const AlbumsScreen(),
+        routes: [
+          GoRoute(
+            path: ':albumId',
+            parentNavigatorKey: _rootKey,
+            builder: (_, state) =>
+                AlbumScreen(albumId: state.pathParameters['albumId']!),
+            routes: [
+              GoRoute(
+                path: 'add',
+                parentNavigatorKey: _rootKey,
+                builder: (_, state) =>
+                    AddToAlbumScreen(albumId: state.pathParameters['albumId']!),
+              ),
+            ],
+          ),
+        ],
       ),
       GoRoute(
         path: '/trash',
@@ -132,7 +158,7 @@ final routerProvider = Provider<GoRouter>((ref) {
           state,
           ImageViewerScreen(
             fileId: state.pathParameters['fileId']!,
-            fromTimeline: state.uri.queryParameters['from'] == 'photos',
+            source: state.uri.queryParameters['from'],
           ),
         ),
       ),

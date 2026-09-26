@@ -20,6 +20,8 @@ import '../../../infrastructure/database/app_database.dart'
 import '../../../infrastructure/storage/device_storage.dart';
 import '../../../infrastructure/telegram/telegram_exception.dart';
 import '../../backup/data/backup_controller.dart';
+import '../../send/data/telegram_chats.dart';
+import '../../send/presentation/chat_picker.dart';
 import '../../drive/data/drive_repository.dart';
 import '../../drive/data/drive_session.dart';
 import '../../drive/domain/drive_models.dart';
@@ -185,6 +187,38 @@ abstract final class FileActions {
   /// came from, so it goes back there.
   static String? _backupAlbum(List<String> path) =>
       path.length >= 2 && path.first == BackupController.rootFolder ? path[1] : null;
+
+  // ---------------------------------------------------------------------------
+  // Sending in Telegram
+  // ---------------------------------------------------------------------------
+
+  /// Sends [files] to chats the person picks, straight from the drive, with
+  /// no upload. Returns whether they went.
+  static Future<bool> sendToChats(
+    BuildContext context,
+    WidgetRef ref,
+    List<DriveFile> files,
+  ) async {
+    if (files.isEmpty) return false;
+    final split = files.any((f) => f.isSplit);
+    final chats = await showChatPicker(
+      context,
+      title: files.length == 1
+          ? 'Send "${files.first.name}"'
+          : 'Send ${Formatters.count(files.length, 'file')}',
+      note: split
+          ? 'Files over 2 GB are kept in parts, and arrive as numbered parts.'
+          : null,
+    );
+    if (chats == null || chats.isEmpty || !context.mounted) return false;
+    return _guard(
+      context,
+      () => ref.read(telegramChatsProvider).send(files, chats.map((c) => c.id).toList()),
+      success: chats.length == 1
+          ? 'Sent to ${chats.single.title}'
+          : 'Sent to ${Formatters.count(chats.length, 'chat')}',
+    );
+  }
 
   // ---------------------------------------------------------------------------
   // Uploading & creating
@@ -508,6 +542,11 @@ abstract final class FileActions {
                   onTap: () => run(() => saveToDevice(context, ref, files: [file])),
                 ),
                 _SheetAction(
+                  icon: Icons.send_outlined,
+                  label: 'Send in Telegram',
+                  onTap: () => run(() => sendToChats(context, ref, [file])),
+                ),
+                _SheetAction(
                   icon: Icons.ios_share_rounded,
                   label: 'Share',
                   onTap: () => run(() => share(context, ref, file)),
@@ -665,6 +704,12 @@ abstract final class FileActions {
   }
 
   /// Runs [action], turning failures into a snackbar. Returns success.
+  static Future<bool> guarded(
+    BuildContext context,
+    Future<void> Function() action, {
+    String? success,
+  }) => _guard(context, action, success: success);
+
   static Future<bool> _guard(
     BuildContext context,
     Future<void> Function() action, {

@@ -13,19 +13,23 @@ import '../../drive/data/previews.dart';
 import '../../drive/domain/drive_models.dart';
 import '../../files/presentation/file_actions.dart';
 
-/// Full-screen viewer. Opened from the Photos timeline it swipes through
-/// every photo and video there; opened on a single file it shows just that.
+/// Full-screen viewer. Opened from the Photos timeline or an album it swipes
+/// through every photo and video there; opened on a single file it shows
+/// just that.
 /// The blurred inline preview shows instantly and the full image fades in
 /// over it; pinch or double-tap to zoom.
 class ImageViewerScreen extends ConsumerStatefulWidget {
   const ImageViewerScreen({
     super.key,
     required this.fileId,
-    this.fromTimeline = false,
+    this.source,
   });
 
   final String fileId;
-  final bool fromTimeline;
+
+  /// What to swipe through: `photos` (the timeline), `favorites`,
+  /// `videos`, or `album:<id>`. Null shows the one file.
+  final String? source;
 
   @override
   ConsumerState<ImageViewerScreen> createState() => _ImageViewerScreenState();
@@ -53,13 +57,15 @@ class _ImageViewerScreenState extends ConsumerState<ImageViewerScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final List<DriveFile> files;
-    if (widget.fromTimeline) {
-      files = ref.watch(mediaTimelineProvider).value ?? const [];
-    } else {
-      final single = ref.watch(fileInfoProvider(widget.fileId)).value;
-      files = single == null ? const [] : [single];
-    }
+    List<DriveFile> timeline() => ref.watch(mediaTimelineProvider).value ?? const [];
+    final List<DriveFile> files = switch (widget.source) {
+      'photos' => timeline(),
+      'favorites' => timeline().where((f) => f.starred).toList(),
+      'videos' => timeline().where((f) => f.kind == FileKind.video).toList(),
+      final String source when source.startsWith('album:') =>
+        ref.watch(albumFilesProvider(source.substring(6))).value ?? const [],
+      _ => [?ref.watch(fileInfoProvider(widget.fileId)).value],
+    };
 
     var index = files.indexWhere((f) => f.id == _currentId);
     if (index < 0 && files.isNotEmpty) {
