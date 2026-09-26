@@ -1,0 +1,909 @@
+import 'dart:async';
+import 'dart:io';
+import 'dart:math' as math;
+
+import 'package:drift/drift.dart' show Value;
+import 'package:flutter/foundation.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:handy_tdlib/api.dart' as td;
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
+
+import '../../../core/files/file_kind.dart';
+import '../../../infrastructure/database/app_database.dart';
+import '../../../infrastructure/telegram/telegram_client.dart';
+import '../../../infrastructure/telegram/telegram_exception.dart';
+import '../../drive/data/channel_messenger.dart';
+import '../../drive/data/drive_repository.dart';
+import '../../drive/data/drive_session.dart';
+import '../../drive/data/message_indexer.dart';
+import '../../drive/domain/drive_models.dart';
+import '../../drive/domain/manifest.dart';
+
+/// A file on this device, about to go up.
+///
+/// Either a real [path], or — for pickers that hand back a content URI, as
+/// Android's does — a way to [openRead] it. TDLib can only upload from a
+/// path, so the latter is copied into staging when its turn comes.
+@immutable
+class UploadRequest {
+  const UploadRequest({
+    required this.name,
+    this.path,
+    this.openRead,
+    this.size,
+    this.ownsSource = false,
+    this.origin = TransferOrigin.manual,
+    this.assetId,
+    this.takenAt,
+    this.thumbnailPath,
+  }) : assert(path != null || openRead != null);
+
+  final String name;
+  final String? path;
+  final Stream<List<int>> Function()? openRead;
+  final int? size;
+
+  /// The path is our own temporary copy and can be deleted once uploaded.
+  final bool ownsSource;
+  final TransferOrigin origin;
+  final String? assetId;
+  final DateTime? takenAt;
+
+  /// Temporary JPEG to attach as the document thumbnail; deleted after.
+  final String? thumbnailPath;
+}
+
+/// A transfer as the UI sees it: the persisted row plus live speed.
+@immutable
+class TransferItem {
+  const TransferItem(this.row, {this.bytesPerSecond = 0, this.preparing = false});
+
+  final TransferRow row;
+  final double bytesPerSecond;
+
+  /// Being copied into staging before the upload proper starts.
+  final bool preparing;
+
+  String get id => row.id;
+  String get name => row.name;
+  TransferKind get kind => row.kind;
+  TransferOrigin get origin => row.origin;
+  TransferStatus get status => row.status;
+  FileKind get fileKind =>
+      FileKind.detect(fileName: row.name, mimeType: row.mimeType);
+
+  double get progress => row.totalBytes <= 0
+      ? 0
+      : (row.doneBytes / row.totalBytes).clamp(0.0, 1.0);
+
+  Duration? get eta {
+    if (bytesPerSecond < 1 || status != TransferStatus.running) return null;
+    final remaining = row.totalBytes - row.doneBytes;
+    return Duration(seconds: (remaining / bytesPerSecond).ceil());
+  }
+}
+
+@immutable
+class TransfersState {
+  const TransfersState(this.items);
+
+  static const empty = TransfersState([]);
+
+  /// Newest first.
+  final List<TransferItem> items;
+
+  List<TransferItem> get active =>
+      items.where((t) => t.status.isActive).toList();
+
+  /// Photo-backup uploads in flight, shown as one group in the UI.
+  List<TransferItem> get backupActive => items
+      .where((t) => t.status.isActive && t.origin == TransferOrigin.backup)
+      .toList();
+
+  List<TransferItem> get finished =>
+      items.where((t) => t.status.isFinished).toList();
+
+  int get activeCount => items.where((t) => t.status.isActive).length;
+
+  /// Combined progress of everything in flight, for the global indicator.
+  double get activeProgress {
+    var total = 0;
+    var done = 0;
+    for (final item in items) {
+      if (!item.status.isActive) continue;
+      total += item.row.totalBytes;
+      done += item.row.doneBytes;
+    }
+    return total == 0 ? 0 : done / total;
+  }
+
+  TransferItem? byId(String id) {
+    for (final item in items) {
+      if (item.id == id) return item;
+    }
+    return null;
+  }
+}
+
+/// Which transfer a TDLib file's progress belongs to.
+class _Tracked {
+  const _Tracked(this.transferId, this.baseBytes, {required this.upload});
+
+  final String transferId;
+
+  /// Bytes already done in earlier parts of a split file.
+  final int baseBytes;
+  final bool upload;
+}
+
+/// The upload and download queue.
+///
+/// Runs a few transfers at a time, reports progress from TDLib's file
+/// updates, and persists every state change so a restart picks up where the
+/// last run stopped: queued work runs again, split uploads resume at the last
+/// finished part, and a single upload TDLib is still sending on its own is
+/// re-attached rather than sent twice.
+class TransferQueue extends Notifier<TransfersState> {
+  static const int _maxUploads = 2;
+  static const int _maxDownloads = 3;
+  static const Duration _emitInterval = Duration(milliseconds: 300);
+
+  final Map<String, TransferRow> _rows = {};
+  final Map<String, double> _speeds = {};
+  final Map<String, (int bytes, DateTime at)> _samples = {};
+  final Set<String> _running = {};
+  final Set<String> _cancelled = {};
+  final Map<int, _Tracked> _tracked = {};
+  final Map<String, int> _pendingMessages = {};
+  final Map<String, int> _activeDownloads = {};
+  final Map<String, Completer<String>> _completions = {};
+  final Map<String, Stream<List<int>> Function()> _stagers = {};
+  final Map<String, Completer<TransferRow>> _finished = {};
+  final Set<String> _preparing = {};
+
+  StreamSubscription<td.File>? _fileSubscription;
+  StreamSubscription<String>? _ingestSubscription;
+  Timer? _emitTimer;
+  int? _loadedFor;
+
+  TelegramClient get _client => ref.read(telegramClientProvider);
+  AppDatabase get _db => ref.read(appDatabaseProvider);
+  DriveRepository get _repository => ref.read(driveRepositoryProvider);
+  ChannelMessenger get _messenger => ref.read(channelMessengerProvider);
+
+  @override
+  TransfersState build() {
+    _fileSubscription = _client.fileUpdates.listen(_onFileUpdate);
+    _ingestSubscription = _repository.ingestedFileIds.listen(_onIngested);
+    ref.listen<DriveSession?>(driveSessionProvider, (previous, next) {
+      if (next == null) {
+        _reset();
+      } else if (_loadedFor != next.chatId) {
+        _loadedFor = next.chatId;
+        unawaited(_load());
+      }
+    }, fireImmediately: true);
+    ref.onDispose(() {
+      _fileSubscription?.cancel();
+      _ingestSubscription?.cancel();
+      _emitTimer?.cancel();
+    });
+    return TransfersState.empty;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Public API
+  // ---------------------------------------------------------------------------
+
+  /// Queues [requests]; returns the new transfers' ids, in order.
+  Future<List<String>> enqueueUploads(
+    List<UploadRequest> requests, {
+    String? folderId,
+  }) async {
+    final ids = <String>[];
+    final now = DateTime.now();
+    final staging = await _stagingDir();
+    for (final (index, request) in requests.indexed) {
+      final id = _repository.newId();
+      final String sourcePath;
+      final bool ownsSource;
+      final int size;
+      final direct = request.path == null ? null : File(request.path!);
+      if (direct != null && await direct.exists()) {
+        sourcePath = direct.path;
+        ownsSource = request.ownsSource;
+        size = await direct.length();
+      } else if (request.openRead != null) {
+        sourcePath = p.join(staging.path, id, request.name);
+        ownsSource = true;
+        size = request.size ?? 0;
+        _stagers[id] = request.openRead!;
+      } else {
+        continue;
+      }
+      final row = TransferRow(
+        id: id,
+        kind: TransferKind.upload,
+        status: TransferStatus.queued,
+        name: request.name,
+        mimeType: mimeTypeFor(request.name),
+        fileId: _repository.newId(),
+        folderId: folderId,
+        sourcePath: sourcePath,
+        ownsSource: ownsSource,
+        totalBytes: size,
+        doneBytes: 0,
+        partCount: 1,
+        completedParts: 0,
+        // Keep the picker's order when several files share a timestamp.
+        createdAt: now.add(Duration(microseconds: index)),
+        origin: request.origin,
+        assetId: request.assetId,
+        takenAt: request.takenAt,
+        thumbnailPath: request.thumbnailPath,
+      );
+      await _save(row);
+      ids.add(id);
+    }
+    _emit();
+    _pump();
+    return ids;
+  }
+
+  /// Completes when transfer [id] finishes, successfully or not, with its
+  /// final row. Used by photo backup to pace itself.
+  Future<TransferRow> whenFinished(String id) {
+    final row = _rows[id];
+    if (row != null && row.status.isFinished) return Future.value(row);
+    return (_finished[id] ??= Completer<TransferRow>()).future;
+  }
+
+  /// Downloads [file] into the app's storage (visible in Transfers).
+  Future<String> download(DriveFile file) async {
+    final existing = _rows.values.where(
+      (r) =>
+          r.kind == TransferKind.download &&
+          r.fileId == file.id &&
+          r.status.isActive,
+    );
+    if (existing.isNotEmpty) return _completionOf(existing.first.id);
+
+    final row = TransferRow(
+      id: _repository.newId(),
+      kind: TransferKind.download,
+      status: TransferStatus.queued,
+      name: file.name,
+      mimeType: file.mimeType,
+      fileId: file.id,
+      folderId: file.folderId,
+      ownsSource: false,
+      origin: TransferOrigin.manual,
+      totalBytes: file.size,
+      doneBytes: 0,
+      partCount: file.partCount,
+      completedParts: 0,
+      createdAt: DateTime.now(),
+    );
+    final completion = _completionOf(row.id);
+    await _save(row);
+    _emit();
+    _pump();
+    return completion;
+  }
+
+  /// A local path for [file], downloading only when there isn't one yet.
+  Future<String> ensureLocal(DriveFile file) async {
+    final local = await localPathIfAvailable(file);
+    if (local != null) return local;
+    return download(file);
+  }
+
+  /// A path for [file] that already exists on this device, or null.
+  Future<String?> localPathIfAvailable(DriveFile file) async {
+    for (final row in _rows.values) {
+      if (row.kind == TransferKind.download &&
+          row.fileId == file.id &&
+          row.status == TransferStatus.completed &&
+          row.resultPath != null &&
+          await File(row.resultPath!).exists()) {
+        return row.resultPath;
+      }
+    }
+    final parts = await _repository.partsOf(file.id);
+    if (parts.length != 1) return null;
+    try {
+      final tdFile = await _resolveTdFile(parts.first);
+      final path = tdFile.local.path;
+      if (tdFile.local.isDownloadingCompleted && await File(path).exists()) {
+        return path;
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  Future<void> cancel(String id) async {
+    final row = _rows[id];
+    if (row == null || !row.status.isActive) return;
+    _cancelled.add(id);
+
+    final chatId = ref.read(driveSessionProvider)?.chatId;
+    if (row.kind == TransferKind.upload) {
+      final pending = _pendingMessages.remove(id);
+      if (pending != null && chatId != null) {
+        await _quietly(() => _messenger.cancel(chatId, pending));
+      }
+      // Parts already delivered are useless without the rest.
+      if (row.completedParts > 0) {
+        await _quietly(() => _repository.deleteFileById(row.fileId));
+      }
+    } else {
+      final fileId = _activeDownloads[id];
+      if (fileId != null) {
+        await _quietly(
+          () => _client.send<td.Ok>(
+            td.CancelDownloadFile(fileId: fileId, onlyIfPending: false),
+          ),
+        );
+      }
+    }
+
+    await _finish(
+      row.copyWith(
+        status: TransferStatus.cancelled,
+        completedParts: 0,
+        doneBytes: 0,
+      ),
+      error: const SendCancelled(),
+    );
+  }
+
+  Future<void> retry(String id) async {
+    final row = _rows[id];
+    if (row == null || row.status.isActive) return;
+    _cancelled.remove(id);
+    await _save(
+      row.copyWith(
+        status: TransferStatus.queued,
+        error: const Value(null),
+        finishedAt: const Value(null),
+      ),
+    );
+    _emit();
+    _pump();
+  }
+
+  Future<void> remove(String id) async {
+    final row = _rows[id];
+    if (row == null) return;
+    if (row.status.isActive) await cancel(id);
+    _rows.remove(id);
+    await _db.deleteTransfers([id]);
+    _emit();
+  }
+
+  Future<void> clearFinished() async {
+    final ids = _rows.values
+        .where((r) => r.status.isFinished)
+        .map((r) => r.id)
+        .toList();
+    for (final id in ids) {
+      _rows.remove(id);
+    }
+    await _db.deleteTransfers(ids);
+    _emit();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Scheduling
+  // ---------------------------------------------------------------------------
+
+  void _pump() {
+    final queued = _rows.values
+        .where((r) => r.status == TransferStatus.queued && !_running.contains(r.id))
+        .toList()
+      ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+
+    var uploads = _running.where((id) => _rows[id]?.kind == TransferKind.upload).length;
+    var downloads = _running.length - uploads;
+
+    for (final row in queued) {
+      if (row.kind == TransferKind.upload && uploads < _maxUploads) {
+        uploads++;
+        _start(row, _upload);
+      } else if (row.kind == TransferKind.download &&
+          downloads < _maxDownloads) {
+        downloads++;
+        _start(row, _download);
+      }
+    }
+  }
+
+  void _start(TransferRow row, Future<void> Function(TransferRow row) work) {
+    _running.add(row.id);
+    _cancelled.remove(row.id);
+    unawaited(() async {
+      try {
+        final running = row.copyWith(status: TransferStatus.running);
+        await _save(running);
+        _emit();
+        await work(running);
+      } catch (e, stack) {
+        if (!_cancelled.contains(row.id)) {
+          debugPrint('[Transfers] ${row.name} failed: $e\n$stack');
+          final current = _rows[row.id] ?? row;
+          await _finish(
+            current.copyWith(
+              status: TransferStatus.failed,
+              error: Value(_describe(e)),
+            ),
+            error: e,
+          );
+        }
+      } finally {
+        _running.remove(row.id);
+        _pendingMessages.remove(row.id);
+        _activeDownloads.remove(row.id);
+        _tracked.removeWhere((_, t) => t.transferId == row.id);
+        _pump();
+      }
+    }());
+  }
+
+  // ---------------------------------------------------------------------------
+  // Uploading
+  // ---------------------------------------------------------------------------
+
+  Future<void> _upload(TransferRow initial, {td.Message? resume}) async {
+    final session = ref.read(driveSessionProvider);
+    if (session == null) throw const DriveException('Your drive is not open.');
+
+    final source = initial.sourcePath == null ? null : File(initial.sourcePath!);
+    final stager = _stagers.remove(initial.id);
+    if (source != null && stager != null && !await source.exists()) {
+      initial = await _stage(initial, source, stager);
+    }
+    final hasSource = source != null && await source.exists();
+    if (!hasSource && resume == null) {
+      throw const DriveException('The original file is no longer available.');
+    }
+
+    final limit = session.isPremium
+        ? SplitPolicy.premiumLimit
+        : SplitPolicy.regularLimit;
+    final partCount = initial.completedParts > 0
+        ? initial.partCount
+        : SplitPolicy.partCountFor(initial.totalBytes, limit: limit);
+    var row = initial.copyWith(partCount: partCount);
+    await _save(row);
+
+    // Parts that already reached the channel — delivered by TDLib while the
+    // app was away, say — are not sent twice.
+    final landed = {
+      for (final part in await _repository.partsOf(row.fileId)) part.partIndex,
+    };
+
+    for (var index = row.completedParts; index < partCount; index++) {
+      if (_cancelled.contains(row.id)) return;
+      final base = partCount == 1 ? 0 : SplitPolicy.offsetOf(index);
+      if (landed.contains(index) && !(resume != null && index == row.completedParts)) {
+        final partEnd = partCount == 1
+            ? row.totalBytes
+            : base + SplitPolicy.sizeOf(index, row.totalBytes);
+        row = row.copyWith(completedParts: index + 1, doneBytes: partEnd);
+        await _save(row);
+        continue;
+      }
+
+      final td.Message delivered;
+      if (resume != null && index == row.completedParts) {
+        _pendingMessages[row.id] = resume.id;
+        _trackMessage(resume, row.id, base);
+        delivered = await _messenger.awaitDelivery(resume.id);
+      } else {
+        final path = partCount == 1
+            ? source!.path
+            : await _writePart(row, source!, index);
+        final manifest = FileManifest(
+          id: row.fileId,
+          name: row.name,
+          folderId: row.folderId,
+          mimeType: row.mimeType,
+          size: row.totalBytes,
+          createdAt: row.createdAt,
+          modifiedAt: row.createdAt,
+          partCount: partCount,
+          partIndex: index,
+          takenAt: row.takenAt,
+        );
+        final thumbnail = index == 0 ? row.thumbnailPath : null;
+        try {
+          delivered = await _messenger.sendDocument(
+            session.chatId,
+            path: path,
+            caption: ManifestCodec.encodeFile(manifest),
+            thumbnailPath: thumbnail != null && await File(thumbnail).exists()
+                ? thumbnail
+                : null,
+            onPending: (pending) {
+              _pendingMessages[row.id] = pending.id;
+              _trackMessage(pending, row.id, base);
+            },
+          );
+        } finally {
+          if (partCount > 1) await _deleteQuietly(File(path));
+        }
+      }
+
+      _pendingMessages.remove(row.id);
+      await _repository.ingest(delivered);
+      final partEnd = partCount == 1
+          ? row.totalBytes
+          : base + SplitPolicy.sizeOf(index, row.totalBytes);
+      row = (_rows[row.id] ?? row).copyWith(
+        completedParts: index + 1,
+        doneBytes: math.min(row.totalBytes, partEnd),
+      );
+      await _save(row);
+    }
+
+    await _finish(row.copyWith(status: TransferStatus.completed));
+    if (row.ownsSource && source != null) await _deleteQuietly(source);
+    if (row.thumbnailPath != null) {
+      await _deleteQuietly(File(row.thumbnailPath!));
+    }
+    if (partCount > 1) await _deleteQuietly(await _partsDir(row.id));
+  }
+
+  /// Copies a picked content URI into staging, where TDLib can read it.
+  Future<TransferRow> _stage(
+    TransferRow row,
+    File target,
+    Stream<List<int>> Function() openRead,
+  ) async {
+    _preparing.add(row.id);
+    _emit();
+    try {
+      await target.parent.create(recursive: true);
+      await openRead().pipe(target.openWrite());
+      final staged = row.copyWith(totalBytes: await target.length());
+      await _save(staged);
+      return staged;
+    } finally {
+      _preparing.remove(row.id);
+      _emit();
+    }
+  }
+
+  static Future<Directory> _stagingDir() async {
+    final temp = await getTemporaryDirectory();
+    return Directory(p.join(temp.path, 'telegrive-staging'));
+  }
+
+  void _trackMessage(td.Message pending, String transferId, int base) {
+    final file = MessageIndexer.mediaFile(pending);
+    if (file == null) return;
+    _tracked[file.id] = _Tracked(transferId, base, upload: true);
+  }
+
+  /// Copies one slice of [source] to a temporary file named like
+  /// `movie.mkv.003`, which is the name Telegram will show for that part.
+  Future<String> _writePart(TransferRow row, File source, int index) async {
+    final dir = await _partsDir(row.id);
+    await dir.create(recursive: true);
+    final out = File(p.join(dir.path, SplitPolicy.partName(row.name, index)));
+    final start = SplitPolicy.offsetOf(index);
+    final end = start + SplitPolicy.sizeOf(index, row.totalBytes);
+    await source.openRead(start, end).pipe(out.openWrite());
+    return out.path;
+  }
+
+  Future<Directory> _partsDir(String transferId) async {
+    final temp = await getTemporaryDirectory();
+    return Directory(p.join(temp.path, 'telegrive-parts', transferId));
+  }
+
+  // ---------------------------------------------------------------------------
+  // Downloading
+  // ---------------------------------------------------------------------------
+
+  Future<void> _download(TransferRow initial) async {
+    final parts = await _repository.partsOf(initial.fileId);
+    if (parts.isEmpty) {
+      throw const DriveException('This file is no longer in your drive.');
+    }
+
+    if (parts.length == 1) {
+      final path = await _downloadPart(initial, parts.first, base: 0);
+      await _finish(
+        (_rows[initial.id] ?? initial).copyWith(
+          status: TransferStatus.completed,
+          doneBytes: initial.totalBytes,
+          completedParts: 1,
+          resultPath: Value(path),
+        ),
+      );
+      return;
+    }
+
+    // Split files are stitched back together as the parts arrive, and each
+    // part's cached copy is dropped straight after so peak disk use stays
+    // around one part over the file's own size.
+    final out = File(
+      p.join((await downloadsDirectory()).path, initial.fileId, initial.name),
+    );
+    await out.parent.create(recursive: true);
+    final sink = out.openWrite();
+    var base = 0;
+    try {
+      for (final (index, part) in parts.indexed) {
+        if (_cancelled.contains(initial.id)) break;
+        final path = await _downloadPart(initial, part, base: base);
+        await sink.addStream(File(path).openRead());
+        base += part.size;
+        _rows[initial.id] = (_rows[initial.id] ?? initial).copyWith(
+          completedParts: index + 1,
+        );
+        await _quietly(
+          () => _client.send<td.Ok>(td.DeleteFile(fileId: part.tdFileId)),
+        );
+      }
+    } finally {
+      await sink.close();
+    }
+    if (_cancelled.contains(initial.id)) {
+      await _deleteQuietly(out.parent);
+      return;
+    }
+    await _finish(
+      (_rows[initial.id] ?? initial).copyWith(
+        status: TransferStatus.completed,
+        doneBytes: initial.totalBytes,
+        resultPath: Value(out.path),
+      ),
+    );
+  }
+
+  Future<String> _downloadPart(
+    TransferRow row,
+    PartRow part, {
+    required int base,
+  }) async {
+    final tdFile = await _resolveTdFile(part);
+    if (tdFile.local.isDownloadingCompleted &&
+        await File(tdFile.local.path).exists()) {
+      return tdFile.local.path;
+    }
+    _tracked[tdFile.id] = _Tracked(row.id, base, upload: false);
+    _activeDownloads[row.id] = tdFile.id;
+    try {
+      // Synchronous mode answers only once the file is complete (or the
+      // download was cancelled), which is exactly what this needs.
+      final done = await _client.send<td.File>(
+        td.DownloadFile(
+          fileId: tdFile.id,
+          priority: 16,
+          offset: 0,
+          limit: 0,
+          synchronous: true,
+        ),
+        timeout: const Duration(days: 2),
+      );
+      if (!done.local.isDownloadingCompleted) {
+        throw const DriveException('The download stopped before finishing.');
+      }
+      return done.local.path;
+    } finally {
+      _tracked.remove(tdFile.id);
+      _activeDownloads.remove(row.id);
+    }
+  }
+
+  Future<td.File> _resolveTdFile(PartRow part) =>
+      _repository.resolveTdFile(part);
+
+  static Future<Directory> downloadsDirectory() async {
+    final support = await getApplicationSupportDirectory();
+    return Directory(p.join(support.path, 'downloads'));
+  }
+
+  // ---------------------------------------------------------------------------
+  // Progress & persistence
+  // ---------------------------------------------------------------------------
+
+  void _onFileUpdate(td.File file) {
+    final tracked = _tracked[file.id];
+    if (tracked == null) return;
+    final row = _rows[tracked.transferId];
+    if (row == null || !row.status.isActive) return;
+    final partBytes = tracked.upload
+        ? file.remote.uploadedSize
+        : file.local.downloadedSize;
+    final done = math.min(row.totalBytes, tracked.baseBytes + partBytes);
+    if (done == row.doneBytes) return;
+    _rows[row.id] = row.copyWith(doneBytes: done);
+    _scheduleEmit();
+  }
+
+  /// An upload that was interrupted can still land — TDLib resumes sends
+  /// after a restart. When its file shows up complete, close it out.
+  Future<void> _onIngested(String fileId) async {
+    final matches = _rows.values.where(
+      (r) =>
+          r.kind == TransferKind.upload &&
+          r.fileId == fileId &&
+          !_running.contains(r.id) &&
+          r.status != TransferStatus.completed &&
+          r.status != TransferStatus.cancelled,
+    );
+    if (matches.isEmpty) return;
+    final file = await _repository.fileById(fileId);
+    if (file == null) return;
+    for (final row in matches.toList()) {
+      await _finish(
+        row.copyWith(
+          status: TransferStatus.completed,
+          doneBytes: row.totalBytes,
+          completedParts: row.partCount,
+        ),
+      );
+    }
+  }
+
+  Future<void> _load() async {
+    _rows.clear();
+    for (final row in await _db.allTransfers()) {
+      _rows[row.id] = row;
+    }
+
+    final chatId = ref.read(driveSessionProvider)?.chatId;
+    List<td.Message> pending = const [];
+    if (chatId != null) {
+      try {
+        pending = await _messenger.pendingMessages(chatId);
+      } catch (e) {
+        debugPrint('[Transfers] Could not read pending messages: $e');
+      }
+    }
+
+    for (final row in _rows.values.toList()) {
+      if (!row.status.isActive) continue;
+      if (row.kind == TransferKind.download) {
+        await _save(row.copyWith(status: TransferStatus.queued));
+        continue;
+      }
+      if (await _repository.fileById(row.fileId) != null) {
+        await _finish(row.copyWith(status: TransferStatus.completed));
+        continue;
+      }
+      final resumable = pending.where((m) {
+        final content = m.content;
+        if (content is! td.MessageDocument) return false;
+        final manifest = ManifestCodec.decodeFile(content.caption.text);
+        return manifest?.id == row.fileId &&
+            manifest?.partIndex == row.completedParts;
+      }).firstOrNull;
+      if (resumable != null &&
+          resumable.sendingState is td.MessageSendingStatePending) {
+        _start(row, (running) => _upload(running, resume: resumable));
+      } else if (row.origin == TransferOrigin.backup) {
+        // Photo backup re-queues these itself on its next pass.
+        _rows.remove(row.id);
+        await _db.deleteTransfers([row.id]);
+      } else {
+        await _save(row.copyWith(status: TransferStatus.queued));
+      }
+    }
+    _emit();
+    _pump();
+  }
+
+  void _reset() {
+    _loadedFor = null;
+    _rows.clear();
+    _running.clear();
+    _tracked.clear();
+    _pendingMessages.clear();
+    _activeDownloads.clear();
+    for (final completer in _completions.values) {
+      if (!completer.isCompleted) {
+        completer.completeError(const DriveException('Signed out.'));
+      }
+    }
+    _completions.clear();
+    state = TransfersState.empty;
+  }
+
+  Future<String> _completionOf(String id) =>
+      (_completions[id] ??= Completer<String>()).future;
+
+  Future<void> _finish(TransferRow row, {Object? error}) async {
+    final finished = row.copyWith(finishedAt: Value(DateTime.now()));
+    if (row.origin == TransferOrigin.backup) {
+      // Backup keeps its own record of each photo; finished rows here would
+      // only bury the person's own transfers under thousands of photos.
+      _rows.remove(row.id);
+      await _db.deleteTransfers([row.id]);
+    } else {
+      await _save(finished);
+    }
+    _finished.remove(row.id)?.complete(finished);
+    _speeds.remove(row.id);
+    _samples.remove(row.id);
+    final completer = _completions.remove(row.id);
+    if (completer != null && !completer.isCompleted) {
+      if (row.status == TransferStatus.completed && row.resultPath != null) {
+        completer.complete(row.resultPath);
+      } else {
+        completer.completeError(error ?? DriveException(_describe(row.error)));
+      }
+    }
+    _emit();
+  }
+
+  Future<void> _save(TransferRow row) async {
+    _rows[row.id] = row;
+    await _db.saveTransfer(row);
+  }
+
+  void _scheduleEmit() {
+    _emitTimer ??= Timer(_emitInterval, () {
+      _emitTimer = null;
+      _emit();
+    });
+  }
+
+  void _emit() {
+    final now = DateTime.now();
+    for (final row in _rows.values) {
+      if (row.status != TransferStatus.running) continue;
+      final previous = _samples[row.id];
+      _samples[row.id] = (row.doneBytes, now);
+      if (previous == null) continue;
+      final seconds = now.difference(previous.$2).inMicroseconds / 1e6;
+      if (seconds <= 0) continue;
+      final instant = (row.doneBytes - previous.$1) / seconds;
+      final smoothed = _speeds[row.id];
+      _speeds[row.id] = smoothed == null
+          ? instant
+          : smoothed * 0.7 + instant * 0.3;
+    }
+    final items = _rows.values
+        .map(
+          (r) => TransferItem(
+            r,
+            bytesPerSecond: _speeds[r.id] ?? 0,
+            preparing: _preparing.contains(r.id),
+          ),
+        )
+        .toList()
+      ..sort((a, b) => b.row.createdAt.compareTo(a.row.createdAt));
+    state = TransfersState(items);
+  }
+
+  static String _describe(Object? error) => switch (error) {
+    null => 'Something went wrong.',
+    TelegramException e => e.friendlyMessage,
+    DriveException e => e.message,
+    FileSystemException e => e.osError?.message ?? e.message,
+    String s => s,
+    _ => '$error',
+  };
+
+  Future<void> _quietly(Future<Object?> Function() action) async {
+    try {
+      await action();
+    } catch (e) {
+      debugPrint('[Transfers] $e');
+    }
+  }
+
+  Future<void> _deleteQuietly(FileSystemEntity entity) async {
+    try {
+      if (await entity.exists()) await entity.delete(recursive: true);
+    } catch (_) {}
+  }
+}
+
+final transferQueueProvider =
+    NotifierProvider<TransferQueue, TransfersState>(TransferQueue.new);
