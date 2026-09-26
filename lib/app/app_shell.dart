@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -111,8 +114,9 @@ class _AppShellState extends ConsumerState<AppShell> {
       ],
     );
 
+    final Widget scaffold;
     if (wide) {
-      return Scaffold(
+      scaffold = Scaffold(
         body: Row(
           children: [
             NavigationRail(
@@ -134,8 +138,45 @@ class _AppShellState extends ConsumerState<AppShell> {
           ],
         ),
       );
+    } else {
+      scaffold = _narrow(body, icon);
     }
 
+    // Back never closes the app by surprise: from another tab it goes Home,
+    // and on Home it asks for a second press.
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _back();
+      },
+      child: scaffold,
+    );
+  }
+
+  /// Running for two seconds after a first back press on Home.
+  Timer? _exitWindow;
+
+  void _back() {
+    if (shell.currentIndex != 0) {
+      _go(0);
+      return;
+    }
+    if (_exitWindow?.isActive ?? false) {
+      SystemNavigator.pop();
+      return;
+    }
+    _exitWindow = Timer(const Duration(seconds: 2), () {});
+    showSnack(context, 'Press back again to exit');
+  }
+
+  @override
+  void dispose() {
+    _exitWindow?.cancel();
+    super.dispose();
+  }
+
+  Widget _narrow(Widget body, Widget Function(IconData, int) icon) {
+    final colors = context.colors;
     return Scaffold(
       body: body,
       bottomNavigationBar: DecoratedBox(
