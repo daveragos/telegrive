@@ -1,12 +1,13 @@
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 
 import '../../app/theme/tokens.dart';
 
 /// The Telegrive mark: a paper plane, the way Telegram sends, folded from
-/// three flat facets into one rounded triangle. Sky
-/// wing, accent body, amber keel; thin creases between them.
+/// three facets into one rounded triangle. A green
+/// wing, a yellow body and a blue keel, with thin creases between them.
 class BrandMark extends StatelessWidget {
   const BrandMark({super.key, this.size = 56});
 
@@ -43,9 +44,12 @@ class BrandPainter extends CustomPainter {
   /// One colour for every facet (notification and themed icons).
   final Color? silhouette;
 
-  static const Color sky = Color(0xFF4FB2F7);
-  static const Color blue = Color(0xFF2356E0);
-  static const Color amber = Color(0xFFFFB020);
+  static const Color green = Color(0xFF0EBC5F);
+  static const Color sky = Color(0xFF78C9FF);
+  static const Color yellow = Color(0xFFFECA03);
+  static const Color lightYellow = Color(0xFFFFE21A);
+  static const Color blue = Color(0xFF3186FF);
+  static const Color lavender = Color(0xFFA9A8FF);
 
   static const Offset _nose = Offset(0.86, 0.17);
   static const Offset _tail = Offset(0.13, 0.47);
@@ -78,15 +82,28 @@ class BrandPainter extends CustomPainter {
     canvas
       ..saveLayer(_bounds.inflate(0.1), Paint())
       ..clipPath(_rounded([_nose, _tail, _keel], 0.06));
-    for (final (points, color) in [
-      ([_nose, _tail, fold], sky),
-      ([_nose, fold, keelTop], blue),
-      ([fold, _keel, keelTop], amber),
-    ]) {
-      canvas.drawPath(
-        Path()..addPolygon(points, true),
-        Paint()..color = silhouette ?? color,
-      );
+    // Each facet shades the way light falls across a fold: the wing cools
+    // to sky at its tail, the body brightens outward, the keel fades to
+    // lavender at its tip.
+    final outer = Offset.lerp(_nose, keelTop, 0.5)! + const Offset(0.08, 0.05);
+    final facets = [
+      (
+        [_nose, _tail, fold],
+        ui.Gradient.linear(_tail, Offset.lerp(_tail, _nose, 0.42)!, [sky, green], [0.12, 1]),
+      ),
+      (
+        [_nose, fold, keelTop],
+        ui.Gradient.linear(fold, outer, [yellow, lightYellow], [0.35, 1]),
+      ),
+      (
+        [fold, _keel, keelTop],
+        ui.Gradient.linear(fold, Offset.lerp(_keel, keelTop, 0.3)!, [blue, lavender], [0.55, 1]),
+      ),
+    ];
+    for (final (points, shader) in facets) {
+      final paint = Paint();
+      silhouette == null ? paint.shader = shader : paint.color = silhouette!;
+      canvas.drawPath(Path()..addPolygon(points, true), paint);
     }
     // Creases cut through to whatever is behind, so the mark works on any
     // background and as a one-colour silhouette.

@@ -60,10 +60,17 @@ Letter spacing stays at the font's default. Body text is never below 13.
 
 ## Mark
 
-A paper plane, the way Telegram sends, folded from three flat facets into
-one rounded triangle. Sky `#4FB2F7` wing, accent
-`#2356E0` body, amber `#FFB020` keel, with thin open creases between them.
-The keel is the only amber anywhere.
+A paper plane, the way Telegram sends, folded from three facets into one
+rounded triangle. Thin open creases separate them.
+
+| Facet | Colour | Shading |
+| --- | --- | --- |
+| Wing (top) | `#0EBC5F` green | cools to `#78C9FF` sky at its tail |
+| Body (right) | `#FECA03` yellow | brightens to `#FFE21A` outward |
+| Keel (bottom) | `#3186FF` blue | fades to `#A9A8FF` lavender at its tip |
+
+These colours and their shading belong to the mark alone; the UI keeps its
+one accent and no gradients.
 
 - Drawn once, by `BrandPainter` in `lib/core/widgets/brand_mark.dart`;
   `tool/icon` renders every icon and the channel photo from it.
@@ -72,8 +79,7 @@ The keel is the only amber anywhere.
   a faint blue so Telegram's circle has an edge.
 - As a one-colour silhouette (notification, themed icon) the creases stay
   open.
-- Never recoloured, outlined, or set on the accent blue, where the body
-  facet disappears.
+- Never recoloured, outlined, or set on a coloured tile.
 
 ## Shape and depth
 
