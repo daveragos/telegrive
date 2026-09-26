@@ -68,9 +68,12 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           controller: _controller,
           autofocus: true,
           textInputAction: TextInputAction.search,
+          // Without a border the text sits at the top of the 48 px box the
+          // clear button reserves, above the back arrow.
+          textAlignVertical: TextAlignVertical.center,
           onChanged: _onChanged,
           decoration: InputDecoration(
-            hintText: 'Search your drive',
+            hintText: 'Search files and folders',
             filled: false,
             border: InputBorder.none,
             enabledBorder: InputBorder.none,

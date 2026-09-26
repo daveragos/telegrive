@@ -21,9 +21,9 @@ import '../../files/presentation/file_actions.dart';
 import '../../files/presentation/file_tiles.dart';
 import '../../transfers/data/transfer_queue.dart';
 
-/// What is in the drive and what is happening to it. Recent files first,
-/// because that is what people come back for; then where the space goes,
-/// which doubles as the way into each kind of file.
+/// What is in the drive and what is happening to it. Where the space goes
+/// first, which doubles as the way into each kind of file; then recent
+/// files.
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
 
@@ -47,6 +47,10 @@ class HomeScreen extends ConsumerWidget {
           slivers: [
             const SliverSafeArea(bottom: false, sliver: SliverToBoxAdapter(child: _Header())),
             const SliverToBoxAdapter(child: _Activity()),
+            if (summary != null && summary.fileCount > 0) ...[
+              const SliverToBoxAdapter(child: SectionHeader('Storage')),
+              SliverToBoxAdapter(child: _Storage(summary: summary)),
+            ],
             SliverToBoxAdapter(
               child: SectionHeader(
                 'Recent',
@@ -93,10 +97,6 @@ class HomeScreen extends ConsumerWidget {
                 ),
               },
             ),
-            if (summary != null && summary.fileCount > 0) ...[
-              const SliverToBoxAdapter(child: SectionHeader('Storage')),
-              SliverToBoxAdapter(child: _Storage(summary: summary)),
-            ],
             const SliverToBoxAdapter(child: SizedBox(height: 112)),
           ],
         ),

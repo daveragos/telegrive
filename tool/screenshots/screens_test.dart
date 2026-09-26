@@ -21,6 +21,7 @@ import 'package:telegrive/features/auth/presentation/welcome_screen.dart';
 import 'package:telegrive/features/backup/data/backup_controller.dart';
 import 'package:telegrive/features/backup/presentation/backup_screen.dart';
 import 'package:telegrive/features/photos/presentation/photos_screen.dart';
+import 'package:telegrive/features/search/presentation/search_screen.dart';
 import 'package:telegrive/core/files/file_kind.dart';
 import 'package:telegrive/features/drive/data/drive_repository.dart';
 import 'package:telegrive/features/drive/data/previews.dart';
@@ -416,6 +417,7 @@ void main() {
           ],
         ),
         GoRoute(path: '/backup', builder: (_, _) => const BackupScreen()),
+        GoRoute(path: '/search', builder: (_, _) => const SearchScreen()),
         GoRoute(path: '/transfers', builder: (_, _) => const TransfersScreen()),
         GoRoute(path: '/settings', builder: (_, _) => const SettingsScreen()),
       ],
@@ -505,6 +507,16 @@ void main() {
     await prepareData(tester);
     await pumpApp(tester, location: '/home', themeMode: ThemeMode.dark);
     await snap(tester, 'home_dark');
+  });
+
+  testWidgets('search', (tester) async {
+    await prepareData(tester);
+    await pumpApp(tester, location: '/home');
+    await tester.tap(find.text('Search files and folders'));
+    for (var i = 0; i < 6; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    await snap(tester, 'search');
   });
 
   testWidgets('files list', (tester) async {

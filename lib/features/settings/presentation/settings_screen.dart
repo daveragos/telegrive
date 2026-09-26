@@ -6,7 +6,6 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../app/theme/tokens.dart';
 import '../../../core/config/app_config.dart';
 import '../../../core/format/formatters.dart';
-import '../../../core/widgets/brand_mark.dart';
 import '../../../core/widgets/common.dart';
 import '../../../infrastructure/storage/preferences.dart';
 import '../../auth/data/auth_controller.dart';
@@ -224,15 +223,8 @@ class SettingsScreen extends ConsumerWidget {
               ),
               ListTile(
                 title: const Text('Version'),
+                subtitle: const Text('Independent, not affiliated with Telegram'),
                 trailing: trailingValue(AppConfig.appVersion),
-                onTap: () => showAboutDialog(
-                  context: context,
-                  applicationName: AppConfig.appName,
-                  applicationVersion: AppConfig.appVersion,
-                  applicationIcon: const BrandMark(size: 40),
-                  applicationLegalese:
-                      'An independent app, not affiliated with Telegram. Built on TDLib.',
-                ),
               ),
             ],
           ),
