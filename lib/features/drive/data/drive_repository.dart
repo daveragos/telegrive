@@ -538,6 +538,110 @@ class DriveRepository {
       emptyTrash(trashedBefore: DateTime.now().subtract(trashKeepsFor));
 
   // ---------------------------------------------------------------------------
+  // Duplicate backups
+  // ---------------------------------------------------------------------------
+
+  /// Photos under the [rootName] folders with the same name and size as
+  /// another, and any second [rootName] folder made beside the first.
+  Future<DuplicateBackups> findDuplicateBackups(String rootName) async {
+    final all = [for (final f in await _db.allFolders()) if (!f.hidden) f];
+    final roots = all
+        .where((f) => f.parentId == null && f.name.toLowerCase() == rootName.toLowerCase())
+        .toList()
+      ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+    if (roots.isEmpty) return DuplicateBackups.none;
+
+    final children = <String, List<FolderRow>>{};
+    for (final f in all) {
+      if (f.parentId != null) (children[f.parentId!] ??= []).add(f);
+    }
+    final ids = <String>{};
+    void collect(String id) {
+      if (!ids.add(id)) return;
+      for (final child in children[id] ?? const <FolderRow>[]) {
+        collect(child.id);
+      }
+    }
+
+    for (final root in roots) {
+      collect(root.id);
+    }
+
+    final byFingerprint = <String, List<FileRow>>{};
+    for (final row in await _db.completeFiles(ids)) {
+      (byFingerprint['${row.name}|${row.size}'] ??= []).add(row);
+    }
+    final extras = <DriveFile>[];
+    final keptFor = <String, String>{};
+    for (final copies in byFingerprint.values.where((c) => c.length > 1)) {
+      // The first upload stays; it is the one other phones know.
+      copies.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+      for (final extra in copies.skip(1)) {
+        extras.add(DriveFile.fromRow(extra));
+        keptFor[extra.id] = copies.first.id;
+      }
+    }
+    return DuplicateBackups(
+      extras: extras,
+      keptFor: keptFor,
+      primary: DriveFolder.fromRow(roots.first),
+      extraRoots: roots.skip(1).map(DriveFolder.fromRow).toList(),
+    );
+  }
+
+  /// Moves the extra copies to the trash, points backup at the copies kept,
+  /// and folds any second backup folder into the first.
+  Future<void> removeDuplicateBackups(
+    DuplicateBackups found, {
+    void Function(int done, int total)? onProgress,
+  }) async {
+    final now = DateTime.now();
+    final total = found.extras.length;
+    for (final (index, file) in found.extras.indexed) {
+      await _rewriteFile(file, (m) => m.copyWith(trashedAt: now));
+      onProgress?.call(index + 1, total);
+    }
+    await _db.repointBackupAssets(found.keptFor);
+
+    final primary = found.primary;
+    if (primary == null) return;
+    for (final root in found.extraRoots) {
+      // Whatever is left in a second folder (new photos, not copies) moves
+      // into the same-named folder in the first, then the empty one goes to
+      // the trash.
+      for (final sub in await _db.watchChildFolders(root.id).first) {
+        final target = await _childFolder(primary.id, sub.name);
+        await moveFiles(
+          (await _db.watchFilesIn(sub.id).first).map(DriveFile.fromRow).toList(),
+          target,
+        );
+      }
+      await moveFiles(
+        (await _db.watchFilesIn(root.id).first).map(DriveFile.fromRow).toList(),
+        primary.id,
+      );
+      await trash(folders: [root]);
+    }
+  }
+
+  /// The folder called [name] in [parentId], made if it isn't there.
+  Future<String> _childFolder(String parentId, String name) async {
+    final existing = (await _db.watchChildFolders(parentId).first)
+        .where((f) => f.name.toLowerCase() == name.toLowerCase());
+    if (existing.isNotEmpty) return existing.first.id;
+    final now = DateTime.now();
+    final manifest = FolderManifest(
+      id: newId(),
+      name: name,
+      parentId: parentId,
+      createdAt: now,
+      modifiedAt: now,
+    );
+    await ingest(await _messenger.sendText(_chatId, ManifestCodec.encodeFolder(manifest)));
+    return manifest.id;
+  }
+
+  // ---------------------------------------------------------------------------
   // Albums
   // ---------------------------------------------------------------------------
 

@@ -6,6 +6,7 @@ import '../../../app/theme/tokens.dart';
 import '../../../core/widgets/common.dart';
 import '../../backup/data/backup_controller.dart';
 import '../../backup/presentation/backup_card.dart';
+import '../../backup/presentation/duplicates_sheet.dart';
 import '../../backup/presentation/free_up_space_sheet.dart';
 import '../../drive/data/drive_repository.dart';
 import '../../drive/data/drive_sync.dart';
@@ -13,7 +14,7 @@ import '../../files/presentation/file_actions.dart';
 import 'media_grid.dart';
 import 'media_selection_bar.dart';
 
-enum _PhotosMenu { download, freeUp }
+enum _PhotosMenu { download, freeUp, duplicates }
 
 /// Every photo and video in the drive as one timeline, newest moment first,
 /// with backup status on top.
@@ -83,11 +84,16 @@ class _PhotosScreenState extends ConsumerState<PhotosScreen> {
                           preferGallery: true,
                         ),
                         _PhotosMenu.freeUp => showFreeUpSpace(context, ref),
+                        _PhotosMenu.duplicates => removeDuplicateBackups(context, ref),
                       },
                       itemBuilder: (_) => [
                         const PopupMenuItem(
                           value: _PhotosMenu.freeUp,
                           child: Text('Free up space on this phone'),
+                        ),
+                        const PopupMenuItem(
+                          value: _PhotosMenu.duplicates,
+                          child: Text('Remove duplicate backups'),
                         ),
                         if (files != null && files.isNotEmpty)
                           const PopupMenuItem(

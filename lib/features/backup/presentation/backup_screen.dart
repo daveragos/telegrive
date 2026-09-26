@@ -8,6 +8,7 @@ import '../../../core/widgets/common.dart';
 import '../../../infrastructure/storage/preferences.dart';
 import '../data/backup_controller.dart';
 import 'backup_card.dart';
+import 'duplicates_sheet.dart';
 
 final _deviceFoldersProvider = FutureProvider.autoDispose<List<DeviceFolder>>(
   (ref) => ref.read(backupControllerProvider.notifier).deviceFolders(),
@@ -99,6 +100,8 @@ class BackupScreen extends ConsumerWidget {
               ],
             ),
             const SizedBox(height: Space.xxl),
+            const DuplicateBackupsTile(),
+            const SizedBox(height: Space.m),
             ListGroup(
               children: [
                 ListTile(

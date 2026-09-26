@@ -211,6 +211,10 @@ class BackupController extends Notifier<BackupState> {
     return true;
   }
 
+  /// Forgets which drive folders photos go into, so they are looked up
+  /// again (after backup folders were merged, say).
+  void forgetFolders() => _folderIds.clear();
+
   Future<void> disable() async {
     await _prefs.setBackupEnabled(false);
     _stopRequested = true;

@@ -231,6 +231,35 @@ class DriveAlbum {
   int get hashCode => Object.hash(id, name, count, coverFileId);
 }
 
+/// Photos backed up more than once, as a reinstall with a half-read index
+/// used to do, and what to do about it.
+@immutable
+class DuplicateBackups {
+  const DuplicateBackups({
+    this.extras = const [],
+    this.keptFor = const {},
+    this.primary,
+    this.extraRoots = const [],
+  });
+
+  static const none = DuplicateBackups();
+
+  /// Later copies, for the trash.
+  final List<DriveFile> extras;
+
+  /// Extra copy's id to the id of the copy that stays.
+  final Map<String, String> keptFor;
+
+  /// The first backup folder, which keeps everything.
+  final DriveFolder? primary;
+
+  /// Backup folders made again beside it, to fold into it.
+  final List<DriveFolder> extraRoots;
+
+  bool get isEmpty => extras.isEmpty && extraRoots.isEmpty;
+  int get bytes => extras.fold(0, (sum, f) => sum + f.size);
+}
+
 /// What is in the trash: the files and folders put there, not everything
 /// inside a trashed folder.
 @immutable

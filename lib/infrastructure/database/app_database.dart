@@ -679,6 +679,18 @@ class AppDatabase extends _$AppDatabase {
         ),
       );
 
+  /// Points backup's records at other drive files, as `from → to`: after
+  /// duplicates are cleared, photos map to the copy that was kept.
+  Future<void> repointBackupAssets(Map<String, String> fileIds) => batch((b) {
+    for (final MapEntry(key: from, value: to) in fileIds.entries) {
+      b.update(
+        backupAssets,
+        BackupAssetsCompanion(fileId: Value(to)),
+        where: (a) => a.fileId.equals(from),
+      );
+    }
+  });
+
   Future<void> markAssetsBackedUp(Iterable<String> assetIds) => batch((b) {
     final now = DateTime.now();
     b.insertAllOnConflictUpdate(backupAssets, [
