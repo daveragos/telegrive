@@ -1841,6 +1841,26 @@ class $TransfersTable extends Transfers
     requiredDuringInsert: false,
   );
   @override
+  late final GeneratedColumnWithTypeConverter<SaveTarget?, String> saveTo =
+      GeneratedColumn<String>(
+        'save_to',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+      ).withConverter<SaveTarget?>($TransfersTable.$convertersaveTon);
+  static const VerificationMeta _saveFolderMeta = const VerificationMeta(
+    'saveFolder',
+  );
+  @override
+  late final GeneratedColumn<String> saveFolder = GeneratedColumn<String>(
+    'save_folder',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  @override
   List<GeneratedColumn> get $columns => [
     id,
     kind,
@@ -1863,6 +1883,8 @@ class $TransfersTable extends Transfers
     assetId,
     takenAt,
     thumbnailPath,
+    saveTo,
+    saveFolder,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -1999,6 +2021,12 @@ class $TransfersTable extends Transfers
         ),
       );
     }
+    if (data.containsKey('save_folder')) {
+      context.handle(
+        _saveFolderMeta,
+        saveFolder.isAcceptableOrUnknown(data['save_folder']!, _saveFolderMeta),
+      );
+    }
     return context;
   }
 
@@ -2098,6 +2126,16 @@ class $TransfersTable extends Transfers
         DriftSqlType.string,
         data['${effectivePrefix}thumbnail_path'],
       ),
+      saveTo: $TransfersTable.$convertersaveTon.fromSql(
+        attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}save_to'],
+        ),
+      ),
+      saveFolder: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}save_folder'],
+      ),
     );
   }
 
@@ -2112,6 +2150,10 @@ class $TransfersTable extends Transfers
       const EnumNameConverter<TransferStatus>(TransferStatus.values);
   static JsonTypeConverter2<TransferOrigin, String, String> $converterorigin =
       const EnumNameConverter<TransferOrigin>(TransferOrigin.values);
+  static JsonTypeConverter2<SaveTarget, String, String> $convertersaveTo =
+      const EnumNameConverter<SaveTarget>(SaveTarget.values);
+  static JsonTypeConverter2<SaveTarget?, String?, String?> $convertersaveTon =
+      JsonTypeConverter2.asNullable($convertersaveTo);
 }
 
 class TransferRow extends DataClass implements Insertable<TransferRow> {
@@ -2151,6 +2193,13 @@ class TransferRow extends DataClass implements Insertable<TransferRow> {
 
   /// Small JPEG sent as the document's thumbnail, so videos get previews.
   final String? thumbnailPath;
+
+  /// Where a download is copied once it arrives (save transfers).
+  final SaveTarget? saveTo;
+
+  /// Folders under the save location, `/`-separated, so the drive's layout
+  /// carries over; for the gallery, the album it goes back into.
+  final String? saveFolder;
   const TransferRow({
     required this.id,
     required this.kind,
@@ -2173,6 +2222,8 @@ class TransferRow extends DataClass implements Insertable<TransferRow> {
     this.assetId,
     this.takenAt,
     this.thumbnailPath,
+    this.saveTo,
+    this.saveFolder,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -2226,6 +2277,14 @@ class TransferRow extends DataClass implements Insertable<TransferRow> {
     if (!nullToAbsent || thumbnailPath != null) {
       map['thumbnail_path'] = Variable<String>(thumbnailPath);
     }
+    if (!nullToAbsent || saveTo != null) {
+      map['save_to'] = Variable<String>(
+        $TransfersTable.$convertersaveTon.toSql(saveTo),
+      );
+    }
+    if (!nullToAbsent || saveFolder != null) {
+      map['save_folder'] = Variable<String>(saveFolder);
+    }
     return map;
   }
 
@@ -2268,6 +2327,12 @@ class TransferRow extends DataClass implements Insertable<TransferRow> {
       thumbnailPath: thumbnailPath == null && nullToAbsent
           ? const Value.absent()
           : Value(thumbnailPath),
+      saveTo: saveTo == null && nullToAbsent
+          ? const Value.absent()
+          : Value(saveTo),
+      saveFolder: saveFolder == null && nullToAbsent
+          ? const Value.absent()
+          : Value(saveFolder),
     );
   }
 
@@ -2304,6 +2369,10 @@ class TransferRow extends DataClass implements Insertable<TransferRow> {
       assetId: serializer.fromJson<String?>(json['assetId']),
       takenAt: serializer.fromJson<DateTime?>(json['takenAt']),
       thumbnailPath: serializer.fromJson<String?>(json['thumbnailPath']),
+      saveTo: $TransfersTable.$convertersaveTon.fromJson(
+        serializer.fromJson<String?>(json['saveTo']),
+      ),
+      saveFolder: serializer.fromJson<String?>(json['saveFolder']),
     );
   }
   @override
@@ -2337,6 +2406,10 @@ class TransferRow extends DataClass implements Insertable<TransferRow> {
       'assetId': serializer.toJson<String?>(assetId),
       'takenAt': serializer.toJson<DateTime?>(takenAt),
       'thumbnailPath': serializer.toJson<String?>(thumbnailPath),
+      'saveTo': serializer.toJson<String?>(
+        $TransfersTable.$convertersaveTon.toJson(saveTo),
+      ),
+      'saveFolder': serializer.toJson<String?>(saveFolder),
     };
   }
 
@@ -2362,6 +2435,8 @@ class TransferRow extends DataClass implements Insertable<TransferRow> {
     Value<String?> assetId = const Value.absent(),
     Value<DateTime?> takenAt = const Value.absent(),
     Value<String?> thumbnailPath = const Value.absent(),
+    Value<SaveTarget?> saveTo = const Value.absent(),
+    Value<String?> saveFolder = const Value.absent(),
   }) => TransferRow(
     id: id ?? this.id,
     kind: kind ?? this.kind,
@@ -2386,6 +2461,8 @@ class TransferRow extends DataClass implements Insertable<TransferRow> {
     thumbnailPath: thumbnailPath.present
         ? thumbnailPath.value
         : this.thumbnailPath,
+    saveTo: saveTo.present ? saveTo.value : this.saveTo,
+    saveFolder: saveFolder.present ? saveFolder.value : this.saveFolder,
   );
   TransferRow copyWithCompanion(TransfersCompanion data) {
     return TransferRow(
@@ -2424,6 +2501,10 @@ class TransferRow extends DataClass implements Insertable<TransferRow> {
       thumbnailPath: data.thumbnailPath.present
           ? data.thumbnailPath.value
           : this.thumbnailPath,
+      saveTo: data.saveTo.present ? data.saveTo.value : this.saveTo,
+      saveFolder: data.saveFolder.present
+          ? data.saveFolder.value
+          : this.saveFolder,
     );
   }
 
@@ -2450,7 +2531,9 @@ class TransferRow extends DataClass implements Insertable<TransferRow> {
           ..write('origin: $origin, ')
           ..write('assetId: $assetId, ')
           ..write('takenAt: $takenAt, ')
-          ..write('thumbnailPath: $thumbnailPath')
+          ..write('thumbnailPath: $thumbnailPath, ')
+          ..write('saveTo: $saveTo, ')
+          ..write('saveFolder: $saveFolder')
           ..write(')'))
         .toString();
   }
@@ -2478,6 +2561,8 @@ class TransferRow extends DataClass implements Insertable<TransferRow> {
     assetId,
     takenAt,
     thumbnailPath,
+    saveTo,
+    saveFolder,
   ]);
   @override
   bool operator ==(Object other) =>
@@ -2503,7 +2588,9 @@ class TransferRow extends DataClass implements Insertable<TransferRow> {
           other.origin == this.origin &&
           other.assetId == this.assetId &&
           other.takenAt == this.takenAt &&
-          other.thumbnailPath == this.thumbnailPath);
+          other.thumbnailPath == this.thumbnailPath &&
+          other.saveTo == this.saveTo &&
+          other.saveFolder == this.saveFolder);
 }
 
 class TransfersCompanion extends UpdateCompanion<TransferRow> {
@@ -2528,6 +2615,8 @@ class TransfersCompanion extends UpdateCompanion<TransferRow> {
   final Value<String?> assetId;
   final Value<DateTime?> takenAt;
   final Value<String?> thumbnailPath;
+  final Value<SaveTarget?> saveTo;
+  final Value<String?> saveFolder;
   final Value<int> rowid;
   const TransfersCompanion({
     this.id = const Value.absent(),
@@ -2551,6 +2640,8 @@ class TransfersCompanion extends UpdateCompanion<TransferRow> {
     this.assetId = const Value.absent(),
     this.takenAt = const Value.absent(),
     this.thumbnailPath = const Value.absent(),
+    this.saveTo = const Value.absent(),
+    this.saveFolder = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   TransfersCompanion.insert({
@@ -2575,6 +2666,8 @@ class TransfersCompanion extends UpdateCompanion<TransferRow> {
     this.assetId = const Value.absent(),
     this.takenAt = const Value.absent(),
     this.thumbnailPath = const Value.absent(),
+    this.saveTo = const Value.absent(),
+    this.saveFolder = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        kind = Value(kind),
@@ -2606,6 +2699,8 @@ class TransfersCompanion extends UpdateCompanion<TransferRow> {
     Expression<String>? assetId,
     Expression<DateTime>? takenAt,
     Expression<String>? thumbnailPath,
+    Expression<String>? saveTo,
+    Expression<String>? saveFolder,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -2630,6 +2725,8 @@ class TransfersCompanion extends UpdateCompanion<TransferRow> {
       if (assetId != null) 'asset_id': assetId,
       if (takenAt != null) 'taken_at': takenAt,
       if (thumbnailPath != null) 'thumbnail_path': thumbnailPath,
+      if (saveTo != null) 'save_to': saveTo,
+      if (saveFolder != null) 'save_folder': saveFolder,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -2656,6 +2753,8 @@ class TransfersCompanion extends UpdateCompanion<TransferRow> {
     Value<String?>? assetId,
     Value<DateTime?>? takenAt,
     Value<String?>? thumbnailPath,
+    Value<SaveTarget?>? saveTo,
+    Value<String?>? saveFolder,
     Value<int>? rowid,
   }) {
     return TransfersCompanion(
@@ -2680,6 +2779,8 @@ class TransfersCompanion extends UpdateCompanion<TransferRow> {
       assetId: assetId ?? this.assetId,
       takenAt: takenAt ?? this.takenAt,
       thumbnailPath: thumbnailPath ?? this.thumbnailPath,
+      saveTo: saveTo ?? this.saveTo,
+      saveFolder: saveFolder ?? this.saveFolder,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -2756,6 +2857,14 @@ class TransfersCompanion extends UpdateCompanion<TransferRow> {
     if (thumbnailPath.present) {
       map['thumbnail_path'] = Variable<String>(thumbnailPath.value);
     }
+    if (saveTo.present) {
+      map['save_to'] = Variable<String>(
+        $TransfersTable.$convertersaveTon.toSql(saveTo.value),
+      );
+    }
+    if (saveFolder.present) {
+      map['save_folder'] = Variable<String>(saveFolder.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -2786,6 +2895,8 @@ class TransfersCompanion extends UpdateCompanion<TransferRow> {
           ..write('assetId: $assetId, ')
           ..write('takenAt: $takenAt, ')
           ..write('thumbnailPath: $thumbnailPath, ')
+          ..write('saveTo: $saveTo, ')
+          ..write('saveFolder: $saveFolder, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -4010,6 +4121,8 @@ typedef $$TransfersTableCreateCompanionBuilder = TransfersCompanion Function({
   Value<String?> assetId,
   Value<DateTime?> takenAt,
   Value<String?> thumbnailPath,
+  Value<SaveTarget?> saveTo,
+  Value<String?> saveFolder,
   Value<int> rowid,
 });
 typedef $$TransfersTableUpdateCompanionBuilder = TransfersCompanion Function({
@@ -4034,6 +4147,8 @@ typedef $$TransfersTableUpdateCompanionBuilder = TransfersCompanion Function({
   Value<String?> assetId,
   Value<DateTime?> takenAt,
   Value<String?> thumbnailPath,
+  Value<SaveTarget?> saveTo,
+  Value<String?> saveFolder,
   Value<int> rowid,
 });
 
@@ -4153,6 +4268,17 @@ class $$TransfersTableFilterComposer
     column: $table.thumbnailPath,
     builder: (column) => ColumnFilters(column),
   );
+
+  ColumnWithTypeConverterFilters<SaveTarget?, SaveTarget, String> get saveTo =>
+      $composableBuilder(
+        column: $table.saveTo,
+        builder: (column) => ColumnWithTypeConverterFilters(column),
+      );
+
+  ColumnFilters<String> get saveFolder => $composableBuilder(
+    column: $table.saveFolder,
+    builder: (column) => ColumnFilters(column),
+  );
 }
 
 class $$TransfersTableOrderingComposer
@@ -4268,6 +4394,16 @@ class $$TransfersTableOrderingComposer
     column: $table.thumbnailPath,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get saveTo => $composableBuilder(
+    column: $table.saveTo,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get saveFolder => $composableBuilder(
+    column: $table.saveFolder,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$TransfersTableAnnotationComposer
@@ -4355,6 +4491,14 @@ class $$TransfersTableAnnotationComposer
     column: $table.thumbnailPath,
     builder: (column) => column,
   );
+
+  GeneratedColumnWithTypeConverter<SaveTarget?, String> get saveTo =>
+      $composableBuilder(column: $table.saveTo, builder: (column) => column);
+
+  GeneratedColumn<String> get saveFolder => $composableBuilder(
+    column: $table.saveFolder,
+    builder: (column) => column,
+  );
 }
 
 class $$TransfersTableTableManager
@@ -4409,6 +4553,8 @@ class $$TransfersTableTableManager
                 Value<String?> assetId = const Value.absent(),
                 Value<DateTime?> takenAt = const Value.absent(),
                 Value<String?> thumbnailPath = const Value.absent(),
+                Value<SaveTarget?> saveTo = const Value.absent(),
+                Value<String?> saveFolder = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => TransfersCompanion(
                 id: id,
@@ -4432,6 +4578,8 @@ class $$TransfersTableTableManager
                 assetId: assetId,
                 takenAt: takenAt,
                 thumbnailPath: thumbnailPath,
+                saveTo: saveTo,
+                saveFolder: saveFolder,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -4457,6 +4605,8 @@ class $$TransfersTableTableManager
                 Value<String?> assetId = const Value.absent(),
                 Value<DateTime?> takenAt = const Value.absent(),
                 Value<String?> thumbnailPath = const Value.absent(),
+                Value<SaveTarget?> saveTo = const Value.absent(),
+                Value<String?> saveFolder = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => TransfersCompanion.insert(
                 id: id,
@@ -4480,6 +4630,8 @@ class $$TransfersTableTableManager
                 assetId: assetId,
                 takenAt: takenAt,
                 thumbnailPath: thumbnailPath,
+                saveTo: saveTo,
+                saveFolder: saveFolder,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0

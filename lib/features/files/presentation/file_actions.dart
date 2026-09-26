@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -14,8 +15,11 @@ import '../../../core/files/file_kind.dart';
 import '../../../core/format/formatters.dart';
 import '../../../core/widgets/common.dart';
 import '../../../core/widgets/file_visuals.dart';
-import '../../../infrastructure/database/app_database.dart' show TransferKind;
+import '../../../infrastructure/database/app_database.dart'
+    show SaveTarget, TransferKind;
+import '../../../infrastructure/storage/device_storage.dart';
 import '../../../infrastructure/telegram/telegram_exception.dart';
+import '../../backup/data/backup_controller.dart';
 import '../../drive/data/drive_repository.dart';
 import '../../drive/data/drive_session.dart';
 import '../../drive/domain/drive_models.dart';
@@ -86,6 +90,101 @@ abstract final class FileActions {
       builder: (_) => _DownloadDialog(file: file, download: download),
     );
   }
+
+  // ---------------------------------------------------------------------------
+  // Downloading to the phone
+  // ---------------------------------------------------------------------------
+
+  /// Downloads [files] and everything inside [folders] (or, with
+  /// [everything], the whole drive) to this phone, in the drive's folders.
+  /// Photos and videos can go to the gallery instead; [preferGallery] is
+  /// where that choice starts, by default on when everything is media.
+  /// Returns whether anything was queued.
+  static Future<bool> saveToDevice(
+    BuildContext context,
+    WidgetRef ref, {
+    List<DriveFile> files = const [],
+    List<DriveFolder> folders = const [],
+    bool everything = false,
+    bool? preferGallery,
+  }) async {
+    final storage = ref.read(deviceStorageProvider);
+    final (items, free) = await (
+      ref
+          .read(driveRepositoryProvider)
+          .collectForSaving(files: files, folders: folders, everything: everything),
+      storage.freeBytes(),
+    ).wait;
+    if (!context.mounted) return false;
+    if (items.isEmpty) {
+      showSnack(context, 'There are no files in here yet.');
+      return false;
+    }
+
+    final gallery = await showModalBottomSheet<bool>(
+      context: context,
+      useRootNavigator: true,
+      isScrollControlled: true,
+      builder: (_) => _SaveSheet(
+        items: items,
+        freeBytes: free,
+        preferGallery: preferGallery ?? items.every((i) => fitsGallery(i.file)),
+      ),
+    );
+    if (gallery == null || !context.mounted) return false;
+
+    final useGallery = gallery && items.any((i) => fitsGallery(i.file));
+    if (!await storage.ensureAccess(gallery: useGallery)) {
+      if (context.mounted) {
+        showSnack(
+          context,
+          useGallery
+              ? 'Allow access to your photos to put them back in your library.'
+              : 'Allow storage access to save files on this phone.',
+        );
+      }
+      return false;
+    }
+
+    final requests = [
+      for (final item in items)
+        if (useGallery && fitsGallery(item.file))
+          SaveRequest(
+            item.file,
+            target: SaveTarget.gallery,
+            folders: [?_backupAlbum(item.path)],
+          )
+        else
+          SaveRequest(item.file, target: SaveTarget.files, folders: item.folders),
+    ];
+    final queued = await ref
+        .read(transferQueueProvider.notifier)
+        .enqueueSaves(requests);
+    if (!context.mounted) return true;
+    showSnack(
+      context,
+      queued == 0
+          ? 'Already downloading to this phone'
+          : 'Downloading ${Formatters.count(queued, 'file')} to this phone',
+      actionLabel: 'View',
+      onAction: () => context.push('/transfers'),
+    );
+    return true;
+  }
+
+  /// Photos and videos in formats every phone's gallery takes.
+  static bool fitsGallery(DriveFile file) =>
+      _galleryExtensions.contains(file.extension.toLowerCase());
+
+  static const Set<String> _galleryExtensions = {
+    'jpg', 'jpeg', 'png', 'heic', 'heif', 'gif', 'webp', 'dng', //
+    'mp4', 'mov', 'm4v', '3gp',
+  };
+
+  /// `Photo backup/Camera/…` → `Camera`: the phone folder a backed-up photo
+  /// came from, so it goes back there.
+  static String? _backupAlbum(List<String> path) =>
+      path.length >= 2 && path.first == BackupController.rootFolder ? path[1] : null;
 
   // ---------------------------------------------------------------------------
   // Uploading & creating
@@ -339,8 +438,13 @@ abstract final class FileActions {
                   onTap: () => run(() => open(context, ref, file)),
                 ),
                 _SheetAction(
+                  icon: Icons.download_rounded,
+                  label: 'Download to this phone',
+                  onTap: () => run(() => saveToDevice(context, ref, files: [file])),
+                ),
+                _SheetAction(
                   icon: Icons.ios_share_rounded,
-                  label: 'Share or save to device',
+                  label: 'Share',
                   onTap: () => run(() => share(context, ref, file)),
                 ),
                 _SheetAction(
@@ -408,6 +512,11 @@ abstract final class FileActions {
                 subtitle: 'Folder · ${Formatters.date(folder.modifiedAt)}',
               ),
               const Divider(height: 16),
+              _SheetAction(
+                icon: Icons.download_rounded,
+                label: 'Download to this phone',
+                onTap: () => run(() => saveToDevice(context, ref, folders: [folder])),
+              ),
               _SheetAction(
                 icon: Icons.drive_file_rename_outline_rounded,
                 label: 'Rename',
@@ -614,6 +723,127 @@ class _DownloadDialogState extends ConsumerState<_DownloadDialog> {
           child: const Text('Hide'),
         ),
       ],
+    );
+  }
+}
+
+/// What a download to this phone will do, and where things will land,
+/// before it starts. Pops with whether photos and videos go to the gallery.
+class _SaveSheet extends StatefulWidget {
+  const _SaveSheet({
+    required this.items,
+    required this.freeBytes,
+    required this.preferGallery,
+  });
+
+  final List<SaveItem> items;
+  final int? freeBytes;
+  final bool preferGallery;
+
+  @override
+  State<_SaveSheet> createState() => _SaveSheetState();
+}
+
+class _SaveSheetState extends State<_SaveSheet> {
+  late bool _gallery = widget.preferGallery;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final items = widget.items;
+    final bytes = items.fold<int>(0, (sum, i) => sum + i.file.size);
+    final largest = items.fold<int>(0, (max, i) => i.file.size > max ? i.file.size : max);
+    final media = items.where((i) => FileActions.fitsGallery(i.file)).length;
+    final free = widget.freeBytes;
+    // Android holds a second copy of the file being saved for a moment.
+    final needed = bytes + (Platform.isAndroid ? largest : 0);
+    final tooBig = free != null && needed > free;
+    final single = items.length == 1;
+    final library = Platform.isIOS ? 'photo library' : 'gallery';
+
+    final String where;
+    if (_gallery && media == items.length) {
+      where = single ? 'It goes to your $library.' : 'They go to your $library.';
+    } else if (_gallery && media > 0) {
+      where = 'Photos and videos go to your $library; everything else to '
+          '${DeviceStorage.location}.';
+    } else {
+      where = single
+          ? 'It goes to ${DeviceStorage.location}.'
+          : 'They go to ${DeviceStorage.location}, in the same folders as '
+                'in your drive.';
+    }
+
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(Space.gutter, 0, Space.gutter, Space.l),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              single ? 'Download to this phone' : 'Download ${Formatters.count(items.length, 'file')}',
+              style: context.text.titleMedium,
+            ),
+            const SizedBox(height: 2),
+            Text(
+              single
+                  ? '${items.first.file.name} · ${Formatters.bytes(bytes)}'
+                  : '${Formatters.bytes(bytes)} in total',
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: context.text.bodyMedium?.copyWith(fontFeatures: tabularFigures),
+            ),
+            const SizedBox(height: Space.l),
+            if (media > 0)
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text('Photos and videos to $library'),
+                subtitle: media == items.length
+                    ? null
+                    : Text(
+                        '${Formatters.number(media)} of these',
+                        style: context.text.bodySmall?.copyWith(fontFeatures: tabularFigures),
+                      ),
+                value: _gallery,
+                onChanged: (value) => setState(() => _gallery = value),
+              ),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: Space.s),
+              child: Text(where, style: context.text.bodyMedium),
+            ),
+            if (free != null)
+              Text(
+                tooBig
+                    ? 'Not enough space: this needs ${Formatters.bytes(needed)} '
+                          'and the phone has ${Formatters.bytes(free)} free.'
+                    : '${Formatters.bytes(free)} free on this phone',
+                style: context.text.bodySmall?.copyWith(
+                  color: tooBig ? colors.danger : null,
+                  fontFeatures: tabularFigures,
+                ),
+              ),
+            const SizedBox(height: Space.xl),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('Cancel'),
+                  ),
+                ),
+                const SizedBox(width: Space.m),
+                Expanded(
+                  child: FilledButton(
+                    onPressed: tooBig ? null : () => Navigator.pop(context, _gallery),
+                    child: const Text('Download'),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

@@ -14,7 +14,13 @@
 		<string>https</string>
 	</array>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Choose photos and videos to upload to your drive.</string>
+	<string>Back up your photos and videos to your drive, and put them back in your library when you download them.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Put photos and videos you download from your drive back in your library.</string>
+	<key>UIFileSharingEnabled</key>
+	<true/>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<true/>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>

@@ -29,6 +29,17 @@ class PhotosScreen extends ConsumerWidget {
         toolbarHeight: 64,
         title: Text('Photos', style: context.text.headlineSmall),
         actions: [
+          if (media.value case final all? when all.isNotEmpty)
+            IconButton(
+              onPressed: () => FileActions.saveToDevice(
+                context,
+                ref,
+                files: all,
+                preferGallery: true,
+              ),
+              tooltip: 'Download all to this phone',
+              icon: const Icon(Icons.download_rounded),
+            ),
           IconButton(
             onPressed: () => context.push('/backup'),
             tooltip: 'Backup settings',

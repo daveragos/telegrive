@@ -166,5 +166,50 @@ void main() {
     await db.clearBackupFailures();
     expect((await db.backupAssetMap()).keys, ['asset-1']);
   });
+
+  test('the phone copy of a backed-up file is found by file id', () async {
+    await db.markAssetBackedUp('asset-1', 'p');
+    await db.markAssetFailed('asset-2', 1);
+    expect(await db.localAssetOf('p'), 'asset-1');
+    expect(await db.localAssetOf('q'), isNull);
+  });
+
+  test('complete files, everywhere or in given folders', () async {
+    await db.upsertFilePart(file('root'), part('root', 0, 10));
+    await db.upsertFilePart(file('in-a', folderId: 'a'), part('in-a', 0, 11));
+    await db.upsertFilePart(file('in-b', folderId: 'b'), part('in-b', 0, 12));
+    await db.upsertFilePart(file('half', folderId: 'a', partCount: 2), part('half', 0, 13));
+
+    expect((await db.completeFiles()).map((f) => f.id), unorderedEquals(['root', 'in-a', 'in-b']));
+    expect((await db.completeFiles(['a'])).map((f) => f.id), ['in-a']);
+  });
+
+  test('deleting more transfers than SQLite takes in one statement', () async {
+    final rows = [
+      for (var i = 0; i < 1200; i++)
+        TransferRow(
+          id: 't$i',
+          kind: TransferKind.download,
+          status: TransferStatus.queued,
+          name: 'f$i',
+          mimeType: 'application/octet-stream',
+          fileId: 'f$i',
+          ownsSource: false,
+          totalBytes: 1,
+          doneBytes: 0,
+          partCount: 1,
+          completedParts: 0,
+          createdAt: now,
+          origin: TransferOrigin.save,
+          saveTo: SaveTarget.files,
+          saveFolder: 'Work/Reports',
+        ),
+    ];
+    await db.saveTransfers(rows);
+    expect((await db.allTransfers()).first.saveFolder, 'Work/Reports');
+
+    await db.deleteTransfers(rows.take(1100).map((r) => r.id));
+    expect(await db.allTransfers(), hasLength(100));
+  });
 }
 

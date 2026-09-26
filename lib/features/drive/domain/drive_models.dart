@@ -185,6 +185,10 @@ class SortOrder {
   int get hashCode => Object.hash(field, descending);
 }
 
+/// A file to download to the phone, with the names of the folders leading
+/// to it from where the download was asked for, and from the drive's root.
+typedef SaveItem = ({DriveFile file, List<String> folders, List<String> path});
+
 @immutable
 class FolderContents {
   const FolderContents({required this.folders, required this.files});

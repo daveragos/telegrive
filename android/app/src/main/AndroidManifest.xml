@@ -13,6 +13,11 @@
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO"/>
     <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED"/>
     <uses-permission android:name="android.permission.ACCESS_MEDIA_LOCATION"/>
+    <!-- Downloads to this phone: Android 9 and older write to Download/ and
+         the gallery only with this; newer versions go through MediaStore. -->
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28"/>
 
     <application
         android:label="Telegrive"

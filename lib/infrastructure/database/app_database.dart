@@ -1,6 +1,10 @@
+import 'dart:io';
+
 import 'package:drift/drift.dart';
 import 'package:drift_flutter/drift_flutter.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 
 import '../../core/files/file_kind.dart';
 import 'tables.dart';
@@ -21,10 +25,36 @@ class KindTotal {
 @DriftDatabase(tables: [Folders, DriveFiles, FileParts, Transfers, BackupAssets])
 class AppDatabase extends _$AppDatabase {
   AppDatabase([QueryExecutor? executor])
-    : super(executor ?? driftDatabase(name: 'telegrive'));
+    : super(
+        executor ??
+            driftDatabase(
+              name: 'telegrive',
+              native: const DriftNativeOptions(databaseDirectory: _directory),
+            ),
+      );
+
+  /// Application Support, not drift's default of Documents: on iOS the
+  /// Documents folder is shown in the Files app, as the place downloads to
+  /// this phone go. A database left there by an earlier version moves over.
+  static Future<Directory> _directory() async {
+    final support = await getApplicationSupportDirectory();
+    await support.create(recursive: true);
+    final documents = await getApplicationDocumentsDirectory();
+    final old = File(p.join(documents.path, 'telegrive.sqlite'));
+    if (await old.exists() &&
+        !await File(p.join(support.path, 'telegrive.sqlite')).exists()) {
+      for (final suffix in ['', '-wal', '-shm', '-journal']) {
+        final file = File('${old.path}$suffix');
+        if (await file.exists()) {
+          await file.rename(p.join(support.path, 'telegrive.sqlite$suffix'));
+        }
+      }
+    }
+    return support;
+  }
 
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -37,6 +67,12 @@ class AppDatabase extends _$AppDatabase {
         'CREATE INDEX files_created ON drive_files (created_at)',
       );
       await customStatement('CREATE INDEX folders_parent ON folders (parent_id)');
+    },
+    onUpgrade: (m, from, to) async {
+      if (from < 2) {
+        await m.addColumn(transfers, transfers.saveTo);
+        await m.addColumn(transfers, transfers.saveFolder);
+      }
     },
   );
 
@@ -121,6 +157,18 @@ class AppDatabase extends _$AppDatabase {
         .map((rows) => {for (final row in rows) row.fileId!: row.assetId});
   }
 
+  /// The phone's media id for drive file [fileId], if it has a copy.
+  Future<String?> localAssetOf(String fileId) =>
+      (select(backupAssets)
+            ..where(
+              (a) =>
+                  a.fileId.equals(fileId) &
+                  a.state.equalsValue(BackupAssetState.done),
+            )
+            ..limit(1))
+          .map((a) => a.assetId)
+          .getSingleOrNull();
+
   Stream<List<FileRow>> watchKind(FileKind kind) =>
       (select(driveFiles)
             ..where((f) => _complete(f) & f.kind.equalsValue(kind))
@@ -190,6 +238,16 @@ class AppDatabase extends _$AppDatabase {
 
   Future<List<FileRow>> filesInFolders(Iterable<String> folderIds) =>
       (select(driveFiles)..where((f) => f.folderId.isIn(folderIds))).get();
+
+  /// Every file that has all its parts, or only those directly inside
+  /// [folderIds].
+  Future<List<FileRow>> completeFiles([Iterable<String>? folderIds]) =>
+      (select(driveFiles)..where(
+            (f) => folderIds == null
+                ? _complete(f)
+                : _complete(f) & f.folderId.isIn(folderIds),
+          ))
+          .get();
 
   /// Every channel message the index knows about, for reconciliation.
   Future<Set<int>> knownMessageIds() async {
@@ -353,8 +411,18 @@ class AppDatabase extends _$AppDatabase {
   Future<void> saveTransfer(TransferRow row) =>
       into(transfers).insertOnConflictUpdate(row);
 
-  Future<void> deleteTransfers(Iterable<String> ids) =>
-      (delete(transfers)..where((t) => t.id.isIn(ids))).go();
+  Future<void> saveTransfers(Iterable<TransferRow> rows) =>
+      batch((b) => b.insertAllOnConflictUpdate(transfers, rows.toList()));
+
+  /// In slices, since a whole drive saved to the phone is more ids than
+  /// SQLite takes in one statement.
+  Future<void> deleteTransfers(Iterable<String> ids) => transaction(() async {
+    final all = ids.toList();
+    for (var i = 0; i < all.length; i += 500) {
+      final slice = all.sublist(i, (i + 500).clamp(0, all.length));
+      await (delete(transfers)..where((t) => t.id.isIn(slice))).go();
+    }
+  });
 }
 
 final appDatabaseProvider = Provider<AppDatabase>((ref) {

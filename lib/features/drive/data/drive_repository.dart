@@ -131,6 +131,75 @@ class DriveRepository {
     return path;
   }
 
+  /// [files], plus everything inside [folders], each with the folders
+  /// between the selection and it — how a download to the phone keeps the
+  /// drive's layout. With [everything], the whole drive from its root.
+  Future<List<SaveItem>> collectForSaving({
+    List<DriveFile> files = const [],
+    List<DriveFolder> folders = const [],
+    bool everything = false,
+  }) async {
+    final all = await _db.allFolders();
+    final byId = {for (final f in all) f.id: f};
+    final children = <String?, List<FolderRow>>{};
+    for (final f in all) {
+      (children[f.parentId] ??= []).add(f);
+    }
+
+    // Names from just below [top] down to [folderId]. A folder whose parent
+    // is gone sits at the root, as the browser shows it.
+    List<String> namesDown(String? folderId, {String? top}) {
+      final names = <String>[];
+      final seen = <String>{};
+      for (var id = folderId; id != null && id != top && seen.add(id);) {
+        final row = byId[id];
+        if (row == null) break;
+        names.insert(0, row.name);
+        id = row.parentId;
+      }
+      return names;
+    }
+
+    if (everything) {
+      return [
+        for (final row in await _db.completeFiles())
+          if (namesDown(row.folderId) case final path)
+            (file: DriveFile.fromRow(row), folders: path, path: path),
+      ];
+    }
+
+    final items = <String, SaveItem>{
+      for (final file in files)
+        file.id: (
+          file: file,
+          folders: const <String>[],
+          path: namesDown(file.folderId),
+        ),
+    };
+    for (final folder in folders) {
+      final ids = <String>{};
+      void collect(String id) {
+        if (!ids.add(id)) return;
+        for (final child in children[id] ?? const <FolderRow>[]) {
+          collect(child.id);
+        }
+      }
+
+      collect(folder.id);
+      for (final row in await _db.completeFiles(ids)) {
+        items.putIfAbsent(
+          row.id,
+          () => (
+            file: DriveFile.fromRow(row),
+            folders: namesDown(row.folderId, top: folder.parentId),
+            path: namesDown(row.folderId),
+          ),
+        );
+      }
+    }
+    return items.values.toList();
+  }
+
   Future<DriveFile?> fileById(String id) async {
     final row = await _db.fileById(id);
     return row == null ? null : DriveFile.fromRow(row);

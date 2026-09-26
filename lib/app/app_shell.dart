@@ -153,7 +153,7 @@ class _TransferStrip extends ConsumerWidget {
     final colors = context.colors;
     final state = ref.watch(transferQueueProvider);
     final active = state.active
-        .where((t) => t.origin == TransferOrigin.manual)
+        .where((t) => t.origin != TransferOrigin.backup)
         .toList();
     final totalBytes = active.fold<int>(0, (sum, t) => sum + t.row.totalBytes);
     final doneBytes = active.fold<int>(0, (sum, t) => sum + t.row.doneBytes);

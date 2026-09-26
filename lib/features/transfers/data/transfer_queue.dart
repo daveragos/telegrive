@@ -11,6 +11,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../../../core/files/file_kind.dart';
 import '../../../infrastructure/database/app_database.dart';
+import '../../../infrastructure/storage/device_storage.dart';
 import '../../../infrastructure/telegram/telegram_client.dart';
 import '../../../infrastructure/telegram/telegram_exception.dart';
 import '../../drive/data/channel_messenger.dart';
@@ -52,6 +53,19 @@ class UploadRequest {
 
   /// Temporary JPEG to attach as the document thumbnail; deleted after.
   final String? thumbnailPath;
+}
+
+/// A drive file to download and keep on this phone.
+@immutable
+class SaveRequest {
+  const SaveRequest(this.file, {required this.target, this.folders = const []});
+
+  final DriveFile file;
+  final SaveTarget target;
+
+  /// Folders under the save location, so the drive's layout carries over.
+  /// For the gallery, the phone folder the photo was backed up from.
+  final List<String> folders;
 }
 
 /// A transfer as the UI sees it: the persisted row plus live speed.
@@ -101,6 +115,10 @@ class TransfersState {
       .where((t) => t.status.isActive && t.origin == TransferOrigin.backup)
       .toList();
 
+  /// Downloads to this phone, which the UI also shows as one group.
+  List<TransferItem> get saves =>
+      items.where((t) => t.origin == TransferOrigin.save).toList();
+
   List<TransferItem> get finished =>
       items.where((t) => t.status.isFinished).toList();
 
@@ -147,6 +165,10 @@ class _Tracked {
 class TransferQueue extends Notifier<TransfersState> {
   static const int _maxUploads = 2;
   static const int _maxDownloads = 3;
+
+  /// Saves to the phone leave a download slot free, so opening a file never
+  /// waits behind a whole drive being downloaded.
+  static const int _maxSaves = 2;
   static const Duration _emitInterval = Duration(milliseconds: 300);
 
   final Map<String, TransferRow> _rows = {};
@@ -264,6 +286,7 @@ class TransferQueue extends Notifier<TransfersState> {
     final existing = _rows.values.where(
       (r) =>
           r.kind == TransferKind.download &&
+          r.origin != TransferOrigin.save &&
           r.fileId == file.id &&
           r.status.isActive,
     );
@@ -290,6 +313,71 @@ class TransferQueue extends Notifier<TransfersState> {
     _emit();
     _pump();
     return completion;
+  }
+
+  /// Queues [requests] as downloads kept on this phone. Files already on
+  /// their way there are left alone. Returns how many were queued.
+  Future<int> enqueueSaves(List<SaveRequest> requests) async {
+    final inFlight = {
+      for (final r in _rows.values)
+        if (r.origin == TransferOrigin.save && r.status.isActive) r.fileId,
+    };
+    final now = DateTime.now();
+    final rows = <TransferRow>[];
+    for (final (index, request) in requests.indexed) {
+      final file = request.file;
+      if (!inFlight.add(file.id)) continue;
+      rows.add(
+        TransferRow(
+          id: _repository.newId(),
+          kind: TransferKind.download,
+          status: TransferStatus.queued,
+          name: file.name,
+          mimeType: file.mimeType,
+          fileId: file.id,
+          folderId: file.folderId,
+          ownsSource: false,
+          origin: TransferOrigin.save,
+          totalBytes: file.size,
+          doneBytes: 0,
+          partCount: file.partCount,
+          completedParts: 0,
+          createdAt: now.add(Duration(microseconds: index)),
+          takenAt: file.takenAt,
+          saveTo: request.target,
+          saveFolder: request.folders.isEmpty
+              ? null
+              : request.folders.map(DeviceStorage.safeName).join('/'),
+        ),
+      );
+    }
+    for (final row in rows) {
+      _rows[row.id] = row;
+    }
+    await _db.saveTransfers(rows);
+    _emit();
+    _pump();
+    return rows.length;
+  }
+
+  /// Stops every save to this phone and drops them from the list. Files
+  /// already saved stay where they are.
+  Future<void> cancelSaves() async {
+    final ids = [
+      for (final r in _rows.values)
+        if (r.origin == TransferOrigin.save && r.status.isActive) r.id,
+    ];
+    // Waiting ones go first, so nothing new starts while the rest stop.
+    final running = ids.where(_running.contains).toList();
+    for (final id in ids) {
+      if (!_running.contains(id)) _rows.remove(id);
+    }
+    for (final id in running) {
+      await cancel(id);
+      _rows.remove(id);
+    }
+    await _db.deleteTransfers(ids);
+    _emit();
   }
 
   /// A local path for [file], downloading only when there isn't one yet.
@@ -399,13 +487,21 @@ class TransferQueue extends Notifier<TransfersState> {
   // ---------------------------------------------------------------------------
 
   void _pump() {
+    // Saves to the phone can be thousands deep; anything else goes first.
+    int rank(TransferRow r) => r.origin == TransferOrigin.save ? 1 : 0;
     final queued = _rows.values
         .where((r) => r.status == TransferStatus.queued && !_running.contains(r.id))
         .toList()
-      ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+      ..sort((a, b) {
+        final byRank = rank(a).compareTo(rank(b));
+        return byRank != 0 ? byRank : a.createdAt.compareTo(b.createdAt);
+      });
 
     var uploads = _running.where((id) => _rows[id]?.kind == TransferKind.upload).length;
     var downloads = _running.length - uploads;
+    var saves = _running
+        .where((id) => _rows[id]?.origin == TransferOrigin.save)
+        .length;
 
     for (final row in queued) {
       if (row.kind == TransferKind.upload && uploads < _maxUploads) {
@@ -413,6 +509,10 @@ class TransferQueue extends Notifier<TransfersState> {
         _start(row, _upload);
       } else if (row.kind == TransferKind.download &&
           downloads < _maxDownloads) {
+        if (row.origin == TransferOrigin.save) {
+          if (saves >= _maxSaves) continue;
+          saves++;
+        }
         downloads++;
         _start(row, _download);
       }
@@ -613,16 +713,42 @@ class TransferQueue extends Notifier<TransfersState> {
       throw const DriveException('This file is no longer in your drive.');
     }
 
+    // Backed up from this phone and still in its gallery: nothing to fetch.
+    if (initial.saveTo == SaveTarget.gallery) {
+      final assetId = await _db.localAssetOf(initial.fileId);
+      if (assetId != null &&
+          await ref.read(deviceStorageProvider).inGallery(assetId)) {
+        await _finish(
+          initial.copyWith(
+            status: TransferStatus.completed,
+            doneBytes: initial.totalBytes,
+            completedParts: initial.partCount,
+          ),
+        );
+        return;
+      }
+    }
+
     if (parts.length == 1) {
-      final path = await _downloadPart(initial, parts.first, base: 0);
-      await _finish(
-        (_rows[initial.id] ?? initial).copyWith(
-          status: TransferStatus.completed,
-          doneBytes: initial.totalBytes,
-          completedParts: 1,
-          resultPath: Value(path),
-        ),
+      final downloaded = await _downloadPart(initial, parts.first, base: 0);
+      var row = (_rows[initial.id] ?? initial).copyWith(
+        status: TransferStatus.completed,
+        doneBytes: initial.totalBytes,
+        completedParts: 1,
+        resultPath: Value(downloaded.path),
       );
+      if (row.saveTo != null) {
+        row = await _keep(row, downloaded.path);
+        // The saved copy is the one that counts; TDLib's would only double
+        // the space a whole drive takes. Unless something else is reading it.
+        if (!_otherDownloadOf(row)) {
+          await _quietly(
+            () => _client.send<td.Ok>(td.DeleteFile(fileId: downloaded.id)),
+          );
+        }
+      }
+      if (_cancelled.contains(initial.id)) return;
+      await _finish(row);
       return;
     }
 
@@ -638,8 +764,8 @@ class TransferQueue extends Notifier<TransfersState> {
     try {
       for (final (index, part) in parts.indexed) {
         if (_cancelled.contains(initial.id)) break;
-        final path = await _downloadPart(initial, part, base: base);
-        await sink.addStream(File(path).openRead());
+        final downloaded = await _downloadPart(initial, part, base: base);
+        await sink.addStream(File(downloaded.path).openRead());
         base += part.size;
         _rows[initial.id] = (_rows[initial.id] ?? initial).copyWith(
           completedParts: index + 1,
@@ -655,16 +781,62 @@ class TransferQueue extends Notifier<TransfersState> {
       await _deleteQuietly(out.parent);
       return;
     }
-    await _finish(
-      (_rows[initial.id] ?? initial).copyWith(
-        status: TransferStatus.completed,
-        doneBytes: initial.totalBytes,
-        resultPath: Value(out.path),
-      ),
+    var row = (_rows[initial.id] ?? initial).copyWith(
+      status: TransferStatus.completed,
+      doneBytes: initial.totalBytes,
+      resultPath: Value(out.path),
     );
+    if (row.saveTo != null) {
+      try {
+        row = await _keep(row, out.path);
+      } finally {
+        await _deleteQuietly(out.parent);
+      }
+    }
+    if (_cancelled.contains(initial.id)) return;
+    await _finish(row);
   }
 
-  Future<String> _downloadPart(
+  /// Copies a finished download to where its save transfer keeps it, and
+  /// points the row at the copy.
+  Future<TransferRow> _keep(TransferRow row, String path) async {
+    final storage = ref.read(deviceStorageProvider);
+    switch (row.saveTo!) {
+      case SaveTarget.files:
+        final saved = await storage.saveFile(
+          path,
+          folders: row.saveFolder?.split('/') ?? const [],
+          name: row.name,
+          mimeType: row.mimeType,
+        );
+        return row.copyWith(resultPath: Value(saved));
+      case SaveTarget.gallery:
+        final kind = FileKind.detect(fileName: row.name, mimeType: row.mimeType);
+        final assetId = await storage.saveToGallery(
+          path,
+          name: row.name,
+          video: kind == FileKind.video,
+          album: row.saveFolder,
+          takenAt: row.takenAt,
+        );
+        // Backup now knows this photo is already in the drive, and the
+        // Photos tab can show the phone's sharp copy of it.
+        await _db.markAssetBackedUp(assetId, row.fileId);
+        return row.copyWith(resultPath: const Value(null));
+    }
+  }
+
+  /// Another download of the same file is running (someone opened it while
+  /// it was being saved), so TDLib's copy must stay.
+  bool _otherDownloadOf(TransferRow row) => _rows.values.any(
+    (r) =>
+        r.id != row.id &&
+        r.kind == TransferKind.download &&
+        r.fileId == row.fileId &&
+        r.status.isActive,
+  );
+
+  Future<({String path, int id})> _downloadPart(
     TransferRow row,
     PartRow part, {
     required int base,
@@ -672,7 +844,7 @@ class TransferQueue extends Notifier<TransfersState> {
     final tdFile = await _resolveTdFile(part);
     if (tdFile.local.isDownloadingCompleted &&
         await File(tdFile.local.path).exists()) {
-      return tdFile.local.path;
+      return (path: tdFile.local.path, id: tdFile.id);
     }
     _tracked[tdFile.id] = _Tracked(row.id, base, upload: false);
     _activeDownloads[row.id] = tdFile.id;
@@ -692,7 +864,7 @@ class TransferQueue extends Notifier<TransfersState> {
       if (!done.local.isDownloadingCompleted) {
         throw const DriveException('The download stopped before finishing.');
       }
-      return done.local.path;
+      return (path: done.local.path, id: done.id);
     } finally {
       _tracked.remove(tdFile.id);
       _activeDownloads.remove(row.id);

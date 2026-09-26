@@ -35,6 +35,9 @@ import 'package:telegrive/features/settings/presentation/settings_screen.dart';
 import 'package:telegrive/features/transfers/data/transfer_queue.dart';
 import 'package:telegrive/features/transfers/presentation/transfers_screen.dart';
 import 'package:telegrive/infrastructure/database/app_database.dart';
+import 'package:telegrive/infrastructure/storage/device_storage.dart';
+import 'package:drift/drift.dart' show Value;
+import 'package:drift/native.dart';
 import 'package:telegrive/infrastructure/storage/preferences.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -77,6 +80,10 @@ class _Backup extends BackupController {
   ];
 }
 
+class _Storage extends DeviceStorage {
+  @override
+  Future<int?> freeBytes() async => 23 * _gb;
+}
 
 class _Queue extends TransferQueue {
   _Queue(this._state);
@@ -427,6 +434,8 @@ void main() {
       ProviderScope(
         overrides: [
           sharedPreferencesProvider.overrideWithValue(shared),
+          appDatabaseProvider.overrideWithValue(AppDatabase(NativeDatabase.memory())),
+          deviceStorageProvider.overrideWithValue(_Storage()),
           driveSessionProvider.overrideWith(_Session.new),
           driveSyncProvider.overrideWith(_Sync.new),
           transferQueueProvider.overrideWith(() => _Queue(transfers)),
@@ -549,6 +558,45 @@ void main() {
     await tester.tap(find.text('Lalibela sunrise.jpg'));
     await tester.pump(const Duration(milliseconds: 300));
     await snap(tester, 'files_selection');
+  });
+
+  testWidgets('save sheet', (tester) async {
+    await prepareData(tester);
+    await pumpApp(tester, location: '/files');
+    await tester.longPress(find.text('Lalibela sunrise.jpg'));
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.tap(find.text('Simien trek.png'));
+    await tester.tap(find.text('Budget 2026.xlsx'));
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.tap(find.byTooltip('Download to this phone'));
+    for (var i = 0; i < 6; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    await snap(tester, 'save_sheet');
+  });
+
+  testWidgets('transfers saving', (tester) async {
+    await prepareData(tester);
+    TransferItem save(String name, TransferStatus status, int total, int done) =>
+        TransferItem(
+          _transfer(name, TransferKind.download, status, total, done).copyWith(
+            origin: TransferOrigin.save,
+            saveTo: const Value(SaveTarget.files),
+          ),
+          bytesPerSecond: status == TransferStatus.running ? 4.1 * _mb : 0,
+        );
+    transfers = TransfersState([
+      save('Wedding highlights 4K.mp4', TransferStatus.running, (5.6 * _gb).round(), (1.2 * _gb).round()),
+      save('Project backup.zip', TransferStatus.running, 780 * _mb, 300 * _mb),
+      for (var i = 0; i < 40; i++)
+        save('IMG_$i.jpg', TransferStatus.queued, 4 * _mb, 0),
+      for (var i = 0; i < 212; i++)
+        save('Scan $i.pdf', TransferStatus.completed, 2 * _mb, 2 * _mb),
+      save('Old notes.txt', TransferStatus.failed, 12000, 0),
+      ...transfers.items.take(2),
+    ]);
+    await pumpApp(tester, location: '/transfers');
+    await snap(tester, 'transfers_saving');
   });
 
   testWidgets('create sheet', (tester) async {

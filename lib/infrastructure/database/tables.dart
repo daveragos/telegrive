@@ -67,9 +67,14 @@ class FileParts extends Table {
 
 enum TransferKind { upload, download }
 
-/// Who asked for a transfer: the person, or photo backup working through
-/// the camera roll. Backup transfers are shown as one group, not one by one.
-enum TransferOrigin { manual, backup }
+/// Who asked for a transfer: the person, photo backup working through the
+/// camera roll, or a download to this phone (often the whole drive, on a new
+/// one). Backup and save transfers are shown as a group each, not one by one.
+enum TransferOrigin { manual, backup, save }
+
+/// Where a saved download ends up: a folder the phone's file manager shows,
+/// or the photo gallery.
+enum SaveTarget { files, gallery }
 
 enum TransferStatus {
   queued,
@@ -124,6 +129,13 @@ class Transfers extends Table {
 
   /// Small JPEG sent as the document's thumbnail, so videos get previews.
   TextColumn get thumbnailPath => text().nullable()();
+
+  /// Where a download is copied once it arrives (save transfers).
+  TextColumn get saveTo => textEnum<SaveTarget>().nullable()();
+
+  /// Folders under the save location, `/`-separated, so the drive's layout
+  /// carries over; for the gallery, the album it goes back into.
+  TextColumn get saveFolder => text().nullable()();
 
   @override
   Set<Column> get primaryKey => {id};

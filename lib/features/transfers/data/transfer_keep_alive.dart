@@ -135,7 +135,7 @@ class TransferKeepAlive {
 
   static (String, String) _describe(TransfersState state, BackupState backup) {
     final active = state.active
-        .where((t) => t.origin == TransferOrigin.manual)
+        .where((t) => t.origin != TransferOrigin.backup)
         .toList();
     final uploads = active.where((t) => t.kind == TransferKind.upload).length;
     final downloads = active.length - uploads;

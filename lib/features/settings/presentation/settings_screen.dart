@@ -14,6 +14,7 @@ import '../../drive/data/drive_repository.dart';
 import '../../drive/data/drive_session.dart';
 import '../../drive/data/drive_sync.dart';
 import '../../files/data/browse_preferences.dart';
+import '../../files/presentation/file_actions.dart';
 import '../../transfers/data/transfer_queue.dart';
 import '../data/settings_providers.dart';
 
@@ -116,6 +117,19 @@ class SettingsScreen extends ConsumerWidget {
                       : '${Formatters.bytes(summary.bytes)} · '
                             '${Formatters.count(summary.fileCount, 'file')}',
                 ),
+              ),
+              ListTile(
+                title: const Text('Download everything'),
+                subtitle: const Text('Every file, onto this phone'),
+                trailing: Icon(Icons.download_rounded, size: 20, color: colors.text3),
+                onTap: summary == null || summary.fileCount == 0
+                    ? null
+                    : () => FileActions.saveToDevice(
+                        context,
+                        ref,
+                        everything: true,
+                        preferGallery: true,
+                      ),
               ),
               ListTile(
                 title: Text(session?.channelTitle ?? 'Drive channel'),

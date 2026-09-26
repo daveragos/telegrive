@@ -198,10 +198,10 @@ class _ActivityState extends ConsumerState<_Activity> {
     final backup = ref.watch(backupControllerProvider);
     final transfers = ref.watch(transferQueueProvider);
     final active = transfers.active
-        .where((t) => t.origin == TransferOrigin.manual)
+        .where((t) => t.origin != TransferOrigin.backup)
         .toList();
     final failed = transfers.finished
-        .where((t) => t.status == TransferStatus.failed && t.origin == TransferOrigin.manual)
+        .where((t) => t.status == TransferStatus.failed && t.origin != TransferOrigin.backup)
         .length;
 
     final showBackup = backup.isWorking ||

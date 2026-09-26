@@ -263,7 +263,8 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
         icon: const Icon(Icons.close_rounded),
         tooltip: 'Clear selection',
       ),
-      title: Text('$count selected'),
+      // The count alone: five actions leave no room for "selected".
+      title: Text(Formatters.number(count)),
       actions: [
         if (files.isNotEmpty && folders.isEmpty)
           IconButton(
@@ -274,6 +275,19 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
             icon: Icon(allStarred ? Icons.star_rounded : Icons.star_outline_rounded),
             tooltip: allStarred ? 'Unstar' : 'Star',
           ),
+        IconButton(
+          onPressed: () async {
+            final saving = await FileActions.saveToDevice(
+              context,
+              ref,
+              files: files,
+              folders: folders,
+            );
+            if (saving) _clearSelection();
+          },
+          icon: const Icon(Icons.download_rounded),
+          tooltip: 'Download to this phone',
+        ),
         IconButton(
           onPressed: () async {
             final moved = await FileActions.move(
