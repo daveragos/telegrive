@@ -50,9 +50,9 @@ phone number.
 - **Watch and read without downloading.** Videos and music stream as they
   play, with seeking, even across a split file's parts. PDFs and text files
   open in the app. Everything else opens in the right app on your phone.
-- **Search inside photos and documents.** On-device models read the text in
-  photos and what they show, plus the words in PDFs, so "receipt" or "dog"
-  finds them. Dates work too: "march 2024", "last week".
+- **Search inside documents.** The words in PDFs and text files are read on
+  the phone, so search finds documents by what they say. Dates work too:
+  "march 2024", "last week".
 - **Send in Telegram.** Send any file to a chat straight from the drive,
   with no re-upload.
 - **Share to Telegrive** from any app on Android, into the folder you pick.
@@ -187,8 +187,6 @@ work doesn't need a Telegram account.
   closed-app job notifies and the app does the upload; running TDLib inside
   the background job would remove that tap.
 - **Share-sheet intake on iOS**, which needs a share extension.
-- **Text recognition beyond Latin script.** ML Kit reads Latin text only, so
-  Amharic (Ge'ez) text in photos isn't found yet.
 
 ## Good to know
 

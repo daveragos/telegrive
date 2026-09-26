@@ -150,8 +150,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                 ? const EmptyState(
                     title: 'Search your drive',
                     message:
-                        'Type part of a name, words in a photo or PDF, or a date '
-                        'like "march 2024". Or pick a kind above.',
+                        'Type part of a name, words in a PDF, or a date like '
+                        '"march 2024". Or pick a kind above.',
                     compact: true,
                   )
                 : AsyncView(

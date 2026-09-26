@@ -219,12 +219,12 @@ class SettingsScreen extends ConsumerWidget {
           ListGroup(
             children: [
               SwitchListTile(
-                title: const Text('Search inside photos and documents'),
+                title: const Text('Search inside documents'),
                 subtitle: Text(
                   indexer.running && indexer.left > 0
                       ? 'Reading · ${Formatters.count(indexer.left, 'file')} to go'
-                      : 'Finds text and things in photos, and words in PDFs. '
-                            'Worked out on this phone${indexed > 0 ? ' · ${Formatters.count(indexed, 'file')} read' : ''}.',
+                      : 'Finds PDFs and text files by the words in them. Read on '
+                            'this phone, on Wi-Fi${indexed > 0 ? ' · ${Formatters.count(indexed, 'file')} read' : ''}.',
                 ),
                 value: indexer.enabled,
                 onChanged: (on) => ref.read(contentIndexerProvider.notifier).setEnabled(on),

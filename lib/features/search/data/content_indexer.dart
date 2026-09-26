@@ -5,13 +5,10 @@ import 'dart:io';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:google_mlkit_image_labeling/google_mlkit_image_labeling.dart';
-import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 import 'package:handy_tdlib/api.dart' as td;
 import 'package:pdfrx/pdfrx.dart';
-import 'package:photo_manager/photo_manager.dart';
 
-import '../../../core/files/file_kind.dart';
+import '../../../core/files/file_kind.dart' show Preview;
 import '../../../infrastructure/database/app_database.dart';
 import '../../../infrastructure/storage/preferences.dart';
 import '../../../infrastructure/telegram/telegram_client.dart';
@@ -38,18 +35,15 @@ class IndexerState {
   );
 }
 
-/// Reads what is in photos and documents so search can find them by it:
-/// the text in a photo (a receipt, a sign, a screenshot), what a photo
-/// shows ("dog", "beach"), and the words in PDFs and text files.
+/// Reads the words in PDFs and text files so search finds documents by
+/// what they say, not only by their names.
 ///
-/// Everything happens on this phone with on-device models, a file at a
-/// time while the app is open; nothing is sent anywhere. Photos are read
-/// from the phone's own copy when there is one and otherwise from their
-/// small preview (enough to say what is in them, not to read their text).
-/// Anything not on the phone yet (previews, PDFs, text files) is fetched on
+/// It happens on this phone, a file at a time while the app is open;
+/// nothing is sent anywhere. Documents not on the phone yet are fetched on
 /// Wi-Fi only.
 class ContentIndexer extends Notifier<IndexerState> {
-  static const int version = 1;
+  /// 2: documents only; version 1 also read photos.
+  static const int version = 2;
   static const int _maxChars = 20000;
   static const int _pdfLimit = 25 * 1024 * 1024;
   static const int _textLimit = 1024 * 1024;
@@ -58,10 +52,8 @@ class ContentIndexer extends Notifier<IndexerState> {
   Timer? _start;
   bool _stop = false;
 
-  /// Whether this pass may fetch previews and documents it doesn't have.
+  /// Whether this pass may fetch documents it doesn't have.
   bool _onWifi = false;
-  ImageLabeler? _labeler;
-  TextRecognizer? _recognizer;
 
   AppDatabase get _db => ref.read(appDatabaseProvider);
   TelegramClient get _client => ref.read(telegramClientProvider);
@@ -74,8 +66,6 @@ class ContentIndexer extends Notifier<IndexerState> {
     ref.onDispose(() {
       _stop = true;
       _start?.cancel();
-      unawaited(_labeler?.close());
-      unawaited(_recognizer?.close());
     });
     if (!_supported) return IndexerState(enabled: enabled);
     ref.listen<DriveSession?>(driveSessionProvider, (_, session) {
@@ -104,6 +94,7 @@ class ContentIndexer extends Notifier<IndexerState> {
     _stop = false;
     state = state.copyWith(running: true);
     try {
+      await _db.dropContentBefore(version);
       final done = await _db.indexedFileIds(version);
       final todo = [
         for (final row in await _db.completeFiles())
@@ -129,9 +120,7 @@ class ContentIndexer extends Notifier<IndexerState> {
     }
   }
 
-  static bool _readable(DriveFile file) =>
-      (file.fitsGallery && file.kind == FileKind.image) ||
-      switch (_preview(file)) {
+  static bool _readable(DriveFile file) => switch (_preview(file)) {
         Preview.pdf => file.size <= _pdfLimit,
         Preview.text => file.size <= _textLimit,
         _ => false,
@@ -148,7 +137,6 @@ class ContentIndexer extends Notifier<IndexerState> {
   /// What [file] contains, or null to try again on a later pass.
   Future<String?> _read(DriveFile file) async {
     try {
-      if (file.kind == FileKind.image) return await _readPhoto(file);
       final path = await _documentPath(file);
       if (path == null) return null;
       return _preview(file) == Preview.pdf ? await _readPdf(path) : await _readText(path);
@@ -158,51 +146,6 @@ class ContentIndexer extends Notifier<IndexerState> {
       // forever.
       return '';
     }
-  }
-
-  Future<String?> _readPhoto(DriveFile file) async {
-    final original = await _originalOnPhone(file);
-    final path = original ?? await _thumbnail(file);
-    if (path == null) return null;
-    final image = InputImage.fromFilePath(path);
-    final labels = await (_labeler ??= ImageLabeler(
-      options: ImageLabelerOptions(confidenceThreshold: 0.7),
-    )).processImage(image);
-    final words = [for (final label in labels) label.label];
-    // A 320 px preview is too small for reading text.
-    if (original != null) {
-      final text = await (_recognizer ??= TextRecognizer()).processImage(image);
-      words.add(text.text);
-    }
-    return words.join(' · ');
-  }
-
-  /// The phone's own copy (backed up from here), or one already downloaded.
-  Future<String?> _originalOnPhone(DriveFile file) async {
-    final assetId = await _db.localAssetOf(file.id);
-    if (assetId != null) {
-      try {
-        final asset = await AssetEntity.fromId(assetId);
-        final local = await asset?.file;
-        if (local != null && await local.exists()) return local.path;
-      } catch (_) {}
-    }
-    return ref.read(transferQueueProvider.notifier).localPathIfAvailable(file);
-  }
-
-  /// The file's small preview; fetched only on Wi-Fi, since a whole drive
-  /// of them adds up.
-  Future<String?> _thumbnail(DriveFile file) async {
-    final id = file.thumbnailFileId;
-    if (id == null) return null;
-    final known = await _client.send<td.File>(td.GetFile(fileId: id));
-    if (known.local.isDownloadingCompleted) return known.local.path;
-    if (!_onWifi) return null;
-    final thumb = await _client.send<td.File>(
-      td.DownloadFile(fileId: id, priority: 1, offset: 0, limit: 0, synchronous: true),
-      timeout: const Duration(minutes: 1),
-    );
-    return thumb.local.isDownloadingCompleted ? thumb.local.path : null;
   }
 
   /// A document's path, fetching it only on Wi-Fi.

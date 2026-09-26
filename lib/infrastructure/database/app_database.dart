@@ -523,6 +523,11 @@ class AppDatabase extends _$AppDatabase {
         ),
       );
 
+  /// Forgets what older indexer versions read, so it is read again (or,
+  /// for kinds no longer read, not at all).
+  Future<void> dropContentBefore(int version) =>
+      (delete(fileContents)..where((c) => c.version.isSmallerThanValue(version))).go();
+
   Stream<int> watchIndexedCount() {
     final count = fileContents.fileId.count();
     return (selectOnly(fileContents)..addColumns([count]))
