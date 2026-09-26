@@ -73,3 +73,50 @@ enum FileKind {
 /// Best-effort MIME type for a file about to be uploaded.
 String mimeTypeFor(String fileName) =>
     lookupMimeType(fileName) ?? 'application/octet-stream';
+
+/// How the app shows a file itself, without handing it to another app.
+enum Preview {
+  /// The photo viewer.
+  image,
+
+  /// The player, streaming.
+  media,
+  pdf,
+  text,
+
+  /// Only another app can open it.
+  none;
+
+  /// Text files larger than this are opened elsewhere.
+  static const int textLimit = 5 * 1024 * 1024;
+
+  static Preview of({
+    required String name,
+    required String mimeType,
+    required FileKind kind,
+    required int size,
+    bool isSplit = false,
+  }) {
+    final ext = p.extension(name).toLowerCase().replaceFirst('.', '');
+    if (kind == FileKind.image && !isSplit) return Preview.image;
+    if (kind == FileKind.video || kind == FileKind.audio) return Preview.media;
+    if (isSplit) return Preview.none;
+    if (ext == 'pdf' || mimeType == 'application/pdf') return Preview.pdf;
+    final texty =
+        _textExtensions.contains(ext) ||
+        mimeType.startsWith('text/') ||
+        mimeType == 'application/json' ||
+        mimeType == 'application/xml';
+    if (texty && size <= textLimit) return Preview.text;
+    return Preview.none;
+  }
+
+  static const Set<String> _textExtensions = {
+    'txt', 'md', 'markdown', 'csv', 'tsv', 'json', 'xml', 'yaml', 'yml', 'log',
+    'ini', 'conf', 'cfg', 'toml', 'env', 'properties', 'html', 'htm', 'css',
+    'js', 'ts', 'jsx', 'tsx', 'dart', 'py', 'java', 'kt', 'kts', 'swift', 'c',
+    'h', 'cpp', 'hpp', 'cc', 'cs', 'go', 'rs', 'rb', 'php', 'sh', 'bash',
+    'zsh', 'bat', 'ps1', 'sql', 'srt', 'vtt', 'gradle', 'lua', 'r', 'tex',
+  };
+}
+

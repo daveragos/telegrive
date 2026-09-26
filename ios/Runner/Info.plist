@@ -17,6 +17,11 @@
 	<string>Back up your photos and videos to your drive, and put them back in your library when you download them.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>Put photos and videos you download from your drive back in your library.</string>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
 	<key>UIFileSharingEnabled</key>
 	<true/>
 	<key>LSSupportsOpeningDocumentsInPlace</key>

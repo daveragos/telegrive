@@ -8,6 +8,7 @@ environment:
 
 dependencies:
   connectivity_plus: ^7.3.1
+  cupertino_icons: ^1.0.9
   drift: ^2.35.0
   drift_flutter: ^0.3.1
   file_picker: ^13.1.0
@@ -26,12 +27,14 @@ dependencies:
   open_filex: ^4.7.0
   path: ^1.9.1
   path_provider: ^2.1.6
+  pdfrx: ^2.6.5
   photo_manager: ^3.12.0
   qr_flutter: ^4.1.0
   share_plus: ^13.3.0
   shared_preferences: ^2.5.5
   url_launcher: ^6.3.2
   uuid: ^4.6.0
+  video_player: ^2.14.0
   workmanager: ^0.10.10
 
 dev_dependencies:

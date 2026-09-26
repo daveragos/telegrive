@@ -35,15 +35,38 @@ abstract final class FileActions {
   // Opening & sharing
   // ---------------------------------------------------------------------------
 
+  /// Shows [file] in the app when it can: photos in the viewer, video and
+  /// audio in the player (streaming), PDFs and text in a reader. Anything
+  /// else downloads and opens in whichever app handles it.
   static Future<void> open(
     BuildContext context,
     WidgetRef ref,
     DriveFile file,
   ) async {
-    if (file.kind == FileKind.image && !file.isSplit) {
-      context.push('/viewer/${file.id}');
-      return;
+    switch (Preview.of(
+      name: file.name,
+      mimeType: file.mimeType,
+      kind: file.kind,
+      size: file.size,
+      isSplit: file.isSplit,
+    )) {
+      case Preview.image:
+        await context.push('/viewer/${file.id}');
+      case Preview.media:
+        await context.push('/play/${file.id}');
+      case Preview.pdf || Preview.text:
+        await context.push('/preview/${file.id}');
+      case Preview.none:
+        await openExternally(context, ref, file);
     }
+  }
+
+  /// Downloads [file] if need be and hands it to another app.
+  static Future<void> openExternally(
+    BuildContext context,
+    WidgetRef ref,
+    DriveFile file,
+  ) async {
     final path = await _obtain(context, ref, file);
     if (path == null) return;
     final result = await OpenFilex.open(path, type: file.mimeType);

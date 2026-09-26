@@ -14,6 +14,8 @@ import '../features/files/presentation/file_list_screen.dart';
 import '../features/files/presentation/files_screen.dart';
 import '../features/home/presentation/home_screen.dart';
 import '../features/photos/presentation/albums_screen.dart';
+import '../features/player/presentation/player_screen.dart';
+import '../features/preview/presentation/document_preview_screen.dart';
 import '../features/photos/presentation/photos_screen.dart';
 import '../features/search/presentation/search_screen.dart';
 import '../features/settings/presentation/settings_screen.dart';
@@ -129,6 +131,17 @@ final routerProvider = Provider<GoRouter>((ref) {
             ],
           ),
         ],
+      ),
+      GoRoute(
+        path: '/play/:fileId',
+        parentNavigatorKey: _rootKey,
+        builder: (_, state) => PlayerScreen(fileId: state.pathParameters['fileId']!),
+      ),
+      GoRoute(
+        path: '/preview/:fileId',
+        parentNavigatorKey: _rootKey,
+        builder: (_, state) =>
+            DocumentPreviewScreen(fileId: state.pathParameters['fileId']!),
       ),
       GoRoute(
         path: '/trash',
