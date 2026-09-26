@@ -49,17 +49,17 @@ class _SetupScreenState extends ConsumerState<SetupScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const BrandMark(size: 72),
-                  const SizedBox(height: 32),
+                  const BrandMark(size: 48),
+                  const SizedBox(height: 24),
                   Text(
                     setup.error != null
                         ? 'We hit a snag'
                         : setup.createdChannel
                         ? 'Creating your drive'
                         : 'Opening your drive',
-                    style: theme.textTheme.titleLarge,
+                    style: theme.textTheme.headlineSmall,
                   ),
-                  const SizedBox(height: 28),
+                  const SizedBox(height: 24),
                   for (final (step, label) in steps)
                     _StepRow(
                       label: step == SetupStep.indexing && scanned > 0

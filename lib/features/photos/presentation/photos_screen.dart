@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 
+import '../../../app/theme/tokens.dart';
 import '../../../core/widgets/common.dart';
 import '../../../core/widgets/file_visuals.dart';
 import '../../backup/data/backup_controller.dart';
@@ -25,7 +26,8 @@ class PhotosScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Photos'),
+        toolbarHeight: 64,
+        title: Text('Photos', style: context.text.headlineSmall),
         actions: [
           IconButton(
             onPressed: () => context.push('/backup'),
@@ -48,9 +50,15 @@ class PhotosScreen extends ConsumerWidget {
         child: CustomScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
           slivers: [
-            const SliverPadding(
-              padding: EdgeInsets.fromLTRB(16, 4, 16, 8),
-              sliver: SliverToBoxAdapter(child: BackupStatusCard()),
+            SliverToBoxAdapter(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  border: Border(
+                    bottom: BorderSide(color: context.colors.line),
+                  ),
+                ),
+                child: const BackupStatusLine(),
+              ),
             ),
             if (sections == null)
               const SliverFillRemaining(
@@ -61,42 +69,43 @@ class PhotosScreen extends ConsumerWidget {
               SliverFillRemaining(
                 hasScrollBody: false,
                 child: EmptyState(
-                  icon: Icons.photo_library_outlined,
                   title: 'No photos yet',
                   message: backup.enabled
-                      ? 'Your photos will show up here as they back up.'
-                      : 'Turn on backup, or upload photos and videos, and '
-                            'they\'ll show up here.',
+                      ? 'Photos show up here as they back up.'
+                      : 'Turn on backup, or upload photos and videos.',
                   compact: true,
                 ),
               )
             else
               for (final section in sections) ...[
                 SliverToBoxAdapter(
-                  child: SectionHeader(
-                    section.title,
-                    padding: const EdgeInsets.fromLTRB(20, 16, 16, 8),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(
+                      Space.gutter,
+                      Space.xxl,
+                      Space.gutter,
+                      Space.s,
+                    ),
+                    child: Text(section.title, style: context.text.titleSmall),
                   ),
                 ),
-                SliverPadding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                  sliver: SliverGrid.builder(
-                    gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                      maxCrossAxisExtent: 128,
-                      mainAxisSpacing: 3,
-                      crossAxisSpacing: 3,
-                    ),
-                    itemCount: section.files.length,
-                    itemBuilder: (context, index) {
-                      final file = section.files[index];
-                      return _PhotoTile(
-                        file: file,
-                        onTap: () => context.push('/viewer/${file.id}?from=photos'),
-                        onLongPress: () =>
-                            FileActions.showFileSheet(context, ref, file),
-                      );
-                    },
+                SliverGrid.builder(
+                  gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                    maxCrossAxisExtent: 128,
+                    mainAxisSpacing: 2,
+                    crossAxisSpacing: 2,
                   ),
+                  itemCount: section.files.length,
+                  itemBuilder: (context, index) {
+                    final file = section.files[index];
+                    return _PhotoTile(
+                      file: file,
+                      onTap: () =>
+                          context.push('/viewer/${file.id}?from=photos'),
+                      onLongPress: () =>
+                          FileActions.showFileSheet(context, ref, file),
+                    );
+                  },
                 ),
               ],
             const SliverToBoxAdapter(child: SizedBox(height: 32)),
@@ -133,7 +142,11 @@ class _Section {
 }
 
 class _PhotoTile extends StatelessWidget {
-  const _PhotoTile({required this.file, required this.onTap, required this.onLongPress});
+  const _PhotoTile({
+    required this.file,
+    required this.onTap,
+    required this.onLongPress,
+  });
 
   final DriveFile file;
   final VoidCallback onTap;
@@ -147,13 +160,17 @@ class _PhotoTile extends StatelessWidget {
       child: Stack(
         fit: StackFit.expand,
         children: [
-          FileThumbnail(file: file, expand: true, radius: 4, size: 40),
+          FileThumbnail(file: file, expand: true, radius: 0, size: 40),
           if (file.starred)
             const Positioned(
               right: 4,
               top: 4,
-              child: Icon(Icons.star_rounded, size: 16, color: Colors.white,
-                  shadows: [Shadow(blurRadius: 4, color: Colors.black54)]),
+              child: Icon(
+                Icons.star_rounded,
+                size: 16,
+                color: Colors.white,
+                shadows: [Shadow(blurRadius: 4, color: Colors.black54)],
+              ),
             ),
         ],
       ),

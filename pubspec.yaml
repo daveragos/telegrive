@@ -49,6 +49,19 @@ flutter:
     # Profile photo given to the drive channel in Telegram.
     - assets/brand/channel_photo.jpg
 
+  # IBM Plex Sans (SIL Open Font License, assets/fonts/OFL.txt): the one
+  # typeface, see DESIGN.md.
+  fonts:
+    - family: IBMPlexSans
+      fonts:
+        - asset: assets/fonts/IBMPlexSans-Regular.ttf
+        - asset: assets/fonts/IBMPlexSans-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/IBMPlexSans-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/IBMPlexSans-Bold.ttf
+          weight: 700
+
 # Launcher icons, generated from tool/icon (see the comment there).
 flutter_launcher_icons:
   android: true

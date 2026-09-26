@@ -1,21 +1,21 @@
 import 'dart:io';
+import 'dart:typed_data';
+import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/theme/file_style.dart';
-import '../files/file_kind.dart';
+import '../../app/theme/tokens.dart';
+import '../../features/backup/data/local_media.dart';
 import '../../features/drive/data/previews.dart';
 import '../../features/drive/domain/drive_models.dart';
+import '../files/file_kind.dart';
 
-/// Rounded tile with a tinted icon — the fallback look for any file.
+/// A neutral slot with the kind glyph in it — the stand-in for a file that
+/// has no picture of its own. Every row has one, so names line up.
 class FileIconTile extends StatelessWidget {
-  const FileIconTile({
-    super.key,
-    required this.style,
-    this.size = 44,
-    this.radius,
-  });
+  const FileIconTile({super.key, required this.style, this.size = 44, this.radius});
 
   final FileStyle style;
   final double size;
@@ -23,21 +23,37 @@ class FileIconTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final brightness = Theme.of(context).brightness;
+    final colors = context.colors;
     return Container(
       width: size,
       height: size,
       decoration: BoxDecoration(
-        color: style.background(brightness),
-        borderRadius: BorderRadius.circular(radius ?? size * 0.3),
+        color: colors.surface2,
+        borderRadius: BorderRadius.circular(radius ?? Radii.thumb),
       ),
-      child: Icon(style.icon, color: style.color, size: size * 0.52),
+      child: Icon(
+        style.icon,
+        color: style.resolve(context, colors.text2),
+        size: size * 0.5,
+      ),
     );
   }
 }
 
-/// The best preview available for [file]: the real thumbnail once fetched,
-/// Telegram's blurred inline one until then, and the type icon otherwise.
+class FolderIconTile extends StatelessWidget {
+  const FolderIconTile({super.key, this.size = 44});
+
+  final double size;
+
+  @override
+  Widget build(BuildContext context) =>
+      FileIconTile(style: FileStyle.folder, size: size);
+}
+
+/// The best picture available for [file]: the phone's own copy when the
+/// file was backed up from here, otherwise Telegram's thumbnail once fetched,
+/// with Telegram's tiny inline preview softly blurred underneath until then,
+/// and the kind glyph for files with no picture at all.
 class FileThumbnail extends ConsumerWidget {
   const FileThumbnail({
     super.key,
@@ -51,93 +67,137 @@ class FileThumbnail extends ConsumerWidget {
   final double size;
   final double? radius;
 
-  /// Fill the parent instead of a fixed square (grid cards).
+  /// Fill the parent instead of a fixed square (grids).
   final bool expand;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final colors = context.colors;
     final style = FileStyle.forFile(file.name, file.kind);
-    final corner = BorderRadius.circular(radius ?? size * 0.3);
+    final corner = BorderRadius.circular(radius ?? Radii.thumb);
+    final isMedia = file.kind == FileKind.image || file.kind == FileKind.video;
 
-    if (!file.hasPreview) {
-      final tile = FileIconTile(style: style, size: size, radius: radius);
-      return expand
-          ? Container(
-              decoration: BoxDecoration(
-                color: style.background(Theme.of(context).brightness),
-                borderRadius: corner,
-              ),
-              alignment: Alignment.center,
-              child: Icon(style.icon, color: style.color, size: size * 0.6),
-            )
-          : tile;
+    Widget framed(Widget child) =>
+        expand ? child : SizedBox.square(dimension: size, child: child);
+
+    final local = isMedia ? ref.watch(localThumbnailProvider(file.id)).value : null;
+
+    if (!file.hasPreview && local == null) {
+      return framed(
+        DecoratedBox(
+          decoration: BoxDecoration(color: colors.surface2, borderRadius: corner),
+          child: Center(
+            child: Icon(
+              style.icon,
+              color: style.resolve(context, colors.text2),
+              size: expand ? 32 : size * 0.5,
+            ),
+          ),
+        ),
+      );
     }
 
-    final thumbPath = file.thumbnailFileId == null
+    // No need to fetch Telegram's copy when the phone has a better one.
+    final thumbPath = local != null || file.thumbnailFileId == null
         ? null
         : ref.watch(thumbnailPathProvider(file.thumbnailFileId!)).value;
 
-    final layers = <Widget>[
-      // Tinted ground first, so there is never a blank square while an
-      // image decodes.
-      ColoredBox(color: style.background(Theme.of(context).brightness)),
-      if (file.minithumbnail != null)
-        Image.memory(
-          file.minithumbnail!,
-          fit: BoxFit.cover,
-          gaplessPlayback: true,
-          filterQuality: FilterQuality.low,
-        ),
-      if (thumbPath != null)
-        Image.file(
-          File(thumbPath),
-          fit: BoxFit.cover,
-          gaplessPlayback: true,
-          cacheWidth: expand ? 480 : (size * 3).round(),
-          frameBuilder: (context, child, frame, sync) => AnimatedOpacity(
-            opacity: frame == null ? 0 : 1,
-            duration: const Duration(milliseconds: 220),
-            child: child,
-          ),
-          errorBuilder: (_, _, _) => const SizedBox.shrink(),
-        ),
-    ];
-
-    final content = ClipRRect(
-      borderRadius: corner,
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          ...layers,
-          if (file.kind == FileKind.video)
-            Center(
-              child: Container(
-                padding: EdgeInsets.all(expand ? 8 : 3),
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.45),
-                  shape: BoxShape.circle,
+    return framed(
+      ClipRRect(
+        borderRadius: corner,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            // The slot colour first, so nothing flashes blank while decoding.
+            ColoredBox(color: colors.surface2),
+            if (file.minithumbnail != null && local == null)
+              _Blurred(bytes: file.minithumbnail!, sigma: expand ? 10 : 3),
+            if (local != null)
+              _Fading(
+                Image.memory(
+                  local,
+                  fit: BoxFit.cover,
+                  gaplessPlayback: true,
+                  filterQuality: FilterQuality.medium,
                 ),
-                child: Icon(
-                  Icons.play_arrow_rounded,
-                  color: Colors.white,
-                  size: expand ? 26 : size * 0.36,
+              )
+            else if (thumbPath != null)
+              _Fading(
+                Image.file(
+                  File(thumbPath),
+                  fit: BoxFit.cover,
+                  gaplessPlayback: true,
+                  // Decoded at its own size (Telegram's are 320 px at most):
+                  // shrinking a cache width below that is fine, forcing it
+                  // above only blurs.
+                  filterQuality: FilterQuality.medium,
+                  errorBuilder: (_, _, _) => const SizedBox.shrink(),
                 ),
               ),
-            ),
-        ],
+            if (file.kind == FileKind.video)
+              Positioned(
+                right: expand ? 6 : 3,
+                bottom: expand ? 6 : 3,
+                child: Icon(
+                  Icons.play_circle_filled_rounded,
+                  color: Colors.white,
+                  size: expand ? 22 : 16,
+                  shadows: const [Shadow(color: Color(0x66000000), blurRadius: 6)],
+                ),
+              ),
+          ],
+        ),
       ),
     );
-
-    return expand ? content : SizedBox.square(dimension: size, child: content);
   }
 }
 
-class FolderIconTile extends StatelessWidget {
-  const FolderIconTile({super.key, this.size = 44});
+/// Telegram's inline preview is ~40 px; drawn sharp it is a mosaic. Blurred,
+/// it reads as "the photo, loading", which is what it is.
+class _Blurred extends StatelessWidget {
+  const _Blurred({required this.bytes, required this.sigma});
 
-  final double size;
+  final Uint8List bytes;
+  final double sigma;
 
   @override
-  Widget build(BuildContext context) =>
-      FileIconTile(style: FileStyle.folder, size: size);
+  Widget build(BuildContext context) {
+    // Scaled a little past the clip so the blur's soft edges fall outside
+    // the tile instead of fading into the gutter.
+    return Transform.scale(
+      scale: 1.2,
+      child: ImageFiltered(
+        imageFilter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma, tileMode: TileMode.clamp),
+        child: Image.memory(
+          bytes,
+          fit: BoxFit.cover,
+          gaplessPlayback: true,
+          filterQuality: FilterQuality.medium,
+        ),
+      ),
+    );
+  }
+}
+
+/// Fades an image in once its first frame is ready.
+class _Fading extends StatelessWidget {
+  const _Fading(this.image);
+
+  final Image image;
+
+  @override
+  Widget build(BuildContext context) {
+    return Image(
+      image: image.image,
+      fit: image.fit,
+      gaplessPlayback: true,
+      filterQuality: image.filterQuality,
+      errorBuilder: image.errorBuilder,
+      frameBuilder: (context, child, frame, sync) => AnimatedOpacity(
+        opacity: frame == null && !sync ? 0 : 1,
+        duration: const Duration(milliseconds: 180),
+        child: child,
+      ),
+    );
+  }
 }

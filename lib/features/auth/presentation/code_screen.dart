@@ -116,7 +116,6 @@ class _CodeScreenState extends ConsumerState<CodeScreen> {
     final length = info == null ? 0 : _lengthOf(info.type);
 
     return AuthLayout(
-      icon: Icons.sms_rounded,
       title: 'Enter the code',
       subtitle: Text(info == null ? '' : _whereSent(info)),
       primary: BusyButton(label: 'Continue', busy: _busy, onPressed: _submit),
@@ -136,13 +135,13 @@ class _CodeScreenState extends ConsumerState<CodeScreen> {
             if (length > 0) LengthLimitingTextInputFormatter(length),
           ],
           style: theme.textTheme.headlineMedium?.copyWith(
-            letterSpacing: 14,
+            letterSpacing: 10,
             fontFeatures: const [FontFeature.tabularFigures()],
           ),
           decoration: InputDecoration(
             hintText: length > 0 ? '•' * length : 'Code',
             hintStyle: theme.textTheme.headlineMedium?.copyWith(
-              letterSpacing: 14,
+              letterSpacing: 10,
               color: theme.colorScheme.outlineVariant,
             ),
           ),

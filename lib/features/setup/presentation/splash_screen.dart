@@ -21,8 +21,8 @@ class SplashScreen extends ConsumerWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const BrandLockup(markSize: 76),
-                const SizedBox(height: 40),
+                const BrandMark(size: 56),
+                const SizedBox(height: 32),
                 if (error == null)
                   const SizedBox(
                     width: 120,

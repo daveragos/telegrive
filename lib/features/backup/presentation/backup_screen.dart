@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:photo_manager/photo_manager.dart';
 
+import '../../../app/theme/tokens.dart';
 import '../../../core/format/formatters.dart';
 import '../../../core/widgets/common.dart';
 import '../../../infrastructure/storage/preferences.dart';
@@ -11,143 +13,123 @@ final _deviceFoldersProvider = FutureProvider.autoDispose<List<DeviceFolder>>(
   (ref) => ref.read(backupControllerProvider.notifier).deviceFolders(),
 );
 
-/// Everything about photo backup: status, the switch, and what and when to
-/// back up.
+/// Everything about photo backup: where it stands, the switch, and what and
+/// when to back up.
 class BackupScreen extends ConsumerWidget {
   const BackupScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
+    final colors = context.colors;
     final backup = ref.watch(backupControllerProvider);
     final controller = ref.read(backupControllerProvider.notifier);
-    // Settings live in preferences; rebuild whenever backup state moves so
-    // the switches below reflect what was just changed.
     final prefs = ref.watch(preferencesProvider);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Photo backup')),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 4, 16, 32),
+        padding: const EdgeInsets.only(bottom: Space.x4),
         children: [
-          const BackupStatusCard(linkToSettings: false),
-          const SizedBox(height: 8),
-          _Group(
-            children: [
-              SwitchListTile(
-                secondary: const Icon(Icons.cloud_upload_outlined),
-                title: const Text('Back up photos & videos'),
-                subtitle: const Text('New ones back up automatically'),
-                value: backup.enabled,
-                onChanged: (on) async {
-                  if (on) {
-                    final ok = await controller.enable();
-                    if (!ok && context.mounted) {
-                      showSnack(context, 'Photo access is needed to back up.');
+          const BackupStatusPanel(),
+          if (backup.phase == BackupPhase.off || backup.phase == BackupPhase.needsPermission)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(Space.gutter, 0, Space.gutter, Space.s),
+              child: SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  onPressed: () async {
+                    if (backup.phase == BackupPhase.needsPermission) {
+                      if (!await controller.enable()) await PhotoManager.openSetting();
+                    } else if (context.mounted) {
+                      await enableBackup(context, ref);
                     }
-                  } else {
+                  },
+                  child: Text(
+                    backup.phase == BackupPhase.off ? 'Turn on backup' : 'Allow photo access',
+                  ),
+                ),
+              ),
+            ),
+          if (backup.failed > 0) ...[
+            const SizedBox(height: Space.s),
+            ListGroup(
+              children: [
+                StatusLine(
+                  icon: Icons.error_outline_rounded,
+                  color: colors.danger,
+                  text: '${Formatters.count(backup.failed, 'item')} didn\'t back up',
+                  detail: 'Skipped after three tries.',
+                  trailing: TextButton(
+                    onPressed: controller.retryFailed,
+                    child: const Text('Retry'),
+                  ),
+                ),
+              ],
+            ),
+          ],
+          if (backup.enabled) ...[
+            const SectionHeader('What to back up'),
+            ListGroup(
+              children: [
+                SwitchListTile(
+                  title: const Text('Videos'),
+                  subtitle: const Text('Photos are always included'),
+                  value: prefs.backupVideos,
+                  onChanged: (value) async {
+                    await controller.setIncludeVideos(value);
+                    ref.invalidate(preferencesProvider);
+                    ref.invalidate(_deviceFoldersProvider);
+                  },
+                ),
+                _FolderList(excluded: prefs.backupExcludedFolders),
+              ],
+            ),
+            const SectionHeader('When'),
+            ListGroup(
+              children: [
+                SwitchListTile(
+                  title: const Text('Use mobile data'),
+                  subtitle: const Text('Off: backup waits for Wi-Fi'),
+                  value: !prefs.backupWifiOnly,
+                  onChanged: (value) async {
+                    await controller.setWifiOnly(!value);
+                    ref.invalidate(preferencesProvider);
+                  },
+                ),
+              ],
+            ),
+            const SizedBox(height: Space.xxl),
+            ListGroup(
+              children: [
+                ListTile(
+                  title: Text(
+                    'Turn off backup',
+                    style: context.text.bodyLarge?.copyWith(color: colors.danger),
+                  ),
+                  onTap: () async {
                     final confirmed = await showConfirmDialog(
                       context,
                       title: 'Turn off backup?',
                       message:
                           'Photos already backed up stay in your drive. New '
-                          'photos won\'t be backed up until you turn it on again.',
+                          'ones won\'t be, until you turn it back on.',
                       confirmLabel: 'Turn off',
+                      destructive: true,
                     );
                     if (confirmed) await controller.disable();
-                  }
-                },
-              ),
-            ],
-          ),
-          if (backup.failed > 0) ...[
-            const SizedBox(height: 12),
-            Card(
-              color: scheme.errorContainer.withValues(alpha: 0.6),
-              child: ListTile(
-                leading: Icon(Icons.error_outline_rounded, color: scheme.onErrorContainer),
-                title: Text(
-                  '${Formatters.count(backup.failed, 'item')} couldn\'t be backed up',
-                  style: TextStyle(color: scheme.onErrorContainer),
+                  },
                 ),
-                subtitle: Text(
-                  'They were skipped after a few tries.',
-                  style: TextStyle(color: scheme.onErrorContainer),
-                ),
-                trailing: TextButton(
-                  onPressed: controller.retryFailed,
-                  child: const Text('Retry'),
-                ),
-              ),
+              ],
             ),
           ],
-          const _Label('What to back up'),
-          _Group(
-            children: [
-              SwitchListTile(
-                secondary: const Icon(Icons.videocam_outlined),
-                title: const Text('Include videos'),
-                value: prefs.backupVideos,
-                onChanged: (value) async {
-                  await controller.setIncludeVideos(value);
-                  ref.invalidate(preferencesProvider);
-                  ref.invalidate(_deviceFoldersProvider);
-                },
-              ),
-              const Divider(indent: 16, endIndent: 16),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-                child: Text(
-                  'Device folders',
-                  style: theme.textTheme.titleSmall,
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
-                child: Text(
-                  'Folders that appear later are included automatically.',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: scheme.onSurfaceVariant,
-                  ),
-                ),
-              ),
-              _FolderList(excluded: prefs.backupExcludedFolders),
-            ],
-          ),
-          const _Label('When'),
-          _Group(
-            children: [
-              SwitchListTile(
-                secondary: const Icon(Icons.signal_cellular_alt_rounded),
-                title: const Text('Use mobile data'),
-                subtitle: const Text('Otherwise backup waits for Wi-Fi'),
-                value: !prefs.backupWifiOnly,
-                onChanged: (value) async {
-                  await controller.setWifiOnly(!value);
-                  ref.invalidate(preferencesProvider);
-                },
-              ),
-            ],
-          ),
-          const SizedBox(height: 20),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Icon(Icons.info_outline_rounded, size: 18, color: scheme.onSurfaceVariant),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  'Originals go up in full quality to My Drive › '
-                  '${BackupController.rootFolder}, sorted by the folder they '
-                  'came from. Nothing is ever deleted from your phone.',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: scheme.onSurfaceVariant,
-                    height: 1.4,
-                  ),
-                ),
-              ),
-            ],
+          Padding(
+            padding: const EdgeInsets.fromLTRB(Space.gutter, Space.xxl, Space.gutter, 0),
+            child: Text(
+              'Originals go up in full quality to Files › ${BackupController.rootFolder}, '
+              'in a folder named after where they came from on this phone. '
+              'Nothing is deleted from your phone.',
+              style: context.text.bodySmall,
+            ),
           ),
         ],
       ),
@@ -166,59 +148,59 @@ class _FolderList extends ConsumerWidget {
     final controller = ref.read(backupControllerProvider.notifier);
     final lowerExcluded = excluded.map((f) => f.toLowerCase()).toSet();
 
-    return switch (folders) {
-      AsyncData(:final value) when value.isEmpty => const Padding(
-        padding: EdgeInsets.all(16),
-        child: Text('No photo folders found, or photo access is off.'),
-      ),
-      AsyncData(:final value) => Column(
+    final header = Padding(
+      padding: const EdgeInsets.fromLTRB(Space.gutter, Space.l, Space.gutter, Space.xs),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          Text('Folders on this phone', style: context.text.titleSmall),
+          const SizedBox(height: 2),
+          Text('New folders are included automatically.', style: context.text.bodySmall),
+        ],
+      ),
+    );
+
+    return switch (folders) {
+      AsyncData(:final value) => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          header,
+          if (value.isEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(Space.gutter, Space.s, Space.gutter, Space.l),
+              child: Text('No photo folders found.', style: context.text.bodyMedium),
+            ),
           for (final folder in value)
             CheckboxListTile(
               value: !lowerExcluded.contains(folder.name.toLowerCase()),
               title: Text(folder.name),
-              subtitle: Text(Formatters.count(folder.count, 'item')),
+              subtitle: Text(
+                Formatters.count(folder.count, 'item'),
+                style: context.text.bodySmall?.copyWith(fontFeatures: tabularFigures),
+              ),
               controlAffinity: ListTileControlAffinity.trailing,
               onChanged: (included) async {
-                await controller.setFolderIncluded(
-                  folder.name,
-                  included: included ?? true,
-                );
+                await controller.setFolderIncluded(folder.name, included: included ?? true);
                 ref.invalidate(preferencesProvider);
               },
             ),
-          const SizedBox(height: 8),
+          const SizedBox(height: Space.s),
         ],
       ),
-      AsyncError() => const Padding(
-        padding: EdgeInsets.all(16),
-        child: Text('Allow photo access to choose folders.'),
+      AsyncError() => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          header,
+          Padding(
+            padding: const EdgeInsets.fromLTRB(Space.gutter, Space.s, Space.gutter, Space.l),
+            child: Text('Allow photo access to choose folders.', style: context.text.bodyMedium),
+          ),
+        ],
       ),
       _ => const Padding(
-        padding: EdgeInsets.all(24),
+        padding: EdgeInsets.all(Space.xxl),
         child: Center(child: CircularProgressIndicator()),
       ),
     };
   }
-}
-
-class _Label extends StatelessWidget {
-  const _Label(this.text);
-
-  final String text;
-
-  @override
-  Widget build(BuildContext context) =>
-      SectionHeader(text, padding: const EdgeInsets.fromLTRB(8, 24, 8, 8));
-}
-
-class _Group extends StatelessWidget {
-  const _Group({required this.children});
-
-  final List<Widget> children;
-
-  @override
-  Widget build(BuildContext context) => Card(
-    child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: children),
-  );
 }

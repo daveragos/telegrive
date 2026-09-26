@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:drift/drift.dart' show Value;
 import 'package:handy_tdlib/api.dart' as td;
 
@@ -180,8 +182,13 @@ abstract final class MessageIndexer {
         final largest = photo.sizes.reduce(
           (a, b) => a.width * a.height >= b.width * b.height ? a : b,
         );
-        final smallest = photo.sizes.reduce(
-          (a, b) => a.width * a.height <= b.width * b.height ? a : b,
+        // The preview: the smallest size that still fills a grid tile on a
+        // dense screen (~480 px), not the 90 px one.
+        final bySize = [...photo.sizes]
+          ..sort((a, b) => (a.width * a.height).compareTo(b.width * b.height));
+        final preview = bySize.firstWhere(
+          (s) => math.max(s.width, s.height) >= 480,
+          orElse: () => bySize.last,
         );
         return _Media(
           file: largest.photo,
@@ -189,7 +196,7 @@ abstract final class MessageIndexer {
           mimeType: 'image/jpeg',
           caption: caption.text,
           minithumbnail: photo.minithumbnail,
-          thumbnailFileId: smallest.photo.id,
+          thumbnailFileId: preview.photo.id,
         );
       default:
         return null;

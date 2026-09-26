@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -6,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/files/file_kind.dart';
 import '../../../core/format/formatters.dart';
+import '../../backup/data/local_media.dart';
 import '../../drive/data/drive_repository.dart';
 import '../../drive/data/previews.dart';
 import '../../drive/domain/drive_models.dart';
@@ -214,8 +216,15 @@ class _ImagePageState extends ConsumerState<_ImagePage> {
 
   @override
   Widget build(BuildContext context) {
-    final preview = ref.watch(filePreviewProvider(widget.file.id));
-    final progress = preview.value;
+    // The phone's own copy, when the photo was backed up from here, opens at
+    // once; only photos that live nowhere else come down from Telegram.
+    final local = ref.watch(localOriginalProvider(widget.file.id));
+    final localPath = local.value;
+    final remote = local.isLoading || localPath != null
+        ? null
+        : ref.watch(filePreviewProvider(widget.file.id));
+    final progress = remote?.value;
+    final path = localPath ?? progress?.path;
 
     return GestureDetector(
       onTap: widget.onTap,
@@ -225,14 +234,15 @@ class _ImagePageState extends ConsumerState<_ImagePage> {
         fit: StackFit.expand,
         children: [
           _Placeholder(file: widget.file),
-          if (progress?.path != null)
+          if (path != null)
             InteractiveViewer(
               transformationController: _transform,
               minScale: 1,
               maxScale: 6,
-              child: Image.file(
-                File(progress!.path!),
+              child: Image(
+                image: _screenSized(context, File(path)),
                 fit: BoxFit.contain,
+                filterQuality: FilterQuality.medium,
                 frameBuilder: (context, child, frame, sync) => AnimatedOpacity(
                   opacity: frame == null && !sync ? 0 : 1,
                   duration: const Duration(milliseconds: 250),
@@ -244,12 +254,25 @@ class _ImagePageState extends ConsumerState<_ImagePage> {
                 ),
               ),
             ),
-          if (preview.hasError)
-            _Message(icon: Icons.cloud_off_rounded, text: '${preview.error}')
-          else if (progress == null || !progress.isReady)
+          if (remote?.hasError ?? false)
+            _Message(icon: Icons.cloud_off_rounded, text: '${remote!.error}')
+          else if (path == null && !local.isLoading)
             Center(child: _ProgressRing(fraction: progress?.fraction ?? 0)),
         ],
       ),
+    );
+  }
+
+  /// Decodes big originals at twice the screen's width: sharp when zoomed
+  /// in, without holding a 50-megapixel bitmap. Never upscales.
+  static ImageProvider _screenSized(BuildContext context, File file) {
+    final media = MediaQuery.of(context);
+    final width = (media.size.width * media.devicePixelRatio * 2).round().clamp(1080, 4096);
+    return ResizeImage(
+      FileImage(file),
+      width: width,
+      policy: ResizeImagePolicy.fit,
+      allowUpscaling: false,
     );
   }
 }
@@ -338,14 +361,37 @@ class _Placeholder extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final local = ref.watch(localThumbnailProvider(file.id)).value;
+    if (local != null) {
+      return Image.memory(
+        local,
+        fit: BoxFit.contain,
+        gaplessPlayback: true,
+        filterQuality: FilterQuality.medium,
+      );
+    }
     final thumb = file.thumbnailFileId == null
         ? null
         : ref.watch(thumbnailPathProvider(file.thumbnailFileId!)).value;
     if (thumb != null) {
-      return Image.file(File(thumb), fit: BoxFit.contain, gaplessPlayback: true);
+      return Image.file(
+        File(thumb),
+        fit: BoxFit.contain,
+        gaplessPlayback: true,
+        filterQuality: FilterQuality.medium,
+      );
     }
     if (file.minithumbnail != null) {
-      return Image.memory(file.minithumbnail!, fit: BoxFit.contain, gaplessPlayback: true);
+      // Only ever a stand-in; blurred so it doesn't read as a broken photo.
+      return ImageFiltered(
+        imageFilter: ImageFilter.blur(sigmaX: 16, sigmaY: 16, tileMode: TileMode.clamp),
+        child: Image.memory(
+          file.minithumbnail!,
+          fit: BoxFit.contain,
+          gaplessPlayback: true,
+          filterQuality: FilterQuality.medium,
+        ),
+      );
     }
     return const SizedBox.shrink();
   }

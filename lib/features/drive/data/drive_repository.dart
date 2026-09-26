@@ -100,7 +100,7 @@ class DriveRepository {
 
   Stream<List<DriveFile>> watchMedia() => _db.watchMedia().map(_files);
 
-  Future<Set<String>> mediaFingerprints() => _db.mediaFingerprints();
+  Future<Map<String, String>> mediaFingerprints() => _db.mediaFingerprints();
 
   Stream<List<DriveFile>> watchKind(FileKind kind) =>
       _db.watchKind(kind).map(_files);

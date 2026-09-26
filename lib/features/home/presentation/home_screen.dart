@@ -3,10 +3,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../app/theme/file_style.dart';
+import '../../../app/theme/tokens.dart';
 import '../../../core/files/file_kind.dart';
 import '../../../core/format/formatters.dart';
+import '../../../core/widgets/brand_mark.dart';
 import '../../../core/widgets/common.dart';
-import '../../../infrastructure/database/app_database.dart' show KindTotal;
+import '../../../infrastructure/database/app_database.dart'
+    show KindTotal, TransferOrigin, TransferStatus;
 import '../../../infrastructure/storage/preferences.dart';
 import '../../backup/data/backup_controller.dart';
 import '../../backup/presentation/backup_card.dart';
@@ -16,17 +19,19 @@ import '../../drive/data/drive_sync.dart';
 import '../../drive/domain/drive_models.dart';
 import '../../files/presentation/file_actions.dart';
 import '../../files/presentation/file_tiles.dart';
+import '../../transfers/data/transfer_queue.dart';
 
+/// What is in the drive and what is happening to it. Recent files first,
+/// because that is what people come back for; then where the space goes,
+/// which doubles as the way into each kind of file.
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final session = ref.watch(driveSessionProvider);
     final summary = ref.watch(storageSummaryProvider).value;
     final recent = ref.watch(recentFilesProvider);
-    final starredCount = ref.watch(starredFilesProvider).value?.length ?? 0;
-    final syncing = ref.watch(driveSyncProvider.select((s) => s.running));
+    final starred = ref.watch(starredFilesProvider).value?.length ?? 0;
 
     return Scaffold(
       floatingActionButton: FloatingActionButton.extended(
@@ -40,485 +45,331 @@ class HomeScreen extends ConsumerWidget {
         child: CustomScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
           slivers: [
-            SliverSafeArea(
-              bottom: false,
-              sliver: SliverToBoxAdapter(
-                child: _Header(
-                  greeting: _greeting(session?.firstName),
-                  initials: session?.initials ?? '?',
-                  syncing: syncing,
+            const SliverSafeArea(bottom: false, sliver: SliverToBoxAdapter(child: _Header())),
+            const SliverToBoxAdapter(child: _Activity()),
+            SliverToBoxAdapter(
+              child: SectionHeader(
+                'Recent',
+                trailing: TextButton(
+                  style: TextButton.styleFrom(
+                    minimumSize: const Size(0, 32),
+                    padding: const EdgeInsets.symmetric(horizontal: Space.s),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  onPressed: () => context.push('/recent'),
+                  child: const Text('See all'),
                 ),
               ),
             ),
             SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                child: _SearchField(onTap: () => context.push('/search')),
-              ),
-            ),
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-                child: _StorageCard(summary: summary),
-              ),
-            ),
-            const SliverToBoxAdapter(child: _HomeBackupCard()),
-            const SliverToBoxAdapter(child: SectionHeader('Browse')),
-            SliverPadding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              sliver: SliverGrid.count(
-                crossAxisCount: 3,
-                mainAxisSpacing: 10,
-                crossAxisSpacing: 10,
-                childAspectRatio: 1.02,
-                children: [
-                  for (final kind in const [
-                    FileKind.image,
-                    FileKind.video,
-                    FileKind.document,
-                    FileKind.audio,
-                    FileKind.archive,
-                    FileKind.other,
-                  ])
-                    _CategoryTile(
-                      kind: kind,
-                      total: summary?.totalFor(kind),
-                      onTap: () => context.push('/category/${kind.name}'),
-                    ),
-                ],
-              ),
-            ),
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-                child: Row(
+              child: switch (recent) {
+                AsyncData(value: final files) when files.isEmpty => const _NothingYet(),
+                AsyncData(value: final files) => ListGroup(
                   children: [
-                    Expanded(
-                      child: _QuickLink(
-                        icon: Icons.star_rounded,
-                        color: Colors.amber.shade600,
-                        label: 'Starred',
-                        detail: Formatters.count(starredCount, 'file'),
+                    for (final file in files.take(5))
+                      FileListTile(
+                        file: file,
+                        onTap: () => FileActions.open(context, ref, file),
+                        onLongPress: () => FileActions.showFileSheet(context, ref, file),
+                        onMore: () => FileActions.showFileSheet(context, ref, file),
+                      ),
+                    if (starred > 0)
+                      ListTile(
+                        leading: const Icon(Icons.star_outline_rounded),
+                        title: const Text('Starred'),
+                        trailing: Text(
+                          Formatters.number(starred),
+                          style: context.text.bodyMedium?.copyWith(
+                            fontFeatures: tabularFigures,
+                          ),
+                        ),
                         onTap: () => context.push('/starred'),
                       ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: _QuickLink(
-                        icon: Icons.folder_rounded,
-                        color: FileStyle.folder.color,
-                        label: 'My Drive',
-                        detail: 'All folders',
-                        onTap: () => context.go('/files'),
-                      ),
-                    ),
                   ],
                 ),
-              ),
+                _ => const Padding(
+                  padding: EdgeInsets.all(Space.x3),
+                  child: Center(child: CircularProgressIndicator()),
+                ),
+              },
             ),
-            SectionHeader(
-              'Recent',
-              trailing: TextButton(
-                onPressed: () => context.push('/recent'),
-                child: const Text('See all'),
-              ),
-            ).asSliver(),
-            ...switch (recent) {
-              AsyncData(value: final files) when files.isEmpty => [
-                SliverToBoxAdapter(
-                  child: EmptyState(
-                    icon: Icons.cloud_upload_outlined,
-                    title: 'Nothing here yet',
-                    message:
-                        'Upload a file, or forward any file into your Telegrive '
-                        'channel in Telegram — it shows up here.',
-                    compact: true,
-                    action: FilledButton.tonalIcon(
-                      onPressed: () => FileActions.upload(context, ref),
-                      icon: const Icon(Icons.upload_rounded),
-                      label: const Text('Upload files'),
-                    ),
-                  ),
-                ),
-              ],
-              AsyncData(value: final files) => [
-                SliverList.builder(
-                  itemCount: files.length,
-                  itemBuilder: (context, index) {
-                    final file = files[index];
-                    return FileListTile(
-                      file: file,
-                      onTap: () => FileActions.open(context, ref, file),
-                      onLongPress: () => FileActions.showFileSheet(context, ref, file),
-                      onMore: () => FileActions.showFileSheet(context, ref, file),
-                    );
-                  },
-                ),
-              ],
-              _ => [
-                const SliverToBoxAdapter(
-                  child: Padding(
-                    padding: EdgeInsets.all(32),
-                    child: Center(child: CircularProgressIndicator()),
-                  ),
-                ),
-              ],
-            },
-            const SliverToBoxAdapter(child: SizedBox(height: 96)),
+            if (summary != null && summary.fileCount > 0) ...[
+              const SliverToBoxAdapter(child: SectionHeader('Storage')),
+              SliverToBoxAdapter(child: _Storage(summary: summary)),
+            ],
+            const SliverToBoxAdapter(child: SizedBox(height: 112)),
           ],
         ),
       ),
     );
   }
+}
 
-  static String _greeting(String? name) {
-    final hour = DateTime.now().hour;
-    final part = hour < 12
-        ? 'Good morning'
-        : hour < 18
-        ? 'Good afternoon'
-        : 'Good evening';
-    return name == null || name.isEmpty ? part : '$part, $name';
+class _Header extends ConsumerWidget {
+  const _Header();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colors = context.colors;
+    final session = ref.watch(driveSessionProvider);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(Space.gutter, Space.m, Space.m, 0),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              const BrandMark(size: 28),
+              const SizedBox(width: Space.m),
+              Expanded(child: Text('Telegrive', style: context.text.titleLarge)),
+              IconButton(
+                onPressed: () => context.push('/transfers'),
+                icon: const Icon(Icons.swap_vert_rounded),
+                tooltip: 'Transfers',
+              ),
+              const SizedBox(width: Space.xs),
+              Tooltip(
+                message: 'Settings',
+                child: InkResponse(
+                  onTap: () => context.push('/settings'),
+                  radius: 24,
+                  child: CircleAvatar(
+                    radius: 17,
+                    backgroundColor: colors.surface2,
+                    child: Text(
+                      session?.initials ?? '?',
+                      style: context.text.labelMedium?.copyWith(color: colors.text),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: Space.s),
+            ],
+          ),
+          const SizedBox(height: Space.l),
+          Padding(
+            padding: const EdgeInsets.only(right: Space.s),
+            child: Material(
+              color: colors.surface2,
+              borderRadius: BorderRadius.circular(Radii.control),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(Radii.control),
+                onTap: () => context.push('/search'),
+                child: SizedBox(
+                  height: 44,
+                  child: Row(
+                    children: [
+                      const SizedBox(width: Space.m),
+                      Icon(Icons.search_rounded, color: colors.text3, size: 22),
+                      const SizedBox(width: Space.m),
+                      Text(
+                        'Search files and folders',
+                        style: context.text.bodyLarge?.copyWith(color: colors.text3),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
-/// Suggests backup while it's off (until "Not now" hides it for a week) and
-/// shows progress while it runs. Quiet once everything is backed up.
-class _HomeBackupCard extends ConsumerStatefulWidget {
-  const _HomeBackupCard();
+/// Only here while something needs saying: transfers in flight or failed,
+/// and backup when it is off, blocked or busy. Quiet once all is well.
+class _Activity extends ConsumerStatefulWidget {
+  const _Activity();
 
   @override
-  ConsumerState<_HomeBackupCard> createState() => _HomeBackupCardState();
+  ConsumerState<_Activity> createState() => _ActivityState();
 }
 
-class _HomeBackupCardState extends ConsumerState<_HomeBackupCard> {
-  late bool _hidden = () {
+class _ActivityState extends ConsumerState<_Activity> {
+  late bool _backupHidden = () {
     final until = ref.read(preferencesProvider).backupCardHiddenUntil;
     return until != null && until.isAfter(DateTime.now());
   }();
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.colors;
     final backup = ref.watch(backupControllerProvider);
-    final show = backup.isWorking ||
+    final transfers = ref.watch(transferQueueProvider);
+    final active = transfers.active
+        .where((t) => t.origin == TransferOrigin.manual)
+        .toList();
+    final failed = transfers.finished
+        .where((t) => t.status == TransferStatus.failed && t.origin == TransferOrigin.manual)
+        .length;
+
+    final showBackup = backup.isWorking ||
         backup.phase == BackupPhase.waitingForWifi ||
         backup.phase == BackupPhase.needsPermission ||
-        (backup.phase == BackupPhase.off && !_hidden);
-    if (!show) return const SizedBox.shrink();
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-      child: BackupStatusCard(
-        onDismiss: () {
-          ref.read(preferencesProvider).hideBackupCard(const Duration(days: 7));
-          setState(() => _hidden = true);
-        },
-      ),
-    );
-  }
-}
+        (backup.phase == BackupPhase.off && !_backupHidden);
 
-extension on Widget {
-  Widget asSliver() => SliverToBoxAdapter(child: this);
-}
-
-class _Header extends StatelessWidget {
-  const _Header({required this.greeting, required this.initials, required this.syncing});
-
-  final String greeting;
-  final String initials;
-  final bool syncing;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 16, 16, 4),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(greeting, style: theme.textTheme.headlineSmall),
-                const SizedBox(height: 2),
-                AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 200),
-                  child: Text(
-                    syncing ? 'Syncing with Telegram…' : 'Everything is backed up in Telegram',
-                    key: ValueKey(syncing),
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: scheme.onSurfaceVariant,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          InkWell(
-            customBorder: const CircleBorder(),
-            onTap: () => context.go('/settings'),
-            child: CircleAvatar(
-              radius: 22,
-              backgroundColor: scheme.primaryContainer,
-              child: Text(
-                initials,
-                style: theme.textTheme.titleSmall?.copyWith(
-                  color: scheme.onPrimaryContainer,
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _SearchField extends StatelessWidget {
-  const _SearchField({required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-    return Material(
-      color: scheme.surfaceContainer,
-      borderRadius: BorderRadius.circular(28),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(28),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 15),
-          child: Row(
-            children: [
-              Icon(Icons.search_rounded, color: scheme.onSurfaceVariant),
-              const SizedBox(width: 12),
-              Text(
-                'Search your drive',
-                style: theme.textTheme.bodyLarge?.copyWith(
-                  color: scheme.onSurfaceVariant,
-                ),
-              ),
-            ],
-          ),
+    final rows = <Widget>[
+      if (active.isNotEmpty)
+        StatusLine(
+          icon: Icons.swap_vert_rounded,
+          color: colors.accent,
+          text: '${Formatters.count(active.length, 'transfer')} in progress',
+          detail: '${(_progress(active) * 100).round()}% done',
+          progress: _progress(active),
+          onTap: () => context.push('/transfers'),
         ),
-      ),
-    );
-  }
-}
-
-class _StorageCard extends StatelessWidget {
-  const _StorageCard({required this.summary});
-
-  final StorageSummary? summary;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final bytes = summary?.bytes ?? 0;
-    final count = summary?.fileCount ?? 0;
-    final segments = [
-      for (final total in summary?.totals ?? const [])
-        if (total.bytes > 0) (FileStyle.forKind(total.kind).color, total.bytes),
-    ]..sort((a, b) => b.$2.compareTo(a.$2));
-
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(24),
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFF2F6FED), Color(0xFF3F83F8), Color(0xFF22B8E6)],
+      if (failed > 0)
+        StatusLine(
+          icon: Icons.error_outline_rounded,
+          color: colors.danger,
+          text: failed == 1 ? '1 transfer failed' : '$failed transfers failed',
+          detail: 'Open Transfers to retry.',
+          onTap: () => context.push('/transfers'),
         ),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF2F6FED).withValues(alpha: 0.25),
-            blurRadius: 24,
-            offset: const Offset(0, 10),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Icon(Icons.cloud_done_rounded, color: Colors.white, size: 20),
-              const SizedBox(width: 8),
-              Text(
-                'Your drive',
-                style: theme.textTheme.titleSmall?.copyWith(color: Colors.white),
-              ),
-              const Spacer(),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.all_inclusive_rounded, size: 14, color: Colors.white),
-                    const SizedBox(width: 4),
-                    Text(
-                      'Unlimited',
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 18),
-          Text(
-            Formatters.bytes(bytes),
-            style: theme.textTheme.displaySmall?.copyWith(color: Colors.white),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            '${Formatters.count(count, 'file')} stored · no quota, ever',
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: Colors.white.withValues(alpha: 0.85),
-            ),
-          ),
-          const SizedBox(height: 16),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(6),
-            child: SizedBox(
-              height: 8,
-              width: double.infinity,
-              child: segments.isEmpty
-                  ? ColoredBox(color: Colors.white.withValues(alpha: 0.25))
-                  : Row(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        for (final (index, (color, size)) in segments.indexed) ...[
-                          if (index > 0) const SizedBox(width: 2),
-                          Expanded(
-                            flex: (size * 1000 ~/ (bytes == 0 ? 1 : bytes)).clamp(8, 1000),
-                            child: ColoredBox(
-                              color: Color.lerp(color, Colors.white, 0.35)!,
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-            ),
-          ),
-        ],
+      if (showBackup)
+        BackupStatusLine(
+          onDismiss: () {
+            ref.read(preferencesProvider).hideBackupCard(const Duration(days: 7));
+            setState(() => _backupHidden = true);
+          },
+        ),
+    ];
+    if (rows.isEmpty) return const SizedBox(height: Space.s);
+
+    return Padding(
+      padding: const EdgeInsets.only(top: Space.l),
+      child: ListGroup(children: rows),
+    );
+  }
+
+  static double _progress(List<TransferItem> items) {
+    final total = items.fold<int>(0, (sum, t) => sum + t.row.totalBytes);
+    final done = items.fold<int>(0, (sum, t) => sum + t.row.doneBytes);
+    return total == 0 ? 0 : done / total;
+  }
+}
+
+class _NothingYet extends ConsumerWidget {
+  const _NothingYet();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return EmptyState(
+      title: 'Your drive is empty',
+      message:
+          'Upload files here, or forward any file to your Telegrive channel '
+          'in Telegram and it will show up.',
+      compact: true,
+      action: FilledButton(
+        onPressed: () => FileActions.upload(context, ref),
+        child: const Text('Upload files'),
       ),
     );
   }
 }
 
-class _CategoryTile extends StatelessWidget {
-  const _CategoryTile({required this.kind, required this.total, required this.onTap});
+/// Total, one proportional bar, then a row per kind that opens it.
+class _Storage extends StatelessWidget {
+  const _Storage({required this.summary});
 
-  final FileKind kind;
-  final KindTotal? total;
-  final VoidCallback onTap;
+  final StorageSummary summary;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-    final style = FileStyle.forKind(kind);
-    return Material(
-      color: scheme.surfaceContainerLow,
-      borderRadius: BorderRadius.circular(20),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(20),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(12),
+    final colors = context.colors;
+    final kinds = [...summary.totals.where((t) => t.count > 0)]
+      ..sort((a, b) => b.bytes.compareTo(a.bytes));
+
+    return ListGroup(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(Space.gutter, Space.l, Space.gutter, Space.l),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                width: 38,
-                height: 38,
-                decoration: BoxDecoration(
-                  color: style.background(theme.brightness),
-                  borderRadius: BorderRadius.circular(12),
+              Text.rich(
+                TextSpan(
+                  children: [
+                    TextSpan(
+                      text: Formatters.bytes(summary.bytes),
+                      style: context.text.titleMedium,
+                    ),
+                    TextSpan(
+                      text: '  in ${Formatters.count(summary.fileCount, 'file')}',
+                      style: context.text.bodyMedium,
+                    ),
+                  ],
                 ),
-                child: Icon(style.icon, color: style.color, size: 21),
+                style: const TextStyle(fontFeatures: tabularFigures),
               ),
-              const Spacer(),
-              Text(kind.label, style: theme.textTheme.titleSmall),
-              Text(
-                total == null || total!.count == 0
-                    ? 'Empty'
-                    : Formatters.bytes(total!.bytes),
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: scheme.onSurfaceVariant,
+              const SizedBox(height: Space.m),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(3),
+                child: SizedBox(
+                  height: 6,
+                  width: double.infinity,
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      for (final (index, total) in kinds.indexed) ...[
+                        if (index > 0) SizedBox(width: 2, child: ColoredBox(color: colors.surface)),
+                        Expanded(
+                          flex: (total.bytes * 1000 ~/ summary.bytes).clamp(6, 1000),
+                          child: ColoredBox(
+                            color: FileStyle.forKind(total.kind).resolve(context, colors.text3),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
                 ),
               ),
             ],
           ),
         ),
-      ),
+        for (final total in kinds) _KindRow(total: total),
+      ],
     );
   }
 }
 
-class _QuickLink extends StatelessWidget {
-  const _QuickLink({
-    required this.icon,
-    required this.color,
-    required this.label,
-    required this.detail,
-    required this.onTap,
-  });
+class _KindRow extends StatelessWidget {
+  const _KindRow({required this.total});
 
-  final IconData icon;
-  final Color color;
-  final String label;
-  final String detail;
-  final VoidCallback onTap;
+  final KindTotal total;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-    return Material(
-      color: scheme.surfaceContainerLow,
-      borderRadius: BorderRadius.circular(18),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(18),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          child: Row(
-            children: [
-              Icon(icon, color: color),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(label, style: theme.textTheme.titleSmall),
-                    Text(
-                      detail,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: scheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Icon(Icons.chevron_right_rounded, color: scheme.onSurfaceVariant),
-            ],
-          ),
+    final colors = context.colors;
+    final style = FileStyle.forKind(total.kind);
+    return InkWell(
+      onTap: () => context.push('/category/${total.kind.name}'),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: Space.gutter, vertical: 14),
+        child: Row(
+          children: [
+            Icon(style.icon, size: 22, color: style.resolve(context, colors.text2)),
+            const SizedBox(width: Space.l),
+            Expanded(child: Text(total.kind.label, style: context.text.titleSmall)),
+            Text(
+              '${Formatters.count(total.count, _noun(total.kind))} · '
+              '${Formatters.bytes(total.bytes)}',
+              style: context.text.bodyMedium?.copyWith(fontFeatures: tabularFigures),
+            ),
+            const SizedBox(width: Space.xs),
+            Icon(Icons.chevron_right_rounded, color: colors.text3, size: 20),
+          ],
         ),
       ),
     );
   }
+
+  static String _noun(FileKind kind) => switch (kind) {
+    FileKind.image => 'photo',
+    FileKind.video => 'video',
+    FileKind.audio => 'track',
+    FileKind.app => 'app',
+    _ => 'file',
+  };
 }

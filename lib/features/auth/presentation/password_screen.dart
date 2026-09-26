@@ -47,7 +47,6 @@ class _PasswordScreenState extends ConsumerState<PasswordScreen> {
     final hint = state is td.AuthorizationStateWaitPassword ? state.passwordHint : '';
 
     return AuthLayout(
-      icon: Icons.lock_rounded,
       title: 'Two-step verification',
       subtitle: const Text(
         'Your account has an extra password. Enter it to finish signing in.',

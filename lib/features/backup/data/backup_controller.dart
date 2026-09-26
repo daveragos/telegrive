@@ -383,7 +383,7 @@ class BackupController extends Notifier<BackupState> {
   /// null when it was skipped (already in flight, or the pass was stopped).
   Future<bool?> _backUp(
     AssetEntity asset,
-    Set<String> fingerprints,
+    Map<String, String> fingerprints,
     BackupAssetRow? record,
   ) async {
     if (!_activeAssets.add(asset.id)) return null;
@@ -397,8 +397,9 @@ class BackupController extends Notifier<BackupState> {
       final size = await file.length();
 
       // Already up there, from an earlier install or another phone.
-      if (fingerprints.contains('$name|$size')) {
-        await _db.markAssetBackedUp(asset.id, null);
+      final existing = fingerprints['$name|$size'];
+      if (existing != null) {
+        await _db.markAssetBackedUp(asset.id, existing);
         return true;
       }
 
@@ -427,7 +428,7 @@ class BackupController extends Notifier<BackupState> {
       switch (row.status) {
         case TransferStatus.completed:
           await _db.markAssetBackedUp(asset.id, row.fileId);
-          fingerprints.add('$name|$size');
+          fingerprints['$name|$size'] = row.fileId;
           return true;
         case TransferStatus.cancelled:
           return null;
@@ -515,8 +516,9 @@ class BackupController extends Notifier<BackupState> {
   static Future<String?> _thumbnailFor(AssetEntity asset) async {
     try {
       final bytes = await asset.thumbnailDataWithSize(
+        // Telegram's ceiling for document thumbnails; as sharp as allowed.
         const ThumbnailSize(320, 320),
-        quality: 80,
+        quality: 90,
       );
       if (bytes == null || bytes.isEmpty || bytes.length > 200 * 1024) {
         return null;

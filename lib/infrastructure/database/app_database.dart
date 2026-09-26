@@ -93,20 +93,32 @@ class AppDatabase extends _$AppDatabase {
         .watch();
   }
 
-  /// `name|size` of every photo and video in the drive. How backup
-  /// recognises what is already up there after a reinstall or on a new
-  /// phone, where device media ids mean nothing.
-  Future<Set<String>> mediaFingerprints() async {
+  /// `name|size` of every photo and video in the drive, to its file id. How
+  /// backup recognises what is already up there after a reinstall or on a
+  /// new phone, where device media ids mean nothing.
+  Future<Map<String, String>> mediaFingerprints() async {
     final rows = await (selectOnly(driveFiles)
-          ..addColumns([driveFiles.name, driveFiles.size])
+          ..addColumns([driveFiles.id, driveFiles.name, driveFiles.size])
           ..where(
             driveFiles.kind.isIn([FileKind.image.name, FileKind.video.name]),
           ))
         .get();
     return {
       for (final row in rows)
-        '${row.read(driveFiles.name)}|${row.read(driveFiles.size)}',
+        '${row.read(driveFiles.name)}|${row.read(driveFiles.size)}':
+            row.read(driveFiles.id)!,
     };
+  }
+
+  /// Drive file id to the phone's media id, for every backed-up photo this
+  /// phone still knows. Lets the app show the phone's own sharp copy.
+  Stream<Map<String, String>> watchLocalAssets() {
+    return (select(backupAssets)
+          ..where(
+            (a) => a.state.equalsValue(BackupAssetState.done) & a.fileId.isNotNull(),
+          ))
+        .watch()
+        .map((rows) => {for (final row in rows) row.fileId!: row.assetId});
   }
 
   Stream<List<FileRow>> watchKind(FileKind kind) =>

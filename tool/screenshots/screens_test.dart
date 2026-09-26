@@ -16,11 +16,14 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:telegrive/app/app_shell.dart';
 import 'package:telegrive/app/theme/app_theme.dart';
+import 'package:telegrive/features/auth/presentation/phone_screen.dart';
+import 'package:telegrive/features/auth/presentation/welcome_screen.dart';
 import 'package:telegrive/features/backup/data/backup_controller.dart';
 import 'package:telegrive/features/backup/presentation/backup_screen.dart';
 import 'package:telegrive/features/photos/presentation/photos_screen.dart';
 import 'package:telegrive/core/files/file_kind.dart';
 import 'package:telegrive/features/drive/data/drive_repository.dart';
+import 'package:telegrive/features/drive/data/previews.dart';
 import 'package:telegrive/features/drive/data/drive_session.dart';
 import 'package:telegrive/features/drive/data/drive_sync.dart';
 import 'package:telegrive/features/drive/domain/drive_models.dart';
@@ -73,6 +76,7 @@ class _Backup extends BackupController {
   ];
 }
 
+
 class _Queue extends TransferQueue {
   _Queue(this._state);
 
@@ -83,38 +87,77 @@ class _Queue extends TransferQueue {
 }
 
 Future<void> _loadFonts() async {
-  final root =
+  final sdkFonts =
       '${Platform.environment['FLUTTER_ROOT']}/bin/cache/artifacts/material_fonts';
-  Future<ByteData> read(String name) async =>
-      ByteData.sublistView(await File('$root/$name').readAsBytes());
+  Future<ByteData> read(String path) async =>
+      ByteData.sublistView(await File(path).readAsBytes());
+  final plex = FontLoader('IBMPlexSans');
+  for (final weight in ['Regular', 'Medium', 'SemiBold', 'Bold']) {
+    plex.addFont(read('assets/fonts/IBMPlexSans-$weight.ttf'));
+  }
+  await plex.load();
+  // Framework widgets that fall back to Roboto still get real glyphs.
   final roboto = FontLoader('Roboto');
-  for (final weight in ['Light', 'Regular', 'Medium', 'Bold', 'Black']) {
-    roboto.addFont(read('Roboto-$weight.ttf'));
+  for (final weight in ['Regular', 'Medium', 'Bold']) {
+    roboto.addFont(read('$sdkFonts/Roboto-$weight.ttf'));
   }
   await roboto.load();
   await (FontLoader(
     'MaterialIcons',
-  )..addFont(read('MaterialIcons-Regular.otf'))).load();
+  )..addFont(read('$sdkFonts/MaterialIcons-Regular.otf'))).load();
 }
 
-/// A soft two-colour gradient standing in for a photo thumbnail.
-Future<Uint8List> _fakePhoto(Color a, Color b) async {
+typedef _FakePhoto = ({Uint8List mini, int thumbId});
+
+/// Thumbnail id to file path, served through thumbnailPathProvider.
+final _thumbPaths = <int, String>{};
+
+/// Draws a small landscape (sky, sun, two hills) at [px] square.
+Future<Uint8List> _scene(Color sky, Color ground, int px) async {
   final recorder = ui.PictureRecorder();
   final canvas = Canvas(recorder);
-  const size = Size(40, 40);
+  final s = px.toDouble();
   canvas.drawRect(
-    Offset.zero & size,
+    Rect.fromLTWH(0, 0, s, s),
     Paint()
-      ..shader = ui.Gradient.linear(Offset.zero, const Offset(40, 40), [a, b]),
+      ..shader = ui.Gradient.linear(Offset.zero, Offset(0, s), [
+        sky,
+        Color.lerp(sky, Colors.white, 0.45)!,
+      ]),
   );
   canvas.drawCircle(
-    const Offset(28, 12),
-    6,
-    Paint()..color = Colors.white.withValues(alpha: 0.7),
+    Offset(s * 0.7, s * 0.3),
+    s * 0.11,
+    Paint()..color = const Color(0xFFFFF4D6),
   );
-  final image = await recorder.endRecording().toImage(40, 40);
+  final far = Path()
+    ..moveTo(0, s * 0.7)
+    ..quadraticBezierTo(s * 0.3, s * 0.45, s * 0.6, s * 0.66)
+    ..quadraticBezierTo(s * 0.8, s * 0.55, s, s * 0.62)
+    ..lineTo(s, s)
+    ..lineTo(0, s)
+    ..close();
+  canvas.drawPath(far, Paint()..color = Color.lerp(ground, sky, 0.35)!);
+  final near = Path()
+    ..moveTo(0, s * 0.82)
+    ..quadraticBezierTo(s * 0.45, s * 0.66, s, s * 0.84)
+    ..lineTo(s, s)
+    ..lineTo(0, s)
+    ..close();
+  canvas.drawPath(near, Paint()..color = ground);
+  final image = await recorder.endRecording().toImage(px, px);
   final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
   return bytes!.buffer.asUint8List();
+}
+
+/// A photo as the app receives it: Telegram's tiny inline preview plus a
+/// thumbnail at the resolution Telegram actually serves (320 px).
+Future<_FakePhoto> _fakePhoto(Color sky, Color ground) async {
+  final id = _thumbPaths.length + 1;
+  final file = File('${Directory.systemTemp.path}/telegrive_thumb_$id.png');
+  await file.writeAsBytes(await _scene(sky, ground, 320));
+  _thumbPaths[id] = file.path;
+  return (mini: await _scene(sky, ground, 24), thumbId: id);
 }
 
 DriveFile _file(
@@ -122,7 +165,7 @@ DriveFile _file(
   int size,
   int hoursAgo, {
   bool starred = false,
-  Uint8List? thumb,
+  _FakePhoto? thumb,
   int parts = 1,
   int? takenDaysAgo,
 }) {
@@ -138,7 +181,8 @@ DriveFile _file(
     modifiedAt: at,
     partCount: parts,
     starred: starred,
-    minithumbnail: thumb,
+    minithumbnail: thumb?.mini,
+    thumbnailFileId: thumb?.thumbId,
     takenAt: takenDaysAgo == null
         ? null
         : DateTime.now().subtract(Duration(days: takenDaysAgo)),
@@ -197,26 +241,27 @@ void main() {
 
   Future<void> prepareData(WidgetTester tester) async {
     await tester.runAsync(() async {
+      _thumbPaths.clear();
       final beach = await _fakePhoto(
-        const Color(0xFF38BDF8),
-        const Color(0xFFF59E0B),
+        const Color(0xFFF2A65A),
+        const Color(0xFF5B3A29),
       );
       final forest = await _fakePhoto(
-        const Color(0xFF166534),
-        const Color(0xFF86EFAC),
+        const Color(0xFF87CEEB),
+        const Color(0xFF2F6B4F),
       );
       final city = await _fakePhoto(
-        const Color(0xFF6D28D9),
-        const Color(0xFFF472B6),
+        const Color(0xFF2E3A59),
+        const Color(0xFF151B28),
       );
       final palette = [
-        (const Color(0xFF38BDF8), const Color(0xFFF59E0B)),
-        (const Color(0xFF166534), const Color(0xFF86EFAC)),
-        (const Color(0xFF6D28D9), const Color(0xFFF472B6)),
-        (const Color(0xFFB45309), const Color(0xFFFDE68A)),
-        (const Color(0xFF0F766E), const Color(0xFF99F6E4)),
-        (const Color(0xFF1E3A8A), const Color(0xFF93C5FD)),
-        (const Color(0xFF9F1239), const Color(0xFFFDA4AF)),
+        (const Color(0xFF7DB9E8), const Color(0xFF4E7D3A)),
+        (const Color(0xFFF2A65A), const Color(0xFF5B3A29)),
+        (const Color(0xFF9BC4E2), const Color(0xFFC9A66B)),
+        (const Color(0xFF2E3A59), const Color(0xFF151B28)),
+        (const Color(0xFFB8D8D8), const Color(0xFF6E8F72)),
+        (const Color(0xFFE8B4A0), const Color(0xFF6B5B73)),
+        (const Color(0xFF87CEEB), const Color(0xFF2F6B4F)),
       ];
       final thumbs = [for (final (a, b) in palette) await _fakePhoto(a, b)];
       photos = [
@@ -368,25 +413,11 @@ void main() {
                 ),
               ],
             ),
-            StatefulShellBranch(
-              routes: [
-                GoRoute(
-                  path: '/transfers',
-                  builder: (_, _) => const TransfersScreen(),
-                ),
-              ],
-            ),
-            StatefulShellBranch(
-              routes: [
-                GoRoute(
-                  path: '/settings',
-                  builder: (_, _) => const SettingsScreen(),
-                ),
-              ],
-            ),
           ],
         ),
         GoRoute(path: '/backup', builder: (_, _) => const BackupScreen()),
+        GoRoute(path: '/transfers', builder: (_, _) => const TransfersScreen()),
+        GoRoute(path: '/settings', builder: (_, _) => const SettingsScreen()),
       ],
     );
 
@@ -411,6 +442,8 @@ void main() {
           cacheSizeProvider.overrideWith((ref) async => 734 * _mb),
           backupControllerProvider.overrideWith(() => _Backup(backup)),
           mediaTimelineProvider.overrideWith((ref) => Stream.value(photos)),
+          for (final entry in _thumbPaths.entries)
+            thumbnailPathProvider(entry.key).overrideWith((ref) async => entry.value),
         ],
         child: MaterialApp.router(
           debugShowCheckedModeBanner: false,
@@ -432,6 +465,9 @@ void main() {
         if (file.minithumbnail != null) {
           await precacheImage(MemoryImage(file.minithumbnail!), context);
         }
+      }
+      for (final path in _thumbPaths.values) {
+        await precacheImage(FileImage(File(path)), context);
       }
     });
     for (var i = 0; i < 5; i++) {
@@ -496,7 +532,7 @@ void main() {
   testWidgets('selection', (tester) async {
     await prepareData(tester);
     await pumpApp(tester, location: '/files');
-    await tester.longPress(find.text('Tax return 2025.pdf'));
+    await tester.longPress(find.text('Budget 2026.xlsx'));
     await tester.pump(const Duration(milliseconds: 300));
     await tester.tap(find.text('Lalibela sunrise.jpg'));
     await tester.pump(const Duration(milliseconds: 300));
@@ -561,5 +597,47 @@ void main() {
     await prepareData(tester);
     await pumpApp(tester, location: '/transfers', backup: uploading);
     await snap(tester, 'transfers_backup');
+  });
+
+  Future<void> pumpScreen(WidgetTester tester, Widget screen) async {
+    debugDisableShadows = false;
+    tester.view.physicalSize = const Size(1080, 2340);
+    tester.view.devicePixelRatio = 2.625;
+    addTearDown(tester.view.reset);
+    // ignore: invalid_use_of_visible_for_testing_member
+    SharedPreferences.setMockInitialValues({});
+    final shared = await SharedPreferences.getInstance();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [sharedPreferencesProvider.overrideWithValue(shared)],
+        child: MaterialApp(
+          debugShowCheckedModeBanner: false,
+          theme: AppTheme.light(),
+          home: screen,
+        ),
+      ),
+    );
+    for (var i = 0; i < 4; i++) {
+      await tester.pump(const Duration(milliseconds: 300));
+    }
+  }
+
+  testWidgets('welcome', (tester) async {
+    await pumpScreen(tester, const WelcomeScreen());
+    await snap(tester, 'welcome');
+  });
+
+  testWidgets('phone', (tester) async {
+    await pumpScreen(tester, const PhoneScreen());
+    await snap(tester, 'phone');
+  });
+
+  testWidgets('photos before thumbnails arrive', (tester) async {
+    await prepareData(tester);
+    // Only Telegram's tiny inline previews: the state a fresh install sees
+    // for a moment while thumbnails download.
+    _thumbPaths.clear();
+    await pumpApp(tester, location: '/photos', backup: uploading);
+    await snap(tester, 'photos_loading');
   });
 }

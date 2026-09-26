@@ -2,11 +2,16 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
-/// The Telegrive mark: a paper plane carried on a drive-blue tile.
+import '../../app/theme/tokens.dart';
+
+/// The Telegrive mark: a paper plane over a baseline, on a flat accent tile.
 class BrandMark extends StatelessWidget {
-  const BrandMark({super.key, this.size = 64});
+  const BrandMark({super.key, this.size = 56});
 
   final double size;
+
+  /// The one fixed brand colour, the light-theme accent.
+  static const Color tile = Color(0xFF2356E0);
 
   @override
   Widget build(BuildContext context) {
@@ -14,19 +19,8 @@ class BrandMark extends StatelessWidget {
       width: size,
       height: size,
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(size * 0.3),
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFF3B82F6), Color(0xFF2F6FED), Color(0xFF22B8E6)],
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF2F6FED).withValues(alpha: 0.35),
-            blurRadius: size * 0.35,
-            offset: Offset(0, size * 0.12),
-          ),
-        ],
+        color: tile,
+        borderRadius: BorderRadius.circular(size * 0.24),
       ),
       child: Stack(
         alignment: Alignment.center,
@@ -34,10 +28,10 @@ class BrandMark extends StatelessWidget {
           Positioned(
             bottom: size * 0.2,
             child: Container(
-              width: size * 0.5,
-              height: size * 0.08,
+              width: size * 0.46,
+              height: size * 0.07,
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.35),
+                color: Colors.white.withValues(alpha: 0.4),
                 borderRadius: BorderRadius.circular(size),
               ),
             ),
@@ -46,7 +40,7 @@ class BrandMark extends StatelessWidget {
             offset: Offset(size * 0.02, -size * 0.05),
             child: Transform.rotate(
               angle: -math.pi / 7,
-              child: Icon(Icons.send_rounded, size: size * 0.5, color: Colors.white),
+              child: Icon(Icons.send_rounded, size: size * 0.48, color: Colors.white),
             ),
           ),
         ],
@@ -55,26 +49,22 @@ class BrandMark extends StatelessWidget {
   }
 }
 
-/// Mark plus name, for the welcome and splash screens.
+/// Mark and name side by side.
 class BrandLockup extends StatelessWidget {
-  const BrandLockup({super.key, this.markSize = 88});
+  const BrandLockup({super.key, this.markSize = 40});
 
   final double markSize;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Column(
+    return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
         BrandMark(size: markSize),
-        SizedBox(height: markSize * 0.28),
+        SizedBox(width: markSize * 0.3),
         Text(
-          'telegrive',
-          style: theme.textTheme.headlineMedium?.copyWith(
-            fontWeight: FontWeight.w800,
-            letterSpacing: -1,
-          ),
+          'Telegrive',
+          style: context.text.titleLarge?.copyWith(fontSize: markSize * 0.5),
         ),
       ],
     );

@@ -3,202 +3,224 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:photo_manager/photo_manager.dart';
 
+import '../../../app/theme/tokens.dart';
 import '../../../core/format/formatters.dart';
 import '../../../core/widgets/common.dart';
 import '../../transfers/data/transfer_queue.dart';
 import '../data/backup_controller.dart';
 
-/// Where backup stands, in one glance — the same card on Home, Photos and
-/// the Backup screen. Tapping it opens the Backup screen (unless it *is*
-/// the Backup screen).
-class BackupStatusCard extends ConsumerWidget {
-  const BackupStatusCard({super.key, this.onDismiss, this.linkToSettings = true});
+/// Where backup stands, said in one line — on Home, Photos and Transfers.
+/// It opens the Backup screen, and carries at most one action: whatever
+/// would unblock backup right now.
+class BackupStatusLine extends ConsumerWidget {
+  const BackupStatusLine({super.key, this.onDismiss, this.linkToSettings = true});
 
-  /// Shown as "Not now" while backup is off (Home uses it).
+  /// Offered as a close button while backup is off (Home uses it).
   final VoidCallback? onDismiss;
   final bool linkToSettings;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
+    final colors = context.colors;
     final backup = ref.watch(backupControllerProvider);
-    final controller = ref.read(backupControllerProvider.notifier);
     final speed = ref.watch(
       transferQueueProvider.select(
         (s) => s.backupActive.fold<double>(0, (sum, t) => sum + t.bytesPerSecond),
       ),
     );
+    final status = describeBackup(backup, speed: speed);
+    final action = _action(context, ref, backup);
 
-    final (IconData icon, Color tint, String title, String? body) = switch (backup.phase) {
-      BackupPhase.off => (
-        Icons.cloud_upload_outlined,
-        scheme.primary,
-        'Back up your photos',
-        'Keep every photo and video safe in Telegram, in full quality, '
-            'with no storage limit.',
-      ),
-      BackupPhase.needsPermission => (
-        Icons.no_photography_outlined,
-        scheme.error,
-        'Allow photo access',
-        'Telegrive needs access to your photos and videos to back them up.',
-      ),
-      BackupPhase.waitingForDrive => (
-        Icons.cloud_sync_outlined,
-        scheme.primary,
-        'Getting ready',
-        'Backup starts as soon as your drive is open.',
-      ),
-      BackupPhase.waitingForWifi => (
-        Icons.wifi_off_rounded,
-        scheme.tertiary,
-        'Waiting for Wi-Fi',
-        '${Formatters.count(backup.remaining, 'item')} to back up. '
-            'Backup is set to use Wi-Fi only.',
-      ),
-      BackupPhase.scanning => (
-        Icons.manage_search_rounded,
-        scheme.primary,
-        'Checking for new photos',
-        null,
-      ),
-      BackupPhase.uploading => (
-        Icons.cloud_upload_rounded,
-        scheme.primary,
-        'Backing up · ${Formatters.count(backup.remaining, 'item')} left',
-        [
-          if (backup.current != null) backup.current!,
-          if (speed > 0) Formatters.speed(speed),
-        ].join(' · '),
-      ),
-      BackupPhase.upToDate => (
-        Icons.cloud_done_rounded,
-        const Color(0xFF1FA971),
-        'Backup complete',
-        [
-          '${Formatters.count(backup.done, 'item')} backed up',
-          if (backup.lastCompleted != null)
-            'checked ${Formatters.date(backup.lastCompleted!)}',
-        ].join(' · '),
-      ),
-    };
+    return StatusLine(
+      icon: status.icon,
+      color: status.done ? colors.success : (backup.isWorking ? colors.accent : null),
+      text: status.title,
+      detail: status.detail,
+      progress: status.progress,
+      onTap: linkToSettings ? () => context.push('/backup') : null,
+      trailing: action == null && onDismiss == null
+          ? null
+          : Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ?action,
+                if (onDismiss != null && !backup.enabled)
+                  IconButton(
+                    onPressed: onDismiss,
+                    icon: const Icon(Icons.close_rounded, size: 20),
+                    tooltip: 'Not now',
+                  ),
+              ],
+            ),
+    );
+  }
 
-    final action = switch (backup.phase) {
-      BackupPhase.off => FilledButton(
-        style: FilledButton.styleFrom(minimumSize: const Size(0, 44)),
-        onPressed: () async {
-          final ok = await controller.enable();
-          if (!ok && context.mounted) {
-            showSnack(
-              context,
-              'Photo access is needed to back up.',
-              actionLabel: 'Settings',
-              onAction: PhotoManager.openSetting,
-            );
-          }
-        },
-        child: const Text('Turn on backup'),
+  static Widget? _action(BuildContext context, WidgetRef ref, BackupState backup) {
+    final controller = ref.read(backupControllerProvider.notifier);
+    return switch (backup.phase) {
+      BackupPhase.off => TextButton(
+        onPressed: () => enableBackup(context, ref),
+        child: const Text('Turn on'),
       ),
-      BackupPhase.needsPermission => FilledButton(
-        style: FilledButton.styleFrom(minimumSize: const Size(0, 44)),
+      BackupPhase.needsPermission => TextButton(
         onPressed: () async {
-          final ok = await controller.enable();
-          if (!ok) await PhotoManager.openSetting();
+          if (!await controller.enable()) await PhotoManager.openSetting();
         },
-        child: const Text('Allow access'),
+        child: const Text('Allow'),
       ),
-      BackupPhase.waitingForWifi => FilledButton.tonal(
-        style: FilledButton.styleFrom(minimumSize: const Size(0, 44)),
+      BackupPhase.waitingForWifi => TextButton(
         onPressed: () => controller.setWifiOnly(false),
-        child: const Text('Use mobile data'),
+        child: const Text('Use data'),
       ),
       _ => null,
     };
+  }
+}
 
-    return Card(
-      child: InkWell(
-        onTap: linkToSettings ? () => context.push('/backup') : null,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 12, 16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+/// The same status, larger, at the top of the Backup screen.
+class BackupStatusPanel extends ConsumerWidget {
+  const BackupStatusPanel({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colors = context.colors;
+    final backup = ref.watch(backupControllerProvider);
+    final speed = ref.watch(
+      transferQueueProvider.select(
+        (s) => s.backupActive.fold<double>(0, (sum, t) => sum + t.bytesPerSecond),
+      ),
+    );
+    final status = describeBackup(backup, speed: speed);
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(Space.gutter, Space.s, Space.gutter, Space.l),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
             children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    width: 44,
-                    height: 44,
-                    decoration: BoxDecoration(
-                      color: tint.withValues(alpha: 0.14),
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: Icon(icon, color: tint),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(title, style: theme.textTheme.titleMedium),
-                        if (body != null && body.isNotEmpty) ...[
-                          const SizedBox(height: 3),
-                          Text(
-                            body,
-                            maxLines: 3,
-                            overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: scheme.onSurfaceVariant,
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                  if (linkToSettings)
-                    Icon(Icons.chevron_right_rounded, color: scheme.onSurfaceVariant),
-                ],
+              Icon(
+                status.icon,
+                size: 22,
+                color: status.done
+                    ? colors.success
+                    : (backup.isWorking ? colors.accent : colors.text2),
               ),
-              if (backup.isWorking) ...[
-                const SizedBox(height: 14),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(6),
-                  child: LinearProgressIndicator(
-                    value: backup.phase == BackupPhase.scanning || backup.total == 0
-                        ? null
-                        : backup.progress,
-                    minHeight: 6,
-                  ),
-                ),
-                if (backup.total > 0) ...[
-                  const SizedBox(height: 6),
-                  Text(
-                    '${Formatters.number(backup.done)} of '
-                    '${Formatters.number(backup.total)}',
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: scheme.onSurfaceVariant,
-                    ),
-                  ),
-                ],
-              ],
-              if (action != null || (onDismiss != null && !backup.enabled)) ...[
-                const SizedBox(height: 14),
-                Row(
-                  children: [
-                    const SizedBox(width: 58),
-                    ?action,
-                    if (onDismiss != null && !backup.enabled) ...[
-                      const SizedBox(width: 8),
-                      TextButton(onPressed: onDismiss, child: const Text('Not now')),
-                    ],
-                  ],
-                ),
-              ],
+              const SizedBox(width: Space.m),
+              Expanded(child: Text(status.title, style: context.text.titleMedium)),
             ],
           ),
-        ),
+          if (status.detail != null) ...[
+            const SizedBox(height: Space.xs),
+            Padding(
+              padding: const EdgeInsets.only(left: 34),
+              child: Text(
+                status.detail!,
+                style: context.text.bodyMedium?.copyWith(fontFeatures: tabularFigures),
+              ),
+            ),
+          ],
+          if (status.progress != null) ...[
+            const SizedBox(height: Space.m),
+            Padding(
+              padding: const EdgeInsets.only(left: 34),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(2),
+                child: LinearProgressIndicator(
+                  value: status.progress! < 0 ? null : status.progress,
+                  minHeight: 4,
+                ),
+              ),
+            ),
+            if (backup.total > 0) ...[
+              const SizedBox(height: Space.s),
+              Padding(
+                padding: const EdgeInsets.only(left: 34),
+                child: Text(
+                  '${Formatters.number(backup.done)} of ${Formatters.number(backup.total)}',
+                  style: context.text.bodySmall?.copyWith(fontFeatures: tabularFigures),
+                ),
+              ),
+            ],
+          ],
+        ],
       ),
     );
   }
+}
+
+/// Turns backup on, explaining a refusal.
+Future<void> enableBackup(BuildContext context, WidgetRef ref) async {
+  final ok = await ref.read(backupControllerProvider.notifier).enable();
+  if (!ok && context.mounted) {
+    showSnack(
+      context,
+      'Backup needs access to your photos.',
+      actionLabel: 'Settings',
+      onAction: PhotoManager.openSetting,
+    );
+  }
+}
+
+/// Backup state as words.
+({IconData icon, String title, String? detail, double? progress, bool done})
+describeBackup(BackupState backup, {double speed = 0}) {
+  return switch (backup.phase) {
+    BackupPhase.off => (
+      icon: Icons.cloud_off_outlined,
+      title: 'Photo backup is off',
+      detail: 'Back up this phone\'s photos and videos to your drive.',
+      progress: null,
+      done: false,
+    ),
+    BackupPhase.needsPermission => (
+      icon: Icons.no_photography_outlined,
+      title: 'Backup can\'t see your photos',
+      detail: 'Allow photo access to continue.',
+      progress: null,
+      done: false,
+    ),
+    BackupPhase.waitingForDrive => (
+      icon: Icons.cloud_queue_rounded,
+      title: 'Backup is starting',
+      detail: null,
+      progress: null,
+      done: false,
+    ),
+    BackupPhase.waitingForWifi => (
+      icon: Icons.wifi_off_rounded,
+      title: 'Waiting for Wi-Fi',
+      detail: '${Formatters.count(backup.remaining, 'item')} left. Backup uses Wi-Fi only.',
+      progress: null,
+      done: false,
+    ),
+    BackupPhase.scanning => (
+      icon: Icons.cloud_sync_outlined,
+      title: 'Looking for new photos',
+      detail: null,
+      progress: -1,
+      done: false,
+    ),
+    BackupPhase.uploading => (
+      icon: Icons.cloud_upload_outlined,
+      title: 'Backing up photos',
+      detail: [
+        '${Formatters.count(backup.remaining, 'item')} left',
+        if (speed > 0) Formatters.speed(speed),
+      ].join(' · '),
+      progress: backup.total == 0 ? -1 : backup.progress,
+      done: false,
+    ),
+    BackupPhase.upToDate => (
+      icon: Icons.cloud_done_outlined,
+      title: 'Backup is up to date',
+      detail: [
+        Formatters.count(backup.done, 'item'),
+        if (backup.lastCompleted != null)
+          'checked ${Formatters.date(backup.lastCompleted!)}',
+      ].join(' · '),
+      progress: null,
+      done: true,
+    ),
+  };
 }

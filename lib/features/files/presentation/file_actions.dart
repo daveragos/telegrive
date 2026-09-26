@@ -9,6 +9,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../app/theme/tokens.dart';
 import '../../../core/files/file_kind.dart';
 import '../../../core/format/formatters.dart';
 import '../../../core/widgets/common.dart';
@@ -162,27 +163,30 @@ abstract final class FileActions {
       useRootNavigator: true,
       builder: (sheetContext) => SafeArea(
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-          child: Row(
+          padding: const EdgeInsets.only(bottom: Space.s),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
               _CreateOption(
-                icon: Icons.upload_file_rounded,
+                icon: Icons.upload_file_outlined,
                 label: 'Upload files',
+                detail: 'Anything on this phone, any size',
                 onTap: () {
                   Navigator.pop(sheetContext);
                   upload(context, ref, folderId: folderId);
                 },
               ),
               _CreateOption(
-                icon: Icons.photo_library_rounded,
-                label: 'Photos & videos',
+                icon: Icons.photo_library_outlined,
+                label: 'Upload photos and videos',
+                detail: 'Originals, uncompressed',
                 onTap: () {
                   Navigator.pop(sheetContext);
                   upload(context, ref, folderId: folderId, mediaOnly: true);
                 },
               ),
               _CreateOption(
-                icon: Icons.create_new_folder_rounded,
+                icon: Icons.create_new_folder_outlined,
                 label: 'New folder',
                 onTap: () {
                   Navigator.pop(sheetContext);
@@ -289,7 +293,6 @@ abstract final class FileActions {
           : 'Folders are deleted with everything inside them. This can\'t be undone.',
       confirmLabel: 'Delete',
       destructive: true,
-      icon: Icons.delete_outline_rounded,
     );
     if (!confirmed || !context.mounted) return false;
     return _guard(
@@ -435,7 +438,7 @@ abstract final class FileActions {
   ) async {
     final path = await ref.read(driveRepositoryProvider).pathTo(file.folderId);
     if (!context.mounted) return;
-    final location = ['My Drive', ...path.map((f) => f.name)].join(' / ');
+    final location = ['Files', ...path.map((f) => f.name)].join(' / ');
     await showModalBottomSheet<void>(
       context: context,
       useRootNavigator: true,
@@ -459,7 +462,7 @@ abstract final class FileActions {
               if (file.isSplit)
                 _DetailRow(
                   'Stored as',
-                  '${file.partCount} messages — Telegram caps a single file at 2 GB',
+                  '${file.partCount} parts. Telegram caps one message at 2 GB.',
                 ),
             ],
           ),
@@ -554,32 +557,43 @@ class _DownloadDialogState extends ConsumerState<_DownloadDialog> {
     final progress = item?.progress ?? 0;
 
     return AlertDialog(
-      icon: FileThumbnail(file: widget.file, size: 56),
       title: Text(
-        widget.file.name,
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
-        textAlign: TextAlign.center,
+        'Downloading',
+        style: theme.textTheme.titleMedium,
       ),
       content: Column(
         mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          Row(
+            children: [
+              FileThumbnail(file: widget.file, size: 40),
+              const SizedBox(width: Space.m),
+              Expanded(
+                child: Text(
+                  widget.file.name,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.titleSmall,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: Space.l),
           ClipRRect(
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(2),
             child: LinearProgressIndicator(
               value: progress > 0 ? progress : null,
-              minHeight: 8,
+              minHeight: 4,
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: Space.s),
           Text(
             item == null
-                ? 'Getting ready…'
+                ? 'Starting'
                 : '${Formatters.bytes(item.row.doneBytes)} of ${Formatters.bytes(item.row.totalBytes)}'
                       '${item.bytesPerSecond > 0 ? ' · ${Formatters.speed(item.bytesPerSecond)}' : ''}',
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
+            style: theme.textTheme.bodySmall?.copyWith(fontFeatures: tabularFigures),
           ),
         ],
       ),
@@ -595,7 +609,7 @@ class _DownloadDialogState extends ConsumerState<_DownloadDialog> {
         TextButton(
           onPressed: () {
             Navigator.of(context).pop();
-            showSnack(context, 'Still downloading — it\'s in Transfers.');
+            showSnack(context, 'Still downloading. You\'ll find it in Transfers.');
           },
           child: const Text('Hide'),
         ),
@@ -605,43 +619,25 @@ class _DownloadDialogState extends ConsumerState<_DownloadDialog> {
 }
 
 class _CreateOption extends StatelessWidget {
-  const _CreateOption({required this.icon, required this.label, required this.onTap});
+  const _CreateOption({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.detail,
+  });
 
   final IconData icon;
   final String label;
+  final String? detail;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-    return Expanded(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(20),
-          child: Ink(
-            padding: const EdgeInsets.symmetric(vertical: 18),
-            decoration: BoxDecoration(
-              color: scheme.surfaceContainer,
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                CircleAvatar(
-                  radius: 24,
-                  backgroundColor: scheme.primaryContainer,
-                  child: Icon(icon, color: scheme.onPrimaryContainer),
-                ),
-                const SizedBox(height: 10),
-                Text(label, style: theme.textTheme.labelLarge, textAlign: TextAlign.center),
-              ],
-            ),
-          ),
-        ),
-      ),
+    return ListTile(
+      leading: Icon(icon),
+      title: Text(label),
+      subtitle: detail == null ? null : Text(detail!),
+      onTap: onTap,
     );
   }
 }
@@ -655,13 +651,12 @@ class _SheetHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 0, 20, 4),
+      padding: const EdgeInsets.fromLTRB(Space.gutter, 0, Space.gutter, Space.m),
       child: Row(
         children: [
           leading,
-          const SizedBox(width: 14),
+          const SizedBox(width: Space.l),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -670,14 +665,12 @@ class _SheetHeader extends StatelessWidget {
                   title,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.titleMedium,
+                  style: context.text.titleSmall,
                 ),
                 const SizedBox(height: 2),
                 Text(
                   subtitle,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
+                  style: context.text.bodySmall?.copyWith(fontFeatures: tabularFigures),
                 ),
               ],
             ),
@@ -703,13 +696,17 @@ class _SheetAction extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final color = destructive ? scheme.error : scheme.onSurface;
+    final colors = context.colors;
     return ListTile(
-      leading: Icon(icon, color: destructive ? scheme.error : scheme.onSurfaceVariant),
-      title: Text(label, style: TextStyle(color: color)),
+      leading: Icon(icon, color: destructive ? colors.danger : colors.text2),
+      title: Text(
+        label,
+        style: context.text.bodyLarge?.copyWith(
+          color: destructive ? colors.danger : colors.text,
+        ),
+      ),
+      minVerticalPadding: 14,
       onTap: onTap,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 24),
     );
   }
 }
@@ -722,22 +719,21 @@ class _DetailRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 7),
+      padding: const EdgeInsets.symmetric(vertical: Space.s),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SizedBox(
-            width: 92,
+          SizedBox(width: 96, child: Text(label, style: context.text.bodyMedium)),
+          Expanded(
             child: Text(
-              label,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
+              value,
+              style: context.text.bodyMedium?.copyWith(
+                color: context.colors.text,
+                fontFeatures: tabularFigures,
               ),
             ),
           ),
-          Expanded(child: Text(value, style: theme.textTheme.bodyMedium)),
         ],
       ),
     );

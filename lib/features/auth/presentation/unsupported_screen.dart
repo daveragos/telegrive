@@ -17,7 +17,6 @@ class UnsupportedAuthScreen extends ConsumerWidget {
     final isRegistration = state is td.AuthorizationStateWaitRegistration;
 
     return AuthLayout(
-      icon: isRegistration ? Icons.person_add_alt_1_rounded : Icons.mail_rounded,
       title: isRegistration ? 'No Telegram account yet' : 'Finish in Telegram',
       subtitle: Text(
         isRegistration

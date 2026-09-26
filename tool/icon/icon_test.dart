@@ -64,11 +64,8 @@ class _Glyph extends StatelessWidget {
   }
 }
 
-const _gradient = LinearGradient(
-  begin: Alignment.topLeft,
-  end: Alignment.bottomRight,
-  colors: [Color(0xFF3B82F6), Color(0xFF2F6FED), Color(0xFF22B8E6)],
-);
+/// Flat brand tile, matching BrandMark (DESIGN.md: no gradients).
+const _tile = Color(0xFF2356E0);
 
 void main() {
   setUpAll(() async {
@@ -100,7 +97,7 @@ void main() {
     await render(
       tester,
       const DecoratedBox(
-        decoration: BoxDecoration(gradient: _gradient),
+        decoration: BoxDecoration(color: _tile),
         child: _Glyph(scale: 1),
       ),
       'icon',
@@ -126,7 +123,7 @@ void main() {
       tester,
       const SizedBox.square(
         dimension: _size,
-        child: DecoratedBox(decoration: BoxDecoration(gradient: _gradient)),
+        child: DecoratedBox(decoration: BoxDecoration(color: _tile)),
       ),
       'background',
     );

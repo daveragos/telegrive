@@ -1,80 +1,72 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../app/theme/tokens.dart';
+import '../../../app/theme/file_style.dart';
+import '../../../core/files/file_kind.dart';
 import '../../../core/widgets/brand_mark.dart';
+import '../../../core/widgets/file_visuals.dart';
 import '../data/auth_controller.dart';
 
+/// Says plainly what Telegrive is and where the files go, then gets out of
+/// the way.
 class WelcomeScreen extends ConsumerWidget {
   const WelcomeScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-
+    final colors = context.colors;
     return Scaffold(
-      body: DecoratedBox(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              scheme.primaryContainer.withValues(alpha: 0.55),
-              scheme.surface,
-              scheme.surface,
-            ],
-          ),
-        ),
-        child: SafeArea(
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 460),
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(28, 24, 28, 20),
-                child: Column(
-                  children: [
-                    const Spacer(flex: 2),
-                    const BrandLockup(markSize: 84),
-                    const SizedBox(height: 28),
-                    Text(
-                      'Your Telegram,\nnow an unlimited drive.',
-                      textAlign: TextAlign.center,
-                      style: theme.textTheme.headlineSmall?.copyWith(height: 1.25),
+      body: SafeArea(
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 440),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(
+                Space.xxl,
+                Space.xxl,
+                Space.xxl,
+                Space.l,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const BrandLockup(markSize: 36),
+                  const Spacer(),
+                  const _Glimpse(),
+                  const Spacer(),
+                  Text(
+                    'Your files, kept in your own Telegram.',
+                    style: context.text.headlineMedium,
+                  ),
+                  const SizedBox(height: Space.l),
+                  Text(
+                    'Telegrive stores everything in a private channel on your '
+                    'account and gives you a proper file manager and photo '
+                    'backup on top. There are no Telegrive servers, and files '
+                    'bigger than Telegram\'s limit are split for you.',
+                    style: context.text.bodyLarge?.copyWith(
+                      color: colors.text2,
                     ),
-                    const SizedBox(height: 36),
-                    const _Feature(
-                      icon: Icons.all_inclusive_rounded,
-                      title: 'No storage limit',
-                      body: 'Files live in a private channel on your own account.',
+                  ),
+                  const SizedBox(height: Space.x4),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton(
+                      onPressed: () => ref
+                          .read(authControllerProvider.notifier)
+                          .startSignIn(),
+                      child: const Text('Sign in with Telegram'),
                     ),
-                    const _Feature(
-                      icon: Icons.upload_file_rounded,
-                      title: 'Any file, any size',
-                      body: 'Files past Telegram\'s 2 GB cap are split and rejoined for you.',
+                  ),
+                  const SizedBox(height: Space.l),
+                  Text(
+                    'Independent app, not affiliated with Telegram.',
+                    style: context.text.bodySmall?.copyWith(
+                      color: colors.text3,
                     ),
-                    const _Feature(
-                      icon: Icons.lock_outline_rounded,
-                      title: 'Just you and Telegram',
-                      body: 'No Telegrive servers and no account to create.',
-                    ),
-                    const Spacer(flex: 3),
-                    SizedBox(
-                      width: double.infinity,
-                      child: FilledButton(
-                        onPressed: () =>
-                            ref.read(authControllerProvider.notifier).startSignIn(),
-                        child: const Text('Get started'),
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                    Text(
-                      'Independent app · not affiliated with Telegram',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: scheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -84,49 +76,63 @@ class WelcomeScreen extends ConsumerWidget {
   }
 }
 
-class _Feature extends StatelessWidget {
-  const _Feature({required this.icon, required this.title, required this.body});
+/// What the drive looks like, drawn with the app's own rows rather than an
+/// illustration: a few files, one of them bigger than Telegram allows.
+class _Glimpse extends StatelessWidget {
+  const _Glimpse();
 
-  final IconData icon;
-  final String title;
-  final String body;
+  static const _files = [
+    ('Tax return 2025.pdf', '2.4 MB', FileKind.document),
+    ('Lalibela sunrise.jpg', '6.3 MB', FileKind.image),
+    ('Wedding film.mp4', '5.6 GB, stored as 12 parts', FileKind.video),
+  ];
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 18),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 42,
-            height: 42,
-            decoration: BoxDecoration(
-              color: scheme.surfaceContainerLowest,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.6)),
-            ),
-            child: Icon(icon, size: 22, color: scheme.primary),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(title, style: theme.textTheme.titleSmall),
-                const SizedBox(height: 2),
-                Text(
-                  body,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: scheme.onSurfaceVariant,
-                  ),
+    final colors = context.colors;
+    return ExcludeSemantics(
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: colors.surface,
+          borderRadius: BorderRadius.circular(Radii.card),
+          border: Border.all(color: colors.line),
+        ),
+        child: Column(
+          children: [
+            for (final (index, (name, meta, kind)) in _files.indexed) ...[
+              if (index > 0) Divider(indent: 72, color: colors.line),
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: Space.l,
+                  vertical: Space.m,
                 ),
-              ],
-            ),
-          ),
-        ],
+                child: Row(
+                  children: [
+                    FileIconTile(
+                      style: FileStyle.forFile(name, kind),
+                      size: 40,
+                    ),
+                    const SizedBox(width: Space.l),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(name, style: context.text.titleSmall),
+                          Text(
+                            meta,
+                            style: context.text.bodySmall?.copyWith(
+                              fontFeatures: tabularFigures,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }

@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../app/theme/file_style.dart';
 import '../../../core/async/combine.dart';
 import '../../../core/files/file_kind.dart';
 import '../../../core/format/formatters.dart';
@@ -105,11 +104,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                   Padding(
                     padding: const EdgeInsets.only(right: 8),
                     child: FilterChip(
-                      avatar: Icon(
-                        FileStyle.forKind(kind).icon,
-                        size: 18,
-                        color: FileStyle.forKind(kind).color,
-                      ),
                       label: Text(kind.label),
                       selected: _kind == kind,
                       showCheckmark: false,
@@ -123,9 +117,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           Expanded(
             child: results == null
                 ? const EmptyState(
-                    icon: Icons.manage_search_rounded,
-                    title: 'Find anything',
-                    message: 'Search by file or folder name, or pick a type above.',
+                    title: 'Search your drive',
+                    message: 'Type part of a name, or pick a kind above.',
                     compact: true,
                   )
                 : AsyncView(
@@ -134,7 +127,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                       final (folders, files) = data;
                       if (folders.isEmpty && files.isEmpty) {
                         return EmptyState(
-                          icon: Icons.search_off_rounded,
                           title: 'No matches',
                           message: _query.isEmpty
                               ? 'Nothing of this type yet.'

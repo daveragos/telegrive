@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../app/theme/tokens.dart';
 import '../../../core/config/app_config.dart';
 import '../../../core/format/formatters.dart';
 import '../../../core/widgets/brand_mark.dart';
@@ -22,290 +23,255 @@ class SettingsScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
+    final colors = context.colors;
     final session = ref.watch(driveSessionProvider);
     final backup = ref.watch(backupControllerProvider);
     final sync = ref.watch(driveSyncProvider);
     final summary = ref.watch(storageSummaryProvider).value;
     final themeMode = ref.watch(themeModeProvider);
-    final viewMode = ref.watch(
-      browsePreferencesProvider.select((p) => p.viewMode),
-    );
+    final viewMode = ref.watch(browsePreferencesProvider.select((p) => p.viewMode));
     final cache = ref.watch(cacheSizeProvider);
-    final busyTransfers =
-        ref.watch(transferQueueProvider.select((s) => s.activeCount)) > 0;
+    final busyTransfers = ref.watch(transferQueueProvider.select((s) => s.activeCount)) > 0;
+
+    Text trailingValue(String value) => Text(
+      value,
+      style: context.text.bodyMedium?.copyWith(fontFeatures: tabularFigures),
+    );
 
     return Scaffold(
       appBar: AppBar(title: const Text('Settings')),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 4, 16, 32),
+        padding: const EdgeInsets.only(bottom: Space.x4),
         children: [
           if (session != null)
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Row(
-                  children: [
-                    CircleAvatar(
-                      radius: 28,
-                      backgroundColor: scheme.primaryContainer,
-                      child: Text(
-                        session.initials,
-                        style: theme.textTheme.titleMedium?.copyWith(
-                          color: scheme.onPrimaryContainer,
+            Padding(
+              padding: const EdgeInsets.fromLTRB(Space.gutter, Space.s, Space.gutter, Space.s),
+              child: Row(
+                children: [
+                  CircleAvatar(
+                    radius: 24,
+                    backgroundColor: colors.surface2,
+                    child: Text(
+                      session.initials,
+                      style: context.text.titleSmall?.copyWith(color: colors.text),
+                    ),
+                  ),
+                  const SizedBox(width: Space.l),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          session.displayName.isEmpty
+                              ? 'Telegram account'
+                              : session.displayName,
+                          style: context.text.titleMedium,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                      ),
+                        Text(
+                          [
+                            if (session.phoneNumber.isNotEmpty) '+${session.phoneNumber}',
+                            if (session.username != null) '@${session.username}',
+                            if (session.isPremium) 'Premium',
+                          ].join(' · '),
+                          style: context.text.bodyMedium?.copyWith(fontFeatures: tabularFigures),
+                        ),
+                      ],
                     ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Flexible(
-                                child: Text(
-                                  session.displayName.isEmpty
-                                      ? 'Telegram account'
-                                      : session.displayName,
-                                  style: theme.textTheme.titleMedium,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                              if (session.isPremium) ...[
-                                const SizedBox(width: 6),
-                                Icon(
-                                  Icons.workspace_premium_rounded,
-                                  size: 18,
-                                  color: Colors.purple.shade300,
-                                ),
-                              ],
-                            ],
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            [
-                              if (session.phoneNumber.isNotEmpty)
-                                '+${session.phoneNumber}',
-                              if (session.username != null)
-                                '@${session.username}',
-                            ].join(' · '),
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: scheme.onSurfaceVariant,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
-          const _GroupLabel('Drive'),
-          _Group(
+          const SectionHeader('Drive'),
+          ListGroup(
             children: [
               ListTile(
-                leading: const Icon(Icons.photo_library_outlined),
                 title: const Text('Photo backup'),
-                subtitle: Text(switch (backup.phase) {
-                  BackupPhase.off => 'Off',
-                  BackupPhase.upToDate => 'On · up to date',
-                  BackupPhase.uploading =>
-                    'On · ${Formatters.count(backup.remaining, 'item')} left',
-                  BackupPhase.waitingForWifi => 'On · waiting for Wi-Fi',
-                  BackupPhase.needsPermission => 'Needs photo access',
-                  _ => 'On',
-                }),
-                trailing: const Icon(Icons.chevron_right_rounded),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    trailingValue(switch (backup.phase) {
+                      BackupPhase.off => 'Off',
+                      BackupPhase.upToDate => 'Up to date',
+                      BackupPhase.uploading =>
+                        '${Formatters.number(backup.remaining)} left',
+                      BackupPhase.waitingForWifi => 'Waiting for Wi-Fi',
+                      BackupPhase.needsPermission => 'Needs access',
+                      _ => 'On',
+                    }),
+                    Icon(Icons.chevron_right_rounded, color: colors.text3),
+                  ],
+                ),
                 onTap: () => context.push('/backup'),
               ),
               ListTile(
-                leading: const Icon(Icons.telegram),
-                title: Text(session?.channelTitle ?? 'Storage channel'),
-                subtitle: const Text('Private channel that holds your files'),
-                trailing: const Icon(Icons.open_in_new_rounded, size: 20),
-                onTap: session == null
-                    ? null
-                    : () {
-                        // Private channels only have post links; the newest
-                        // indexed post lands on the latest files.
-                        final latest = ref
-                            .read(preferencesProvider)
-                            .lastSyncedMessageId(session.chatId);
-                        final post = latest > 0 ? latest >> 20 : 1;
-                        launchUrl(
-                          Uri.parse(
-                            'https://t.me/c/${-session.chatId - 1000000000000}/$post',
-                          ),
-                          mode: LaunchMode.externalApplication,
-                        );
-                      },
+                title: const Text('Transfers'),
+                trailing: Icon(Icons.chevron_right_rounded, color: colors.text3),
+                onTap: () => context.push('/transfers'),
               ),
               ListTile(
-                leading: const Icon(Icons.pie_chart_outline_rounded),
                 title: const Text('Stored in Telegram'),
-                subtitle: Text(
+                trailing: trailingValue(
                   summary == null
-                      ? '…'
-                      : '${Formatters.bytes(summary.bytes)} in ${Formatters.count(summary.fileCount, 'file')}',
+                      ? ''
+                      : '${Formatters.bytes(summary.bytes)} · '
+                            '${Formatters.count(summary.fileCount, 'file')}',
                 ),
               ),
               ListTile(
-                leading: sync.running
-                    ? const SizedBox.square(
-                        dimension: 24,
-                        child: Padding(
-                          padding: EdgeInsets.all(2),
-                          child: CircularProgressIndicator(strokeWidth: 2.4),
-                        ),
-                      )
-                    : const Icon(Icons.sync_rounded),
+                title: Text(session?.channelTitle ?? 'Drive channel'),
+                subtitle: const Text('The private channel that holds your files'),
+                trailing: Icon(Icons.open_in_new_rounded, size: 20, color: colors.text3),
+                onTap: session == null ? null : () => _openChannel(ref, session),
+              ),
+              ListTile(
                 title: const Text('Rebuild index'),
                 subtitle: Text(
                   sync.running
-                      ? 'Reading your channel · ${Formatters.count(sync.scanned, 'item')}'
+                      ? 'Reading the channel · ${Formatters.count(sync.scanned, 'item')}'
                       : sync.error ??
                             (sync.lastSynced == null
-                                ? 'Re-read everything from Telegram'
-                                : 'Last synced ${Formatters.date(sync.lastSynced!)}'),
+                                ? 'Read everything again from Telegram'
+                                : 'Last checked ${Formatters.date(sync.lastSynced!)}'),
                 ),
+                trailing: sync.running
+                    ? const SizedBox.square(
+                        dimension: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : null,
                 onTap: sync.running
                     ? null
                     : () => ref.read(driveSyncProvider.notifier).rebuildIndex(),
               ),
             ],
           ),
-          const _GroupLabel('Appearance'),
-          _Group(
+          const SectionHeader('Appearance'),
+          ListGroup(
             children: [
               Padding(
-                padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
+                padding: const EdgeInsets.fromLTRB(Space.gutter, Space.l, Space.gutter, Space.l),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Theme', style: theme.textTheme.titleSmall),
-                    const SizedBox(height: 10),
+                    Text('Theme', style: context.text.titleSmall),
+                    const SizedBox(height: Space.m),
                     SizedBox(
                       width: double.infinity,
                       child: SegmentedButton<ThemeMode>(
                         segments: const [
-                          ButtonSegment(
-                            value: ThemeMode.system,
-                            icon: Icon(Icons.brightness_auto_rounded),
-                            label: Text('Auto'),
-                          ),
-                          ButtonSegment(
-                            value: ThemeMode.light,
-                            icon: Icon(Icons.light_mode_rounded),
-                            label: Text('Light'),
-                          ),
-                          ButtonSegment(
-                            value: ThemeMode.dark,
-                            icon: Icon(Icons.dark_mode_rounded),
-                            label: Text('Dark'),
-                          ),
+                          ButtonSegment(value: ThemeMode.system, label: Text('System')),
+                          ButtonSegment(value: ThemeMode.light, label: Text('Light')),
+                          ButtonSegment(value: ThemeMode.dark, label: Text('Dark')),
                         ],
                         selected: {themeMode},
                         showSelectedIcon: false,
-                        onSelectionChanged: (value) => ref
-                            .read(themeModeProvider.notifier)
-                            .set(value.first),
+                        onSelectionChanged: (value) =>
+                            ref.read(themeModeProvider.notifier).set(value.first),
                       ),
                     ),
                   ],
                 ),
               ),
               SwitchListTile(
-                secondary: const Icon(Icons.grid_view_rounded),
                 title: const Text('Show files as a grid'),
                 value: viewMode == ViewMode.grid,
-                onChanged: (_) => ref
-                    .read(browsePreferencesProvider.notifier)
-                    .toggleViewMode(),
+                onChanged: (_) => ref.read(browsePreferencesProvider.notifier).toggleViewMode(),
               ),
             ],
           ),
-          const _GroupLabel('This device'),
-          _Group(
+          const SectionHeader('This phone'),
+          ListGroup(
             children: [
               ListTile(
-                leading: const Icon(Icons.cleaning_services_outlined),
+                enabled: !busyTransfers,
                 title: const Text('Clear downloaded copies'),
                 subtitle: Text(
                   busyTransfers
-                      ? 'Wait for transfers to finish'
+                      ? 'Available when transfers finish'
                       : switch (cache) {
-                          AsyncData(:final value) =>
-                            '${Formatters.bytes(value)} used on this device',
-                          _ => 'Calculating…',
+                          AsyncData(:final value) => '${Formatters.bytes(value)} on this phone',
+                          _ => 'Measuring',
                         },
                 ),
-                enabled: !busyTransfers,
                 onTap: () async {
                   final ok = await showConfirmDialog(
                     context,
                     title: 'Clear downloaded copies?',
-                    message: 'Files stay safe in Telegram — they\'ll download again when you open them.',
+                    message:
+                        'Your files stay in Telegram and download again when '
+                        'you open them.',
                     confirmLabel: 'Clear',
                   );
                   if (!ok) return;
                   try {
                     await clearLocalCache(ref);
-                    if (context.mounted) showSnack(context, 'Cleared');
+                    if (context.mounted) showSnack(context, 'Downloaded copies cleared');
                   } catch (e) {
-                    if (context.mounted) {
-                      showSnack(context, 'Couldn\'t clear: $e');
-                    }
+                    if (context.mounted) showSnack(context, 'Couldn\'t clear them: $e');
                   }
                 },
               ),
             ],
           ),
-          const _GroupLabel('About'),
-          _Group(
+          const SectionHeader('About'),
+          ListGroup(
             children: [
               ListTile(
-                leading: const Icon(Icons.help_outline_rounded),
                 title: const Text('How Telegrive works'),
+                trailing: Icon(Icons.chevron_right_rounded, color: colors.text3),
                 onTap: () => _showHowItWorks(context),
               ),
               ListTile(
-                leading: const Icon(Icons.info_outline_rounded),
                 title: const Text('Version'),
-                subtitle: const Text(AppConfig.appVersion),
+                trailing: trailingValue(AppConfig.appVersion),
                 onTap: () => showAboutDialog(
                   context: context,
                   applicationName: AppConfig.appName,
                   applicationVersion: AppConfig.appVersion,
-                  applicationIcon: const BrandMark(size: 48),
-                  applicationLegalese: 'Independent app, not affiliated with Telegram. Built on TDLib.',
+                  applicationIcon: const BrandMark(size: 40),
+                  applicationLegalese:
+                      'An independent app, not affiliated with Telegram. Built on TDLib.',
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 16),
-          OutlinedButton.icon(
-            style: OutlinedButton.styleFrom(
-              foregroundColor: scheme.error,
-              side: BorderSide(color: scheme.error.withValues(alpha: 0.4)),
-            ),
-            onPressed: () async {
-              final ok = await showConfirmDialog(
-                context,
-                title: 'Sign out?',
-                message: 'Your files stay in your Telegram channel. Sign back in any time to get them all back.',
-                confirmLabel: 'Sign out',
-                destructive: true,
-                icon: Icons.logout_rounded,
-              );
-              if (ok) await ref.read(authControllerProvider.notifier).signOut();
-            },
-            icon: const Icon(Icons.logout_rounded),
-            label: const Text('Sign out'),
+          const SizedBox(height: Space.xxl),
+          ListGroup(
+            children: [
+              ListTile(
+                title: Text(
+                  'Sign out',
+                  style: context.text.bodyLarge?.copyWith(color: colors.danger),
+                ),
+                onTap: () async {
+                  final ok = await showConfirmDialog(
+                    context,
+                    title: 'Sign out?',
+                    message:
+                        'Your files stay in your Telegram channel. Sign in '
+                        'again any time to see them.',
+                    confirmLabel: 'Sign out',
+                    destructive: true,
+                  );
+                  if (ok) await ref.read(authControllerProvider.notifier).signOut();
+                },
+              ),
+            ],
           ),
         ],
       ),
+    );
+  }
+
+  /// Private channels only have post links; the newest indexed post lands
+  /// on the latest files.
+  static void _openChannel(WidgetRef ref, DriveSession session) {
+    final latest = ref.read(preferencesProvider).lastSyncedMessageId(session.chatId);
+    final post = latest > 0 ? latest >> 20 : 1;
+    launchUrl(
+      Uri.parse('https://t.me/c/${-session.chatId - 1000000000000}/$post'),
+      mode: LaunchMode.externalApplication,
     );
   }
 
@@ -315,63 +281,45 @@ class SettingsScreen extends ConsumerWidget {
       isScrollControlled: true,
       useRootNavigator: true,
       builder: (context) {
-        final theme = Theme.of(context);
-        Widget point(IconData icon, String title, String body) => Padding(
-          padding: const EdgeInsets.only(bottom: 18),
-          child: Row(
+        Widget point(String title, String body) => Padding(
+          padding: const EdgeInsets.only(bottom: Space.l),
+          child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(icon, color: theme.colorScheme.primary),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(title, style: theme.textTheme.titleSmall),
-                    const SizedBox(height: 2),
-                    Text(
-                      body,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+              Text(title, style: context.text.titleSmall),
+              const SizedBox(height: 2),
+              Text(body, style: context.text.bodyMedium),
             ],
           ),
         );
         return SafeArea(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+            padding: const EdgeInsets.fromLTRB(Space.gutter, 0, Space.gutter, Space.xxl),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('How Telegrive works', style: theme.textTheme.titleLarge),
-                const SizedBox(height: 20),
+                Text('How Telegrive works', style: context.text.titleMedium),
+                const SizedBox(height: Space.l),
                 point(
-                  Icons.telegram,
-                  'A private channel is your disk',
-                  'Each file is a message in a channel only you can see. Telegram '
-                      'stores it for free, with no total limit.',
+                  'Your drive is a private channel',
+                  'Each file is a message in a channel only you can see. '
+                      'Telegram stores it, and there is no total limit.',
                 ),
                 point(
-                  Icons.label_outline_rounded,
-                  'Captions carry the details',
-                  'Name, folder and star live in each message\'s caption, so your '
-                      'whole drive can be rebuilt from Telegram on any device.',
+                  'Names and folders live in captions',
+                  'So the whole drive can be rebuilt from Telegram on any phone '
+                      'you sign in on.',
                 ),
                 point(
-                  Icons.call_split_rounded,
-                  'Big files are split',
-                  'Telegram caps a message at 2 GB (4 GB with Premium). Larger '
-                      'files are stored as numbered parts and joined on download.',
+                  'Big files are stored in parts',
+                  'Telegram takes up to 2 GB per message (4 GB with Premium). '
+                      'Larger files go up as numbered parts and are joined '
+                      'again when you download them.',
                 ),
                 point(
-                  Icons.forward_rounded,
-                  'Forward to add',
-                  'Forward any file into the channel from Telegram and it appears '
-                      'in your drive — nothing is uploaded again.',
+                  'Forwarding adds files',
+                  'Forward any file to the channel in Telegram and it appears '
+                      'here, without uploading it again.',
                 ),
               ],
             ),
@@ -380,23 +328,4 @@ class SettingsScreen extends ConsumerWidget {
       },
     );
   }
-}
-
-class _GroupLabel extends StatelessWidget {
-  const _GroupLabel(this.label);
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) =>
-      SectionHeader(label, padding: const EdgeInsets.fromLTRB(8, 24, 8, 8));
-}
-
-class _Group extends StatelessWidget {
-  const _Group({required this.children});
-
-  final List<Widget> children;
-
-  @override
-  Widget build(BuildContext context) => Card(child: Column(children: children));
 }

@@ -153,7 +153,7 @@ void main() {
       ),
       part('p', 0, 1),
     );
-    expect(await db.mediaFingerprints(), {'IMG_1.jpg|4242'});
+    expect(await db.mediaFingerprints(), {'IMG_1.jpg|4242': 'p'});
 
     await db.markAssetBackedUp('asset-1', 'p');
     await db.markAssetFailed('asset-2', 2);
@@ -161,8 +161,10 @@ void main() {
     expect(records['asset-1']!.state, BackupAssetState.done);
     expect(records['asset-2']!.failures, 2);
     expect(await db.watchBackedUpCount().first, 1);
+    expect(await db.watchLocalAssets().first, {'p': 'asset-1'});
 
     await db.clearBackupFailures();
     expect((await db.backupAssetMap()).keys, ['asset-1']);
   });
 }
+

@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 
-/// Shared frame for every sign-in step: a hero icon, a title that says what
-/// is being asked, a line of why, the fields, and one obvious next action
-/// pinned above the keyboard.
+import '../../../app/theme/tokens.dart';
+
+/// Shared frame for every sign-in step: what is being asked, a line on why,
+/// the field, and one obvious next action pinned above the keyboard.
 class AuthLayout extends StatelessWidget {
   const AuthLayout({
     super.key,
-    required this.icon,
     required this.title,
     required this.subtitle,
     required this.children,
@@ -15,7 +15,6 @@ class AuthLayout extends StatelessWidget {
     this.onBack,
   });
 
-  final IconData icon;
   final String title;
   final Widget subtitle;
   final List<Widget> children;
@@ -25,9 +24,6 @@ class AuthLayout extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-
     return Scaffold(
       appBar: AppBar(
         automaticallyImplyLeading: false,
@@ -46,32 +42,19 @@ class AuthLayout extends StatelessWidget {
             Expanded(
               child: Center(
                 child: SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
+                  padding: const EdgeInsets.fromLTRB(Space.xxl, Space.s, Space.xxl, Space.xxl),
                   child: ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 440),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Container(
-                          width: 64,
-                          height: 64,
-                          decoration: BoxDecoration(
-                            color: scheme.primaryContainer,
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: Icon(icon, size: 30, color: scheme.onPrimaryContainer),
-                        ),
-                        const SizedBox(height: 24),
-                        Text(title, style: theme.textTheme.headlineSmall),
-                        const SizedBox(height: 10),
+                        Text(title, style: context.text.headlineSmall),
+                        const SizedBox(height: Space.s),
                         DefaultTextStyle.merge(
-                          style: theme.textTheme.bodyLarge?.copyWith(
-                            color: scheme.onSurfaceVariant,
-                            height: 1.45,
-                          ),
+                          style: context.text.bodyLarge?.copyWith(color: context.colors.text2),
                           child: subtitle,
                         ),
-                        const SizedBox(height: 28),
+                        const SizedBox(height: Space.xxl),
                         ...children,
                       ],
                     ),
@@ -81,7 +64,7 @@ class AuthLayout extends StatelessWidget {
             ),
             if (primary != null || secondary != null)
               Padding(
-                padding: const EdgeInsets.fromLTRB(24, 0, 24, 16),
+                padding: const EdgeInsets.fromLTRB(Space.xxl, 0, Space.xxl, Space.l),
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 440),
                   child: Column(
@@ -89,7 +72,7 @@ class AuthLayout extends StatelessWidget {
                     children: [
                       ?primary,
                       if (secondary != null) ...[
-                        const SizedBox(height: 8),
+                        const SizedBox(height: Space.xs),
                         secondary!,
                       ],
                     ],
@@ -121,12 +104,12 @@ class BusyButton extends StatelessWidget {
     return FilledButton(
       onPressed: busy ? null : onPressed,
       child: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 180),
+        duration: const Duration(milliseconds: 150),
         child: busy
             ? const SizedBox.square(
                 key: ValueKey('busy'),
-                dimension: 22,
-                child: CircularProgressIndicator(strokeWidth: 2.5),
+                dimension: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
               )
             : Text(label, key: const ValueKey('label')),
       ),
@@ -134,7 +117,7 @@ class BusyButton extends StatelessWidget {
   }
 }
 
-/// Inline error under a form, animated in and out.
+/// Inline error under a form.
 class FormError extends StatelessWidget {
   const FormError(this.message, {super.key});
 
@@ -142,29 +125,23 @@ class FormError extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final colors = context.colors;
     return AnimatedSize(
-      duration: const Duration(milliseconds: 200),
+      duration: const Duration(milliseconds: 180),
       curve: Curves.easeOut,
       child: message == null
           ? const SizedBox(width: double.infinity)
-          : Container(
-              width: double.infinity,
-              margin: const EdgeInsets.only(top: 16),
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-              decoration: BoxDecoration(
-                color: scheme.errorContainer,
-                borderRadius: BorderRadius.circular(14),
-              ),
+          : Padding(
+              padding: const EdgeInsets.only(top: Space.m),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(Icons.error_outline_rounded, size: 20, color: scheme.onErrorContainer),
-                  const SizedBox(width: 10),
+                  Icon(Icons.error_outline_rounded, size: 18, color: colors.danger),
+                  const SizedBox(width: Space.s),
                   Expanded(
                     child: Text(
                       message!,
-                      style: TextStyle(color: scheme.onErrorContainer),
+                      style: context.text.bodyMedium?.copyWith(color: colors.danger),
                     ),
                   ),
                 ],

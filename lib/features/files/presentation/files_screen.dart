@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../app/theme/tokens.dart';
 import '../../../core/format/formatters.dart';
 import '../../../core/widgets/common.dart';
 import '../../../infrastructure/storage/preferences.dart';
@@ -48,7 +49,7 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
     final prefs = ref.watch(browsePreferencesProvider);
     final crumbs = ref.watch(breadcrumbsProvider(widget.folderId)).value ?? const [];
     final title = widget.folderId == null
-        ? 'My Drive'
+        ? 'Files'
         : (crumbs.isNotEmpty ? crumbs.last.name : '');
     final data = contents.value?.sorted(prefs.sort);
 
@@ -67,7 +68,12 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
         appBar: _selecting
             ? _selectionBar(context, data)
             : AppBar(
-                title: Text(title, overflow: TextOverflow.ellipsis),
+                toolbarHeight: widget.folderId == null ? 64 : kToolbarHeight,
+                title: Text(
+                  title,
+                  overflow: TextOverflow.ellipsis,
+                  style: widget.folderId == null ? context.text.headlineSmall : null,
+                ),
                 actions: [
                   IconButton(
                     onPressed: () => context.push('/search'),
@@ -115,18 +121,14 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
                 SliverFillRemaining(
                   hasScrollBody: false,
                   child: EmptyState(
-                    icon: widget.folderId == null
-                        ? Icons.cloud_upload_outlined
-                        : Icons.folder_open_rounded,
                     title: widget.folderId == null
-                        ? 'Your drive is empty'
+                        ? 'Nothing here yet'
                         : 'This folder is empty',
-                    message: 'Upload files or create a folder with the New button.',
-                    action: FilledButton.tonalIcon(
+                    message: 'Upload files, or tap New to make a folder.',
+                    action: FilledButton(
                       onPressed: () =>
                           FileActions.upload(context, ref, folderId: widget.folderId),
-                      icon: const Icon(Icons.upload_rounded),
-                      label: const Text('Upload files'),
+                      child: const Text('Upload files'),
                     ),
                   ),
                 )
@@ -136,7 +138,7 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
                   ..._listSlivers(data)
                 else
                   ..._gridSlivers(data),
-                const SliverToBoxAdapter(child: SizedBox(height: 96)),
+                const SliverToBoxAdapter(child: SizedBox(height: 112)),
               ],
             ],
           ),
@@ -144,6 +146,9 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
       ),
     );
   }
+
+  /// The first label sits close under the summary line.
+  static const _firstHeader = EdgeInsets.fromLTRB(Space.gutter, Space.s, Space.m, Space.s);
 
   void _openFolder(DriveFolder folder) => context.push('/files/${folder.id}');
 
@@ -154,6 +159,8 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
       _selecting ? _toggleFile(file) : FileActions.open(context, ref, file);
 
   List<Widget> _listSlivers(FolderContents data) => [
+    if (data.folders.isNotEmpty && data.files.isNotEmpty)
+      const SliverToBoxAdapter(child: SectionHeader('Folders', padding: _firstHeader)),
     SliverList.builder(
       itemCount: data.folders.length,
       itemBuilder: (context, index) {
@@ -168,6 +175,8 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
         );
       },
     ),
+    if (data.folders.isNotEmpty && data.files.isNotEmpty)
+      const SliverToBoxAdapter(child: SectionHeader('Files')),
     SliverList.builder(
       itemCount: data.files.length,
       itemBuilder: (context, index) {
@@ -185,15 +194,16 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
   ];
 
   List<Widget> _gridSlivers(FolderContents data) => [
-    if (data.folders.isNotEmpty)
+    if (data.folders.isNotEmpty) ...[
+      const SliverToBoxAdapter(child: SectionHeader('Folders', padding: _firstHeader)),
       SliverPadding(
-        padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+        padding: const EdgeInsets.symmetric(horizontal: Space.l),
         sliver: SliverGrid.builder(
           gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
             maxCrossAxisExtent: 240,
-            mainAxisExtent: 60,
-            crossAxisSpacing: 10,
-            mainAxisSpacing: 10,
+            mainAxisExtent: 52,
+            crossAxisSpacing: Space.s,
+            mainAxisSpacing: Space.s,
           ),
           itemCount: data.folders.length,
           itemBuilder: (context, index) {
@@ -209,29 +219,34 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
           },
         ),
       ),
-    SliverPadding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      sliver: SliverGrid.builder(
-        gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-          maxCrossAxisExtent: 200,
-          childAspectRatio: 0.84,
-          crossAxisSpacing: 10,
-          mainAxisSpacing: 10,
+    ],
+    if (data.files.isNotEmpty) ...[
+      if (data.folders.isNotEmpty)
+        const SliverToBoxAdapter(child: SectionHeader('Files')),
+      SliverPadding(
+        padding: const EdgeInsets.symmetric(horizontal: Space.l),
+        sliver: SliverGrid.builder(
+          gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+            maxCrossAxisExtent: 200,
+            childAspectRatio: 0.8,
+            crossAxisSpacing: Space.m,
+            mainAxisSpacing: Space.l,
+          ),
+          itemCount: data.files.length,
+          itemBuilder: (context, index) {
+            final file = data.files[index];
+            return FileGridCard(
+              file: file,
+              selected: _files.contains(file.id),
+              selecting: _selecting,
+              onTap: () => _onFileTap(file),
+              onLongPress: () => _toggleFile(file),
+              onMore: () => FileActions.showFileSheet(context, ref, file),
+            );
+          },
         ),
-        itemCount: data.files.length,
-        itemBuilder: (context, index) {
-          final file = data.files[index];
-          return FileGridCard(
-            file: file,
-            selected: _files.contains(file.id),
-            selecting: _selecting,
-            onTap: () => _onFileTap(file),
-            onLongPress: () => _toggleFile(file),
-            onMore: () => FileActions.showFileSheet(context, ref, file),
-          );
-        },
       ),
-    ),
+    ],
   ];
 
   PreferredSizeWidget _selectionBar(BuildContext context, FolderContents? data) {
@@ -307,19 +322,16 @@ class _Summary extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final parts = [
       if (contents.folders.isNotEmpty) Formatters.count(contents.folders.length, 'folder'),
       if (contents.files.isNotEmpty) Formatters.count(contents.files.length, 'file'),
       if (contents.files.isNotEmpty) Formatters.bytes(contents.totalBytes),
     ];
     return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 4, 24, 8),
+      padding: const EdgeInsets.fromLTRB(Space.gutter, 0, Space.gutter, Space.s),
       child: Text(
         parts.join(' · '),
-        style: theme.textTheme.bodySmall?.copyWith(
-          color: theme.colorScheme.onSurfaceVariant,
-        ),
+        style: context.text.bodySmall?.copyWith(fontFeatures: tabularFigures),
       ),
     );
   }
@@ -332,39 +344,35 @@ class _Breadcrumbs extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
+    final colors = context.colors;
     final entries = <(String label, String location)>[
-      ('My Drive', '/files'),
+      ('Files', '/files'),
       for (final folder in crumbs) (folder.name, '/files/${folder.id}'),
     ];
     return SizedBox(
-      height: 40,
+      height: 36,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         reverse: true,
-        padding: const EdgeInsets.symmetric(horizontal: 16),
+        padding: const EdgeInsets.symmetric(horizontal: Space.m),
         itemCount: entries.length,
-        separatorBuilder: (_, _) => Icon(
-          Icons.chevron_right_rounded,
-          size: 18,
-          color: scheme.onSurfaceVariant,
-        ),
+        separatorBuilder: (_, _) =>
+            Icon(Icons.chevron_right_rounded, size: 16, color: colors.text3),
         itemBuilder: (context, reversedIndex) {
           final index = entries.length - 1 - reversedIndex;
           final (label, location) = entries[index];
           final isLast = index == entries.length - 1;
           return Center(
             child: InkWell(
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(Radii.thumb),
               onTap: isLast ? null : () => context.go(location),
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: Space.s, vertical: Space.xs),
                 child: Text(
                   label,
-                  style: theme.textTheme.labelLarge?.copyWith(
-                    color: isLast ? scheme.onSurface : scheme.onSurfaceVariant,
-                    fontWeight: isLast ? FontWeight.w700 : FontWeight.w500,
+                  style: context.text.bodyMedium?.copyWith(
+                    color: isLast ? colors.text : colors.text2,
+                    fontWeight: isLast ? FontWeight.w600 : FontWeight.w400,
                   ),
                 ),
               ),

@@ -4,6 +4,7 @@ import 'package:handy_tdlib/api.dart' as td;
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../app/theme/tokens.dart';
 import '../../../core/widgets/common.dart';
 import '../../../infrastructure/telegram/telegram_client.dart';
 import '../data/auth_controller.dart';
@@ -24,14 +25,13 @@ class QrScreen extends ConsumerWidget {
         : null;
 
     return AuthLayout(
-      icon: Icons.qr_code_scanner_rounded,
       title: 'Scan to sign in',
       subtitle: const Text(
-        'On a phone signed in to Telegram, open Settings → Devices → '
-        'Link Desktop Device, and point it at this code.',
+        'On a phone that is signed in to Telegram, open Settings, then '
+        'Devices, then Link Desktop Device, and scan this code.',
       ),
       onBack: () => ref.read(authControllerProvider.notifier).editPhone(),
-      primary: FilledButton.tonalIcon(
+      primary: FilledButton(
         onPressed: link == null
             ? null
             : () async {
@@ -43,8 +43,7 @@ class QrScreen extends ConsumerWidget {
                   showSnack(context, 'Telegram isn\'t installed on this device.');
                 }
               },
-        icon: const Icon(Icons.send_rounded),
-        label: const Text('Confirm in Telegram on this device'),
+        child: const Text('Confirm in Telegram on this phone'),
       ),
       secondary: TextButton(
         onPressed: () => ref.read(authControllerProvider.notifier).editPhone(),
@@ -53,10 +52,10 @@ class QrScreen extends ConsumerWidget {
       children: [
         Center(
           child: Container(
-            padding: const EdgeInsets.all(18),
+            padding: const EdgeInsets.all(Space.l),
             decoration: BoxDecoration(
               color: Colors.white,
-              borderRadius: BorderRadius.circular(28),
+              borderRadius: BorderRadius.circular(Radii.card),
               border: Border.all(color: scheme.outlineVariant),
             ),
             child: AnimatedSwitcher(
@@ -72,22 +71,22 @@ class QrScreen extends ConsumerWidget {
                       size: 220,
                       padding: EdgeInsets.zero,
                       eyeStyle: const QrEyeStyle(
-                        eyeShape: QrEyeShape.circle,
-                        color: Color(0xFF12151B),
+                        eyeShape: QrEyeShape.square,
+                        color: Color(0xFF15171B),
                       ),
                       dataModuleStyle: const QrDataModuleStyle(
-                        dataModuleShape: QrDataModuleShape.circle,
-                        color: Color(0xFF12151B),
+                        dataModuleShape: QrDataModuleShape.square,
+                        color: Color(0xFF15171B),
                       ),
                       embeddedImage: null,
                     ),
             ),
           ),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: Space.m),
         Center(
           child: Text(
-            'The code refreshes on its own.',
+            'The code refreshes by itself.',
             style: theme.textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
           ),
         ),

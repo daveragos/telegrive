@@ -60,11 +60,6 @@ class FileListScreen extends ConsumerWidget {
         data: (files) {
           if (files.isEmpty) {
             return EmptyState(
-              icon: switch (mode) {
-                FileListMode.starred => Icons.star_outline_rounded,
-                FileListMode.recent => Icons.history_rounded,
-                FileListMode.kind => Icons.inbox_outlined,
-              },
               title: switch (mode) {
                 FileListMode.starred => 'No starred files',
                 FileListMode.recent => 'Nothing yet',

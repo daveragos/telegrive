@@ -53,7 +53,7 @@ class _FolderPickerState extends ConsumerState<_FolderPicker> {
     final theme = Theme.of(context);
     final contents = ref.watch(folderContentsProvider(_current));
     final crumbs = ref.watch(breadcrumbsProvider(_current)).value ?? const [];
-    final currentName = crumbs.isEmpty ? 'My Drive' : crumbs.last.name;
+    final currentName = crumbs.isEmpty ? 'Files' : crumbs.last.name;
 
     return Column(
       children: [
@@ -97,9 +97,8 @@ class _FolderPickerState extends ConsumerState<_FolderPicker> {
               final folders = data.sorted(const SortOrder(SortField.name)).folders;
               if (folders.isEmpty) {
                 return const EmptyState(
-                  icon: Icons.folder_open_rounded,
                   title: 'No folders here',
-                  message: 'Move your items into this folder, or go back up.',
+                  message: 'You can move items here, or go up a level.',
                   compact: true,
                 );
               }

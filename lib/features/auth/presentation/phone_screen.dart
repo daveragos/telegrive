@@ -69,24 +69,23 @@ class _PhoneScreenState extends ConsumerState<PhoneScreen> {
     final canGoBack = editing && auth is! td.AuthorizationStateWaitPhoneNumber;
 
     return AuthLayout(
-      icon: Icons.phone_iphone_rounded,
       title: 'Sign in to Telegram',
       subtitle: const Text(
-        'Use the phone number of the Telegram account your drive should live in.',
+        'Enter the number of the Telegram account your drive belongs to, '
+        'starting with the country code.',
       ),
       onBack: canGoBack
           ? () => ref.read(authControllerProvider.notifier).cancelEditPhone()
           : () => ref.invalidate(authControllerProvider),
       primary: BusyButton(label: 'Send code', busy: _busy, onPressed: _submit),
-      secondary: TextButton.icon(
+      secondary: TextButton(
         onPressed: _qrBusy || _busy ? null : _useQr,
-        icon: _qrBusy
+        child: _qrBusy
             ? const SizedBox.square(
                 dimension: 18,
                 child: CircularProgressIndicator(strokeWidth: 2),
               )
-            : const Icon(Icons.qr_code_2_rounded),
-        label: const Text('Log in with a QR code instead'),
+            : const Text('Sign in with a QR code instead'),
       ),
       children: [
         TextField(
@@ -99,13 +98,12 @@ class _PhoneScreenState extends ConsumerState<PhoneScreen> {
             FilteringTextInputFormatter.allow(RegExp(r'[\d+ ]')),
             _LeadingPlusFormatter(),
           ],
-          style: theme.textTheme.titleLarge?.copyWith(letterSpacing: 1),
-          onSubmitted: (_) => _submit(),
-          decoration: const InputDecoration(
-            labelText: 'Phone number',
-            hintText: '+251 91 234 5678',
-            prefixIcon: Icon(Icons.call_rounded),
+          style: theme.textTheme.bodyLarge?.copyWith(
+            fontSize: 18,
+            fontFeatures: const [FontFeature.tabularFigures()],
           ),
+          onSubmitted: (_) => _submit(),
+          decoration: const InputDecoration(hintText: '+251 91 234 5678'),
         ),
         FormError(_error),
       ],

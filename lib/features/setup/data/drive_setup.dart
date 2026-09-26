@@ -58,8 +58,8 @@ class DriveSetup extends Notifier<SetupState> {
   static const String _legacyTag = '#gramrive';
 
   static const String _channelDescription =
-      'Storage for the Telegrive app. Every file here is part of your drive — '
-      'deleting or editing these messages changes it. $channelTag';
+      'Storage for the Telegrive app. Every file here is part of your drive, '
+      'so deleting or editing these messages changes it. $channelTag';
 
   Future<void>? _running;
 

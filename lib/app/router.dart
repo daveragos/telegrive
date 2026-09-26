@@ -81,28 +81,22 @@ final routerProvider = Provider<GoRouter>((ref) {
               GoRoute(path: '/photos', builder: (_, _) => const PhotosScreen()),
             ],
           ),
-          StatefulShellBranch(
-            routes: [
-              GoRoute(
-                path: '/transfers',
-                builder: (_, _) => const TransfersScreen(),
-              ),
-            ],
-          ),
-          StatefulShellBranch(
-            routes: [
-              GoRoute(
-                path: '/settings',
-                builder: (_, _) => const SettingsScreen(),
-              ),
-            ],
-          ),
         ],
       ),
       GoRoute(
         path: '/search',
         parentNavigatorKey: _rootKey,
         builder: (_, _) => const SearchScreen(),
+      ),
+      GoRoute(
+        path: '/transfers',
+        parentNavigatorKey: _rootKey,
+        builder: (_, _) => const TransfersScreen(),
+      ),
+      GoRoute(
+        path: '/settings',
+        parentNavigatorKey: _rootKey,
+        builder: (_, _) => const SettingsScreen(),
       ),
       GoRoute(
         path: '/backup',
