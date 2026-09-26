@@ -115,6 +115,14 @@ class DriveFile {
 
   bool get isSplit => partCount > 1;
 
+  /// A photo or video in a format every phone's gallery takes.
+  bool get fitsGallery => _galleryExtensions.contains(extension.toLowerCase());
+
+  static const Set<String> _galleryExtensions = {
+    'jpg', 'jpeg', 'png', 'heic', 'heif', 'gif', 'webp', 'dng', //
+    'mp4', 'mov', 'm4v', '3gp',
+  };
+
   bool get hasPreview => minithumbnail != null || thumbnailFileId != null;
 
   static Uint8List? _decodeThumb(String? data) {

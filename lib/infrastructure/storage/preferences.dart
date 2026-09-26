@@ -34,6 +34,10 @@ class Preferences {
   Future<void> setViewMode(ViewMode mode) =>
       _prefs.setString('view_mode', mode.name);
 
+  /// Reading text and objects in photos and documents for search.
+  bool get contentSearch => _prefs.getBool('content_search') ?? true;
+  Future<void> setContentSearch(bool on) => _prefs.setBool('content_search', on);
+
   bool get appLock => _prefs.getBool('app_lock') ?? false;
   Future<void> setAppLock(bool on) => _prefs.setBool('app_lock', on);
 

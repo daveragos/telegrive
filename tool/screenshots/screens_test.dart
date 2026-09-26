@@ -22,7 +22,11 @@ import 'package:telegrive/features/backup/data/backup_controller.dart';
 import 'package:telegrive/features/backup/presentation/backup_screen.dart';
 import 'package:telegrive/features/photos/presentation/photos_screen.dart';
 import 'package:telegrive/features/search/presentation/search_screen.dart';
+import 'package:telegrive/features/photos/presentation/albums_screen.dart';
+import 'package:telegrive/features/send/data/telegram_chats.dart';
+import 'package:telegrive/features/trash/presentation/trash_screen.dart';
 import 'package:telegrive/core/files/file_kind.dart';
+import 'package:telegrive/core/widgets/file_visuals.dart';
 import 'package:telegrive/features/drive/data/drive_repository.dart';
 import 'package:telegrive/features/drive/data/previews.dart';
 import 'package:telegrive/features/drive/data/drive_session.dart';
@@ -425,6 +429,8 @@ void main() {
         ),
         GoRoute(path: '/backup', builder: (_, _) => const BackupScreen()),
         GoRoute(path: '/search', builder: (_, _) => const SearchScreen()),
+        GoRoute(path: '/trash', builder: (_, _) => const TrashScreen()),
+        GoRoute(path: '/albums', builder: (_, _) => const AlbumsScreen()),
         GoRoute(path: '/transfers', builder: (_, _) => const TransfersScreen()),
         GoRoute(path: '/settings', builder: (_, _) => const SettingsScreen()),
       ],
@@ -453,6 +459,49 @@ void main() {
           cacheSizeProvider.overrideWith((ref) async => 734 * _mb),
           backupControllerProvider.overrideWith(() => _Backup(backup)),
           mediaTimelineProvider.overrideWith((ref) => Stream.value(photos)),
+          trashProvider.overrideWith(
+            (ref) => Stream.value(
+              TrashContents(
+                folders: [
+                  DriveFolder(
+                    id: 'old',
+                    parentId: null,
+                    name: 'Old taxes',
+                    createdAt: DateTime(2024),
+                    modifiedAt: DateTime(2024),
+                    trashedAt: DateTime.now().subtract(const Duration(days: 12)),
+                  ),
+                ],
+                files: [
+                  _file('Draft v1.docx', 900000, 40),
+                  _file('Screen recording.mp4', 84 * _mb, 300),
+                ].map((f) => DriveFile(
+                  id: f.id, folderId: null, name: f.name, mimeType: f.mimeType,
+                  kind: f.kind, size: f.size, createdAt: f.createdAt,
+                  modifiedAt: f.modifiedAt, partCount: 1, starred: false,
+                  trashedAt: DateTime.now().subtract(Duration(days: f.size > _mb ? 26 : 2)),
+                )).toList(),
+              ),
+            ),
+          ),
+          albumsProvider.overrideWith(
+            (ref) => Stream.value([
+              DriveAlbum(id: 'a1', name: 'Lalibela 2026', count: 48, coverFileId: photos[1].id),
+              DriveAlbum(id: 'a2', name: 'Family', count: 212, coverFileId: photos[6].id),
+              DriveAlbum(id: 'a3', name: 'Receipts', count: 17, coverFileId: photos[9].id),
+            ]),
+          ),
+          for (final photo in photos)
+            fileInfoProvider(photo.id).overrideWith((ref) => Stream.value(photo)),
+          recentChatsProvider.overrideWith(
+            (ref) async => const [
+              TelegramChat(id: 1, title: 'Saved Messages', isSelf: true),
+              TelegramChat(id: 2, title: 'Selam Tesfaye'),
+              TelegramChat(id: 3, title: 'Family', isGroup: true),
+              TelegramChat(id: 4, title: 'Abebe Kebede'),
+              TelegramChat(id: 5, title: 'Design team', isGroup: true),
+            ],
+          ),
           for (final entry in _thumbPaths.entries)
             thumbnailPathProvider(entry.key).overrideWith((ref) async => entry.value),
         ],
@@ -504,6 +553,10 @@ void main() {
     } finally {
       debugDisableShadows = true;
     }
+    // Close the app here, so the database's stream clean-up timers run
+    // inside the test rather than after it.
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(seconds: 1));
   }
 
   testWidgets('home', (tester) async {
@@ -597,6 +650,47 @@ void main() {
     ]);
     await pumpApp(tester, location: '/transfers');
     await snap(tester, 'transfers_saving');
+  });
+
+  testWidgets('trash', (tester) async {
+    await prepareData(tester);
+    await pumpApp(tester, location: '/trash');
+    await snap(tester, 'trash');
+  });
+
+  testWidgets('albums', (tester) async {
+    await prepareData(tester);
+    await pumpApp(tester, location: '/albums');
+    await snap(tester, 'albums');
+  });
+
+  testWidgets('photos selection', (tester) async {
+    await prepareData(tester);
+    await pumpApp(tester, location: '/photos');
+    final tiles = find.byType(FileThumbnail);
+    final gesture = await tester.startGesture(tester.getCenter(tiles.at(1)));
+    await tester.pump(const Duration(milliseconds: 700));
+    await gesture.moveTo(tester.getCenter(tiles.at(6)));
+    await tester.pump(const Duration(milliseconds: 100));
+    await gesture.up();
+    await tester.pump(const Duration(milliseconds: 300));
+    await snap(tester, 'photos_selection');
+  });
+
+  testWidgets('send sheet', (tester) async {
+    await prepareData(tester);
+    await pumpApp(tester, location: '/files');
+    await tester.tap(find.byTooltip('More').at(3));
+    for (var i = 0; i < 6; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    await tester.tap(find.text('Send in Telegram'));
+    for (var i = 0; i < 6; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    await tester.tap(find.text('Selam Tesfaye'));
+    await tester.pump(const Duration(milliseconds: 200));
+    await snap(tester, 'send_sheet');
   });
 
   testWidgets('create sheet', (tester) async {

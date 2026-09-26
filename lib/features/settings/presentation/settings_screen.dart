@@ -19,6 +19,7 @@ import '../../files/data/browse_preferences.dart';
 import '../../files/presentation/file_actions.dart';
 import '../../lock/data/app_lock.dart';
 import '../../offline/data/offline_sync.dart';
+import '../../search/data/content_indexer.dart';
 import '../../transfers/data/transfer_queue.dart';
 import '../data/settings_providers.dart';
 
@@ -40,6 +41,8 @@ class SettingsScreen extends ConsumerWidget {
     final lock = ref.watch(appLockProvider);
     final freeable = ref.watch(freeableProvider);
     final offline = ref.watch(offlineUsageProvider);
+    final indexer = ref.watch(contentIndexerProvider);
+    final indexed = ref.watch(indexedCountProvider).value ?? 0;
 
     Text trailingValue(String value) => Text(
       value,
@@ -209,6 +212,22 @@ class SettingsScreen extends ConsumerWidget {
                 title: const Text('Show files as a grid'),
                 value: viewMode == ViewMode.grid,
                 onChanged: (_) => ref.read(browsePreferencesProvider.notifier).toggleViewMode(),
+              ),
+            ],
+          ),
+          const SectionHeader('Search'),
+          ListGroup(
+            children: [
+              SwitchListTile(
+                title: const Text('Search inside photos and documents'),
+                subtitle: Text(
+                  indexer.running && indexer.left > 0
+                      ? 'Reading · ${Formatters.count(indexer.left, 'file')} to go'
+                      : 'Finds text and things in photos, and words in PDFs. '
+                            'Worked out on this phone${indexed > 0 ? ' · ${Formatters.count(indexed, 'file')} read' : ''}.',
+                ),
+                value: indexer.enabled,
+                onChanged: (on) => ref.read(contentIndexerProvider.notifier).setEnabled(on),
               ),
             ],
           ),

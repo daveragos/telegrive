@@ -199,13 +199,7 @@ abstract final class FileActions {
   }
 
   /// Photos and videos in formats every phone's gallery takes.
-  static bool fitsGallery(DriveFile file) =>
-      _galleryExtensions.contains(file.extension.toLowerCase());
-
-  static const Set<String> _galleryExtensions = {
-    'jpg', 'jpeg', 'png', 'heic', 'heif', 'gif', 'webp', 'dng', //
-    'mp4', 'mov', 'm4v', '3gp',
-  };
+  static bool fitsGallery(DriveFile file) => file.fitsGallery;
 
   /// `Photo backup/Camera/…` → `Camera`: the phone folder a backed-up photo
   /// came from, so it goes back there.

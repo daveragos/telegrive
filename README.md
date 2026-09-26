@@ -24,7 +24,11 @@ phone number.
   roll goes up in full quality — then every new photo and video follows on
   its own. Choose device folders, videos on or off, Wi-Fi only or mobile
   data. A Photos tab shows everything as a timeline grouped by month, with a
-  swipeable full-screen viewer.
+  swipeable full-screen viewer. Long-press and drag to select a run of
+  photos, pinch to change the grid, and keep albums (a photo can be in
+  several without being copied), plus Favorites and Videos.
+- **Free up space.** Delete the phone's copies of photos and videos that are
+  safely backed up; they stay in the drive.
 - **Real folders.** Create, rename, move and delete folders; breadcrumbs;
   list and grid views; sort by name, date, size or type.
 - **Fast and offline-friendly.** A local index (SQLite) makes browsing and
@@ -32,17 +36,32 @@ phone number.
 - **Syncs itself.** New, edited or deleted messages flow in live. Anything you
   **forward into the channel from Telegram** (documents, videos, audio, photos)
   shows up in the drive with no re-upload.
-- **Rebuildable.** Names, folders and stars live in each message's caption.
-  Reinstall or sign in on another phone and the whole drive comes back.
+- **Rebuildable.** Names, folders, stars, albums and the trash live in each
+  message's caption. Reinstall or sign in on another phone and the whole
+  drive comes back.
+- **Trash with undo.** Deleting moves things to the trash for 30 days, with
+  an Undo straight away; restore or delete for good from Trash.
 - **Tidy in Telegram too.** Captions lead with the plain file name; the
   machine-readable part sits in a spoiler, so the channel still reads like a
   file list.
 - **Transfers that survive.** A queue with live speed and ETA, cancel and
   retry. On Android a foreground service keeps uploads going in the
   background, and interrupted split uploads resume at the last finished part.
-- **Previews.** Thumbnails in lists and grids, and a zoomable photo viewer.
-  Everything else opens in the right app on your phone, or goes to the share
-  sheet.
+- **Watch and read without downloading.** Videos and music stream as they
+  play, with seeking, even across a split file's parts. PDFs and text files
+  open in the app. Everything else opens in the right app on your phone.
+- **Search inside photos and documents.** On-device models read the text in
+  photos and what they show, plus the words in PDFs, so "receipt" or "dog"
+  finds them. Dates work too: "march 2024", "last week".
+- **Send in Telegram.** Send any file to a chat straight from the drive,
+  with no re-upload.
+- **Share to Telegrive** from any app on Android, into the folder you pick.
+- **Download to this phone.** Files, folders or the whole drive, in the
+  drive's folders under Download › Telegrive; photos and videos can go back
+  into the gallery.
+- **Available offline.** Keep files or folders on the phone to open without
+  a connection; new files in a kept folder follow on their own.
+- **App lock** with the phone's fingerprint, face or screen lock.
 - **Private by default.** API credentials and the local-database key live in
   the platform keystore. TDLib's cache is encrypted from the first launch.
   Telegrive never shows you as "online" to your contacts.
@@ -164,12 +183,12 @@ work doesn't need a Telegram account.
   binding.
 - **End-to-end encryption** of file bodies and captions with a recovery
   passphrase.
-- **Share-sheet intake** (send to Telegrive from any app).
 - **Fully unattended background backup** with the app closed. Today the
   closed-app job notifies and the app does the upload; running TDLib inside
   the background job would remove that tap.
-- **Streaming playback** for video and audio without a full download.
-- **Trash** with undo, instead of immediate deletion.
+- **Share-sheet intake on iOS**, which needs a share extension.
+- **Text recognition beyond Latin script.** ML Kit reads Latin text only, so
+  Amharic (Ge'ez) text in photos isn't found yet.
 
 ## Good to know
 
