@@ -16,6 +16,13 @@ class TelegramException implements Exception {
 
   bool get isFloodWait => code == 420 || code == 429;
 
+  /// Telegram refused to edit the message: it was forwarded in, or isn't
+  /// the account's own to change.
+  bool get isNotEditable =>
+      message.contains("can't be edited") ||
+      message.contains('MESSAGE_EDIT_TIME_EXPIRED') ||
+      message.contains('MESSAGE_AUTHOR_REQUIRED');
+
   /// Seconds Telegram asked us to wait, when it said.
   int? get retryAfterSeconds {
     final match = _retryAfter.firstMatch(message);
@@ -61,6 +68,7 @@ class TelegramException implements Exception {
     'AUTH_KEY_UNREGISTERED': 'Your session expired. Sign in again.',
     'SESSION_REVOKED': 'This session was ended from another device.',
     'MESSAGE_NOT_MODIFIED': 'Nothing changed.',
+    "can't be edited": 'Telegram won\'t let this file be changed.',
     'CHANNELS_TOO_MUCH': 'You are in too many channels to create a drive.',
     'FILE_PARTS_INVALID': 'Telegram refused the file size.',
     'Request timeout': 'Telegram took too long to answer.',

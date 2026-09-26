@@ -443,15 +443,49 @@ class DriveRepository {
     ).copyWith(modifiedAt: DateTime.now());
 
     for (final part in parts) {
-      final message = await _ignoreUnchanged(
-        () => _messenger.editCaption(
-          _chatId,
-          part.messageId,
-          ManifestCodec.encodeFile(base.copyWith(partIndex: part.partIndex)),
-        ),
-      );
+      final caption = ManifestCodec.encodeFile(base.copyWith(partIndex: part.partIndex));
+      td.Message? message;
+      try {
+        message = await _ignoreUnchanged(
+          () => _messenger.editCaption(_chatId, part.messageId, caption),
+        );
+      } on TelegramException catch (e) {
+        if (!e.isNotEditable) rethrow;
+        message = await _replaceWithOwnCopy(part.messageId, caption);
+      }
       if (message != null) await ingest(message);
     }
+  }
+
+  /// Telegram won't edit a message forwarded into the channel, so a file
+  /// that arrived that way can't be renamed, moved, starred or trashed as
+  /// it is. This swaps it for the drive's own copy of the same message,
+  /// made by Telegram with no upload, which can be: the copy gets
+  /// [caption] and the original goes. The file keeps its id throughout.
+  Future<td.Message> _replaceWithOwnCopy(int messageId, EncodedText caption) async {
+    final client = _ref.read(telegramClientProvider);
+    final sent = await client.send<td.Messages>(
+      td.ForwardMessages(
+        chatId: _chatId,
+        messageThreadId: 0,
+        fromChatId: _chatId,
+        messageIds: [messageId],
+        sendCopy: true,
+        removeCaption: true,
+      ),
+    );
+    final pending = sent.messages.firstOrNull;
+    if (pending == null) {
+      throw const DriveException('Telegram wouldn\'t copy this file.');
+    }
+    final copy = pending.sendingState == null
+        ? pending
+        : await _messenger.awaitDelivery(pending.id);
+    final edited = await _messenger.editCaption(_chatId, copy.id, caption);
+    await ingest(edited);
+    await _messenger.deleteMessages(_chatId, [messageId]);
+    await _db.removeMessages([messageId]);
+    return edited;
   }
 
   // ---------------------------------------------------------------------------
