@@ -52,4 +52,15 @@ flutter {
 
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
+    // Activity results (the scanner, the camera, picking a phone folder) and
+    // sharing shortcuts. Pinned to the versions the plugins already resolve,
+    // so naming them here changes nothing else in the build.
+    implementation("androidx.activity:activity-ktx:1.9.0")
+    implementation("androidx.core:core-ktx:1.18.0")
+    // Google's on-device document scanner. Play services delivers the scanner
+    // itself, so the app carries only the thin client.
+    implementation("com.google.android.gms:play-services-mlkit-document-scanner:16.0.0")
+    // Direct share targets on Android 7 to 9, which have no sharing shortcuts
+    // of their own.
+    implementation("androidx.sharetarget:sharetarget:1.2.0")
 }

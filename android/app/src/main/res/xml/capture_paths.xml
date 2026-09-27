@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The cache folder photos are taken into, handed to the camera app through
+     CaptureFileProvider. -->
+<paths>
+    <cache-path name="captured" path="captured/"/>
+</paths>

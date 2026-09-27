@@ -68,6 +68,15 @@
                 <data android:scheme="tg" android:host="proxy"/>
                 <data android:scheme="tg" android:host="socks"/>
             </intent-filter>
+            <!-- Recent drive folders as targets in the share sheet: the
+                 share-target declaration, and the androidx service that
+                 offers them on Android 7 to 9. -->
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
+            <meta-data
+                android:name="android.service.chooser.chooser_target_service"
+                android:value="androidx.sharetarget.ChooserTargetServiceCompat" />
         </activity>
         <!-- flutter_foreground_task's service; the name must not change. -->
         <service
@@ -79,6 +88,33 @@
         <receiver
             android:name="com.dexterous.flutterlocalnotifications.ActionBroadcastReceiver"
             android:exported="false" />
+        <!-- Where the camera app writes a photo taken into the drive. A
+             FileProvider of its own, kept apart from share_plus's and
+             open_filex's in the merged manifest. -->
+        <provider
+            android:name=".CaptureFileProvider"
+            android:authorities="${applicationId}.capture"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/capture_paths" />
+        </provider>
+        <!-- The drive in Android's file picker. Off until it is turned on in
+             Settings, and in a process of its own: it reads the index with
+             Android's SQLite, which must never share a process with Drift's. -->
+        <provider
+            android:name=".picker.DriveDocumentsProvider"
+            android:authorities="${applicationId}.documents"
+            android:process=":picker"
+            android:exported="true"
+            android:enabled="false"
+            android:grantUriPermissions="true"
+            android:permission="android.permission.MANAGE_DOCUMENTS">
+            <intent-filter>
+                <action android:name="android.content.action.DOCUMENTS_PROVIDER"/>
+            </intent-filter>
+        </provider>
         <!-- The one-colour mark flutter_foreground_task's notification shows. -->
         <meta-data
             android:name="dev.ragoose.telegrive.STAT_ICON"
@@ -107,6 +143,10 @@
         <intent>
             <action android:name="android.intent.action.VIEW"/>
             <data android:scheme="tg"/>
+        </intent>
+        <!-- Whether a camera app is there to take a photo into the drive. -->
+        <intent>
+            <action android:name="android.media.action.IMAGE_CAPTURE"/>
         </intent>
     </queries>
 </manifest>
