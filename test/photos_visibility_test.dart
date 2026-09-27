@@ -1,14 +1,30 @@
 import 'dart:async';
 
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:telegrive/app/theme/app_theme.dart';
 import 'package:telegrive/core/files/file_kind.dart';
+import 'package:telegrive/core/widgets/file_visuals.dart';
+import 'package:telegrive/features/backup/data/backup_controller.dart';
 import 'package:telegrive/features/drive/data/drive_repository.dart';
 import 'package:telegrive/features/drive/domain/drive_models.dart';
 import 'package:telegrive/features/photos/data/photos_visibility.dart';
+import 'package:telegrive/features/photos/presentation/photos_screen.dart';
+import 'package:telegrive/features/transfers/data/transfer_queue.dart';
 import 'package:telegrive/infrastructure/database/app_database.dart';
 import 'package:telegrive/infrastructure/storage/preferences.dart';
+
+class _Backup extends BackupController {
+  @override
+  BackupState build() => const BackupState(phase: BackupPhase.upToDate);
+}
+
+class _Queue extends TransferQueue {
+  @override
+  TransfersState build() => TransfersState.empty;
+}
 
 void main() {
   final now = DateTime(2026, 9, 27);
@@ -206,5 +222,47 @@ void main() {
       expect(container.read(photosTimelineProvider).value, hasLength(5));
       expect(container.read(keptOutSummaryProvider).count, 0);
     });
+  });
+
+  testWidgets('Hide lets go of the selected photos it takes off screen', (tester) async {
+    // ignore: invalid_use_of_visible_for_testing_member
+    SharedPreferences.setMockInitialValues({});
+    final shared = await SharedPreferences.getInstance();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          sharedPreferencesProvider.overrideWithValue(shared),
+          backupControllerProvider.overrideWith(_Backup.new),
+          transferQueueProvider.overrideWith(_Queue.new),
+          mediaTimelineProvider.overrideWith(
+            (ref) => Stream.value([photo('camera'), photo('screenshot', folderId: 'scr')]),
+          ),
+          hiddenBackupFoldersProvider.overrideWith(
+            (ref) => Stream.value({'scr': 'Screenshots'}),
+          ),
+        ],
+        child: MaterialApp(theme: AppTheme.light(), home: const PhotosScreen()),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    Finder tile(String id) =>
+        find.byWidgetPredicate((w) => w is FileThumbnail && w.file.id == id);
+    Finder selected(String count) =>
+        find.descendant(of: find.byType(AppBar), matching: find.text(count));
+
+    await tester.tap(find.widgetWithText(TextButton, 'Show'));
+    await tester.pump();
+    await tester.longPress(tile('camera'));
+    await tester.pump();
+    await tester.tap(tile('screenshot'));
+    await tester.pump();
+    expect(selected('2'), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(TextButton, 'Hide'));
+    await tester.pump();
+    expect(tile('screenshot'), findsNothing);
+    expect(selected('1'), findsOneWidget);
   });
 }

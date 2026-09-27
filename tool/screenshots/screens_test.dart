@@ -340,9 +340,10 @@ void main() {
         _file('gramx-release.apk', 62 * _mb, 120),
       ];
     });
-    // Opened on this phone, most recent first.
+    // Opened on this phone, most recent first, each some time after it was
+    // added.
     opens = [
-      for (final (index, hoursAgo) in [(2, 20), (5, 74), (6, 150), (4, 290), (0, 960)])
+      for (final (index, hoursAgo) in [(2, 20), (4, 44), (5, 60), (6, 84), (7, 110)])
         (files[index], DateTime.now().subtract(Duration(hours: hoursAgo))),
     ];
     folders = [

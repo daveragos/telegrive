@@ -149,8 +149,8 @@ class DriveFile {
       Object.hash(id, name, folderId, starred, modifiedAt, thumbnailFileId);
 }
 
-/// A file on Home's Recent list, with when it was last opened on this phone
-/// or, failing that, added to the drive.
+/// A file on Home's Recent list, with whichever happened later: the last
+/// time this phone opened it, or when it was added to the drive.
 @immutable
 class RecentEntry {
   const RecentEntry(this.file, {required this.at, required this.opened});

@@ -82,19 +82,22 @@ class HomeScreen extends ConsumerWidget {
             ),
             SliverToBoxAdapter(
               child: switch (recent) {
-                AsyncData(value: final entries) when entries.isEmpty =>
-                  (summary?.fileCount ?? 0) == 0
-                      ? const _NothingYet()
-                      : Column(
-                          children: [
-                            const EmptyState(
-                              title: 'Nothing opened yet',
-                              message: 'Files you open, share or add show up here.',
-                              compact: true,
-                            ),
-                            if (starredRow != null) ListGroup(children: [starredRow]),
-                          ],
-                        ),
+                // Until the drive has been counted it isn't known to be
+                // empty, so nothing is said yet.
+                AsyncData(value: final entries) when entries.isEmpty => switch (summary) {
+                  null => const SizedBox.shrink(),
+                  StorageSummary(fileCount: 0) => const _NothingYet(),
+                  _ => Column(
+                    children: [
+                      const EmptyState(
+                        title: 'Nothing opened yet',
+                        message: 'Files you open, share or add show up here.',
+                        compact: true,
+                      ),
+                      if (starredRow != null) ListGroup(children: [starredRow]),
+                    ],
+                  ),
+                },
                 AsyncData(value: final entries) => ListGroup(
                   children: [
                     for (final entry in entries.take(5))

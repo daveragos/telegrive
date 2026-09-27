@@ -23,13 +23,13 @@ phone number.
 - **Photo backup.** Turn it on once and the whole camera
   roll goes up in full quality — then every new photo and video follows on
   its own. Choose device folders, videos on or off, Wi-Fi only or mobile
-  data. A Photos tab shows everything as a timeline grouped by month, with a
-  swipeable full-screen viewer; screenshots and chat folders back up too but
-  stay out of it until you tap Show. Long-press and drag to select a run of
-  photos, pinch to change the grid, and keep albums (a photo can be in
-  several without being copied), plus Favorites and Videos. Home opens with
-  one line that says whether everything is backed up and in sync, and when
-  that was last checked.
+  data. A Photos tab shows your photos and videos as a timeline grouped by
+  month, with a swipeable full-screen viewer. Screenshots and chat folders
+  back up too, but the timeline leaves them out until you tap Show.
+  Long-press and drag to select a run of photos, pinch to change the grid,
+  and keep albums (a photo can be in several without being copied), plus
+  Favorites and Videos. Home opens with one line that says whether
+  everything is backed up and in sync, and when that was last checked.
 - **Free up space.** Delete the phone's copies of photos and videos that are
   safely backed up; they stay in the drive.
 - **Real folders.** Create, rename, move and delete folders; breadcrumbs;

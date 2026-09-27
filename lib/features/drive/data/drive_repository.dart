@@ -133,6 +133,9 @@ class DriveRepository {
   /// or sent.
   Future<void> recordOpen(String fileId) => _db.recordOpen(fileId);
 
+  /// [recordOpen] for files sent together, in one write.
+  Future<void> recordOpens(List<String> fileIds) => _db.recordOpens(fileIds);
+
   Stream<List<(DriveFile, DateTime)>> watchRecentOpens({int limit = 20}) =>
       _db.watchRecentOpens(limit: limit).map(
         (rows) => [for (final (row, at) in rows) (DriveFile.fromRow(row), at)],

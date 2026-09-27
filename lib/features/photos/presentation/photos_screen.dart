@@ -37,6 +37,10 @@ class _PhotosScreenState extends ConsumerState<PhotosScreen> {
   @override
   Widget build(BuildContext context) {
     final media = ref.watch(photosTimelineProvider);
+    // Hide, or a file going away, can take selected photos off screen.
+    ref.listen(photosTimelineProvider, (_, next) {
+      if (next.value case final files?) _selection.keepOnly(files);
+    });
     final backup = ref.watch(backupControllerProvider);
     final keptOut = ref.watch(keptOutSummaryProvider);
     final files = media.value;

@@ -35,6 +35,11 @@ class MediaSelection extends ChangeNotifier {
 
   void clear() => replace(const {});
 
+  /// Lets go of anything not among [files], so the count and the actions
+  /// only ever cover what is on screen.
+  void keepOnly(List<DriveFile> files) =>
+      replace(_ids.intersection({for (final f in files) f.id}));
+
   /// The selected ones among [files], in their order.
   List<DriveFile> pick(List<DriveFile> files) =>
       files.where((f) => _ids.contains(f.id)).toList();

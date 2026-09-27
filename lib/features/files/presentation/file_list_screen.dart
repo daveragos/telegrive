@@ -79,7 +79,11 @@ class _FileListScreenState extends ConsumerState<FileListScreen> {
         ],
       ),
       body: switch (widget.mode) {
-        FileListMode.recent => _recentBody(grid: grid),
+        FileListMode.recent => _recentBody(
+          ref.watch(recentOpenedProvider),
+          ref.watch(recentAddedProvider),
+          grid: grid,
+        ),
         FileListMode.kind || FileListMode.starred => AsyncView<List<DriveFile>>(
           value: widget.mode == FileListMode.starred
               ? ref.watch(starredFilesProvider)
@@ -104,11 +108,17 @@ class _FileListScreenState extends ConsumerState<FileListScreen> {
     );
   }
 
-  Widget _recentBody({required bool grid}) {
+  /// Both halves are watched in [build] and handed in, so neither is
+  /// dropped when only one of them has loaded.
+  Widget _recentBody(
+    AsyncValue<List<RecentEntry>> opened,
+    AsyncValue<List<DriveFile>> added, {
+    required bool grid,
+  }) {
     return AsyncView<List<RecentEntry>>(
-      value: ref.watch(recentOpenedProvider),
+      value: opened,
       data: (opened) => AsyncView<List<DriveFile>>(
-        value: ref.watch(recentAddedProvider),
+        value: added,
         data: (added) {
           final mode = _recent ??= opened.isNotEmpty
               ? RecentMode.opened
@@ -154,7 +164,9 @@ class _FileListScreenState extends ConsumerState<FileListScreen> {
                           message: 'Files you upload will show up here.',
                         ),
                       }
+                    // Keyed by half, so each opens at the top of its list.
                     : _Files(
+                        key: ValueKey(mode),
                         files: [for (final entry in entries) entry.file],
                         subtitles: [
                           for (final entry in entries)
@@ -174,7 +186,7 @@ class _FileListScreenState extends ConsumerState<FileListScreen> {
 
 /// A count line, then [files] as rows or a grid.
 class _Files extends ConsumerWidget {
-  const _Files({required this.files, required this.grid, this.subtitles});
+  const _Files({super.key, required this.files, required this.grid, this.subtitles});
 
   final List<DriveFile> files;
   final bool grid;

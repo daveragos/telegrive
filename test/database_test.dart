@@ -163,6 +163,23 @@ void main() {
     expect((await db.watchRecentOpens().first).map((o) => o.$1.id), ['b']);
   });
 
+  test('files sent together are remembered in one update', () async {
+    for (final (i, id) in ['a', 'b', 'c'].indexed) {
+      await db.upsertFilePart(file(id), part(id, 0, 10 + i));
+    }
+    final seen = <Set<String>>[];
+    final watching = db.watchRecentOpens().listen(
+      (opens) => seen.add({for (final (row, _) in opens) row.id}),
+    );
+    addTearDown(watching.cancel);
+    Future<void> settle() => Future<void>.delayed(const Duration(milliseconds: 20));
+    await settle();
+
+    await db.recordOpens(['a', 'b', 'c']);
+    await settle();
+    expect(seen, [<String>{}, {'a', 'b', 'c'}]);
+  });
+
   test('totals group by kind and skip incomplete files', () async {
     await db.upsertFilePart(file('a'), part('a', 0, 10));
     await db.upsertFilePart(file('b', partCount: 2), part('b', 0, 11));

@@ -166,9 +166,16 @@ class AppDatabase extends _$AppDatabase {
 
   /// Remembers that this phone just opened, shared or sent [fileId], and
   /// forgets all but the newest [keptOpens].
-  Future<void> recordOpen(String fileId) => transaction(() async {
-    await into(fileOpens).insertOnConflictUpdate(
-      FileOpensCompanion.insert(fileId: fileId, openedAt: DateTime.now()),
+  Future<void> recordOpen(String fileId) => recordOpens([fileId]);
+
+  /// [recordOpen] for several files at once, as when they are sent
+  /// together. One transaction, so Recent updates once rather than per file.
+  Future<void> recordOpens(List<String> fileIds) => transaction(() async {
+    final now = DateTime.now();
+    await batch(
+      (b) => b.insertAllOnConflictUpdate(fileOpens, [
+        for (final id in fileIds) FileOpensCompanion.insert(fileId: id, openedAt: now),
+      ]),
     );
     await customUpdate(
       'DELETE FROM file_opens WHERE file_id NOT IN '

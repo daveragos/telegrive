@@ -277,9 +277,7 @@ abstract final class FileActions {
       context,
       () async {
         await telegram.send(files, chats.map((c) => c.id).toList());
-        for (final f in files) {
-          await repository.recordOpen(f.id);
-        }
+        await repository.recordOpens([for (final f in files) f.id]);
       },
       success: chats.length == 1
           ? 'Sent to ${chats.single.title}'
