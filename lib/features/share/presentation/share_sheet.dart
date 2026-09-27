@@ -42,7 +42,7 @@ class _ShareSheetState extends ConsumerState<_ShareSheet> {
     final files = widget.files;
     await ref.read(transferQueueProvider.notifier).enqueueUploads([
       for (final file in files)
-        UploadRequest(name: file.name, path: file.path, size: file.size, ownsSource: true),
+        UploadRequest(name: file.name, path: file.path, size: file.size, ownsSource: file.owned),
     ], folderId: _folder.folderId);
     await ref.read(shareIntakeProvider.notifier).clear();
     if (!mounted) return;

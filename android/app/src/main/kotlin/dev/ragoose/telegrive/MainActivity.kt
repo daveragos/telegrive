@@ -1,9 +1,11 @@
 package dev.ragoose.telegrive
 
 import android.Manifest
+import android.app.ActivityManager
 import android.content.ContentValues
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.media.MediaMetadataRetriever
 import android.media.MediaScannerConnection
 import android.net.ConnectivityManager
 import android.net.Network
@@ -14,9 +16,12 @@ import android.os.Bundle
 import android.os.Environment
 import android.os.Handler
 import android.os.Looper
+import android.os.PowerManager
 import android.os.StatFs
+import android.provider.DocumentsContract
 import android.provider.MediaStore
 import android.provider.OpenableColumns
+import android.provider.Settings
 import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
@@ -34,26 +39,33 @@ class MainActivity : FlutterFragmentActivity() {
     private val main = Handler(Looper.getMainLooper())
     private var pendingWriteAccess: MethodChannel.Result? = null
 
-    /** Files other apps shared in, copied into the cache, until Dart takes them. */
+    /**
+     * What other apps shared in (cache copies, gallery originals, or files
+     * with no room to copy) until Dart takes them.
+     */
     private val pendingShares = mutableListOf<Map<String, Any>>()
     private var shareChannel: MethodChannel? = null
 
-    /** Dart's listener on the network, and the Android callback feeding it. */
-    private var networkSink: EventChannel.EventSink? = null
-    private var networkCallback: ConnectivityManager.NetworkCallback? = null
-    private val connectivity: ConnectivityManager by lazy {
-        getSystemService(ConnectivityManager::class.java)
-    }
+    /** A tapped tg://proxy or tg://socks link, until Dart takes it. */
+    private var pendingLink: String? = null
+    private var linkChannel: MethodChannel? = null
+
+    /** Follows the default network while Dart listens on telegrive/network. */
+    private var networkWatcher: NetworkWatcher? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // A recreated activity has already handled its intent.
-        if (savedInstanceState == null) receiveShare(intent)
+        if (savedInstanceState == null) {
+            receiveShare(intent)
+            receiveLink(intent)
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         receiveShare(intent)
+        receiveLink(intent)
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -65,6 +77,14 @@ class MainActivity : FlutterFragmentActivity() {
                     "takeShared" -> result.success(
                         synchronized(pendingShares) { pendingShares.toList().also { pendingShares.clear() } },
                     )
+                    else -> result.notImplemented()
+                }
+            }
+        }
+        linkChannel = MethodChannel(messenger, "telegrive/links").apply {
+            setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "takeLink" -> result.success(pendingLink.also { pendingLink = null })
                     else -> result.notImplemented()
                 }
             }
@@ -86,6 +106,7 @@ class MainActivity : FlutterFragmentActivity() {
             .setMethodCallHandler { call, result ->
                 when (call.method) {
                     "freeBytes" -> result.success(StatFs(filesDir.path).availableBytes)
+                    "totalBytes" -> result.success(StatFs(filesDir.path).totalBytes)
                     "ensureWriteAccess" -> ensureWriteAccess(result)
                     "saveToDownloads" -> {
                         val source = call.argument<String>("source")!!
@@ -104,25 +125,67 @@ class MainActivity : FlutterFragmentActivity() {
                     else -> result.notImplemented()
                 }
             }
-        // Our own callback rather than connectivity_plus: that plugin folds a
-        // move between two Wi-Fi networks into one "wifi", so a hotspot taking
-        // over from home Wi-Fi would never reach Dart.
+        MethodChannel(messenger, "telegrive/device").setMethodCallHandler { call, result ->
+            when (call.method) {
+                "profile" -> result.success(deviceProfile())
+                "deviceInfo" -> result.success(deviceInfo())
+                else -> result.notImplemented()
+            }
+        }
+        MethodChannel(messenger, "telegrive/media").setMethodCallHandler { call, result ->
+            when (call.method) {
+                "durationMs" -> {
+                    val path = call.argument<String>("path")
+                    io.execute {
+                        val ms = path?.let { durationMs(it) }
+                        main.post { result.success(ms) }
+                    }
+                }
+                else -> result.notImplemented()
+            }
+        }
+        MethodChannel(messenger, "telegrive/system").setMethodCallHandler { call, result ->
+            when (call.method) {
+                "openNotificationSettings" -> result.success(
+                    openSettings(
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                            Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                                .putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+                        } else {
+                            null
+                        },
+                        appDetailsSettings(),
+                    ),
+                )
+                "ignoringBatteryOptimizations" -> result.success(
+                    try {
+                        getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(packageName)
+                    } catch (e: Exception) {
+                        null
+                    },
+                )
+                "openBatterySettings" -> result.success(
+                    openSettings(
+                        Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS),
+                        appDetailsSettings(),
+                    ),
+                )
+                else -> result.notImplemented()
+            }
+        }
         EventChannel(messenger, "telegrive/network").setStreamHandler(
             object : EventChannel.StreamHandler {
                 override fun onListen(arguments: Any?, events: EventChannel.EventSink) {
                     stopWatchingNetwork()
-                    networkSink = events
-                    val callback = object : ConnectivityManager.NetworkCallback() {
-                        override fun onAvailable(network: Network) = emitNetwork()
-                        override fun onLost(network: Network) = emitNetwork()
-                        override fun onCapabilitiesChanged(
-                            network: Network,
-                            capabilities: NetworkCapabilities,
-                        ) = emitNetwork()
+                    val watcher = NetworkWatcher(events)
+                    networkWatcher = watcher
+                    watcher.emit()
+                    try {
+                        watcher.connectivity.registerDefaultNetworkCallback(watcher)
+                    } catch (e: RuntimeException) {
+                        // Some phones refuse the callback; Dart keeps the state it
+                        // was just sent.
                     }
-                    networkCallback = callback
-                    connectivity.registerDefaultNetworkCallback(callback)
-                    emitNetwork()
                 }
 
                 override fun onCancel(arguments: Any?) = stopWatchingNetwork()
@@ -137,26 +200,108 @@ class MainActivity : FlutterFragmentActivity() {
     }
 
     /**
-     * Tells Dart whether the phone is online and whether its bytes are paid
-     * for. Android calls back on its own thread; the sink is only safe on the
-     * main one.
+     * Sends Dart whether the phone is online and whether its network is
+     * metered, whenever the default network changes. Android marks a phone's
+     * hotspot as metered, so it counts as mobile data. A callback of our own,
+     * because connectivity_plus reports a move from one Wi-Fi to another as
+     * no change at all.
      */
-    private fun emitNetwork() {
-        val capabilities = connectivity.getNetworkCapabilities(connectivity.activeNetwork)
-        val online = capabilities?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
-        val metered = connectivity.isActiveNetworkMetered
-        main.post { networkSink?.success(mapOf("online" to online, "metered" to metered)) }
+    private inner class NetworkWatcher(private val events: EventChannel.EventSink) :
+        ConnectivityManager.NetworkCallback() {
+        val connectivity: ConnectivityManager = getSystemService(ConnectivityManager::class.java)
+
+        override fun onAvailable(network: Network) = emit()
+
+        override fun onLost(network: Network) = emit()
+
+        override fun onCapabilitiesChanged(network: Network, capabilities: NetworkCapabilities) = emit()
+
+        /**
+         * Reads the state afresh. Callbacks arrive on Android's own thread,
+         * where an exception would end the app, and the sink is main only.
+         * Android 11 can refuse the read with a SecurityException that has
+         * nothing to do with Telegrive; nothing is sent then, and the next
+         * change sends the state again.
+         */
+        fun emit() {
+            val state = try {
+                val capabilities = connectivity.getNetworkCapabilities(connectivity.activeNetwork)
+                val online = capabilities?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
+                // Android calls having no network metered. Being offline isn't mobile
+                // data, so a transfer waiting for the connection isn't held for Wi-Fi.
+                mapOf("online" to online, "metered" to (online && connectivity.isActiveNetworkMetered))
+            } catch (e: RuntimeException) {
+                return
+            }
+            main.post { if (networkWatcher === this) events.success(state) }
+        }
     }
 
     private fun stopWatchingNetwork() {
-        networkSink = null
-        val callback = networkCallback ?: return
-        networkCallback = null
+        val watcher = networkWatcher ?: return
+        networkWatcher = null
         try {
-            connectivity.unregisterNetworkCallback(callback)
-        } catch (e: IllegalArgumentException) {
-            // Android had already let go of it.
+            watcher.connectivity.unregisterNetworkCallback(watcher)
+        } catch (e: RuntimeException) {
+            // It was never registered, or Android 11 refused, as it can with
+            // the network reads.
         }
+    }
+
+    /**
+     * Starts the first of [intents] this phone has. Some phones leave a
+     * settings page out, and the app's own page is always there to fall back on.
+     */
+    private fun openSettings(vararg intents: Intent?): Boolean {
+        for (intent in intents.filterNotNull()) {
+            try {
+                startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                return true
+            } catch (e: RuntimeException) {
+                continue
+            }
+        }
+        return false
+    }
+
+    private fun appDetailsSettings(): Intent =
+        Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", packageName, null))
+
+    /** How much memory the phone has, so a small one can use less of it. */
+    private fun deviceProfile(): Map<String, Any>? = try {
+        val activities = getSystemService(ActivityManager::class.java)
+        val memory = ActivityManager.MemoryInfo().also { activities.getMemoryInfo(it) }
+        mapOf(
+            "lowRam" to activities.isLowRamDevice,
+            "memoryClassMb" to activities.memoryClass,
+            "totalRamBytes" to memory.totalMem,
+        )
+    } catch (e: Exception) {
+        null
+    }
+
+    /**
+     * What Telegram's Devices list calls this session: "Google Pixel 8" and
+     * "Android 15". A model that already names its maker keeps its own name.
+     */
+    private fun deviceInfo(): Map<String, String> {
+        val maker = Build.MANUFACTURER.orEmpty().replaceFirstChar { it.titlecase(Locale.ROOT) }
+        val model = Build.MODEL.orEmpty()
+        val named = if (maker.isBlank() || model.startsWith(maker, ignoreCase = true)) model else "$maker $model"
+        return mapOf("model" to named, "system" to "Android ${Build.VERSION.RELEASE}")
+    }
+
+    /** A video or audio file's length from its own header, or null when it can't be read. */
+    private fun durationMs(path: String): Long? = try {
+        val retriever = MediaMetadataRetriever()
+        try {
+            retriever.setDataSource(path)
+            retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull()
+        } finally {
+            runCatching { retriever.release() }
+        }
+    } catch (e: Exception) {
+        null
     }
 
     /**
@@ -226,8 +371,9 @@ class MainActivity : FlutterFragmentActivity() {
     }
 
     /**
-     * Copies what another app shared into the cache, where the upload queue
-     * can read it once the person picks a folder. Plain text becomes a note.
+     * Takes what another app shared, for the upload queue to send once the
+     * person picks a folder: a gallery file from where it is, anything else
+     * as a copy in the cache. Plain text becomes a note.
      */
     private fun receiveShare(intent: Intent?) {
         if (intent == null) return
@@ -249,6 +395,14 @@ class MainActivity : FlutterFragmentActivity() {
         }
     }
 
+    /** Keeps a tapped proxy link for Dart, which asks before connecting through it. */
+    private fun receiveLink(intent: Intent?) {
+        val link = intent?.takeIf { it.action == Intent.ACTION_VIEW }?.data ?: return
+        if (link.scheme != "tg" || link.host !in PROXY_HOSTS) return
+        pendingLink = link.toString()
+        linkChannel?.invokeMethod("linkAvailable", null)
+    }
+
     @Suppress("DEPRECATION")
     private fun streamOf(intent: Intent): Uri? =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -268,20 +422,139 @@ class MainActivity : FlutterFragmentActivity() {
     private fun sharedDir(): File =
         File(cacheDir, "shared/${System.nanoTime()}").apply { mkdirs() }
 
-    private fun copyShared(uri: Uri): Map<String, Any>? = try {
-        var name: String? = null
-        contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use {
-            if (it.moveToFirst()) name = it.getString(0)
+    /**
+     * One shared file for Dart. A gallery file Telegrive may read by its own
+     * permission is sent from where it is ("owned" false, so it is never
+     * deleted). Anything else is copied, unless the copy would leave the
+     * phone with less than [ROOM_MARGIN] free: then only its size and the
+     * free space go back ("tooBig"), and nothing is kept. A copy is written
+     * under a ".part" name and renamed when complete, so a copy cut short is
+     * never taken for the file.
+     */
+    private fun copyShared(uri: Uri): Map<String, Any>? {
+        try {
+            val (name, size) = describeShared(uri)
+            val clean = (name ?: uri.lastPathSegment ?: "Shared file")
+                .replace(Regex("[\\\\/:\\u0000-\\u001f]"), "_")
+                .ifBlank { "Shared file" }
+
+            val direct = directPath(uri)?.let(::File)?.takeIf { it.canRead() && it.length() == size }
+            if (direct != null) {
+                return mapOf("path" to direct.path, "name" to clean, "size" to direct.length(), "owned" to false)
+            }
+            if (size != null && StatFs(cacheDir.path).availableBytes < size + ROOM_MARGIN) {
+                return tooBig(clean, size)
+            }
+
+            val dir = sharedDir()
+            val target = File(dir, clean)
+            val partial = File(dir, "$clean.part")
+            try {
+                copyLeavingRoom(uri, partial)
+                if (!partial.renameTo(target)) throw IOException("Can't finish the copy of $clean")
+            } catch (e: Exception) {
+                dir.deleteRecursively()
+                if (e is NoRoom) return tooBig(clean, size ?: e.atLeast)
+                throw e
+            }
+            return mapOf("path" to target.path, "name" to clean, "size" to target.length(), "owned" to true)
+        } catch (e: Exception) {
+            return null
         }
-        val clean = (name ?: uri.lastPathSegment ?: "Shared file")
-            .replace(Regex("[\\\\/:\\u0000-\\u001f]"), "_")
-            .ifBlank { "Shared file" }
-        val target = File(sharedDir(), clean)
+    }
+
+    /**
+     * The name and size the sender gives for [uri], either of which can be
+     * missing. Some providers leave a column out or refuse the query, and
+     * the file can still be read.
+     */
+    private fun describeShared(uri: Uri): Pair<String?, Long?> = try {
+        contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null)
+            ?.use {
+                if (!it.moveToFirst()) return@use null
+                val name = it.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                val size = it.getColumnIndex(OpenableColumns.SIZE)
+                Pair(
+                    if (name < 0 || it.isNull(name)) null else it.getString(name),
+                    if (size < 0 || it.isNull(size)) null else it.getLong(size),
+                )
+            } ?: (null to null)
+    } catch (e: Exception) {
+        null to null
+    }
+
+    /**
+     * A shared file there is no room to copy, with the space the phone has
+     * once any partial copy is gone. When the sender didn't give a size,
+     * [size] is what had been read when the copy stopped, so at least that.
+     */
+    private fun tooBig(name: String, size: Long): Map<String, Any> =
+        mapOf("name" to name, "size" to size, "free" to StatFs(cacheDir.path).availableBytes, "tooBig" to true)
+
+    /**
+     * Copies [uri] into [target] a megabyte at a time, and stops with
+     * [NoRoom] before a write would leave the phone less than [ROOM_MARGIN]
+     * free. That also covers a sender that never said how big the file is.
+     */
+    private fun copyLeavingRoom(uri: Uri, target: File) {
         val input = contentResolver.openInputStream(uri) ?: throw IOException("Can't read $uri")
-        input.use { source -> target.outputStream().use { source.copyTo(it, 1 shl 20) } }
-        mapOf("path" to target.path, "name" to clean, "size" to target.length())
+        input.use { source ->
+            target.outputStream().use { out ->
+                val buffer = ByteArray(1 shl 20)
+                var copied = 0L
+                while (true) {
+                    val read = source.read(buffer)
+                    if (read < 0) return
+                    if (StatFs(cacheDir.path).availableBytes < read + ROOM_MARGIN) throw NoRoom(copied + read)
+                    out.write(buffer, 0, read)
+                    copied += read
+                }
+            }
+        }
+    }
+
+    /**
+     * The file behind a MediaStore [uri], from the gallery itself or from the
+     * system file picker's media documents, when Telegrive's own permission
+     * covers it. Read by path on the share's grant alone, it could stop
+     * being readable once the grant ends, and an upload still in the queue
+     * would lose its file. Null for anything else.
+     */
+    @Suppress("DEPRECATION")
+    private fun directPath(uri: Uri): String? = try {
+        val media = when (uri.authority) {
+            MediaStore.AUTHORITY -> uri
+            MEDIA_DOCUMENTS -> DocumentsContract.getDocumentId(uri).substringAfter(':').toLongOrNull()
+                ?.let { MediaStore.Files.getContentUri("external", it) }
+            else -> null
+        }
+        media?.let {
+            contentResolver.query(
+                it,
+                arrayOf(MediaStore.MediaColumns.DATA, MediaStore.MediaColumns.MIME_TYPE),
+                null,
+                null,
+                null,
+            )?.use { row -> if (row.moveToFirst() && mayReadMedia(row.getString(1))) row.getString(0) else null }
+        }
     } catch (e: Exception) {
         null
+    }
+
+    /**
+     * Whether Telegrive's own permission lets it read a gallery file of
+     * [mimeType]: photo or video access from Android 13 on, which is all
+     * backup asks for, and storage access before that. With access to
+     * selected photos only (Android 14), the file is copied instead.
+     */
+    private fun mayReadMedia(mimeType: String?): Boolean {
+        val permission = when {
+            Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU -> Manifest.permission.READ_EXTERNAL_STORAGE
+            mimeType?.startsWith("image/") == true -> Manifest.permission.READ_MEDIA_IMAGES
+            mimeType?.startsWith("video/") == true -> Manifest.permission.READ_MEDIA_VIDEO
+            else -> return false
+        }
+        return checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED
     }
 
     private fun saveNote(text: String, subject: String?): Map<String, Any>? = try {
@@ -319,8 +592,20 @@ class MainActivity : FlutterFragmentActivity() {
         pendingWriteAccess = null
     }
 
+    /** A shared copy stopped for room, after [atLeast] bytes of the file. */
+    private class NoRoom(val atLeast: Long) : IOException("No room to copy the shared file")
+
     private companion object {
         const val WRITE_ACCESS_REQUEST = 7301
+
+        /** Room a shared copy leaves free, so it never fills the phone to the last byte. */
+        const val ROOM_MARGIN = 64L shl 20
+
+        /** The system file picker's documents for photos, videos and audio. */
+        const val MEDIA_DOCUMENTS = "com.android.providers.media.documents"
+
+        /** tg://proxy for MTProto proxies, tg://socks for SOCKS5 ones. */
+        val PROXY_HOSTS = setOf("proxy", "socks")
 
         /** `photo.jpg`, 2 → `photo (2).jpg`. */
         fun numbered(name: String, n: Int): String {

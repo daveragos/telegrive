@@ -5,24 +5,43 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-/// A file another app shared into Telegrive, already copied into the cache.
+/// A file another app shared into Telegrive: a copy in the cache, or a
+/// gallery photo or video right where it is.
 @immutable
 class SharedFile {
-  const SharedFile({required this.path, required this.name, required this.size});
+  const SharedFile({
+    required this.path,
+    required this.name,
+    required this.size,
+    this.owned = true,
+  });
 
   factory SharedFile.fromMap(Map<Object?, Object?> map) => SharedFile(
     path: map['path']! as String,
     name: map['name']! as String,
     size: (map['size']! as num).toInt(),
+    owned: map['owned'] as bool? ?? true,
   );
+
+  /// The files in what the activity hands over that can be uploaded. One
+  /// the phone had no room to copy comes without a path, and is left out.
+  static List<SharedFile> listFrom(Iterable<Map<Object?, Object?>> maps) => [
+    for (final map in maps)
+      if (map['tooBig'] != true) SharedFile.fromMap(map),
+  ];
 
   final String path;
   final String name;
   final int size;
+
+  /// Whether [path] is Telegrive's own copy, which goes once it is uploaded
+  /// or the share is cancelled. An original from the gallery never does.
+  final bool owned;
 }
 
 /// "Share to Telegrive" from any app (Android). The activity copies what
-/// arrives into the cache and holds it until the drive is open to take it.
+/// arrives into the cache, unless it can be read where it is, and holds it
+/// until the drive is open to take it.
 class ShareIntake extends Notifier<List<SharedFile>> {
   static const _channel = MethodChannel('telegrive/share');
 
@@ -41,18 +60,19 @@ class ShareIntake extends Notifier<List<SharedFile>> {
     try {
       final items = await _channel.invokeListMethod<Map<Object?, Object?>>('takeShared');
       if (items == null || items.isEmpty) return;
-      state = [...state, ...items.map(SharedFile.fromMap)];
+      state = [...state, ...SharedFile.listFrom(items)];
     } catch (e) {
       debugPrint('[Share] $e');
     }
   }
 
-  /// Forgets the waiting files; with [discard], deletes their copies too.
+  /// Forgets the waiting files; with [discard], deletes Telegrive's own
+  /// copies of them too.
   Future<void> clear({bool discard = false}) async {
     final files = state;
     state = const [];
     if (!discard) return;
-    for (final file in files) {
+    for (final file in files.where((f) => f.owned)) {
       try {
         await File(file.path).parent.delete(recursive: true);
       } catch (_) {}

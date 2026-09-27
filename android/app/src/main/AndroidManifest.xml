@@ -60,12 +60,29 @@
                 <category android:name="android.intent.category.DEFAULT"/>
                 <data android:mimeType="*/*"/>
             </intent-filter>
+            <!-- Tapped Telegram proxy links; Telegrive asks before using one. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="tg" android:host="proxy"/>
+                <data android:scheme="tg" android:host="socks"/>
+            </intent-filter>
         </activity>
         <!-- flutter_foreground_task's service; the name must not change. -->
         <service
             android:name="com.pravera.flutter_foreground_task.service.ForegroundService"
             android:foregroundServiceType="dataSync"
             android:exported="false" />
+        <!-- flutter_local_notifications' receiver for notification buttons and
+             swipes; its own manifest leaves it out. -->
+        <receiver
+            android:name="com.dexterous.flutterlocalnotifications.ActionBroadcastReceiver"
+            android:exported="false" />
+        <!-- The one-colour mark flutter_foreground_task's notification shows. -->
+        <meta-data
+            android:name="dev.ragoose.telegrive.STAT_ICON"
+            android:resource="@drawable/ic_stat_telegrive" />
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data
