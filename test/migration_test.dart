@@ -55,4 +55,26 @@ void main() {
     expect((await db.folderById('docs'))!.manifestExtra, isNull);
     expect(await db.select(db.fileOpens).get(), isEmpty);
   });
+
+  for (final from in GeneratedHelper.versions.where((v) => v < latest)) {
+    test('a transfer queued at version $from is still queued, not waiting for Wi-Fi',
+        () async {
+      final schema = await verifier.schemaAt(from);
+      schema.rawDatabase.execute(
+        'INSERT INTO transfers (id, kind, status, name, mime_type, file_id, '
+        'total_bytes, created_at) '
+        "VALUES ('t', 'download', 'queued', 'a.pdf', 'application/pdf', 'a', 3, 0)",
+      );
+
+      final db = AppDatabase(schema.newConnection());
+      addTearDown(db.close);
+      await verifier.migrateAndValidate(db, latest);
+
+      final row = (await db.allTransfers()).single;
+      expect(row.status, TransferStatus.queued);
+      expect(row.wifiOnly, isFalse);
+      await db.saveTransfer(row.copyWith(wifiOnly: true));
+      expect((await db.allTransfers()).single.wifiOnly, isTrue);
+    });
+  }
 }

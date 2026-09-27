@@ -122,7 +122,7 @@ void main() {
       file('c').copyWith(takenAt: Value(DateTime(2026, 9, 20))),
       part('c', 0, 12),
     );
-    expect(db.schemaVersion, 4);
+    expect(db.schemaVersion, 5);
 
     await db.recordOpen('a');
     expect((await db.watchRecentOpens().first).map((o) => o.$1.id), ['a']);
@@ -322,6 +322,7 @@ void main() {
           mimeType: 'application/octet-stream',
           fileId: 'f$i',
           ownsSource: false,
+          wifiOnly: false,
           totalBytes: 1,
           doneBytes: 0,
           partCount: 1,

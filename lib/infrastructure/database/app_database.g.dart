@@ -2185,6 +2185,21 @@ class $TransfersTable extends Transfers
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _wifiOnlyMeta = const VerificationMeta(
+    'wifiOnly',
+  );
+  @override
+  late final GeneratedColumn<bool> wifiOnly = GeneratedColumn<bool>(
+    'wifi_only',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("wifi_only" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -2210,6 +2225,7 @@ class $TransfersTable extends Transfers
     thumbnailPath,
     saveTo,
     saveFolder,
+    wifiOnly,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -2352,6 +2368,12 @@ class $TransfersTable extends Transfers
         saveFolder.isAcceptableOrUnknown(data['save_folder']!, _saveFolderMeta),
       );
     }
+    if (data.containsKey('wifi_only')) {
+      context.handle(
+        _wifiOnlyMeta,
+        wifiOnly.isAcceptableOrUnknown(data['wifi_only']!, _wifiOnlyMeta),
+      );
+    }
     return context;
   }
 
@@ -2461,6 +2483,10 @@ class $TransfersTable extends Transfers
         DriftSqlType.string,
         data['${effectivePrefix}save_folder'],
       ),
+      wifiOnly: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}wifi_only'],
+      )!,
     );
   }
 
@@ -2525,6 +2551,10 @@ class TransferRow extends DataClass implements Insertable<TransferRow> {
   /// Folders under the save location, `/`-separated, so the drive's layout
   /// carries over; for the gallery, the album it goes back into.
   final String? saveFolder;
+
+  /// Waits for an unmetered network: chosen as "Later, on Wi-Fi", or big and
+  /// started on Wi-Fi. A phone's hotspot counts as mobile data.
+  final bool wifiOnly;
   const TransferRow({
     required this.id,
     required this.kind,
@@ -2549,6 +2579,7 @@ class TransferRow extends DataClass implements Insertable<TransferRow> {
     this.thumbnailPath,
     this.saveTo,
     this.saveFolder,
+    required this.wifiOnly,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -2610,6 +2641,7 @@ class TransferRow extends DataClass implements Insertable<TransferRow> {
     if (!nullToAbsent || saveFolder != null) {
       map['save_folder'] = Variable<String>(saveFolder);
     }
+    map['wifi_only'] = Variable<bool>(wifiOnly);
     return map;
   }
 
@@ -2658,6 +2690,7 @@ class TransferRow extends DataClass implements Insertable<TransferRow> {
       saveFolder: saveFolder == null && nullToAbsent
           ? const Value.absent()
           : Value(saveFolder),
+      wifiOnly: Value(wifiOnly),
     );
   }
 
@@ -2698,6 +2731,7 @@ class TransferRow extends DataClass implements Insertable<TransferRow> {
         serializer.fromJson<String?>(json['saveTo']),
       ),
       saveFolder: serializer.fromJson<String?>(json['saveFolder']),
+      wifiOnly: serializer.fromJson<bool>(json['wifiOnly']),
     );
   }
   @override
@@ -2735,6 +2769,7 @@ class TransferRow extends DataClass implements Insertable<TransferRow> {
         $TransfersTable.$convertersaveTon.toJson(saveTo),
       ),
       'saveFolder': serializer.toJson<String?>(saveFolder),
+      'wifiOnly': serializer.toJson<bool>(wifiOnly),
     };
   }
 
@@ -2762,6 +2797,7 @@ class TransferRow extends DataClass implements Insertable<TransferRow> {
     Value<String?> thumbnailPath = const Value.absent(),
     Value<SaveTarget?> saveTo = const Value.absent(),
     Value<String?> saveFolder = const Value.absent(),
+    bool? wifiOnly,
   }) => TransferRow(
     id: id ?? this.id,
     kind: kind ?? this.kind,
@@ -2788,6 +2824,7 @@ class TransferRow extends DataClass implements Insertable<TransferRow> {
         : this.thumbnailPath,
     saveTo: saveTo.present ? saveTo.value : this.saveTo,
     saveFolder: saveFolder.present ? saveFolder.value : this.saveFolder,
+    wifiOnly: wifiOnly ?? this.wifiOnly,
   );
   TransferRow copyWithCompanion(TransfersCompanion data) {
     return TransferRow(
@@ -2830,6 +2867,7 @@ class TransferRow extends DataClass implements Insertable<TransferRow> {
       saveFolder: data.saveFolder.present
           ? data.saveFolder.value
           : this.saveFolder,
+      wifiOnly: data.wifiOnly.present ? data.wifiOnly.value : this.wifiOnly,
     );
   }
 
@@ -2858,7 +2896,8 @@ class TransferRow extends DataClass implements Insertable<TransferRow> {
           ..write('takenAt: $takenAt, ')
           ..write('thumbnailPath: $thumbnailPath, ')
           ..write('saveTo: $saveTo, ')
-          ..write('saveFolder: $saveFolder')
+          ..write('saveFolder: $saveFolder, ')
+          ..write('wifiOnly: $wifiOnly')
           ..write(')'))
         .toString();
   }
@@ -2888,6 +2927,7 @@ class TransferRow extends DataClass implements Insertable<TransferRow> {
     thumbnailPath,
     saveTo,
     saveFolder,
+    wifiOnly,
   ]);
   @override
   bool operator ==(Object other) =>
@@ -2915,7 +2955,8 @@ class TransferRow extends DataClass implements Insertable<TransferRow> {
           other.takenAt == this.takenAt &&
           other.thumbnailPath == this.thumbnailPath &&
           other.saveTo == this.saveTo &&
-          other.saveFolder == this.saveFolder);
+          other.saveFolder == this.saveFolder &&
+          other.wifiOnly == this.wifiOnly);
 }
 
 class TransfersCompanion extends UpdateCompanion<TransferRow> {
@@ -2942,6 +2983,7 @@ class TransfersCompanion extends UpdateCompanion<TransferRow> {
   final Value<String?> thumbnailPath;
   final Value<SaveTarget?> saveTo;
   final Value<String?> saveFolder;
+  final Value<bool> wifiOnly;
   final Value<int> rowid;
   const TransfersCompanion({
     this.id = const Value.absent(),
@@ -2967,6 +3009,7 @@ class TransfersCompanion extends UpdateCompanion<TransferRow> {
     this.thumbnailPath = const Value.absent(),
     this.saveTo = const Value.absent(),
     this.saveFolder = const Value.absent(),
+    this.wifiOnly = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   TransfersCompanion.insert({
@@ -2993,6 +3036,7 @@ class TransfersCompanion extends UpdateCompanion<TransferRow> {
     this.thumbnailPath = const Value.absent(),
     this.saveTo = const Value.absent(),
     this.saveFolder = const Value.absent(),
+    this.wifiOnly = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        kind = Value(kind),
@@ -3026,6 +3070,7 @@ class TransfersCompanion extends UpdateCompanion<TransferRow> {
     Expression<String>? thumbnailPath,
     Expression<String>? saveTo,
     Expression<String>? saveFolder,
+    Expression<bool>? wifiOnly,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -3052,6 +3097,7 @@ class TransfersCompanion extends UpdateCompanion<TransferRow> {
       if (thumbnailPath != null) 'thumbnail_path': thumbnailPath,
       if (saveTo != null) 'save_to': saveTo,
       if (saveFolder != null) 'save_folder': saveFolder,
+      if (wifiOnly != null) 'wifi_only': wifiOnly,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -3080,6 +3126,7 @@ class TransfersCompanion extends UpdateCompanion<TransferRow> {
     Value<String?>? thumbnailPath,
     Value<SaveTarget?>? saveTo,
     Value<String?>? saveFolder,
+    Value<bool>? wifiOnly,
     Value<int>? rowid,
   }) {
     return TransfersCompanion(
@@ -3106,6 +3153,7 @@ class TransfersCompanion extends UpdateCompanion<TransferRow> {
       thumbnailPath: thumbnailPath ?? this.thumbnailPath,
       saveTo: saveTo ?? this.saveTo,
       saveFolder: saveFolder ?? this.saveFolder,
+      wifiOnly: wifiOnly ?? this.wifiOnly,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -3190,6 +3238,9 @@ class TransfersCompanion extends UpdateCompanion<TransferRow> {
     if (saveFolder.present) {
       map['save_folder'] = Variable<String>(saveFolder.value);
     }
+    if (wifiOnly.present) {
+      map['wifi_only'] = Variable<bool>(wifiOnly.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -3222,6 +3273,7 @@ class TransfersCompanion extends UpdateCompanion<TransferRow> {
           ..write('thumbnailPath: $thumbnailPath, ')
           ..write('saveTo: $saveTo, ')
           ..write('saveFolder: $saveFolder, ')
+          ..write('wifiOnly: $wifiOnly, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -6208,6 +6260,7 @@ typedef $$TransfersTableCreateCompanionBuilder = TransfersCompanion Function({
   Value<String?> thumbnailPath,
   Value<SaveTarget?> saveTo,
   Value<String?> saveFolder,
+  Value<bool> wifiOnly,
   Value<int> rowid,
 });
 typedef $$TransfersTableUpdateCompanionBuilder = TransfersCompanion Function({
@@ -6234,6 +6287,7 @@ typedef $$TransfersTableUpdateCompanionBuilder = TransfersCompanion Function({
   Value<String?> thumbnailPath,
   Value<SaveTarget?> saveTo,
   Value<String?> saveFolder,
+  Value<bool> wifiOnly,
   Value<int> rowid,
 });
 
@@ -6364,6 +6418,11 @@ class $$TransfersTableFilterComposer
     column: $table.saveFolder,
     builder: (column) => ColumnFilters(column),
   );
+
+  ColumnFilters<bool> get wifiOnly => $composableBuilder(
+    column: $table.wifiOnly,
+    builder: (column) => ColumnFilters(column),
+  );
 }
 
 class $$TransfersTableOrderingComposer
@@ -6489,6 +6548,11 @@ class $$TransfersTableOrderingComposer
     column: $table.saveFolder,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<bool> get wifiOnly => $composableBuilder(
+    column: $table.wifiOnly,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$TransfersTableAnnotationComposer
@@ -6584,6 +6648,9 @@ class $$TransfersTableAnnotationComposer
     column: $table.saveFolder,
     builder: (column) => column,
   );
+
+  GeneratedColumn<bool> get wifiOnly =>
+      $composableBuilder(column: $table.wifiOnly, builder: (column) => column);
 }
 
 class $$TransfersTableTableManager
@@ -6640,6 +6707,7 @@ class $$TransfersTableTableManager
                 Value<String?> thumbnailPath = const Value.absent(),
                 Value<SaveTarget?> saveTo = const Value.absent(),
                 Value<String?> saveFolder = const Value.absent(),
+                Value<bool> wifiOnly = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => TransfersCompanion(
                 id: id,
@@ -6665,6 +6733,7 @@ class $$TransfersTableTableManager
                 thumbnailPath: thumbnailPath,
                 saveTo: saveTo,
                 saveFolder: saveFolder,
+                wifiOnly: wifiOnly,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -6692,6 +6761,7 @@ class $$TransfersTableTableManager
                 Value<String?> thumbnailPath = const Value.absent(),
                 Value<SaveTarget?> saveTo = const Value.absent(),
                 Value<String?> saveFolder = const Value.absent(),
+                Value<bool> wifiOnly = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => TransfersCompanion.insert(
                 id: id,
@@ -6717,6 +6787,7 @@ class $$TransfersTableTableManager
                 thumbnailPath: thumbnailPath,
                 saveTo: saveTo,
                 saveFolder: saveFolder,
+                wifiOnly: wifiOnly,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0

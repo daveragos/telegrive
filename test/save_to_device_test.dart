@@ -118,7 +118,7 @@ void main() {
     addTearDown(() => dir.delete(recursive: true));
     final file = File('${dir.path}/telegrive.sqlite');
 
-    // Version 1 is today's schema without what versions 2 to 4 added.
+    // Version 1 is today's schema without what versions 2 to 5 added.
     var db = AppDatabase(NativeDatabase(file));
     await db.allTransfers();
     for (final statement in [
@@ -136,6 +136,7 @@ void main() {
       'ALTER TABLE folders DROP COLUMN manifest_extra',
       'ALTER TABLE drive_files DROP COLUMN manifest_extra',
       'DROP TABLE file_opens',
+      'ALTER TABLE transfers DROP COLUMN wifi_only',
       'PRAGMA user_version = 1',
     ]) {
       await db.customStatement(statement);
@@ -153,6 +154,7 @@ void main() {
         mimeType: 'image/jpeg',
         fileId: 'f',
         ownsSource: false,
+        wifiOnly: false,
         totalBytes: 1,
         doneBytes: 0,
         partCount: 1,

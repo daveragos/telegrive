@@ -254,6 +254,7 @@ TransferRow _transfer(
   mimeType: mimeTypeFor(name),
   fileId: name,
   ownsSource: false,
+  wifiOnly: false,
   origin: TransferOrigin.manual,
   totalBytes: total,
   doneBytes: done,

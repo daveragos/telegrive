@@ -27,6 +27,7 @@ TransferItem _transfer(
     mimeType: 'application/octet-stream',
     fileId: name,
     ownsSource: false,
+    wifiOnly: false,
     totalBytes: total,
     doneBytes: done,
     partCount: 1,

@@ -227,6 +227,7 @@ void main() {
     mimeType: 'application/pdf',
     fileId: fileId,
     ownsSource: false,
+    wifiOnly: false,
     origin: origin,
     totalBytes: 10 * parts,
     doneBytes: 10 * completedParts,

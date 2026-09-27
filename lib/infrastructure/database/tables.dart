@@ -240,6 +240,10 @@ class Transfers extends Table {
   /// carries over; for the gallery, the album it goes back into.
   TextColumn get saveFolder => text().nullable()();
 
+  /// Waits for an unmetered network: chosen as "Later, on Wi-Fi", or big and
+  /// started on Wi-Fi. A phone's hotspot counts as mobile data.
+  BoolColumn get wifiOnly => boolean().withDefault(const Constant(false))();
+
   @override
   Set<Column> get primaryKey => {id};
 }

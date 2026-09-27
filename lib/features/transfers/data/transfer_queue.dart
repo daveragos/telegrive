@@ -11,6 +11,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../../../core/files/file_kind.dart';
 import '../../../infrastructure/database/app_database.dart';
+import '../../../infrastructure/network/network_status.dart';
 import '../../../infrastructure/storage/device_storage.dart';
 import '../../../infrastructure/telegram/telegram_client.dart';
 import '../../../infrastructure/telegram/telegram_exception.dart';
@@ -22,6 +23,7 @@ import '../../drive/domain/drive_models.dart';
 import '../../drive/domain/manifest.dart';
 import '../domain/transfer_error.dart';
 import '../domain/transfer_wait.dart';
+import 'transfer_policy.dart';
 
 /// A file on this device, about to go up.
 ///
@@ -206,7 +208,8 @@ class _Tracked {
 /// re-attached rather than sent twice. When Telegram asks for a pause, the
 /// transfer waits in the queue and starts again by itself; when it asks an
 /// upload, every other upload waits with it, a split one under way before
-/// its next part.
+/// its next part. Whether a queued transfer may start is one question,
+/// [TransferPolicy.mayRun], so every reason to wait is checked in one place.
 class TransferQueue extends Notifier<TransfersState> {
   static const int _maxUploads = 2;
   static const int _maxDownloads = 3;
@@ -246,6 +249,9 @@ class TransferQueue extends Notifier<TransfersState> {
   /// the person's data for nothing. Downloads carry on.
   DateTime? _uploadsNotBefore;
 
+  /// The phone's connection as last reported, for rows that wait for Wi-Fi.
+  NetworkState _network = NetworkState.unknown;
+
   StreamSubscription<td.File>? _fileSubscription;
   StreamSubscription<String>? _ingestSubscription;
   Timer? _emitTimer;
@@ -263,6 +269,11 @@ class TransferQueue extends Notifier<TransfersState> {
   TransfersState build() {
     _fileSubscription = _client.fileUpdates.listen(_onFileUpdate);
     _ingestSubscription = _repository.ingestedFileIds.listen(_onIngested);
+    ref.listen<NetworkState>(networkStatusProvider, (_, next) {
+      _network = next;
+      // Back on Wi-Fi, rows that waited for it may start.
+      _pump();
+    }, fireImmediately: true);
     ref.listen<DriveSession?>(driveSessionProvider, (previous, next) {
       if (next == null) {
         _reset();
@@ -320,6 +331,7 @@ class TransferQueue extends Notifier<TransfersState> {
         folderId: folderId,
         sourcePath: sourcePath,
         ownsSource: ownsSource,
+        wifiOnly: false,
         totalBytes: size,
         doneBytes: 0,
         partCount: 1,
@@ -371,6 +383,7 @@ class TransferQueue extends Notifier<TransfersState> {
       fileId: file.id,
       folderId: file.folderId,
       ownsSource: false,
+      wifiOnly: false,
       origin: TransferOrigin.manual,
       totalBytes: file.size,
       doneBytes: 0,
@@ -407,6 +420,7 @@ class TransferQueue extends Notifier<TransfersState> {
           fileId: file.id,
           folderId: file.folderId,
           ownsSource: false,
+          wifiOnly: false,
           origin: TransferOrigin.save,
           totalBytes: file.size,
           doneBytes: 0,
@@ -647,7 +661,12 @@ class TransferQueue extends Notifier<TransfersState> {
           (r) =>
               r.status == TransferStatus.queued &&
               !_running.contains(r.id) &&
-              !(_notBeforeOf(r)?.isAfter(now) ?? false),
+              TransferPolicy.mayRun(
+                r,
+                now: now,
+                network: _network,
+                notBefore: _notBeforeOf(r),
+              ),
         )
         .toList()
       ..sort((a, b) {
