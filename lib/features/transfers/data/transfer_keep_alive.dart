@@ -54,7 +54,14 @@ class TransferKeepAlive {
   /// backup pass (which has short gaps between photos that must not bounce
   /// the service off and on).
   static bool _isActive(TransfersState state, BackupState backup) =>
-      state.activeCount > 0 || backup.isWorking;
+      state.activeCount > 0 || _backingUp(state, backup);
+
+  /// A backup pass that is moving. One whose upload Telegram has put on a
+  /// long wait sits out that wait without the service, and so without a
+  /// wake lock; the service starts again when the upload does.
+  static bool _backingUp(TransfersState state, BackupState backup) =>
+      backup.isWorking &&
+      !state.held.any((t) => t.origin == TransferOrigin.backup);
 
   Future<void> update(TransfersState state, BackupState backup) async {
     _latest = (state, backup);
@@ -140,15 +147,16 @@ class TransferKeepAlive {
     final uploads = active.where((t) => t.kind == TransferKind.upload).length;
     final downloads = active.length - uploads;
     final speed = state.active.fold<double>(0, (sum, t) => sum + t.bytesPerSecond);
+    final backingUp = _backingUp(state, backup);
 
     final parts = [
       if (uploads > 0) 'Uploading ${Formatters.count(uploads, 'file')}',
       if (downloads > 0) 'Downloading ${Formatters.count(downloads, 'file')}',
-      if (backup.isWorking) active.isEmpty ? 'Backing up photos' : 'backing up photos',
+      if (backingUp) active.isEmpty ? 'Backing up photos' : 'backing up photos',
     ];
     final title = parts.isEmpty ? 'Telegrive' : parts.join(' · ');
     final text = [
-      if (backup.isWorking && backup.total > 0)
+      if (backingUp && backup.total > 0)
         '${Formatters.count(backup.remaining, 'item')} left'
       else
         '${(state.activeProgress * 100).round()}%',

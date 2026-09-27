@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -9,18 +10,22 @@ import '../core/format/formatters.dart';
 import '../core/widgets/common.dart';
 import '../features/backup/data/backup_controller.dart';
 import '../features/backup/presentation/backup_prompt.dart';
+import '../features/drive/data/telegram_wait.dart';
+import '../features/files/data/bulk_edits.dart';
 import '../features/offline/data/offline_sync.dart';
 import '../features/search/data/content_indexer.dart';
 import '../features/share/data/share_intake.dart';
 import '../features/share/presentation/share_sheet.dart';
 import '../features/transfers/data/transfer_queue.dart';
+import '../features/transfers/domain/transfer_wait.dart';
 import '../infrastructure/database/app_database.dart' show TransferKind, TransferOrigin;
 import 'launch_action.dart';
 import 'theme/tokens.dart';
 
 /// Three places to be: Home, Files, Photos. Transfers is not a place, it is
 /// something happening, so it shows as a line above the bar while it
-/// happens. Settings sits under the avatar on Home.
+/// happens, and so does a big change to many items. Settings sits under the
+/// avatar on Home.
 ///
 /// The shell is also the first screen of an open drive, so it asks the
 /// one-time "back up your photos?" question and acts on a tapped backup
@@ -95,6 +100,8 @@ class _AppShellState extends ConsumerState<AppShell> {
       transferQueueProvider.select((s) => s.activeCount - s.backupActive.length),
     );
     final backingUp = ref.watch(backupControllerProvider.select((b) => b.isWorking));
+    // A bulk change wins the one line there is.
+    final showBulk = _bulkLineShows(ref);
     final wide = MediaQuery.sizeOf(context).width >= 840;
 
     Widget icon(IconData data, int index) =>
@@ -106,8 +113,11 @@ class _AppShellState extends ConsumerState<AppShell> {
         AnimatedSize(
           duration: const Duration(milliseconds: 200),
           curve: Curves.easeOut,
-          // Home already lists what is moving in its Activity group.
-          child: manualActive > 0 && shell.currentIndex != 0
+          // Home already lists what is moving in its Activity group, but
+          // not bulk changes.
+          child: showBulk
+              ? const _BulkStrip()
+              : manualActive > 0 && shell.currentIndex != 0
               ? const _TransferStrip()
               : const SizedBox(width: double.infinity),
         ),
@@ -202,6 +212,8 @@ class _AppShellState extends ConsumerState<AppShell> {
 }
 
 /// "Uploading 2 files · 41% · 8.3 MB/s" above the bar, opening Transfers.
+/// When everything in it is sitting out a short Telegram wait, the line
+/// counts down to the next try instead, with the bar gone grey.
 class _TransferStrip extends ConsumerWidget {
   const _TransferStrip();
 
@@ -223,22 +235,181 @@ class _TransferStrip extends ConsumerWidget {
       if (uploads > 0) 'Uploading ${Formatters.count(uploads, 'file')}',
       if (downloads > 0) 'Downloading ${Formatters.count(downloads, 'file')}',
     ].join(', ');
+    final waits = [
+      for (final item in active)
+        if (item.wait case WaitingForTelegram(:final until)) until,
+    ];
+    final resumesAt = waits.isEmpty || waits.length < active.length
+        ? null
+        : waits.reduce((a, b) => a.isBefore(b) ? a : b);
+
+    Widget line(String detail, {required bool waiting}) => StatusLine(
+      icon: uploads > 0 ? Icons.arrow_upward_rounded : Icons.arrow_downward_rounded,
+      color: waiting ? null : colors.accent,
+      text: title,
+      detail: detail,
+      progress: waiting || progress > 0 ? progress : -1,
+      progressColor: waiting ? colors.text3 : null,
+      onTap: () => context.push('/transfers'),
+    );
 
     return Material(
       color: colors.surface,
       child: DecoratedBox(
         decoration: BoxDecoration(border: Border(top: BorderSide(color: colors.line))),
-        child: StatusLine(
-          icon: uploads > 0 ? Icons.arrow_upward_rounded : Icons.arrow_downward_rounded,
-          color: colors.accent,
-          text: title,
-          detail: [
-            '${(progress * 100).round()}%',
-            if (speed > 0) Formatters.speed(speed),
-          ].join(' · '),
-          progress: progress > 0 ? progress : -1,
-          onTap: () => context.push('/transfers'),
+        child: resumesAt == null
+            ? line(
+                [
+                  '${(progress * 100).round()}%',
+                  if (speed > 0) Formatters.speed(speed),
+                ].join(' · '),
+                waiting: false,
+              )
+            : Countdown(
+                until: resumesAt,
+                builder: (context, left) => line(
+                  'Waiting for Telegram · ${Formatters.countdown(left)}',
+                  waiting: true,
+                ),
+              ),
+      ),
+    );
+  }
+}
+
+/// Whether the bulk line shows: a change to more than a handful of items
+/// takes a while, and any change Telegram holds up says so.
+bool _bulkLineShows(WidgetRef ref) {
+  final big = ref.watch(bulkEditsProvider.select((b) => b != null && b.total > 20));
+  final waiting = ref.watch(telegramWaitProvider.select((until) => until != null));
+  return big || waiting;
+}
+
+/// Screens opened over the shell, such as an album or the Trash, have no
+/// bar for the bulk line to sit above, so it sits at their foot instead: a
+/// change started there still shows how far it got, and can be stopped.
+/// Wraps everything [router] shows; on the shell itself it stays out of the
+/// way, since the shell has its own line.
+class BulkStripOverShell extends ConsumerStatefulWidget {
+  const BulkStripOverShell({super.key, required this.router, required this.child});
+
+  final GoRouter router;
+  final Widget child;
+
+  @override
+  ConsumerState<BulkStripOverShell> createState() => _BulkStripOverShellState();
+}
+
+class _BulkStripOverShellState extends ConsumerState<BulkStripOverShell> {
+  bool _overShell = false;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.router.routerDelegate.addListener(_onRoute);
+  }
+
+  @override
+  void didUpdateWidget(BulkStripOverShell oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.router != widget.router) {
+      oldWidget.router.routerDelegate.removeListener(_onRoute);
+      widget.router.routerDelegate.addListener(_onRoute);
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.router.routerDelegate.removeListener(_onRoute);
+    super.dispose();
+  }
+
+  /// The router changes pages while the screens below this are building,
+  /// so the line follows once that frame is done.
+  void _onRoute() {
+    SchedulerBinding.instance
+      ..addPostFrameCallback((_) {
+        if (!mounted) return;
+        final matches = widget.router.routerDelegate.currentConfiguration.matches;
+        final overShell = matches.lastOrNull is! ShellRouteMatch;
+        if (overShell != _overShell) setState(() => _overShell = overShell);
+      })
+      ..ensureVisualUpdate();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final visible = _overShell && _bulkLineShows(ref);
+    return Column(
+      children: [
+        Expanded(
+          // The line takes the bottom inset, as a bottom bar would.
+          child: MediaQuery.removePadding(
+            context: context,
+            removeBottom: visible,
+            child: widget.child,
+          ),
         ),
+        AnimatedSize(
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+          child: visible
+              ? ColoredBox(
+                  color: context.colors.surface,
+                  child: const SafeArea(top: false, child: _BulkStrip()),
+                )
+              : const SizedBox(width: double.infinity),
+        ),
+      ],
+    );
+  }
+}
+
+/// "Moving 500 items · 212 of 500 done" above the bar, or at the foot of a
+/// screen opened over it, with Stop. While Telegram holds the change up, the
+/// line counts down to when it carries on, with the bar gone grey.
+class _BulkStrip extends ConsumerWidget {
+  const _BulkStrip();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colors = context.colors;
+    final bulk = ref.watch(bulkEditsProvider);
+    final until = ref.watch(telegramWaitProvider);
+    final edits = ref.read(bulkEditsProvider.notifier);
+
+    Widget line(String detail, {required bool waiting}) => StatusLine(
+      icon: bulk?.icon ?? Icons.hourglass_empty_rounded,
+      color: waiting ? null : colors.accent,
+      text: bulk?.label ?? 'Telegram asked us to wait',
+      detail: detail,
+      progress: bulk == null ? null : bulk.done / bulk.total,
+      progressColor: waiting ? colors.text3 : null,
+      trailing: TextButton(
+        onPressed: (bulk?.stopping ?? false) ? null : edits.stop,
+        child: const Text('Stop'),
+      ),
+    );
+
+    return Material(
+      color: colors.surface,
+      child: DecoratedBox(
+        decoration: BoxDecoration(border: Border(top: BorderSide(color: colors.line))),
+        child: until == null
+            ? line(
+                '${Formatters.number(bulk?.done ?? 0)} of '
+                '${Formatters.number(bulk?.total ?? 0)} done',
+                waiting: false,
+              )
+            : Countdown(
+                until: until,
+                builder: (context, left) => line(
+                  bulk == null
+                      ? 'Resuming in ${Formatters.countdown(left)}'
+                      : 'Telegram asked us to wait · resuming in ${Formatters.countdown(left)}',
+                  waiting: true,
+                ),
+              ),
       ),
     );
   }

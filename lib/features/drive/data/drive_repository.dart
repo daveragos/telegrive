@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:drift/drift.dart' show Value, BooleanExpressionOperators;
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:handy_tdlib/api.dart' as td;
 import 'package:uuid/uuid.dart';
@@ -15,6 +16,7 @@ import '../domain/manifest.dart';
 import 'channel_messenger.dart';
 import 'drive_session.dart';
 import 'message_indexer.dart';
+import 'telegram_wait.dart';
 
 /// A request the drive cannot carry out, phrased for a person.
 class DriveException implements Exception {
@@ -320,10 +322,12 @@ class DriveRepository {
       extra: ManifestCodec.decodeExtra(row.manifestExtra),
     );
     final message = await _ignoreUnchanged(
-      () => _messenger.editText(
-        _chatId,
-        row.messageId,
-        ManifestCodec.encodeFolder(manifest),
+      () => _patiently(
+        () => _messenger.editText(
+          _chatId,
+          row.messageId,
+          ManifestCodec.encodeFolder(manifest),
+        ),
       ),
     );
     if (message != null) await ingest(message);
@@ -445,18 +449,25 @@ class DriveRepository {
       ),
     ).copyWith(modifiedAt: DateTime.now());
 
+    // Once one part carries the change, Stop no longer cuts a wait short,
+    // so a split file never ends up with parts that disagree.
+    var stoppable = true;
     for (final part in parts) {
       final caption = ManifestCodec.encodeFile(base.copyWith(partIndex: part.partIndex));
       td.Message? message;
       try {
         message = await _ignoreUnchanged(
-          () => _messenger.editCaption(_chatId, part.messageId, caption),
+          () => _patiently(
+            () => _messenger.editCaption(_chatId, part.messageId, caption),
+            stoppable: stoppable,
+          ),
         );
       } on TelegramException catch (e) {
         if (!e.isNotEditable) rethrow;
-        message = await _replaceWithOwnCopy(part.messageId, caption);
+        message = await _replaceWithOwnCopy(part.messageId, caption, stoppable: stoppable);
       }
       if (message != null) await ingest(message);
+      stoppable = false;
     }
   }
 
@@ -465,26 +476,49 @@ class DriveRepository {
   /// it is. This swaps it for the drive's own copy of the same message,
   /// made by Telegram with no upload, which can be: the copy gets
   /// [caption] and the original goes. The file keeps its id throughout.
-  Future<td.Message> _replaceWithOwnCopy(int messageId, EncodedText caption) async {
+  Future<td.Message> _replaceWithOwnCopy(
+    int messageId,
+    EncodedText caption, {
+    bool stoppable = true,
+  }) async {
     final client = _ref.read(telegramClientProvider);
-    final sent = await client.send<td.Messages>(
-      td.ForwardMessages(
-        chatId: _chatId,
-        messageThreadId: 0,
-        fromChatId: _chatId,
-        messageIds: [messageId],
-        sendCopy: true,
-        removeCaption: true,
-      ),
+    // Telegram usually turns a copy away only once it is being sent, so the
+    // wait covers the delivery as well as the request.
+    final copy = await _patiently(() async {
+      final sent = await client.send<td.Messages>(
+        td.ForwardMessages(
+          chatId: _chatId,
+          messageThreadId: 0,
+          fromChatId: _chatId,
+          messageIds: [messageId],
+          sendCopy: true,
+          removeCaption: true,
+        ),
+      );
+      final pending = sent.messages.firstOrNull;
+      if (pending == null) {
+        throw const DriveException('Telegram wouldn\'t copy this file.');
+      }
+      if (pending.sendingState == null) return pending;
+      try {
+        return await _messenger.awaitDelivery(pending.id);
+      } on SendFailed catch (e) {
+        // TDLib keeps the copy that failed, under a new id. It never reached
+        // the channel, so deleting it only drops that local copy, and the
+        // next try doesn't leave a second one.
+        try {
+          await _messenger.deleteMessages(_chatId, [e.failedMessageId]);
+        } catch (error) {
+          debugPrint('[Drive] Could not drop a failed copy: $error');
+        }
+        rethrow;
+      }
+    }, stoppable: stoppable);
+    // The copy has no caption yet, so it is finished even through a Stop.
+    final edited = await _patiently(
+      () => _messenger.editCaption(_chatId, copy.id, caption),
+      stoppable: false,
     );
-    final pending = sent.messages.firstOrNull;
-    if (pending == null) {
-      throw const DriveException('Telegram wouldn\'t copy this file.');
-    }
-    final copy = pending.sendingState == null
-        ? pending
-        : await _messenger.awaitDelivery(pending.id);
-    final edited = await _messenger.editCaption(_chatId, copy.id, caption);
     await ingest(edited);
     await _messenger.deleteMessages(_chatId, [messageId]);
     await _db.removeMessages([messageId]);
@@ -675,15 +709,17 @@ class DriveRepository {
     final row = await _db.albumById(albumId);
     if (row == null || row.name == clean) return;
     final message = await _ignoreUnchanged(
-      () => _messenger.editText(
-        _chatId,
-        row.messageId,
-        ManifestCodec.encodeAlbum(
-          AlbumManifest(
-            id: row.id,
-            name: clean,
-            createdAt: row.createdAt,
-            modifiedAt: DateTime.now(),
+      () => _patiently(
+        () => _messenger.editText(
+          _chatId,
+          row.messageId,
+          ManifestCodec.encodeAlbum(
+            AlbumManifest(
+              id: row.id,
+              name: clean,
+              createdAt: row.createdAt,
+              modifiedAt: DateTime.now(),
+            ),
           ),
         ),
       ),
@@ -701,13 +737,21 @@ class DriveRepository {
     await _db.removeMessages([row.messageId]);
   }
 
-  Future<void> addToAlbum(List<DriveFile> files, String albumId) async {
+  /// Adds [files] to the album and lifts it to the top of the list. A bulk
+  /// add that goes one file at a time passes [touch] as false and calls
+  /// [touchAlbum] once at the end, so the album's own message is edited
+  /// once rather than once per file.
+  Future<void> addToAlbum(
+    List<DriveFile> files,
+    String albumId, {
+    bool touch = true,
+  }) async {
     for (final file in files) {
       final current = await _db.albumIdsOf(file.id);
       if (current.contains(albumId)) continue;
       await _rewriteFile(file, (m) => m.copyWith(albums: [...current, albumId]));
     }
-    await _touchAlbum(albumId);
+    if (touch) await touchAlbum(albumId);
   }
 
   Future<void> removeFromAlbum(List<DriveFile> files, String albumId) async {
@@ -723,19 +767,21 @@ class DriveRepository {
 
   /// Albums sort by when they last changed, so adding photos lifts one to
   /// the top.
-  Future<void> _touchAlbum(String albumId) async {
+  Future<void> touchAlbum(String albumId) async {
     final row = await _db.albumById(albumId);
     if (row == null) return;
     await _ignoreUnchanged(
-      () => _messenger.editText(
-        _chatId,
-        row.messageId,
-        ManifestCodec.encodeAlbum(
-          AlbumManifest(
-            id: row.id,
-            name: row.name,
-            createdAt: row.createdAt,
-            modifiedAt: DateTime.now(),
+      () => _patiently(
+        () => _messenger.editText(
+          _chatId,
+          row.messageId,
+          ManifestCodec.encodeAlbum(
+            AlbumManifest(
+              id: row.id,
+              name: row.name,
+              createdAt: row.createdAt,
+              modifiedAt: DateTime.now(),
+            ),
           ),
         ),
       ),
@@ -790,6 +836,28 @@ class DriveRepository {
     if (ids.isEmpty) return;
     await _messenger.deleteMessages(_chatId, ids);
     await _db.removeMessages(ids);
+  }
+
+  /// Longest flood wait an edit sits out. Anything longer fails with
+  /// Telegram's own sentence, since holding a change for hours helps nobody.
+  static const int _longestWaitSeconds = 15 * 60;
+
+  /// Runs [action], sitting out Telegram's flood waits of up to 15 minutes
+  /// instead of failing, so a long run of edits carries on by itself. The
+  /// wait is announced through [telegramWaitProvider], whose Stop can cut
+  /// it short when [stoppable].
+  Future<T> _patiently<T>(Future<T> Function() action, {bool stoppable = true}) async {
+    for (var attempt = 1; ; attempt++) {
+      try {
+        return await action();
+      } on TelegramException catch (e) {
+        final seconds = e.retryAfterSeconds ?? 30;
+        if (!e.isFloodWait || seconds > _longestWaitSeconds || attempt >= 3) rethrow;
+        await _ref
+            .read(telegramWaitProvider.notifier)
+            .sleep(Duration(seconds: seconds), stoppable: stoppable);
+      }
+    }
   }
 
   Future<td.Message?> _ignoreUnchanged(

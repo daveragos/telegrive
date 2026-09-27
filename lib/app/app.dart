@@ -14,6 +14,7 @@ import '../features/settings/data/settings_providers.dart';
 import '../features/transfers/data/transfer_keep_alive.dart';
 import '../features/transfers/data/transfer_queue.dart';
 import '../infrastructure/telegram/telegram_client.dart';
+import 'app_shell.dart';
 import 'router.dart';
 import 'theme/app_theme.dart';
 import '../features/lock/presentation/lock_gate.dart';
@@ -77,14 +78,17 @@ class _TelegriveAppState extends ConsumerState<TelegriveApp>
     // Alive from the start so backup resumes the moment the drive opens.
     ref.watch(backupControllerProvider.select((b) => b.phase));
 
+    final router = ref.watch(routerProvider);
     return MaterialApp.router(
       title: AppConfig.appName,
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light(),
       darkTheme: AppTheme.dark(),
       themeMode: ref.watch(themeModeProvider),
-      routerConfig: ref.watch(routerProvider),
-      builder: (context, child) => LockGate(child: child ?? const SizedBox.shrink()),
+      routerConfig: router,
+      builder: (context, child) => LockGate(
+        child: BulkStripOverShell(router: router, child: child ?? const SizedBox.shrink()),
+      ),
       localizationsDelegates: GlobalMaterialLocalizations.delegates,
       supportedLocales: const [Locale('en')],
     );

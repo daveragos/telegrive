@@ -39,6 +39,24 @@ void main() {
       expect(Formatters.eta(const Duration(seconds: 75)), '1m 15s left');
       expect(Formatters.eta(const Duration(minutes: 125)), '2h 5m left');
     });
+
+    test('countdown', () {
+      expect(Formatters.countdown(const Duration(seconds: 7)), '0:07');
+      expect(Formatters.countdown(const Duration(seconds: 72)), '1:12');
+      expect(Formatters.countdown(const Duration(minutes: 58, seconds: 12)), '58:12');
+      expect(Formatters.countdown(const Duration(hours: 1, minutes: 2, seconds: 3)), '1:02:03');
+      // Part of a second still to go reads as a whole one, never 0:00.
+      expect(Formatters.countdown(const Duration(milliseconds: 71200)), '1:12');
+      expect(Formatters.countdown(const Duration(milliseconds: 300)), '0:01');
+      expect(Formatters.countdown(Duration.zero), '0:00');
+    });
+
+    test('inWords', () {
+      expect(Formatters.inWords(const Duration(seconds: 1)), '1 second');
+      expect(Formatters.inWords(const Duration(seconds: 37)), '37 seconds');
+      expect(Formatters.inWords(const Duration(minutes: 5)), '5 minutes');
+      expect(Formatters.inWords(const Duration(hours: 2)), '2 hours');
+    });
   });
 
   group('SortOrder', () {
@@ -92,6 +110,14 @@ void main() {
       expect(
         const TelegramException(400, 'SOMETHING_ODD').friendlyMessage,
         'Something odd',
+      );
+      expect(
+        const TelegramException(400, 'FILE_REFERENCE_EXPIRED').friendlyMessage,
+        'Telegram needs this file fetched again. Retry.',
+      );
+      expect(
+        const TelegramException(420, 'FLOOD_WAIT_7200').friendlyMessage,
+        'Too many attempts. Try again in 2 hours.',
       );
     });
   });

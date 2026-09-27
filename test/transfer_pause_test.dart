@@ -11,26 +11,13 @@ import 'package:telegrive/features/drive/data/drive_repository.dart';
 import 'package:telegrive/features/drive/data/drive_session.dart';
 import 'package:telegrive/features/transfers/data/transfer_queue.dart';
 import 'package:telegrive/infrastructure/database/app_database.dart';
-import 'package:telegrive/infrastructure/telegram/secure_store.dart';
 import 'package:telegrive/infrastructure/telegram/telegram_client.dart';
 
-class _Session extends DriveSessionNotifier {
-  @override
-  DriveSession? build() => const DriveSession(
-    userId: 1,
-    chatId: -100,
-    channelTitle: 'Telegrive',
-    firstName: 'A',
-    lastName: '',
-    phoneNumber: '',
-    username: null,
-    isPremium: false,
-  );
-}
+import 'support/fake_telegram.dart';
 
 /// A download of file 7 that takes a moment, unless it is cancelled first.
-class _FakeTelegram extends TelegramClient {
-  _FakeTelegram(this.path) : super(SecureStore());
+class _FakeTelegram extends FakeTelegram {
+  _FakeTelegram(this.path);
 
   final String path;
   bool done = false;
@@ -38,39 +25,13 @@ class _FakeTelegram extends TelegramClient {
   int cancels = 0;
   Completer<td.File>? _inFlight;
 
-  td.File _file() => td.File(
-    id: 7,
-    size: 10,
-    expectedSize: 10,
-    local: td.LocalFile(
-      path: done ? path : '',
-      canBeDownloaded: true,
-      canBeDeleted: true,
-      isDownloadingActive: false,
-      isDownloadingCompleted: done,
-      downloadOffset: 0,
-      downloadedPrefixSize: done ? 10 : 4,
-      downloadedSize: done ? 10 : 4,
-    ),
-    remote: const td.RemoteFile(
-      id: 'r',
-      uniqueId: 'u',
-      isUploadingActive: false,
-      isUploadingCompleted: true,
-      uploadedSize: 10,
-    ),
-  );
+  td.File _file() => tdFile(7, path: path, downloaded: done);
 
   @override
-  Future<T> send<T extends td.TdObject>(
-    td.TdFunction function, {
-    Duration timeout = const Duration(seconds: 30),
-  }) async {
+  Future<td.TdObject?> answer(td.TdFunction function) async {
     switch (function) {
-      case td.GetChatHistory():
-        return const td.Messages(totalCount: 0, messages: []) as T;
       case td.GetFile():
-        return _file() as T;
+        return _file();
       case td.DownloadFile():
         downloads++;
         final inFlight = _inFlight = Completer<td.File>();
@@ -81,14 +42,14 @@ class _FakeTelegram extends TelegramClient {
             if (!inFlight.isCompleted) inFlight.complete(_file());
           });
         }
-        return await inFlight.future as T;
+        return inFlight.future;
       case td.CancelDownloadFile():
         cancels++;
         final inFlight = _inFlight;
         if (inFlight != null && !inFlight.isCompleted) inFlight.complete(_file());
-        return const td.Ok() as T;
+        return const td.Ok();
       default:
-        throw UnsupportedError('$function');
+        return null;
     }
   }
 }
@@ -105,7 +66,7 @@ void main() {
       overrides: [
         appDatabaseProvider.overrideWithValue(db),
         telegramClientProvider.overrideWithValue(telegram),
-        driveSessionProvider.overrideWith(_Session.new),
+        driveSessionProvider.overrideWith(TestSession.new),
       ],
     );
     addTearDown(() async {

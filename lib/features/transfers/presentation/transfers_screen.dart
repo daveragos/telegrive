@@ -12,6 +12,8 @@ import '../../../infrastructure/storage/device_storage.dart';
 import '../../backup/data/backup_controller.dart';
 import '../../backup/presentation/backup_card.dart';
 import '../data/transfer_queue.dart';
+import '../domain/transfer_error.dart';
+import '../domain/transfer_wait.dart';
 
 class TransfersScreen extends ConsumerWidget {
   const TransfersScreen({super.key});
@@ -34,6 +36,7 @@ class TransfersScreen extends ConsumerWidget {
           (t) => !(t.origin == TransferOrigin.save && t.status == TransferStatus.completed),
         )
         .toList();
+    final failed = finished.where((t) => t.status == TransferStatus.failed).length;
     final backingUp = ref.watch(backupControllerProvider.select((b) => b.isWorking));
 
     return Scaffold(
@@ -79,7 +82,19 @@ class TransfersScreen extends ConsumerWidget {
                   ListGroup(children: [for (final item in active) _ActiveRow(item: item)]),
                 ],
                 if (finished.isNotEmpty) ...[
-                  const SectionHeader('Finished'),
+                  SectionHeader(
+                    'Finished',
+                    trailing: failed < 2
+                        ? null
+                        : TextButton(
+                            onPressed: () => queue.retryAll(
+                              (r) =>
+                                  r.status == TransferStatus.failed &&
+                                  r.origin != TransferOrigin.backup,
+                            ),
+                            child: const Text('Retry all'),
+                          ),
+                  ),
                   ListGroup(children: [for (final item in finished) _FinishedRow(item: item)]),
                 ],
               ],
@@ -194,6 +209,10 @@ class _ActiveRow extends ConsumerWidget {
     final isUpload = item.kind == TransferKind.upload;
     final queued = item.status == TransferStatus.queued;
     final paused = item.status == TransferStatus.paused;
+    final waitingUntil = switch (item.wait) {
+      WaitingForTelegram(:final until) => until,
+      null => null,
+    };
     final queue = ref.read(transferQueueProvider.notifier);
     final eta = item.eta;
     final parts = item.row.partCount > 1
@@ -201,6 +220,7 @@ class _ActiveRow extends ConsumerWidget {
               'of ${item.row.partCount}'
         : null;
 
+    final detailStyle = context.text.bodySmall?.copyWith(fontFeatures: tabularFigures);
     final String detail;
     if (item.preparing) {
       detail = 'Preparing the file';
@@ -247,12 +267,21 @@ class _ActiveRow extends ConsumerWidget {
                     ),
                     const SizedBox(width: Space.xs),
                     Expanded(
-                      child: Text(
-                        detail,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: context.text.bodySmall?.copyWith(fontFeatures: tabularFigures),
-                      ),
+                      child: waitingUntil == null
+                          ? Text(
+                              detail,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: detailStyle,
+                            )
+                          : Countdown(
+                              until: waitingUntil,
+                              builder: (context, left) => Text(
+                                'Waiting for Telegram · ${Formatters.countdown(left)}',
+                                maxLines: 1,
+                                style: detailStyle,
+                              ),
+                            ),
                     ),
                   ],
                 ),
@@ -265,7 +294,7 @@ class _ActiveRow extends ConsumerWidget {
                     builder: (context, value, _) => LinearProgressIndicator(
                       value: item.preparing ? null : value,
                       minHeight: 4,
-                      color: paused ? colors.text3 : null,
+                      color: paused || waitingUntil != null ? colors.text3 : null,
                     ),
                   ),
                 ),
@@ -283,7 +312,11 @@ class _ActiveRow extends ConsumerWidget {
               tooltip: paused ? 'Resume' : 'Pause',
             ),
           IconButton(
-            onPressed: () => queue.cancel(item.id),
+            // Cancelled transfers leave the list rather than pile up in it.
+            onPressed: () {
+              queue.remove(item.id);
+              showSnack(context, 'Cancelled ${item.name}');
+            },
             icon: Icon(Icons.close_rounded, color: colors.text3),
             tooltip: 'Cancel',
           ),
@@ -307,7 +340,7 @@ class _FinishedRow extends ConsumerWidget {
 
     final (String status, Color color) = switch (item.status) {
       TransferStatus.completed => (isUpload ? 'Uploaded' : 'Downloaded', colors.success),
-      TransferStatus.failed => (item.row.error ?? 'Failed', colors.danger),
+      TransferStatus.failed => (describeTransferError(item.row.error), colors.danger),
       _ => ('Cancelled', colors.text2),
     };
     final openable =

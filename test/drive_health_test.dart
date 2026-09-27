@@ -5,6 +5,7 @@ import 'package:telegrive/features/backup/data/backup_controller.dart';
 import 'package:telegrive/features/drive/data/drive_sync.dart';
 import 'package:telegrive/features/home/presentation/drive_health.dart';
 import 'package:telegrive/features/transfers/data/transfer_queue.dart';
+import 'package:telegrive/features/transfers/domain/transfer_wait.dart';
 import 'package:telegrive/infrastructure/database/app_database.dart';
 
 final _now = DateTime(2026, 9, 27, 19, 32);
@@ -15,6 +16,8 @@ TransferItem _transfer(
   TransferOrigin origin = TransferOrigin.manual,
   int total = 100,
   int done = 0,
+  String? error,
+  TransferWait? wait,
 }) => TransferItem(
   TransferRow(
     id: name,
@@ -30,12 +33,22 @@ TransferItem _transfer(
     completedParts: 0,
     createdAt: _now,
     origin: origin,
+    error: error,
   ),
+  wait: wait,
 );
 
 const _upToDate = BackupState(phase: BackupPhase.upToDate, total: 10, done: 10);
 const _off = BackupState(phase: BackupPhase.off);
 final _synced = SyncState(lastSynced: _now);
+
+/// A transfer Telegram asked to wait 40 minutes, long enough to be held.
+TransferItem _held(String name, {TransferOrigin origin = TransferOrigin.manual}) => _transfer(
+  name,
+  TransferStatus.queued,
+  origin: origin,
+  wait: WaitingForTelegram(_now.add(const Duration(minutes: 40))),
+);
 
 DriveHealth _top({
   BackupState backup = _upToDate,
@@ -140,16 +153,109 @@ void main() {
       expect(health.action, HealthAction.retryFailed);
     });
 
-    test('failed transfers open Transfers', () {
+    test('failed transfers open Transfers and retry in place', () {
       final health = _top(
         transfers: TransfersState([
-          _transfer('a.zip', TransferStatus.failed),
+          _transfer('a.zip', TransferStatus.failed, error: 'Not enough space on this phone.'),
           _transfer('b.zip', TransferStatus.failed),
         ]),
       );
       expect(health.text, '2 transfers failed');
+      expect(health.detail, 'Open Transfers to see why.');
       expect(health.tone, HealthTone.bad);
+      expect(health.action, HealthAction.retryTransfers);
       expect(health.target, HealthTarget.transfers);
+    });
+
+    test('one failed transfer says why', () {
+      final health = _top(
+        transfers: TransfersState([
+          _transfer('a.zip', TransferStatus.failed, error: 'Not enough space on this phone.'),
+          _transfer('IMG_1.jpg', TransferStatus.failed, origin: TransferOrigin.backup),
+        ]),
+      );
+      expect(health.text, '1 transfer failed');
+      expect(health.detail, 'Not enough space on this phone.');
+      expect(health.action, HealthAction.retryTransfers);
+    });
+
+    test('a long Telegram wait is said, not taken for all good', () {
+      final resumes = _now.add(const Duration(minutes: 40));
+      final health = _top(
+        backup: const BackupState(phase: BackupPhase.uploading, total: 20, done: 3),
+        transfers: TransfersState([
+          _transfer('a.zip', TransferStatus.queued, wait: WaitingForTelegram(resumes)),
+        ]),
+      );
+      expect(health.text, 'Telegram asked us to wait');
+      expect(
+        health.detail,
+        'Transfers carry on by themselves at ${Formatters.date(resumes, now: _now)}.',
+      );
+      expect(health.tone, HealthTone.neutral);
+      expect(health.target, HealthTarget.transfers);
+    });
+
+    test('a long Telegram wait beats transfers in progress', () {
+      final health = _top(
+        backup: _off,
+        transfers: TransfersState([
+          _held('a.zip'),
+          _transfer('b.zip', TransferStatus.running),
+        ]),
+      );
+      expect(health.text, 'Telegram asked us to wait');
+    });
+
+    test('a backup that needs the person beats a long Telegram wait', () {
+      final transfers = TransfersState([
+        _held('a.zip'),
+        _held('IMG_1.jpg', origin: TransferOrigin.backup),
+      ]);
+      expect(
+        _top(backup: const BackupState(phase: BackupPhase.stopped), transfers: transfers).text,
+        'Backup stopped',
+      );
+      expect(
+        _top(backup: const BackupState(phase: BackupPhase.needsPermission), transfers: transfers)
+            .text,
+        'Backup can\'t see your photos',
+      );
+      expect(
+        _top(
+          backup: const BackupState(phase: BackupPhase.waitingForWifi),
+          transfers: transfers,
+        ).text,
+        'Waiting for Wi-Fi',
+      );
+    });
+
+    test('a short Telegram wait still counts as in progress', () {
+      final health = _top(
+        backup: _off,
+        transfers: TransfersState([
+          _transfer(
+            'a.zip',
+            TransferStatus.queued,
+            wait: WaitingForTelegram(_now.add(const Duration(seconds: 72))),
+          ),
+        ]),
+      );
+      expect(health.text, '1 transfer in progress');
+    });
+
+    test('a paused transfer is never held by a wait', () {
+      final health = _top(
+        backup: _off,
+        transfers: TransfersState([
+          _transfer(
+            'a.zip',
+            TransferStatus.paused,
+            wait: WaitingForTelegram(_now.add(const Duration(minutes: 40))),
+          ),
+        ]),
+      );
+      expect(health.text, isNot('Telegram asked us to wait'));
     });
 
     test('not reaching Telegram beats everything else', () {
@@ -268,14 +374,16 @@ void main() {
           _top(backup: backup, transfers: transfers, sync: sync),
           backup: backup,
           transfers: transfers,
+          now: _now,
         );
 
     final paused = TransfersState([_transfer('a.zip', TransferStatus.paused)]);
 
-    test('shows paused transfers under a backup line', () {
+    test('shows paused transfers under a backup line, with Resume', () {
       final row = second(const BackupState(phase: BackupPhase.stopped), paused);
       expect(row?.text, '1 transfer paused');
-      expect(row?.detail, 'Open Transfers to resume.');
+      expect(row?.detail, isNull);
+      expect(row?.action, HealthAction.resumeTransfers);
       expect(row?.target, HealthTarget.transfers);
 
       expect(second(_upToDate, paused)?.text, '1 transfer paused');
@@ -298,10 +406,29 @@ void main() {
       final row = second(_off, busy);
       expect(row?.text, '1 transfer failed');
       expect(row?.tone, HealthTone.bad);
+      expect(row?.action, HealthAction.retryTransfers);
       expect(row?.target, HealthTarget.transfers);
 
       // A stopped backup still comes first, with its Retry.
       expect(second(const BackupState(phase: BackupPhase.stopped), busy)?.text, 'Backup stopped');
+    });
+
+    test('failed and paused transfers keep their row under a Telegram wait', () {
+      final failed = TransfersState([
+        _held('a.zip'),
+        _transfer('b.zip', TransferStatus.failed),
+        _transfer('c.zip', TransferStatus.failed),
+      ]);
+      expect(_top(backup: _upToDate, transfers: failed).text, 'Telegram asked us to wait');
+      final row = second(_upToDate, failed);
+      expect(row?.text, '2 transfers failed');
+      expect(row?.action, HealthAction.retryTransfers);
+
+      final paused = TransfersState([
+        _held('a.zip'),
+        _transfer('b.zip', TransferStatus.paused),
+      ]);
+      expect(second(_upToDate, paused)?.action, HealthAction.resumeTransfers);
     });
 
     test('never repeats the top line, and never shows progress', () {
@@ -318,19 +445,20 @@ void main() {
         paused,
         busy,
         TransfersState([_transfer('a.zip', TransferStatus.failed), ...paused.items]),
+        TransfersState([_held('w.zip'), ...busy.items, ...paused.items]),
       ];
       final syncs = [_synced, const SyncState(error: 'No connection'), const SyncState(running: true)];
       for (final backup in states) {
         for (final transfers in transferMixes) {
           for (final sync in syncs) {
             final top = _top(backup: backup, transfers: transfers, sync: sync);
-            final row = secondaryHealth(top, backup: backup, transfers: transfers);
+            final row = secondaryHealth(top, backup: backup, transfers: transfers, now: _now);
             if (row == null) continue;
             expect(row.text, isNot(top.text));
-            // At most one button across the group, and only the top row can
-            // be accent-coloured.
+            // The two buttons never do the same job, and only the top row
+            // can be accent-coloured.
             expect(
-              row.action == HealthAction.none || top.action == HealthAction.none,
+              row.action == HealthAction.none || row.action != top.action,
               isTrue,
             );
             expect(row.tone, isNot(HealthTone.busy));

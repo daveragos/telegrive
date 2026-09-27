@@ -31,12 +31,15 @@ import 'package:telegrive/features/drive/data/drive_repository.dart';
 import 'package:telegrive/features/drive/data/previews.dart';
 import 'package:telegrive/features/drive/data/drive_session.dart';
 import 'package:telegrive/features/drive/data/drive_sync.dart';
+import 'package:telegrive/features/drive/data/telegram_wait.dart';
 import 'package:telegrive/features/drive/domain/drive_models.dart';
+import 'package:telegrive/features/files/data/bulk_edits.dart';
 import 'package:telegrive/features/files/presentation/files_screen.dart';
 import 'package:telegrive/features/home/presentation/home_screen.dart';
 import 'package:telegrive/features/settings/data/settings_providers.dart';
 import 'package:telegrive/features/settings/presentation/settings_screen.dart';
 import 'package:telegrive/features/transfers/data/transfer_queue.dart';
+import 'package:telegrive/features/transfers/domain/transfer_wait.dart';
 import 'package:telegrive/features/transfers/presentation/transfers_screen.dart';
 import 'package:telegrive/infrastructure/database/app_database.dart';
 import 'package:telegrive/infrastructure/storage/device_storage.dart';
@@ -96,6 +99,24 @@ class _Queue extends TransferQueue {
 
   @override
   TransfersState build() => _state;
+}
+
+class _Bulk extends BulkEdits {
+  _Bulk(this._edit);
+
+  final BulkEdit? _edit;
+
+  @override
+  BulkEdit? build() => _edit;
+}
+
+class _Wait extends TelegramWait {
+  _Wait(this._until);
+
+  final DateTime? _until;
+
+  @override
+  DateTime? build() => _until;
 }
 
 Future<void> _loadFonts() async {
@@ -348,6 +369,9 @@ void main() {
           4 * _mb,
           0,
         ),
+        wait: WaitingForTelegram(
+          DateTime.now().add(const Duration(minutes: 1, seconds: 12)),
+        ),
       ),
       TransferItem(
         _transfer(
@@ -368,6 +392,16 @@ void main() {
           error: 'The original file is no longer available.',
         ),
       ),
+      TransferItem(
+        _transfer(
+          'Budget 2026.xlsx',
+          TransferKind.download,
+          TransferStatus.failed,
+          88000,
+          0,
+          error: 'Not enough space on this phone.',
+        ),
+      ),
     ]);
   }
 
@@ -377,6 +411,8 @@ void main() {
     ThemeMode themeMode = ThemeMode.light,
     Map<String, Object> prefs = const {},
     BackupState backup = const BackupState(phase: BackupPhase.off),
+    BulkEdit? bulk,
+    DateTime? telegramWait,
   }) async {
     debugDisableShadows = false;
     tester.view.physicalSize = const Size(1080, 2340);
@@ -458,6 +494,8 @@ void main() {
           ),
           cacheSizeProvider.overrideWith((ref) async => 734 * _mb),
           backupControllerProvider.overrideWith(() => _Backup(backup)),
+          bulkEditsProvider.overrideWith(() => _Bulk(bulk)),
+          telegramWaitProvider.overrideWith(() => _Wait(telegramWait)),
           mediaTimelineProvider.overrideWith((ref) => Stream.value(photos)),
           trashProvider.overrideWith(
             (ref) => Stream.value(
@@ -614,6 +652,22 @@ void main() {
     await prepareData(tester);
     await pumpApp(tester, location: '/files');
     await snap(tester, 'files_list');
+  });
+
+  testWidgets('bulk edit waiting', (tester) async {
+    await prepareData(tester);
+    await pumpApp(
+      tester,
+      location: '/files',
+      bulk: const BulkEdit(
+        label: 'Moving 500 items',
+        icon: Icons.drive_file_move_outline,
+        done: 212,
+        total: 500,
+      ),
+      telegramWait: DateTime.now().add(const Duration(minutes: 3, seconds: 41)),
+    );
+    await snap(tester, 'bulk_waiting');
   });
 
   testWidgets('files grid', (tester) async {

@@ -23,10 +23,14 @@ import '../../backup/data/backup_controller.dart';
 import '../../offline/data/offline_sync.dart';
 import '../../send/data/telegram_chats.dart';
 import '../../send/presentation/chat_picker.dart';
+import '../../drive/data/channel_messenger.dart';
 import '../../drive/data/drive_repository.dart';
 import '../../drive/data/drive_session.dart';
 import '../../drive/domain/drive_models.dart';
 import '../../transfers/data/transfer_queue.dart';
+import '../../transfers/domain/transfer_error.dart';
+import '../../transfers/domain/transfer_wait.dart';
+import '../data/bulk_edits.dart';
 import 'folder_picker.dart';
 
 /// Every action a person can take on files and folders, in one place so the
@@ -430,13 +434,20 @@ abstract final class FileActions {
     );
     if (destination == null || !context.mounted) return false;
     final target = destination.folderId;
-    return _guard(context, () async {
-      final repository = ref.read(driveRepositoryProvider);
-      await repository.moveFiles(files, target);
-      for (final folder in folders) {
-        await repository.moveFolder(folder, target);
-      }
-    }, success: 'Moved to ${destination.name}');
+    final repository = ref.read(driveRepositoryProvider);
+    final outcome = await runBulk(
+      context,
+      ref.read(bulkEditsProvider.notifier),
+      label: 'Moving ${Formatters.count(count, 'item')}',
+      icon: Icons.drive_file_move_outline,
+      items: <Future<void> Function()>[
+        for (final file in files) () => repository.moveFiles([file], target),
+        for (final folder in folders) () => repository.moveFolder(folder, target),
+      ],
+      apply: (move) => move(),
+      success: 'Moved to ${destination.name}',
+    );
+    return outcome?.complete ?? false;
   }
 
   static Future<void> setStarred(
@@ -445,9 +456,15 @@ abstract final class FileActions {
     List<DriveFile> files, {
     required bool starred,
   }) async {
-    await _guard(
+    final repository = ref.read(driveRepositoryProvider);
+    final count = Formatters.count(files.length, 'item');
+    await runBulk(
       context,
-      () => ref.read(driveRepositoryProvider).setStarred(files, starred: starred),
+      ref.read(bulkEditsProvider.notifier),
+      label: starred ? 'Starring $count' : 'Removing $count from Starred',
+      icon: Icons.star_outline_rounded,
+      items: files,
+      apply: (file) => repository.setStarred([file], starred: starred),
       success: starred ? 'Added to Starred' : 'Removed from Starred',
     );
   }
@@ -461,24 +478,40 @@ abstract final class FileActions {
     List<DriveFolder> folders = const [],
   }) async {
     final repository = ref.read(driveRepositoryProvider);
+    final edits = ref.read(bulkEditsProvider.notifier);
     final what = _describe(files, folders);
-    // Each file is one caption edit, so a big selection takes a moment.
-    if (files.length + folders.length > 20) {
-      showSnack(context, 'Moving $what to Trash…');
-    }
-    final moved = await _guard(
+    final count = Formatters.count(files.length + folders.length, 'item');
+    final outcome = await runBulk(
       context,
-      () => repository.trash(files: files, folders: folders),
+      edits,
+      label: 'Moving $count to Trash',
+      icon: Icons.delete_outline_rounded,
+      items: <Future<void> Function()>[
+        for (final folder in folders) () => repository.trash(folders: [folder]),
+        for (final file in files) () => repository.trash(files: [file]),
+      ],
+      apply: (trash) => trash(),
+      success: 'Moved $what to Trash',
+      // Folders go first, so what reached the Trash is the first `done` of
+      // the folders and then the files, even when the change stopped part
+      // way.
+      undo: (done) {
+        final trashedFolders = folders.take(done).toList();
+        final trashedFiles = files.take(done - trashedFolders.length).toList();
+        return runBulk(
+          context,
+          edits,
+          label: 'Restoring ${Formatters.count(done, 'item')}',
+          icon: Icons.restore_rounded,
+          items: <Future<void> Function()>[
+            for (final folder in trashedFolders) () => repository.restore(folders: [folder]),
+            for (final file in trashedFiles) () => repository.restore(files: [file]),
+          ],
+          apply: (restore) => restore(),
+        );
+      },
     );
-    if (moved && context.mounted) {
-      showSnack(
-        context,
-        'Moved $what to Trash',
-        actionLabel: 'Undo',
-        onAction: () => repository.restore(files: files, folders: folders),
-      );
-    }
-    return moved;
+    return outcome?.complete ?? false;
   }
 
   static Future<void> restore(
@@ -773,14 +806,67 @@ abstract final class FileActions {
       await action();
       if (success != null && context.mounted) showSnack(context, success);
       return true;
-    } on DriveException catch (e) {
-      if (context.mounted) showSnack(context, e.message);
-    } on TelegramException catch (e) {
-      if (context.mounted) showSnack(context, e.friendlyMessage);
     } catch (e) {
-      if (context.mounted) showSnack(context, 'Something went wrong: $e');
+      if (context.mounted) showSnack(context, _failure(e));
     }
     return false;
+  }
+
+  static String _failure(Object error) => switch (error) {
+    DriveException(:final message) => message,
+    TelegramException e => e.friendlyMessage,
+    _ => 'Something went wrong: $error',
+  };
+
+  /// Applies [apply] to each of [items] as one bulk change, which the status
+  /// line above the bar follows when it is big or Telegram asks for a wait,
+  /// and says how it ended: [success], where it stopped, or why it failed.
+  /// With [undo], that sentence offers Undo for the items that did change,
+  /// the first `done` of [items], however it ended. Returns how it ended,
+  /// or null when it couldn't start.
+  ///
+  /// [edits] is read up front because an Undo can run this after the screen
+  /// that started it is gone.
+  static Future<BulkOutcome?> runBulk<T>(
+    BuildContext context,
+    BulkEdits edits, {
+    required String label,
+    required IconData icon,
+    required List<T> items,
+    required Future<void> Function(T item) apply,
+    String? success,
+    Future<void> Function(int done)? undo,
+  }) async {
+    BulkOutcome? outcome;
+    await _guard(context, () async {
+      outcome = await edits.run(label: label, icon: icon, items: items, apply: apply);
+    });
+    final ended = outcome;
+    if (ended == null) return null;
+    final error = ended.error;
+    final wait = error == null ? null : telegramWaitOf(error);
+    final done = '${Formatters.number(ended.done)} of ${Formatters.number(ended.total)}';
+    final String? message;
+    if (ended.stopped) {
+      message = 'Stopped after $done. The rest are unchanged.';
+    } else if (wait != null) {
+      message =
+          'Telegram asked us to wait ${Formatters.inWords(wait)}. '
+          '$done are done; try the rest later.';
+    } else if (error != null) {
+      message = _failure(error);
+    } else {
+      message = success;
+    }
+    if (message != null && context.mounted) {
+      showSnack(
+        context,
+        message,
+        actionLabel: undo != null && ended.done > 0 ? 'Undo' : null,
+        onAction: undo == null ? null : () => undo(ended.done),
+      );
+    }
+    return ended;
   }
 }
 
@@ -805,7 +891,9 @@ class _DownloadDialogState extends ConsumerState<_DownloadDialog> {
       onError: (Object error) {
         if (!mounted) return;
         Navigator.of(context).pop();
-        if (error is! DriveException || error.message != 'Signed out.') {
+        if (error is SendCancelled) {
+          showSnack(context, 'Cancelled ${widget.file.name}');
+        } else if (error is! DriveException || error.message != 'Signed out.') {
           showSnack(context, 'Download failed: ${error is DriveException ? error.message : error}');
         }
       },
@@ -828,6 +916,11 @@ class _DownloadDialogState extends ConsumerState<_DownloadDialog> {
       ),
     );
     final progress = item?.progress ?? 0;
+    final waitingUntil = switch (item?.wait) {
+      WaitingForTelegram(:final until) => until,
+      null => null,
+    };
+    final detailStyle = theme.textTheme.bodySmall?.copyWith(fontFeatures: tabularFigures);
 
     return AlertDialog(
       title: Text(
@@ -856,25 +949,36 @@ class _DownloadDialogState extends ConsumerState<_DownloadDialog> {
           ClipRRect(
             borderRadius: BorderRadius.circular(2),
             child: LinearProgressIndicator(
-              value: progress > 0 ? progress : null,
+              value: waitingUntil != null || progress > 0 ? progress : null,
               minHeight: 4,
+              color: waitingUntil == null ? null : context.colors.text3,
             ),
           ),
           const SizedBox(height: Space.s),
-          Text(
-            item == null
-                ? 'Starting'
-                : '${Formatters.bytes(item.row.doneBytes)} of ${Formatters.bytes(item.row.totalBytes)}'
-                      '${item.bytesPerSecond > 0 ? ' · ${Formatters.speed(item.bytesPerSecond)}' : ''}',
-            style: theme.textTheme.bodySmall?.copyWith(fontFeatures: tabularFigures),
-          ),
+          if (waitingUntil != null)
+            Countdown(
+              until: waitingUntil,
+              builder: (context, left) => Text(
+                'Waiting for Telegram · ${Formatters.countdown(left)}',
+                style: detailStyle,
+              ),
+            )
+          else
+            Text(
+              item == null
+                  ? 'Starting'
+                  : '${Formatters.bytes(item.row.doneBytes)} of ${Formatters.bytes(item.row.totalBytes)}'
+                        '${item.bytesPerSecond > 0 ? ' · ${Formatters.speed(item.bytesPerSecond)}' : ''}',
+              style: detailStyle,
+            ),
         ],
       ),
       actions: [
         TextButton(
           onPressed: () {
+            // Like × in Transfers: a cancelled download leaves no row behind.
             if (item != null) {
-              ref.read(transferQueueProvider.notifier).cancel(item.id);
+              ref.read(transferQueueProvider.notifier).remove(item.id);
             }
           },
           child: const Text('Cancel'),

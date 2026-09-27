@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -155,6 +157,7 @@ class StatusLine extends StatelessWidget {
     this.detail,
     this.progress,
     this.color,
+    this.progressColor,
     this.trailing,
     this.onTap,
   });
@@ -167,6 +170,10 @@ class StatusLine extends StatelessWidget {
   /// indeterminate bar.
   final double? progress;
   final Color? color;
+
+  /// The bar's colour when it isn't the accent: grey for work that is
+  /// waiting rather than moving.
+  final Color? progressColor;
   final Widget? trailing;
   final VoidCallback? onTap;
 
@@ -217,6 +224,7 @@ class StatusLine extends StatelessWidget {
                   child: LinearProgressIndicator(
                     value: progress! < 0 ? null : progress,
                     minHeight: 4,
+                    color: progressColor,
                   ),
                 ),
               ),
@@ -225,6 +233,40 @@ class StatusLine extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+/// Rebuilds [builder] once a second with the time left until [until], for
+/// a wait that counts down. Only what it builds ticks; the rest stays still.
+class Countdown extends StatefulWidget {
+  const Countdown({super.key, required this.until, required this.builder});
+
+  final DateTime until;
+  final Widget Function(BuildContext context, Duration left) builder;
+
+  @override
+  State<Countdown> createState() => _CountdownState();
+}
+
+class _CountdownState extends State<Countdown> {
+  late final Timer _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) => setState(() {}));
+  }
+
+  @override
+  void dispose() {
+    _timer.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final left = widget.until.difference(DateTime.now());
+    return widget.builder(context, left.isNegative ? Duration.zero : left);
   }
 }
 

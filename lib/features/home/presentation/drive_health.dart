@@ -6,21 +6,32 @@ import '../../../infrastructure/database/app_database.dart'
 import '../../backup/data/backup_controller.dart';
 import '../../drive/data/drive_sync.dart';
 import '../../transfers/data/transfer_queue.dart';
+import '../../transfers/domain/transfer_wait.dart';
 
 /// How a line is coloured. Only work in progress takes the accent, only
 /// "all good" is green, and only failures are red.
 enum HealthTone { neutral, busy, good, bad }
 
 /// The one button a line carries, when pressing it would unblock something.
-enum HealthAction { none, turnOn, allow, useData, retryBackup, retryFailed }
+enum HealthAction {
+  none,
+  turnOn,
+  allow,
+  useData,
+  retryBackup,
+  retryFailed,
+  retryTransfers,
+  resumeTransfers,
+}
 
 /// Where tapping a line goes: a screen, or another try at syncing.
 enum HealthTarget { backup, transfers, refresh }
 
 /// What a line is about. The second row keeps to a different topic from the
-/// top line, so the two rows say different things and carry at most one
-/// button. Transfers in progress are the exception: saying some are moving
-/// doesn't say that others failed.
+/// top line, so the two rows say different things and their buttons never
+/// do the same job. Transfers in progress are the exception: saying some
+/// are moving doesn't say that others failed. Lines about Telegram itself,
+/// not reaching it or it asking for a pause, are [sync].
 enum HealthTopic { backup, transfers, sync }
 
 /// One line of Home's Activity group, worked out from state alone so the
@@ -61,6 +72,11 @@ class DriveHealth {
 /// its Retry on the second row. A failed transfer can be the main sentence
 /// too, so the line never turns green, or asks to turn backup on, over
 /// something the person asked for that didn't happen.
+///
+/// Telegram asking for a long pause ranks below a backup that is stopped,
+/// can't see the photos or waits for Wi-Fi, since each of those has a
+/// button that unblocks it, and above work in progress, which the pause is
+/// holding up.
 DriveHealth describeDriveHealth({
   required BackupState backup,
   required SyncState sync,
@@ -70,11 +86,36 @@ DriveHealth describeDriveHealth({
   DateTime? now,
 }) {
   final at = now ?? DateTime.now();
-  final active = _manualActive(transfers);
-  final failedTransfers = _manualFailed(transfers);
+  final active = _manualActive(transfers, at);
+  final failedTransfers = transfers.failedCount;
 
   if (sync.error != null) {
     return _unreachable(_latest([sync.lastSynced, lastFullSync]), at, retrying: sync.running);
+  }
+  // Held transfers no longer count as moving, so without this line a long
+  // wait would read as all good, or as backup still going.
+  final waits = [
+    for (final item in transfers.heldAt(at))
+      if (item.wait case WaitingForTelegram(:final until)) until,
+  ];
+  final backupBlocked = switch (backup.phase) {
+    BackupPhase.stopped || BackupPhase.needsPermission || BackupPhase.waitingForWifi => true,
+    _ => false,
+  };
+  if (waits.isNotEmpty && !backupBlocked) {
+    final resumesAt = waits.reduce((a, b) => a.isBefore(b) ? a : b);
+    return DriveHealth(
+      icon: Icons.hourglass_empty_rounded,
+      tone: HealthTone.neutral,
+      text: 'Telegram asked us to wait',
+      detail: 'Transfers carry on by themselves '
+          '${DateUtils.isSameDay(resumesAt, at) ? 'at' : 'on'} '
+          '${Formatters.date(resumesAt, now: at)}.',
+      target: HealthTarget.transfers,
+      // About Telegram, so failed and paused transfers keep the second row
+      // with their Retry and Resume.
+      topic: HealthTopic.sync,
+    );
   }
   if (backup.phase == BackupPhase.uploading) {
     return DriveHealth(
@@ -113,7 +154,7 @@ DriveHealth describeDriveHealth({
   if (backup.phase == BackupPhase.needsPermission) return _needsPermission;
   if (backup.phase == BackupPhase.waitingForWifi) return _waitingForWifi(backup);
   if (backup.enabled && backup.failed > 0) return _failedItems(backup);
-  if (failedTransfers > 0) return _failedTransfers(failedTransfers);
+  if (failedTransfers > 0) return _failedTransfers(transfers);
   if (backup.phase == BackupPhase.waitingForDrive) {
     return const DriveHealth(
       icon: Icons.cloud_queue_rounded,
@@ -158,8 +199,10 @@ DriveHealth? secondaryHealth(
   DriveHealth top, {
   required BackupState backup,
   required TransfersState transfers,
+  DateTime? now,
 }) {
-  final failedTransfers = _manualFailed(transfers);
+  final at = now ?? DateTime.now();
+  final failedTransfers = transfers.failedCount;
   final paused = transfers.items
       .where((t) => t.status == TransferStatus.paused && t.origin != TransferOrigin.backup)
       .length;
@@ -168,13 +211,13 @@ DriveHealth? secondaryHealth(
     if (backup.phase == BackupPhase.needsPermission) _needsPermission,
     if (backup.phase == BackupPhase.waitingForWifi) _waitingForWifi(backup),
     if (backup.enabled && backup.failed > 0) _failedItems(backup),
-    if (failedTransfers > 0) _failedTransfers(failedTransfers),
-    if (paused > 0 && _manualActive(transfers).isEmpty)
+    if (failedTransfers > 0) _failedTransfers(transfers),
+    if (paused > 0 && _manualActive(transfers, at).isEmpty)
       DriveHealth(
         icon: Icons.pause_circle_outline_rounded,
         tone: HealthTone.neutral,
         text: '${Formatters.count(paused, 'transfer')} paused',
-        detail: 'Open Transfers to resume.',
+        action: HealthAction.resumeTransfers,
         target: HealthTarget.transfers,
         topic: HealthTopic.transfers,
       ),
@@ -244,14 +287,22 @@ DriveHealth _failedItems(BackupState backup) => DriveHealth(
   topic: HealthTopic.backup,
 );
 
-DriveHealth _failedTransfers(int count) => DriveHealth(
-  icon: Icons.error_outline_rounded,
-  tone: HealthTone.bad,
-  text: '${Formatters.count(count, 'transfer')} failed',
-  detail: 'Open Transfers to retry.',
-  target: HealthTarget.transfers,
-  topic: HealthTopic.transfers,
-);
+/// With one failure the line says why; with more, where to read why.
+DriveHealth _failedTransfers(TransfersState transfers) {
+  final failed = transfers.finished
+      .where((t) => t.status == TransferStatus.failed && t.origin != TransferOrigin.backup)
+      .toList();
+  return DriveHealth(
+    icon: Icons.error_outline_rounded,
+    tone: HealthTone.bad,
+    text: '${Formatters.count(failed.length, 'transfer')} failed',
+    detail: (failed.length == 1 ? failed.single.row.error : null) ??
+        'Open Transfers to see why.',
+    action: HealthAction.retryTransfers,
+    target: HealthTarget.transfers,
+    topic: HealthTopic.transfers,
+  );
+}
 
 const _off = DriveHealth(
   icon: Icons.cloud_off_outlined,
@@ -263,13 +314,10 @@ const _off = DriveHealth(
   topic: HealthTopic.backup,
 );
 
-/// Uploads and downloads someone started by hand; backup has its own line.
-List<TransferItem> _manualActive(TransfersState transfers) =>
-    transfers.active.where((t) => t.origin != TransferOrigin.backup).toList();
-
-int _manualFailed(TransfersState transfers) => transfers.finished
-    .where((t) => t.status == TransferStatus.failed && t.origin != TransferOrigin.backup)
-    .length;
+/// Uploads and downloads someone started by hand that are in flight at
+/// [at]; backup has its own line.
+List<TransferItem> _manualActive(TransfersState transfers, DateTime at) =>
+    transfers.activeAt(at).where((t) => t.origin != TransferOrigin.backup).toList();
 
 double _progress(List<TransferItem> items) {
   final total = items.fold<int>(0, (sum, t) => sum + t.row.totalBytes);

@@ -31,6 +31,29 @@ abstract final class Formatters {
     return '${duration.inHours}h ${minutes % 60}m left';
   }
 
+  /// `72 s` → `1:12`, `3723 s` → `1:02:03`: time left on a wait that counts
+  /// down. A part-second counts as a whole one, so the clock never reads
+  /// 0:00 while there is still time to go.
+  static String countdown(Duration duration) {
+    final total = duration.isNegative
+        ? 0
+        : (duration.inMicroseconds / Duration.microsecondsPerSecond).ceil();
+    String two(int value) => value.toString().padLeft(2, '0');
+    final hours = total ~/ 3600;
+    final minutes = total % 3600 ~/ 60;
+    final seconds = total % 60;
+    return hours > 0 ? '$hours:${two(minutes)}:${two(seconds)}' : '$minutes:${two(seconds)}';
+  }
+
+  /// `37 s` → `37 seconds`, `7200 s` → `2 hours`: a length of time rounded
+  /// the way a person would say it.
+  static String inWords(Duration duration) {
+    final seconds = duration.inSeconds;
+    if (seconds < 90) return count(seconds, 'second');
+    if (seconds < 5400) return count((seconds / 60).round(), 'minute');
+    return count((seconds / 3600).round(), 'hour');
+  }
+
   /// Today → time, this year → day and month, otherwise the full date.
   static String date(DateTime value, {DateTime? now}) {
     final reference = now ?? DateTime.now();

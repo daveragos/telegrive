@@ -232,7 +232,13 @@ class BackupController extends Notifier<BackupState> {
     _unwatchLibrary();
     unawaited(BackupWorker.cancel());
     unawaited(BackupNotifications.clear());
-    for (final item in ref.read(transferQueueProvider).backupActive) {
+    // Uploads on a long Telegram wait as well, or they would start again
+    // by themselves once it is over.
+    final uploads = ref
+        .read(transferQueueProvider)
+        .items
+        .where((t) => t.status.isActive && t.origin == TransferOrigin.backup);
+    for (final item in uploads) {
       unawaited(_queue.cancel(item.id));
     }
     state = BackupState(phase: BackupPhase.off, lastCompleted: state.lastCompleted);

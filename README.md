@@ -47,8 +47,14 @@ phone number.
   machine-readable part sits in a spoiler, so the channel still reads like a
   file list.
 - **Transfers that survive.** A queue with live speed and ETA, cancel and
-  retry. On Android a foreground service keeps uploads going in the
-  background, and interrupted split uploads resume at the last finished part.
+  retry. A failed transfer says why in one sentence, and Home and Transfers
+  retry it in place. On Android a foreground service keeps uploads going in
+  the background, and interrupted split uploads resume at the last finished
+  part.
+- **Patient with Telegram.** When Telegram asks for a pause, transfers count
+  down and carry on by themselves. Moving, starring, trashing or adding many
+  items to an album shows its progress above the bar, or at the foot of a
+  screen opened over it, with Stop, and waits out Telegram the same way.
 - **Watch and read without downloading.** Videos and music stream as they
   play, with seeking, even across a split file's parts. PDFs and text files
   open in the app. Everything else opens in the right app on your phone.
@@ -204,5 +210,8 @@ two commands are at the top of that test.
 - Split files appear in Telegram as numbered parts (`movie.mkv.001`, …). Only
   Telegrive joins them back.
 - Forwarded files land at the root; move them into folders from the app.
+- When Telegram asks for a pause longer than five minutes, Telegrive lets the
+  phone sleep rather than keep it awake, so a transfer may wait until you next
+  open the app.
 
 Telegrive is an independent project, not affiliated with Telegram.

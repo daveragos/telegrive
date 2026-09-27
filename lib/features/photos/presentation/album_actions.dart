@@ -8,7 +8,9 @@ import '../../../core/widgets/common.dart';
 import '../../../core/widgets/file_visuals.dart';
 import '../../drive/data/drive_repository.dart';
 import '../../drive/domain/drive_models.dart';
+import '../../files/data/bulk_edits.dart';
 import '../../files/presentation/file_actions.dart';
+import '../../transfers/domain/transfer_error.dart';
 
 /// Making, filling and tidying photo albums.
 abstract final class AlbumActions {
@@ -42,11 +44,27 @@ abstract final class AlbumActions {
       );
       if (!created || !context.mounted) return false;
     }
-    return FileActions.guarded(
+    final count = Formatters.count(files.length, 'item');
+    final outcome = await FileActions.runBulk(
       context,
-      () => repository.addToAlbum(files, albumId),
-      success: 'Added ${Formatters.count(files.length, 'item')} to "$name"',
+      ref.read(bulkEditsProvider.notifier),
+      label: 'Adding $count to "$name"',
+      icon: Icons.photo_album_outlined,
+      items: files,
+      apply: (file) => repository.addToAlbum([file], albumId, touch: false),
+      success: 'Added $count to "$name"',
     );
+    if (outcome == null || outcome.done == 0) return false;
+    // Lifting the album to the top is one edit of its own, made once for
+    // however many files went in, even when the change stopped part way or
+    // the screen that asked for it is gone.
+    try {
+      await repository.touchAlbum(albumId);
+    } catch (e) {
+      debugPrint('[Albums] Could not lift "$name" to the top: $e');
+      if (context.mounted) showSnack(context, describeTransferError(e));
+    }
+    return outcome.complete;
   }
 
   /// A new, empty album, opened straight away.
@@ -97,11 +115,20 @@ abstract final class AlbumActions {
     WidgetRef ref,
     List<DriveFile> files,
     String albumId,
-  ) => FileActions.guarded(
-    context,
-    () => ref.read(driveRepositoryProvider).removeFromAlbum(files, albumId),
-    success: 'Removed ${Formatters.count(files.length, 'item')} from the album',
-  );
+  ) async {
+    final repository = ref.read(driveRepositoryProvider);
+    final count = Formatters.count(files.length, 'item');
+    final outcome = await FileActions.runBulk(
+      context,
+      ref.read(bulkEditsProvider.notifier),
+      label: 'Removing $count from the album',
+      icon: Icons.photo_album_outlined,
+      items: files,
+      apply: (file) => repository.removeFromAlbum([file], albumId),
+      success: 'Removed $count from the album',
+    );
+    return outcome?.complete ?? false;
+  }
 
   static Future<String?> _askName(
     BuildContext context, {

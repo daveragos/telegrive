@@ -13,13 +13,14 @@ import '../../../core/files/file_kind.dart';
 import '../../../infrastructure/database/app_database.dart';
 import '../../../infrastructure/storage/device_storage.dart';
 import '../../../infrastructure/telegram/telegram_client.dart';
-import '../../../infrastructure/telegram/telegram_exception.dart';
 import '../../drive/data/channel_messenger.dart';
 import '../../drive/data/drive_repository.dart';
 import '../../drive/data/drive_session.dart';
 import '../../drive/data/message_indexer.dart';
 import '../../drive/domain/drive_models.dart';
 import '../../drive/domain/manifest.dart';
+import '../domain/transfer_error.dart';
+import '../domain/transfer_wait.dart';
 
 /// A file on this device, about to go up.
 ///
@@ -71,13 +72,21 @@ class SaveRequest {
 /// A transfer as the UI sees it: the persisted row plus live speed.
 @immutable
 class TransferItem {
-  const TransferItem(this.row, {this.bytesPerSecond = 0, this.preparing = false});
+  const TransferItem(
+    this.row, {
+    this.bytesPerSecond = 0,
+    this.preparing = false,
+    this.wait,
+  });
 
   final TransferRow row;
   final double bytesPerSecond;
 
   /// Being copied into staging before the upload proper starts.
   final bool preparing;
+
+  /// What a queued transfer is waiting for before it starts again by itself.
+  final TransferWait? wait;
 
   String get id => row.id;
   String get name => row.name;
@@ -86,6 +95,16 @@ class TransferItem {
   TransferStatus get status => row.status;
   FileKind get fileKind =>
       FileKind.detect(fileName: row.name, mimeType: row.mimeType);
+
+  /// Queued on a wait that, at [now], is long enough that it doesn't count
+  /// as in flight. A paused transfer is never held: it waits for a person,
+  /// not for the clock.
+  bool heldAt(DateTime now) =>
+      status == TransferStatus.queued && (wait?.holdsAt(now) ?? false);
+
+  /// Running, or queued with nothing holding it back for long at [now]. A
+  /// transfer on a long wait isn't counted, so nothing stays awake for it.
+  bool inFlightAt(DateTime now) => status.isActive && !heldAt(now);
 
   double get progress => row.totalBytes <= 0
       ? 0
@@ -107,13 +126,23 @@ class TransfersState {
   /// Newest first.
   final List<TransferItem> items;
 
-  List<TransferItem> get active =>
-      items.where((t) => t.status.isActive).toList();
+  List<TransferItem> get active => activeAt(DateTime.now());
+
+  /// [active] as it stands at [now], for status worked out for a given time.
+  List<TransferItem> activeAt(DateTime now) =>
+      items.where((t) => t.inFlightAt(now)).toList();
 
   /// Photo-backup uploads in flight, shown as one group in the UI.
-  List<TransferItem> get backupActive => items
-      .where((t) => t.status.isActive && t.origin == TransferOrigin.backup)
+  List<TransferItem> get backupActive => active
+      .where((t) => t.origin == TransferOrigin.backup)
       .toList();
+
+  /// Queued, but on a wait long enough that they don't count as in flight.
+  List<TransferItem> get held => heldAt(DateTime.now());
+
+  /// [held] as it stands at [now].
+  List<TransferItem> heldAt(DateTime now) =>
+      items.where((t) => t.heldAt(now)).toList();
 
   /// Downloads to this phone, which the UI also shows as one group.
   List<TransferItem> get saves =>
@@ -129,14 +158,19 @@ class TransfersState {
 
   int get pausedCount => items.where((t) => t.status == TransferStatus.paused).length;
 
-  int get activeCount => items.where((t) => t.status.isActive).length;
+  int get activeCount => active.length;
+
+  /// Failed uploads and downloads the person can retry; backup retries its
+  /// own.
+  int get failedCount => items
+      .where((t) => t.status == TransferStatus.failed && t.origin != TransferOrigin.backup)
+      .length;
 
   /// Combined progress of everything in flight, for the global indicator.
   double get activeProgress {
     var total = 0;
     var done = 0;
-    for (final item in items) {
-      if (!item.status.isActive) continue;
+    for (final item in active) {
       total += item.row.totalBytes;
       done += item.row.doneBytes;
     }
@@ -168,7 +202,8 @@ class _Tracked {
 /// updates, and persists every state change so a restart picks up where the
 /// last run stopped: queued work runs again, split uploads resume at the last
 /// finished part, and a single upload TDLib is still sending on its own is
-/// re-attached rather than sent twice.
+/// re-attached rather than sent twice. When Telegram asks for a pause, the
+/// transfer waits in the queue and starts again by itself.
 class TransferQueue extends Notifier<TransfersState> {
   static const int _maxUploads = 2;
   static const int _maxDownloads = 3;
@@ -177,6 +212,10 @@ class TransferQueue extends Notifier<TransfersState> {
   /// waits behind a whole drive being downloaded.
   static const int _maxSaves = 2;
   static const Duration _emitInterval = Duration(milliseconds: 300);
+
+  /// How long one second of a Telegram flood wait lasts; tests shorten it.
+  @visibleForTesting
+  static Duration waitUnit = const Duration(seconds: 1);
 
   final Map<String, TransferRow> _rows = {};
   final Map<String, double> _speeds = {};
@@ -194,9 +233,15 @@ class TransferQueue extends Notifier<TransfersState> {
   final Map<String, Completer<TransferRow>> _finished = {};
   final Set<String> _preparing = {};
 
+  /// Queued transfers Telegram asked to wait, and when they may start again.
+  final Map<String, DateTime> _notBefore = {};
+
   StreamSubscription<td.File>? _fileSubscription;
   StreamSubscription<String>? _ingestSubscription;
   Timer? _emitTimer;
+
+  /// Fires when the next of [_notBefore] comes due.
+  Timer? _wakeTimer;
   int? _loadedFor;
 
   TelegramClient get _client => ref.read(telegramClientProvider);
@@ -220,6 +265,7 @@ class TransferQueue extends Notifier<TransfersState> {
       _fileSubscription?.cancel();
       _ingestSubscription?.cancel();
       _emitTimer?.cancel();
+      _wakeTimer?.cancel();
     });
     return TransfersState.empty;
   }
@@ -431,6 +477,7 @@ class TransferQueue extends Notifier<TransfersState> {
     if (row == null || !row.status.isPending) return;
     _cancelled.add(id);
     _pausing.remove(id);
+    _notBefore.remove(id);
     await _interrupt(row);
     // Parts already delivered are useless without the rest.
     if (row.kind == TransferKind.upload && row.completedParts > 0) {
@@ -461,6 +508,8 @@ class TransferQueue extends Notifier<TransfersState> {
     // Copying a picked file into staging can't stop halfway safely.
     if (row == null || !row.status.isActive || _preparing.contains(id)) return;
     if (!_running.contains(id)) {
+      // A paused transfer waits for Resume, not for Telegram's clock.
+      _notBefore.remove(id);
       await _save(row.copyWith(status: TransferStatus.paused));
       _emit();
       return;
@@ -473,6 +522,7 @@ class TransferQueue extends Notifier<TransfersState> {
   Future<void> resume(String id) async {
     final row = _rows[id];
     if (row == null || row.status != TransferStatus.paused) return;
+    _notBefore.remove(id);
     await _save(row.copyWith(status: TransferStatus.queued));
     _emit();
     _pump();
@@ -490,6 +540,7 @@ class TransferQueue extends Notifier<TransfersState> {
         .where((r) => r.status == TransferStatus.paused && which(r))
         .toList();
     for (final row in paused) {
+      _notBefore.remove(row.id);
       await _save(row.copyWith(status: TransferStatus.queued));
     }
     _emit();
@@ -520,7 +571,26 @@ class TransferQueue extends Notifier<TransfersState> {
   Future<void> retry(String id) async {
     final row = _rows[id];
     if (row == null || !row.status.isFinished) return;
-    _cancelled.remove(id);
+    await _requeue(row);
+    _emit();
+    _pump();
+  }
+
+  /// Queues again every failed transfer [which] picks out, in one go.
+  Future<void> retryAll(bool Function(TransferRow row) which) async {
+    final failed = _rows.values
+        .where((r) => r.status == TransferStatus.failed && which(r))
+        .toList();
+    for (final row in failed) {
+      await _requeue(row);
+    }
+    _emit();
+    _pump();
+  }
+
+  Future<void> _requeue(TransferRow row) async {
+    _cancelled.remove(row.id);
+    _notBefore.remove(row.id);
     await _save(
       row.copyWith(
         status: TransferStatus.queued,
@@ -528,14 +598,15 @@ class TransferQueue extends Notifier<TransfersState> {
         finishedAt: const Value(null),
       ),
     );
-    _emit();
-    _pump();
   }
 
+  /// Drops [id] from the list. One that hasn't finished is cancelled first,
+  /// paused ones included, so no delivered parts of a split upload or
+  /// stitched-together download are left behind.
   Future<void> remove(String id) async {
     final row = _rows[id];
     if (row == null) return;
-    if (row.status.isActive) await cancel(id);
+    if (row.status.isPending) await cancel(id);
     _rows.remove(id);
     await _db.deleteTransfers([id]);
     _emit();
@@ -560,8 +631,14 @@ class TransferQueue extends Notifier<TransfersState> {
   void _pump() {
     // Saves to the phone can be thousands deep; anything else goes first.
     int rank(TransferRow r) => r.origin == TransferOrigin.save ? 1 : 0;
+    final now = DateTime.now();
     final queued = _rows.values
-        .where((r) => r.status == TransferStatus.queued && !_running.contains(r.id))
+        .where(
+          (r) =>
+              r.status == TransferStatus.queued &&
+              !_running.contains(r.id) &&
+              !(_notBefore[r.id]?.isAfter(now) ?? false),
+        )
         .toList()
       ..sort((a, b) {
         final byRank = rank(a).compareTo(rank(b));
@@ -593,6 +670,7 @@ class TransferQueue extends Notifier<TransfersState> {
   void _start(TransferRow row, Future<void> Function(TransferRow row) work) {
     _running.add(row.id);
     _cancelled.remove(row.id);
+    _notBefore.remove(row.id);
     unawaited(() async {
       try {
         final running = row.copyWith(status: TransferStatus.running);
@@ -600,16 +678,19 @@ class TransferQueue extends Notifier<TransfersState> {
         _emit();
         await work(running);
       } catch (e, stack) {
+        final wait = telegramWaitOf(e);
         if (_pausing.contains(row.id)) {
           await _save((_rows[row.id] ?? row).copyWith(status: TransferStatus.paused));
           _emit();
+        } else if (wait != null && !_cancelled.contains(row.id)) {
+          await _waitOut(row, wait, e);
         } else if (!_cancelled.contains(row.id)) {
           debugPrint('[Transfers] ${row.name} failed: $e\n$stack');
           final current = _rows[row.id] ?? row;
           await _finish(
             current.copyWith(
               status: TransferStatus.failed,
-              error: Value(_describe(e)),
+              error: Value(describeTransferError(e)),
             ),
             error: e,
           );
@@ -625,6 +706,41 @@ class TransferQueue extends Notifier<TransfersState> {
     }());
   }
 
+  /// Telegram asked for a pause. The transfer goes back in the queue with
+  /// the parts and bytes it has, and starts again by itself once the time
+  /// is up, rather than failing halfway.
+  Future<void> _waitOut(TransferRow row, Duration wait, Object error) async {
+    // TDLib keeps the message that failed to send, under a new id. It never
+    // reached the channel, so deleting it only drops that local copy.
+    final chatId = ref.read(driveSessionProvider)?.chatId;
+    if (error is SendFailed && chatId != null) {
+      await _quietly(() => _messenger.deleteMessages(chatId, [error.failedMessageId]));
+    }
+    // Cancelled meanwhile: there is nothing left to wait for.
+    if (_cancelled.contains(row.id)) return;
+    await _save((_rows[row.id] ?? row).copyWith(status: TransferStatus.queued));
+    // A second over what was asked, so the next try doesn't land early.
+    _notBefore[row.id] = DateTime.now().add(waitUnit * (wait.inSeconds + 1));
+    _scheduleWake();
+    _emit();
+  }
+
+  /// Sets one timer for the next transfer whose wait is over.
+  void _scheduleWake() {
+    _wakeTimer?.cancel();
+    _wakeTimer = null;
+    final now = DateTime.now();
+    _notBefore.removeWhere((_, at) => !at.isAfter(now));
+    if (_notBefore.isEmpty) return;
+    final next = _notBefore.values.reduce((a, b) => a.isBefore(b) ? a : b);
+    _wakeTimer = Timer(next.difference(now), () {
+      _wakeTimer = null;
+      _scheduleWake();
+      _pump();
+      _emit();
+    });
+  }
+
   // ---------------------------------------------------------------------------
   // Uploading
   // ---------------------------------------------------------------------------
@@ -638,6 +754,8 @@ class TransferQueue extends Notifier<TransfersState> {
     if (source != null && stager != null && !await source.exists()) {
       initial = await _stage(initial, source, stager);
     }
+    // Cancelled while the file was being prepared: nothing has gone yet.
+    if (_cancelled.contains(initial.id)) return;
     final hasSource = source != null && await source.exists();
     if (!hasSource && resume == null) {
       throw const DriveException('The original file is no longer available.');
@@ -680,7 +798,6 @@ class TransferQueue extends Notifier<TransfersState> {
         final path = partCount == 1
             ? source!.path
             : await _writePart(row, source!, index);
-        _stopIfPausing(row.id);
         final manifest = FileManifest(
           id: row.fileId,
           name: row.name,
@@ -695,6 +812,9 @@ class TransferQueue extends Notifier<TransfersState> {
         );
         final thumbnail = index == 0 ? row.thumbnailPath : null;
         try {
+          // Cancelled while the part was being written: it isn't sent.
+          if (_cancelled.contains(row.id)) return;
+          _stopIfPausing(row.id);
           delivered = await _messenger.sendDocument(
             session.chatId,
             path: path,
@@ -716,6 +836,9 @@ class TransferQueue extends Notifier<TransfersState> {
 
       _pendingMessages.remove(row.id);
       await _repository.ingest(delivered);
+      // Cancelled, or removed from the list, while the part was being
+      // indexed: saving now would bring the row back.
+      if (_cancelled.contains(row.id)) return;
       final partEnd = partCount == 1
           ? row.totalBytes
           : base + SplitPolicy.sizeOf(index, row.totalBytes);
@@ -726,6 +849,7 @@ class TransferQueue extends Notifier<TransfersState> {
       await _save(row);
     }
 
+    if (_cancelled.contains(row.id)) return;
     await _finish(row.copyWith(status: TransferStatus.completed));
     if (row.ownsSource && source != null) await _deleteQuietly(source);
     if (row.thumbnailPath != null) {
@@ -863,6 +987,7 @@ class TransferQueue extends Notifier<TransfersState> {
         _stopIfPausing(initial.id);
         final downloaded = await _downloadPart(initial, part, base: base);
         await sink.addStream(File(downloaded.path).openRead());
+        if (_cancelled.contains(initial.id)) break;
         base += part.size;
         await _save(
           (_rows[initial.id] ?? initial).copyWith(
@@ -876,11 +1001,11 @@ class TransferQueue extends Notifier<TransfersState> {
       }
     } finally {
       await sink.close();
+      // Cancelled mid-part as well as between parts: the stitched copy is
+      // no use without the rest.
+      if (_cancelled.contains(initial.id)) await _deleteQuietly(out.parent);
     }
-    if (_cancelled.contains(initial.id)) {
-      await _deleteQuietly(out.parent);
-      return;
-    }
+    if (_cancelled.contains(initial.id)) return;
     var row = (_rows[initial.id] ?? initial).copyWith(
       status: TransferStatus.completed,
       doneBytes: initial.totalBytes,
@@ -1087,6 +1212,9 @@ class TransferQueue extends Notifier<TransfersState> {
     _loadedFor = null;
     _rows.clear();
     _running.clear();
+    _notBefore.clear();
+    _wakeTimer?.cancel();
+    _wakeTimer = null;
     _tracked.clear();
     _pendingMessages.clear();
     _activeDownloads.clear();
@@ -1103,6 +1231,7 @@ class TransferQueue extends Notifier<TransfersState> {
       (_completions[id] ??= Completer<String>()).future;
 
   Future<void> _finish(TransferRow row, {Object? error}) async {
+    _notBefore.remove(row.id);
     final finished = row.copyWith(finishedAt: Value(DateTime.now()));
     final keptOffline =
         row.saveTo == SaveTarget.offline && row.status == TransferStatus.completed;
@@ -1123,13 +1252,17 @@ class TransferQueue extends Notifier<TransfersState> {
       if (row.status == TransferStatus.completed && row.resultPath != null) {
         completer.complete(row.resultPath);
       } else {
-        completer.completeError(error ?? DriveException(_describe(row.error)));
+        completer.completeError(error ?? DriveException(describeTransferError(row.error)));
       }
     }
     _emit();
   }
 
   Future<void> _save(TransferRow row) async {
+    // Work still under way for a transfer that was cancelled, or removed
+    // from the list, would otherwise bring it back as it saves its
+    // progress, and start it again on the next launch.
+    if (_cancelled.contains(row.id) && row.status != TransferStatus.cancelled) return;
     _rows[row.id] = row;
     await _db.saveTransfer(row);
   }
@@ -1162,21 +1295,19 @@ class TransferQueue extends Notifier<TransfersState> {
             r,
             bytesPerSecond: _speeds[r.id] ?? 0,
             preparing: _preparing.contains(r.id),
+            // Only a queued transfer waits on the clock; paused and
+            // finished ones don't start by themselves.
+            wait: switch (_notBefore[r.id]) {
+              final until? when r.status == TransferStatus.queued && until.isAfter(now) =>
+                WaitingForTelegram(until),
+              _ => null,
+            },
           ),
         )
         .toList()
       ..sort((a, b) => b.row.createdAt.compareTo(a.row.createdAt));
     state = TransfersState(items);
   }
-
-  static String _describe(Object? error) => switch (error) {
-    null => 'Something went wrong.',
-    TelegramException e => e.friendlyMessage,
-    DriveException e => e.message,
-    FileSystemException e => e.osError?.message ?? e.message,
-    String s => s,
-    _ => '$error',
-  };
 
   Future<void> _quietly(Future<Object?> Function() action) async {
     try {

@@ -1,3 +1,5 @@
+import '../../core/format/formatters.dart';
+
 /// A request TDLib refused, with the numeric code kept so rate limits can be
 /// told apart from bad input.
 class TelegramException implements Exception {
@@ -40,7 +42,8 @@ class TelegramException implements Exception {
       final seconds = retryAfterSeconds;
       return seconds == null
           ? 'Telegram is rate limiting this account. Try again shortly.'
-          : 'Too many attempts. Try again in ${_humanSeconds(seconds)}.';
+          : 'Too many attempts. Try again in '
+                '${Formatters.inWords(Duration(seconds: seconds))}.';
     }
     for (final entry in _friendly.entries) {
       if (message.contains(entry.key)) return entry.value;
@@ -49,12 +52,6 @@ class TelegramException implements Exception {
       RegExp(r'^[a-z]'),
       (m) => m.group(0)!.toUpperCase(),
     );
-  }
-
-  static String _humanSeconds(int seconds) {
-    if (seconds < 90) return '$seconds seconds';
-    if (seconds < 5400) return '${(seconds / 60).round()} minutes';
-    return '${(seconds / 3600).round()} hours';
   }
 
   static const Map<String, String> _friendly = {
@@ -72,6 +69,7 @@ class TelegramException implements Exception {
     'CHANNELS_TOO_MUCH': 'You are in too many channels to create a drive.',
     'FILE_PARTS_INVALID': 'Telegram refused the file size.',
     'Request timeout': 'Telegram took too long to answer.',
+    'FILE_REFERENCE_EXPIRED': 'Telegram needs this file fetched again. Retry.',
   };
 
   @override

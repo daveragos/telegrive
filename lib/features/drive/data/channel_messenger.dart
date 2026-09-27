@@ -13,6 +13,15 @@ class SendCancelled implements Exception {
   const SendCancelled();
 }
 
+/// A send Telegram turned down. TDLib keeps the failed message in the chat
+/// under a new id, [failedMessageId], so whoever gives up on the send can
+/// delete it.
+class SendFailed extends TelegramException {
+  const SendFailed(super.code, super.message, {required this.failedMessageId});
+
+  final int failedMessageId;
+}
+
 /// Everything the drive does to messages in its channel.
 ///
 /// The awkward part of sending through TDLib is that `sendMessage` returns a
@@ -202,8 +211,11 @@ class ChannelMessenger {
     switch (update) {
       case td.UpdateMessageSendSucceeded(:final oldMessageId, :final message):
         _resolve(oldMessageId, message);
-      case td.UpdateMessageSendFailed(:final oldMessageId, :final error):
-        _resolve(oldMessageId, TelegramException(error.code, error.message));
+      case td.UpdateMessageSendFailed(:final oldMessageId, :final message, :final error):
+        _resolve(
+          oldMessageId,
+          SendFailed(error.code, error.message, failedMessageId: message.id),
+        );
       default:
         break;
     }

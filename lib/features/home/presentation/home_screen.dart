@@ -9,7 +9,8 @@ import '../../../core/files/file_kind.dart';
 import '../../../core/format/formatters.dart';
 import '../../../core/widgets/brand_mark.dart';
 import '../../../core/widgets/common.dart';
-import '../../../infrastructure/database/app_database.dart' show KindTotal;
+import '../../../infrastructure/database/app_database.dart'
+    show KindTotal, TransferOrigin, TransferStatus;
 import '../../../infrastructure/storage/preferences.dart';
 import '../../backup/data/backup_controller.dart';
 import '../../backup/presentation/backup_card.dart';
@@ -215,6 +216,7 @@ class _Activity extends ConsumerWidget {
   static Widget _line(BuildContext context, WidgetRef ref, DriveHealth health) {
     final colors = context.colors;
     final controller = ref.read(backupControllerProvider.notifier);
+    final queue = ref.read(transferQueueProvider.notifier);
     return StatusLine(
       icon: health.icon,
       color: switch (health.tone) {
@@ -248,6 +250,16 @@ class _Activity extends ConsumerWidget {
         HealthAction.retryFailed => TextButton(
           onPressed: controller.retryFailed,
           child: const Text('Retry'),
+        ),
+        HealthAction.retryTransfers => TextButton(
+          onPressed: () => queue.retryAll(
+            (r) => r.status == TransferStatus.failed && r.origin != TransferOrigin.backup,
+          ),
+          child: const Text('Retry'),
+        ),
+        HealthAction.resumeTransfers => TextButton(
+          onPressed: () => queue.resumeAll((r) => r.origin != TransferOrigin.backup),
+          child: const Text('Resume'),
         ),
         HealthAction.none => null,
       },
