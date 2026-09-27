@@ -37,6 +37,7 @@ void main() {
     createdAt: now,
     modifiedAt: now,
     hidden: false,
+    starred: false,
   );
 
   DriveFile photo(String id, {String? folderId, bool starred = false}) => DriveFile(

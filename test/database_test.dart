@@ -115,6 +115,44 @@ void main() {
     expect(await opened(), isEmpty);
   });
 
+  test('play positions outlast a rebuilt index and go on sign-out', () async {
+    await db.upsertFilePart(file('a'), part('a', 0, 10));
+    await db.into(db.playPositions).insert(
+      PlayPositionsCompanion.insert(
+        fileId: 'a',
+        positionMs: 42 * 60 * 1000,
+        durationMs: 90 * 60 * 1000,
+        updatedAt: now,
+      ),
+    );
+    Future<List<PlayPositionRow>> positions() => db.select(db.playPositions).get();
+
+    expect((await positions()).single.positionMs, 42 * 60 * 1000);
+
+    await db.clearIndex();
+    expect(await positions(), hasLength(1));
+
+    await db.clearAll();
+    expect(await positions(), isEmpty);
+  });
+
+  test('a length learned on this phone survives a caption without one', () async {
+    await db.upsertFilePart(file('clip'), part('clip', 0, 10));
+    await db.updateFile('clip', const DriveFilesCompanion(durationSeconds: Value(84)));
+    expect((await db.watchMedia().first), isEmpty, reason: 'not a media kind');
+    expect((await db.fileById('clip'))!.durationSeconds, 84);
+
+    // The indexer leaves the column alone when the caption carries no du.
+    await db.upsertFilePart(file('clip'), part('clip', 0, 10));
+    expect((await db.fileById('clip'))!.durationSeconds, 84);
+
+    await db.upsertFilePart(
+      file('clip').copyWith(durationSeconds: const Value(90)),
+      part('clip', 0, 10),
+    );
+    expect((await db.fileById('clip'))!.durationSeconds, 90);
+  });
+
   test('opens are remembered, pruned and follow the file', () async {
     await db.upsertFilePart(file('a'), part('a', 0, 10));
     await db.upsertFilePart(file('b'), part('b', 0, 11));
@@ -122,7 +160,7 @@ void main() {
       file('c').copyWith(takenAt: Value(DateTime(2026, 9, 20))),
       part('c', 0, 12),
     );
-    expect(db.schemaVersion, 6);
+    expect(db.schemaVersion, 7);
 
     await db.recordOpen('a');
     expect((await db.watchRecentOpens().first).map((o) => o.$1.id), ['a']);

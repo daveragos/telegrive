@@ -105,6 +105,21 @@ class $FoldersTable extends Folders with TableInfo<$FoldersTable, FolderRow> {
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _starredMeta = const VerificationMeta(
+    'starred',
+  );
+  @override
+  late final GeneratedColumn<bool> starred = GeneratedColumn<bool>(
+    'starred',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("starred" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -116,6 +131,7 @@ class $FoldersTable extends Folders with TableInfo<$FoldersTable, FolderRow> {
     trashedAt,
     hidden,
     manifestExtra,
+    starred,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -193,6 +209,12 @@ class $FoldersTable extends Folders with TableInfo<$FoldersTable, FolderRow> {
         ),
       );
     }
+    if (data.containsKey('starred')) {
+      context.handle(
+        _starredMeta,
+        starred.isAcceptableOrUnknown(data['starred']!, _starredMeta),
+      );
+    }
     return context;
   }
 
@@ -238,6 +260,10 @@ class $FoldersTable extends Folders with TableInfo<$FoldersTable, FolderRow> {
         DriftSqlType.string,
         data['${effectivePrefix}manifest_extra'],
       ),
+      starred: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}starred'],
+      )!,
     );
   }
 
@@ -266,6 +292,10 @@ class FolderRow extends DataClass implements Insertable<FolderRow> {
   /// made here writes them back instead of dropping what a newer version
   /// stored. Null when there are none.
   final String? manifestExtra;
+
+  /// Starred like a file is, and kept in the folder's own message, so the
+  /// star follows the drive to another phone.
+  final bool starred;
   const FolderRow({
     required this.id,
     this.parentId,
@@ -276,6 +306,7 @@ class FolderRow extends DataClass implements Insertable<FolderRow> {
     this.trashedAt,
     required this.hidden,
     this.manifestExtra,
+    required this.starred,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -295,6 +326,7 @@ class FolderRow extends DataClass implements Insertable<FolderRow> {
     if (!nullToAbsent || manifestExtra != null) {
       map['manifest_extra'] = Variable<String>(manifestExtra);
     }
+    map['starred'] = Variable<bool>(starred);
     return map;
   }
 
@@ -315,6 +347,7 @@ class FolderRow extends DataClass implements Insertable<FolderRow> {
       manifestExtra: manifestExtra == null && nullToAbsent
           ? const Value.absent()
           : Value(manifestExtra),
+      starred: Value(starred),
     );
   }
 
@@ -333,6 +366,7 @@ class FolderRow extends DataClass implements Insertable<FolderRow> {
       trashedAt: serializer.fromJson<DateTime?>(json['trashedAt']),
       hidden: serializer.fromJson<bool>(json['hidden']),
       manifestExtra: serializer.fromJson<String?>(json['manifestExtra']),
+      starred: serializer.fromJson<bool>(json['starred']),
     );
   }
   @override
@@ -348,6 +382,7 @@ class FolderRow extends DataClass implements Insertable<FolderRow> {
       'trashedAt': serializer.toJson<DateTime?>(trashedAt),
       'hidden': serializer.toJson<bool>(hidden),
       'manifestExtra': serializer.toJson<String?>(manifestExtra),
+      'starred': serializer.toJson<bool>(starred),
     };
   }
 
@@ -361,6 +396,7 @@ class FolderRow extends DataClass implements Insertable<FolderRow> {
     Value<DateTime?> trashedAt = const Value.absent(),
     bool? hidden,
     Value<String?> manifestExtra = const Value.absent(),
+    bool? starred,
   }) => FolderRow(
     id: id ?? this.id,
     parentId: parentId.present ? parentId.value : this.parentId,
@@ -373,6 +409,7 @@ class FolderRow extends DataClass implements Insertable<FolderRow> {
     manifestExtra: manifestExtra.present
         ? manifestExtra.value
         : this.manifestExtra,
+    starred: starred ?? this.starred,
   );
   FolderRow copyWithCompanion(FoldersCompanion data) {
     return FolderRow(
@@ -389,6 +426,7 @@ class FolderRow extends DataClass implements Insertable<FolderRow> {
       manifestExtra: data.manifestExtra.present
           ? data.manifestExtra.value
           : this.manifestExtra,
+      starred: data.starred.present ? data.starred.value : this.starred,
     );
   }
 
@@ -403,7 +441,8 @@ class FolderRow extends DataClass implements Insertable<FolderRow> {
           ..write('modifiedAt: $modifiedAt, ')
           ..write('trashedAt: $trashedAt, ')
           ..write('hidden: $hidden, ')
-          ..write('manifestExtra: $manifestExtra')
+          ..write('manifestExtra: $manifestExtra, ')
+          ..write('starred: $starred')
           ..write(')'))
         .toString();
   }
@@ -419,6 +458,7 @@ class FolderRow extends DataClass implements Insertable<FolderRow> {
     trashedAt,
     hidden,
     manifestExtra,
+    starred,
   );
   @override
   bool operator ==(Object other) =>
@@ -432,7 +472,8 @@ class FolderRow extends DataClass implements Insertable<FolderRow> {
           other.modifiedAt == this.modifiedAt &&
           other.trashedAt == this.trashedAt &&
           other.hidden == this.hidden &&
-          other.manifestExtra == this.manifestExtra);
+          other.manifestExtra == this.manifestExtra &&
+          other.starred == this.starred);
 }
 
 class FoldersCompanion extends UpdateCompanion<FolderRow> {
@@ -445,6 +486,7 @@ class FoldersCompanion extends UpdateCompanion<FolderRow> {
   final Value<DateTime?> trashedAt;
   final Value<bool> hidden;
   final Value<String?> manifestExtra;
+  final Value<bool> starred;
   final Value<int> rowid;
   const FoldersCompanion({
     this.id = const Value.absent(),
@@ -456,6 +498,7 @@ class FoldersCompanion extends UpdateCompanion<FolderRow> {
     this.trashedAt = const Value.absent(),
     this.hidden = const Value.absent(),
     this.manifestExtra = const Value.absent(),
+    this.starred = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   FoldersCompanion.insert({
@@ -468,6 +511,7 @@ class FoldersCompanion extends UpdateCompanion<FolderRow> {
     this.trashedAt = const Value.absent(),
     this.hidden = const Value.absent(),
     this.manifestExtra = const Value.absent(),
+    this.starred = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        name = Value(name),
@@ -484,6 +528,7 @@ class FoldersCompanion extends UpdateCompanion<FolderRow> {
     Expression<DateTime>? trashedAt,
     Expression<bool>? hidden,
     Expression<String>? manifestExtra,
+    Expression<bool>? starred,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -496,6 +541,7 @@ class FoldersCompanion extends UpdateCompanion<FolderRow> {
       if (trashedAt != null) 'trashed_at': trashedAt,
       if (hidden != null) 'hidden': hidden,
       if (manifestExtra != null) 'manifest_extra': manifestExtra,
+      if (starred != null) 'starred': starred,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -510,6 +556,7 @@ class FoldersCompanion extends UpdateCompanion<FolderRow> {
     Value<DateTime?>? trashedAt,
     Value<bool>? hidden,
     Value<String?>? manifestExtra,
+    Value<bool>? starred,
     Value<int>? rowid,
   }) {
     return FoldersCompanion(
@@ -522,6 +569,7 @@ class FoldersCompanion extends UpdateCompanion<FolderRow> {
       trashedAt: trashedAt ?? this.trashedAt,
       hidden: hidden ?? this.hidden,
       manifestExtra: manifestExtra ?? this.manifestExtra,
+      starred: starred ?? this.starred,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -556,6 +604,9 @@ class FoldersCompanion extends UpdateCompanion<FolderRow> {
     if (manifestExtra.present) {
       map['manifest_extra'] = Variable<String>(manifestExtra.value);
     }
+    if (starred.present) {
+      map['starred'] = Variable<bool>(starred.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -574,6 +625,7 @@ class FoldersCompanion extends UpdateCompanion<FolderRow> {
           ..write('trashedAt: $trashedAt, ')
           ..write('hidden: $hidden, ')
           ..write('manifestExtra: $manifestExtra, ')
+          ..write('starred: $starred, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -773,6 +825,28 @@ class $DriveFilesTable extends DriveFiles
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _durationSecondsMeta = const VerificationMeta(
+    'durationSeconds',
+  );
+  @override
+  late final GeneratedColumn<int> durationSeconds = GeneratedColumn<int>(
+    'duration_seconds',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _replacedByMeta = const VerificationMeta(
+    'replacedBy',
+  );
+  @override
+  late final GeneratedColumn<String> replacedBy = GeneratedColumn<String>(
+    'replaced_by',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -792,6 +866,8 @@ class $DriveFilesTable extends DriveFiles
     trashedAt,
     hidden,
     manifestExtra,
+    durationSeconds,
+    replacedBy,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -922,6 +998,21 @@ class $DriveFilesTable extends DriveFiles
         ),
       );
     }
+    if (data.containsKey('duration_seconds')) {
+      context.handle(
+        _durationSecondsMeta,
+        durationSeconds.isAcceptableOrUnknown(
+          data['duration_seconds']!,
+          _durationSecondsMeta,
+        ),
+      );
+    }
+    if (data.containsKey('replaced_by')) {
+      context.handle(
+        _replacedByMeta,
+        replacedBy.isAcceptableOrUnknown(data['replaced_by']!, _replacedByMeta),
+      );
+    }
     return context;
   }
 
@@ -1001,6 +1092,14 @@ class $DriveFilesTable extends DriveFiles
         DriftSqlType.string,
         data['${effectivePrefix}manifest_extra'],
       ),
+      durationSeconds: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}duration_seconds'],
+      ),
+      replacedBy: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}replaced_by'],
+      ),
     );
   }
 
@@ -1044,6 +1143,14 @@ class FileRow extends DataClass implements Insertable<FileRow> {
 
   /// Manifest keys this version doesn't know; see [Folders.manifestExtra].
   final String? manifestExtra;
+
+  /// Length in seconds for video and audio; from the manifest, or learned
+  /// on first play. Null until either happens.
+  final int? durationSeconds;
+
+  /// Id of the file that took this one's place when Replace moved it to the
+  /// trash. Only meaningful while [trashedAt] is set.
+  final String? replacedBy;
   const FileRow({
     required this.id,
     this.folderId,
@@ -1062,6 +1169,8 @@ class FileRow extends DataClass implements Insertable<FileRow> {
     this.trashedAt,
     required this.hidden,
     this.manifestExtra,
+    this.durationSeconds,
+    this.replacedBy,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -1099,6 +1208,12 @@ class FileRow extends DataClass implements Insertable<FileRow> {
     if (!nullToAbsent || manifestExtra != null) {
       map['manifest_extra'] = Variable<String>(manifestExtra);
     }
+    if (!nullToAbsent || durationSeconds != null) {
+      map['duration_seconds'] = Variable<int>(durationSeconds);
+    }
+    if (!nullToAbsent || replacedBy != null) {
+      map['replaced_by'] = Variable<String>(replacedBy);
+    }
     return map;
   }
 
@@ -1133,6 +1248,12 @@ class FileRow extends DataClass implements Insertable<FileRow> {
       manifestExtra: manifestExtra == null && nullToAbsent
           ? const Value.absent()
           : Value(manifestExtra),
+      durationSeconds: durationSeconds == null && nullToAbsent
+          ? const Value.absent()
+          : Value(durationSeconds),
+      replacedBy: replacedBy == null && nullToAbsent
+          ? const Value.absent()
+          : Value(replacedBy),
     );
   }
 
@@ -1161,6 +1282,8 @@ class FileRow extends DataClass implements Insertable<FileRow> {
       trashedAt: serializer.fromJson<DateTime?>(json['trashedAt']),
       hidden: serializer.fromJson<bool>(json['hidden']),
       manifestExtra: serializer.fromJson<String?>(json['manifestExtra']),
+      durationSeconds: serializer.fromJson<int?>(json['durationSeconds']),
+      replacedBy: serializer.fromJson<String?>(json['replacedBy']),
     );
   }
   @override
@@ -1186,6 +1309,8 @@ class FileRow extends DataClass implements Insertable<FileRow> {
       'trashedAt': serializer.toJson<DateTime?>(trashedAt),
       'hidden': serializer.toJson<bool>(hidden),
       'manifestExtra': serializer.toJson<String?>(manifestExtra),
+      'durationSeconds': serializer.toJson<int?>(durationSeconds),
+      'replacedBy': serializer.toJson<String?>(replacedBy),
     };
   }
 
@@ -1207,6 +1332,8 @@ class FileRow extends DataClass implements Insertable<FileRow> {
     Value<DateTime?> trashedAt = const Value.absent(),
     bool? hidden,
     Value<String?> manifestExtra = const Value.absent(),
+    Value<int?> durationSeconds = const Value.absent(),
+    Value<String?> replacedBy = const Value.absent(),
   }) => FileRow(
     id: id ?? this.id,
     folderId: folderId.present ? folderId.value : this.folderId,
@@ -1231,6 +1358,10 @@ class FileRow extends DataClass implements Insertable<FileRow> {
     manifestExtra: manifestExtra.present
         ? manifestExtra.value
         : this.manifestExtra,
+    durationSeconds: durationSeconds.present
+        ? durationSeconds.value
+        : this.durationSeconds,
+    replacedBy: replacedBy.present ? replacedBy.value : this.replacedBy,
   );
   FileRow copyWithCompanion(DriveFilesCompanion data) {
     return FileRow(
@@ -1261,6 +1392,12 @@ class FileRow extends DataClass implements Insertable<FileRow> {
       manifestExtra: data.manifestExtra.present
           ? data.manifestExtra.value
           : this.manifestExtra,
+      durationSeconds: data.durationSeconds.present
+          ? data.durationSeconds.value
+          : this.durationSeconds,
+      replacedBy: data.replacedBy.present
+          ? data.replacedBy.value
+          : this.replacedBy,
     );
   }
 
@@ -1283,7 +1420,9 @@ class FileRow extends DataClass implements Insertable<FileRow> {
           ..write('takenAt: $takenAt, ')
           ..write('trashedAt: $trashedAt, ')
           ..write('hidden: $hidden, ')
-          ..write('manifestExtra: $manifestExtra')
+          ..write('manifestExtra: $manifestExtra, ')
+          ..write('durationSeconds: $durationSeconds, ')
+          ..write('replacedBy: $replacedBy')
           ..write(')'))
         .toString();
   }
@@ -1307,6 +1446,8 @@ class FileRow extends DataClass implements Insertable<FileRow> {
     trashedAt,
     hidden,
     manifestExtra,
+    durationSeconds,
+    replacedBy,
   );
   @override
   bool operator ==(Object other) =>
@@ -1328,7 +1469,9 @@ class FileRow extends DataClass implements Insertable<FileRow> {
           other.takenAt == this.takenAt &&
           other.trashedAt == this.trashedAt &&
           other.hidden == this.hidden &&
-          other.manifestExtra == this.manifestExtra);
+          other.manifestExtra == this.manifestExtra &&
+          other.durationSeconds == this.durationSeconds &&
+          other.replacedBy == this.replacedBy);
 }
 
 class DriveFilesCompanion extends UpdateCompanion<FileRow> {
@@ -1349,6 +1492,8 @@ class DriveFilesCompanion extends UpdateCompanion<FileRow> {
   final Value<DateTime?> trashedAt;
   final Value<bool> hidden;
   final Value<String?> manifestExtra;
+  final Value<int?> durationSeconds;
+  final Value<String?> replacedBy;
   final Value<int> rowid;
   const DriveFilesCompanion({
     this.id = const Value.absent(),
@@ -1368,6 +1513,8 @@ class DriveFilesCompanion extends UpdateCompanion<FileRow> {
     this.trashedAt = const Value.absent(),
     this.hidden = const Value.absent(),
     this.manifestExtra = const Value.absent(),
+    this.durationSeconds = const Value.absent(),
+    this.replacedBy = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   DriveFilesCompanion.insert({
@@ -1388,6 +1535,8 @@ class DriveFilesCompanion extends UpdateCompanion<FileRow> {
     this.trashedAt = const Value.absent(),
     this.hidden = const Value.absent(),
     this.manifestExtra = const Value.absent(),
+    this.durationSeconds = const Value.absent(),
+    this.replacedBy = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        name = Value(name),
@@ -1414,6 +1563,8 @@ class DriveFilesCompanion extends UpdateCompanion<FileRow> {
     Expression<DateTime>? trashedAt,
     Expression<bool>? hidden,
     Expression<String>? manifestExtra,
+    Expression<int>? durationSeconds,
+    Expression<String>? replacedBy,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -1434,6 +1585,8 @@ class DriveFilesCompanion extends UpdateCompanion<FileRow> {
       if (trashedAt != null) 'trashed_at': trashedAt,
       if (hidden != null) 'hidden': hidden,
       if (manifestExtra != null) 'manifest_extra': manifestExtra,
+      if (durationSeconds != null) 'duration_seconds': durationSeconds,
+      if (replacedBy != null) 'replaced_by': replacedBy,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -1456,6 +1609,8 @@ class DriveFilesCompanion extends UpdateCompanion<FileRow> {
     Value<DateTime?>? trashedAt,
     Value<bool>? hidden,
     Value<String?>? manifestExtra,
+    Value<int?>? durationSeconds,
+    Value<String?>? replacedBy,
     Value<int>? rowid,
   }) {
     return DriveFilesCompanion(
@@ -1476,6 +1631,8 @@ class DriveFilesCompanion extends UpdateCompanion<FileRow> {
       trashedAt: trashedAt ?? this.trashedAt,
       hidden: hidden ?? this.hidden,
       manifestExtra: manifestExtra ?? this.manifestExtra,
+      durationSeconds: durationSeconds ?? this.durationSeconds,
+      replacedBy: replacedBy ?? this.replacedBy,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -1536,6 +1693,12 @@ class DriveFilesCompanion extends UpdateCompanion<FileRow> {
     if (manifestExtra.present) {
       map['manifest_extra'] = Variable<String>(manifestExtra.value);
     }
+    if (durationSeconds.present) {
+      map['duration_seconds'] = Variable<int>(durationSeconds.value);
+    }
+    if (replacedBy.present) {
+      map['replaced_by'] = Variable<String>(replacedBy.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -1562,6 +1725,8 @@ class DriveFilesCompanion extends UpdateCompanion<FileRow> {
           ..write('trashedAt: $trashedAt, ')
           ..write('hidden: $hidden, ')
           ..write('manifestExtra: $manifestExtra, ')
+          ..write('durationSeconds: $durationSeconds, ')
+          ..write('replacedBy: $replacedBy, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -2200,6 +2365,28 @@ class $TransfersTable extends Transfers
     ),
     defaultValue: const Constant(false),
   );
+  static const VerificationMeta _durationSecondsMeta = const VerificationMeta(
+    'durationSeconds',
+  );
+  @override
+  late final GeneratedColumn<int> durationSeconds = GeneratedColumn<int>(
+    'duration_seconds',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _replacesFileIdMeta = const VerificationMeta(
+    'replacesFileId',
+  );
+  @override
+  late final GeneratedColumn<String> replacesFileId = GeneratedColumn<String>(
+    'replaces_file_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -2226,6 +2413,8 @@ class $TransfersTable extends Transfers
     saveTo,
     saveFolder,
     wifiOnly,
+    durationSeconds,
+    replacesFileId,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -2374,6 +2563,24 @@ class $TransfersTable extends Transfers
         wifiOnly.isAcceptableOrUnknown(data['wifi_only']!, _wifiOnlyMeta),
       );
     }
+    if (data.containsKey('duration_seconds')) {
+      context.handle(
+        _durationSecondsMeta,
+        durationSeconds.isAcceptableOrUnknown(
+          data['duration_seconds']!,
+          _durationSecondsMeta,
+        ),
+      );
+    }
+    if (data.containsKey('replaces_file_id')) {
+      context.handle(
+        _replacesFileIdMeta,
+        replacesFileId.isAcceptableOrUnknown(
+          data['replaces_file_id']!,
+          _replacesFileIdMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -2487,6 +2694,14 @@ class $TransfersTable extends Transfers
         DriftSqlType.bool,
         data['${effectivePrefix}wifi_only'],
       )!,
+      durationSeconds: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}duration_seconds'],
+      ),
+      replacesFileId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}replaces_file_id'],
+      ),
     );
   }
 
@@ -2555,6 +2770,14 @@ class TransferRow extends DataClass implements Insertable<TransferRow> {
   /// Waits for an unmetered network: chosen as "Later, on Wi-Fi", or big and
   /// started on Wi-Fi. A phone's hotspot counts as mobile data.
   final bool wifiOnly;
+
+  /// Length in seconds of a video or audio upload, carried into its
+  /// manifest.
+  final int? durationSeconds;
+
+  /// Drive file this upload replaces: once it lands, that one goes to the
+  /// trash pointing back at the new one.
+  final String? replacesFileId;
   const TransferRow({
     required this.id,
     required this.kind,
@@ -2580,6 +2803,8 @@ class TransferRow extends DataClass implements Insertable<TransferRow> {
     this.saveTo,
     this.saveFolder,
     required this.wifiOnly,
+    this.durationSeconds,
+    this.replacesFileId,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -2642,6 +2867,12 @@ class TransferRow extends DataClass implements Insertable<TransferRow> {
       map['save_folder'] = Variable<String>(saveFolder);
     }
     map['wifi_only'] = Variable<bool>(wifiOnly);
+    if (!nullToAbsent || durationSeconds != null) {
+      map['duration_seconds'] = Variable<int>(durationSeconds);
+    }
+    if (!nullToAbsent || replacesFileId != null) {
+      map['replaces_file_id'] = Variable<String>(replacesFileId);
+    }
     return map;
   }
 
@@ -2691,6 +2922,12 @@ class TransferRow extends DataClass implements Insertable<TransferRow> {
           ? const Value.absent()
           : Value(saveFolder),
       wifiOnly: Value(wifiOnly),
+      durationSeconds: durationSeconds == null && nullToAbsent
+          ? const Value.absent()
+          : Value(durationSeconds),
+      replacesFileId: replacesFileId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(replacesFileId),
     );
   }
 
@@ -2732,6 +2969,8 @@ class TransferRow extends DataClass implements Insertable<TransferRow> {
       ),
       saveFolder: serializer.fromJson<String?>(json['saveFolder']),
       wifiOnly: serializer.fromJson<bool>(json['wifiOnly']),
+      durationSeconds: serializer.fromJson<int?>(json['durationSeconds']),
+      replacesFileId: serializer.fromJson<String?>(json['replacesFileId']),
     );
   }
   @override
@@ -2770,6 +3009,8 @@ class TransferRow extends DataClass implements Insertable<TransferRow> {
       ),
       'saveFolder': serializer.toJson<String?>(saveFolder),
       'wifiOnly': serializer.toJson<bool>(wifiOnly),
+      'durationSeconds': serializer.toJson<int?>(durationSeconds),
+      'replacesFileId': serializer.toJson<String?>(replacesFileId),
     };
   }
 
@@ -2798,6 +3039,8 @@ class TransferRow extends DataClass implements Insertable<TransferRow> {
     Value<SaveTarget?> saveTo = const Value.absent(),
     Value<String?> saveFolder = const Value.absent(),
     bool? wifiOnly,
+    Value<int?> durationSeconds = const Value.absent(),
+    Value<String?> replacesFileId = const Value.absent(),
   }) => TransferRow(
     id: id ?? this.id,
     kind: kind ?? this.kind,
@@ -2825,6 +3068,12 @@ class TransferRow extends DataClass implements Insertable<TransferRow> {
     saveTo: saveTo.present ? saveTo.value : this.saveTo,
     saveFolder: saveFolder.present ? saveFolder.value : this.saveFolder,
     wifiOnly: wifiOnly ?? this.wifiOnly,
+    durationSeconds: durationSeconds.present
+        ? durationSeconds.value
+        : this.durationSeconds,
+    replacesFileId: replacesFileId.present
+        ? replacesFileId.value
+        : this.replacesFileId,
   );
   TransferRow copyWithCompanion(TransfersCompanion data) {
     return TransferRow(
@@ -2868,6 +3117,12 @@ class TransferRow extends DataClass implements Insertable<TransferRow> {
           ? data.saveFolder.value
           : this.saveFolder,
       wifiOnly: data.wifiOnly.present ? data.wifiOnly.value : this.wifiOnly,
+      durationSeconds: data.durationSeconds.present
+          ? data.durationSeconds.value
+          : this.durationSeconds,
+      replacesFileId: data.replacesFileId.present
+          ? data.replacesFileId.value
+          : this.replacesFileId,
     );
   }
 
@@ -2897,7 +3152,9 @@ class TransferRow extends DataClass implements Insertable<TransferRow> {
           ..write('thumbnailPath: $thumbnailPath, ')
           ..write('saveTo: $saveTo, ')
           ..write('saveFolder: $saveFolder, ')
-          ..write('wifiOnly: $wifiOnly')
+          ..write('wifiOnly: $wifiOnly, ')
+          ..write('durationSeconds: $durationSeconds, ')
+          ..write('replacesFileId: $replacesFileId')
           ..write(')'))
         .toString();
   }
@@ -2928,6 +3185,8 @@ class TransferRow extends DataClass implements Insertable<TransferRow> {
     saveTo,
     saveFolder,
     wifiOnly,
+    durationSeconds,
+    replacesFileId,
   ]);
   @override
   bool operator ==(Object other) =>
@@ -2956,7 +3215,9 @@ class TransferRow extends DataClass implements Insertable<TransferRow> {
           other.thumbnailPath == this.thumbnailPath &&
           other.saveTo == this.saveTo &&
           other.saveFolder == this.saveFolder &&
-          other.wifiOnly == this.wifiOnly);
+          other.wifiOnly == this.wifiOnly &&
+          other.durationSeconds == this.durationSeconds &&
+          other.replacesFileId == this.replacesFileId);
 }
 
 class TransfersCompanion extends UpdateCompanion<TransferRow> {
@@ -2984,6 +3245,8 @@ class TransfersCompanion extends UpdateCompanion<TransferRow> {
   final Value<SaveTarget?> saveTo;
   final Value<String?> saveFolder;
   final Value<bool> wifiOnly;
+  final Value<int?> durationSeconds;
+  final Value<String?> replacesFileId;
   final Value<int> rowid;
   const TransfersCompanion({
     this.id = const Value.absent(),
@@ -3010,6 +3273,8 @@ class TransfersCompanion extends UpdateCompanion<TransferRow> {
     this.saveTo = const Value.absent(),
     this.saveFolder = const Value.absent(),
     this.wifiOnly = const Value.absent(),
+    this.durationSeconds = const Value.absent(),
+    this.replacesFileId = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   TransfersCompanion.insert({
@@ -3037,6 +3302,8 @@ class TransfersCompanion extends UpdateCompanion<TransferRow> {
     this.saveTo = const Value.absent(),
     this.saveFolder = const Value.absent(),
     this.wifiOnly = const Value.absent(),
+    this.durationSeconds = const Value.absent(),
+    this.replacesFileId = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        kind = Value(kind),
@@ -3071,6 +3338,8 @@ class TransfersCompanion extends UpdateCompanion<TransferRow> {
     Expression<String>? saveTo,
     Expression<String>? saveFolder,
     Expression<bool>? wifiOnly,
+    Expression<int>? durationSeconds,
+    Expression<String>? replacesFileId,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -3098,6 +3367,8 @@ class TransfersCompanion extends UpdateCompanion<TransferRow> {
       if (saveTo != null) 'save_to': saveTo,
       if (saveFolder != null) 'save_folder': saveFolder,
       if (wifiOnly != null) 'wifi_only': wifiOnly,
+      if (durationSeconds != null) 'duration_seconds': durationSeconds,
+      if (replacesFileId != null) 'replaces_file_id': replacesFileId,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -3127,6 +3398,8 @@ class TransfersCompanion extends UpdateCompanion<TransferRow> {
     Value<SaveTarget?>? saveTo,
     Value<String?>? saveFolder,
     Value<bool>? wifiOnly,
+    Value<int?>? durationSeconds,
+    Value<String?>? replacesFileId,
     Value<int>? rowid,
   }) {
     return TransfersCompanion(
@@ -3154,6 +3427,8 @@ class TransfersCompanion extends UpdateCompanion<TransferRow> {
       saveTo: saveTo ?? this.saveTo,
       saveFolder: saveFolder ?? this.saveFolder,
       wifiOnly: wifiOnly ?? this.wifiOnly,
+      durationSeconds: durationSeconds ?? this.durationSeconds,
+      replacesFileId: replacesFileId ?? this.replacesFileId,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -3241,6 +3516,12 @@ class TransfersCompanion extends UpdateCompanion<TransferRow> {
     if (wifiOnly.present) {
       map['wifi_only'] = Variable<bool>(wifiOnly.value);
     }
+    if (durationSeconds.present) {
+      map['duration_seconds'] = Variable<int>(durationSeconds.value);
+    }
+    if (replacesFileId.present) {
+      map['replaces_file_id'] = Variable<String>(replacesFileId.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -3274,6 +3555,8 @@ class TransfersCompanion extends UpdateCompanion<TransferRow> {
           ..write('saveTo: $saveTo, ')
           ..write('saveFolder: $saveFolder, ')
           ..write('wifiOnly: $wifiOnly, ')
+          ..write('durationSeconds: $durationSeconds, ')
+          ..write('replacesFileId: $replacesFileId, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -5331,6 +5614,328 @@ class FileOpensCompanion extends UpdateCompanion<FileOpenRow> {
   }
 }
 
+class $PlayPositionsTable extends PlayPositions
+    with TableInfo<$PlayPositionsTable, PlayPositionRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $PlayPositionsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _fileIdMeta = const VerificationMeta('fileId');
+  @override
+  late final GeneratedColumn<String> fileId = GeneratedColumn<String>(
+    'file_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _positionMsMeta = const VerificationMeta(
+    'positionMs',
+  );
+  @override
+  late final GeneratedColumn<int> positionMs = GeneratedColumn<int>(
+    'position_ms',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _durationMsMeta = const VerificationMeta(
+    'durationMs',
+  );
+  @override
+  late final GeneratedColumn<int> durationMs = GeneratedColumn<int>(
+    'duration_ms',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> updatedAt = GeneratedColumn<DateTime>(
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    fileId,
+    positionMs,
+    durationMs,
+    updatedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'play_positions';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<PlayPositionRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('file_id')) {
+      context.handle(
+        _fileIdMeta,
+        fileId.isAcceptableOrUnknown(data['file_id']!, _fileIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_fileIdMeta);
+    }
+    if (data.containsKey('position_ms')) {
+      context.handle(
+        _positionMsMeta,
+        positionMs.isAcceptableOrUnknown(data['position_ms']!, _positionMsMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_positionMsMeta);
+    }
+    if (data.containsKey('duration_ms')) {
+      context.handle(
+        _durationMsMeta,
+        durationMs.isAcceptableOrUnknown(data['duration_ms']!, _durationMsMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_durationMsMeta);
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_updatedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {fileId};
+  @override
+  PlayPositionRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return PlayPositionRow(
+      fileId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}file_id'],
+      )!,
+      positionMs: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}position_ms'],
+      )!,
+      durationMs: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}duration_ms'],
+      )!,
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}updated_at'],
+      )!,
+    );
+  }
+
+  @override
+  $PlayPositionsTable createAlias(String alias) {
+    return $PlayPositionsTable(attachedDatabase, alias);
+  }
+}
+
+class PlayPositionRow extends DataClass implements Insertable<PlayPositionRow> {
+  final String fileId;
+  final int positionMs;
+  final int durationMs;
+  final DateTime updatedAt;
+  const PlayPositionRow({
+    required this.fileId,
+    required this.positionMs,
+    required this.durationMs,
+    required this.updatedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['file_id'] = Variable<String>(fileId);
+    map['position_ms'] = Variable<int>(positionMs);
+    map['duration_ms'] = Variable<int>(durationMs);
+    map['updated_at'] = Variable<DateTime>(updatedAt);
+    return map;
+  }
+
+  PlayPositionsCompanion toCompanion(bool nullToAbsent) {
+    return PlayPositionsCompanion(
+      fileId: Value(fileId),
+      positionMs: Value(positionMs),
+      durationMs: Value(durationMs),
+      updatedAt: Value(updatedAt),
+    );
+  }
+
+  factory PlayPositionRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return PlayPositionRow(
+      fileId: serializer.fromJson<String>(json['fileId']),
+      positionMs: serializer.fromJson<int>(json['positionMs']),
+      durationMs: serializer.fromJson<int>(json['durationMs']),
+      updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'fileId': serializer.toJson<String>(fileId),
+      'positionMs': serializer.toJson<int>(positionMs),
+      'durationMs': serializer.toJson<int>(durationMs),
+      'updatedAt': serializer.toJson<DateTime>(updatedAt),
+    };
+  }
+
+  PlayPositionRow copyWith({
+    String? fileId,
+    int? positionMs,
+    int? durationMs,
+    DateTime? updatedAt,
+  }) => PlayPositionRow(
+    fileId: fileId ?? this.fileId,
+    positionMs: positionMs ?? this.positionMs,
+    durationMs: durationMs ?? this.durationMs,
+    updatedAt: updatedAt ?? this.updatedAt,
+  );
+  PlayPositionRow copyWithCompanion(PlayPositionsCompanion data) {
+    return PlayPositionRow(
+      fileId: data.fileId.present ? data.fileId.value : this.fileId,
+      positionMs: data.positionMs.present
+          ? data.positionMs.value
+          : this.positionMs,
+      durationMs: data.durationMs.present
+          ? data.durationMs.value
+          : this.durationMs,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('PlayPositionRow(')
+          ..write('fileId: $fileId, ')
+          ..write('positionMs: $positionMs, ')
+          ..write('durationMs: $durationMs, ')
+          ..write('updatedAt: $updatedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(fileId, positionMs, durationMs, updatedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is PlayPositionRow &&
+          other.fileId == this.fileId &&
+          other.positionMs == this.positionMs &&
+          other.durationMs == this.durationMs &&
+          other.updatedAt == this.updatedAt);
+}
+
+class PlayPositionsCompanion extends UpdateCompanion<PlayPositionRow> {
+  final Value<String> fileId;
+  final Value<int> positionMs;
+  final Value<int> durationMs;
+  final Value<DateTime> updatedAt;
+  final Value<int> rowid;
+  const PlayPositionsCompanion({
+    this.fileId = const Value.absent(),
+    this.positionMs = const Value.absent(),
+    this.durationMs = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  PlayPositionsCompanion.insert({
+    required String fileId,
+    required int positionMs,
+    required int durationMs,
+    required DateTime updatedAt,
+    this.rowid = const Value.absent(),
+  }) : fileId = Value(fileId),
+       positionMs = Value(positionMs),
+       durationMs = Value(durationMs),
+       updatedAt = Value(updatedAt);
+  static Insertable<PlayPositionRow> custom({
+    Expression<String>? fileId,
+    Expression<int>? positionMs,
+    Expression<int>? durationMs,
+    Expression<DateTime>? updatedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (fileId != null) 'file_id': fileId,
+      if (positionMs != null) 'position_ms': positionMs,
+      if (durationMs != null) 'duration_ms': durationMs,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  PlayPositionsCompanion copyWith({
+    Value<String>? fileId,
+    Value<int>? positionMs,
+    Value<int>? durationMs,
+    Value<DateTime>? updatedAt,
+    Value<int>? rowid,
+  }) {
+    return PlayPositionsCompanion(
+      fileId: fileId ?? this.fileId,
+      positionMs: positionMs ?? this.positionMs,
+      durationMs: durationMs ?? this.durationMs,
+      updatedAt: updatedAt ?? this.updatedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (fileId.present) {
+      map['file_id'] = Variable<String>(fileId.value);
+    }
+    if (positionMs.present) {
+      map['position_ms'] = Variable<int>(positionMs.value);
+    }
+    if (durationMs.present) {
+      map['duration_ms'] = Variable<int>(durationMs.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<DateTime>(updatedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('PlayPositionsCompanion(')
+          ..write('fileId: $fileId, ')
+          ..write('positionMs: $positionMs, ')
+          ..write('durationMs: $durationMs, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
@@ -5345,6 +5950,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $OfflineCopiesTable offlineCopies = $OfflineCopiesTable(this);
   late final $FileContentsTable fileContents = $FileContentsTable(this);
   late final $FileOpensTable fileOpens = $FileOpensTable(this);
+  late final $PlayPositionsTable playPositions = $PlayPositionsTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -5361,6 +5967,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     offlineCopies,
     fileContents,
     fileOpens,
+    playPositions,
   ];
 }
 
@@ -5374,6 +5981,7 @@ typedef $$FoldersTableCreateCompanionBuilder = FoldersCompanion Function({
   Value<DateTime?> trashedAt,
   Value<bool> hidden,
   Value<String?> manifestExtra,
+  Value<bool> starred,
   Value<int> rowid,
 });
 typedef $$FoldersTableUpdateCompanionBuilder = FoldersCompanion Function({
@@ -5386,6 +5994,7 @@ typedef $$FoldersTableUpdateCompanionBuilder = FoldersCompanion Function({
   Value<DateTime?> trashedAt,
   Value<bool> hidden,
   Value<String?> manifestExtra,
+  Value<bool> starred,
   Value<int> rowid,
 });
 
@@ -5440,6 +6049,11 @@ class $$FoldersTableFilterComposer
 
   ColumnFilters<String> get manifestExtra => $composableBuilder(
     column: $table.manifestExtra,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get starred => $composableBuilder(
+    column: $table.starred,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -5497,6 +6111,11 @@ class $$FoldersTableOrderingComposer
     column: $table.manifestExtra,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<bool> get starred => $composableBuilder(
+    column: $table.starred,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$FoldersTableAnnotationComposer
@@ -5538,6 +6157,9 @@ class $$FoldersTableAnnotationComposer
     column: $table.manifestExtra,
     builder: (column) => column,
   );
+
+  GeneratedColumn<bool> get starred =>
+      $composableBuilder(column: $table.starred, builder: (column) => column);
 }
 
 class $$FoldersTableTableManager
@@ -5577,6 +6199,7 @@ class $$FoldersTableTableManager
                 Value<DateTime?> trashedAt = const Value.absent(),
                 Value<bool> hidden = const Value.absent(),
                 Value<String?> manifestExtra = const Value.absent(),
+                Value<bool> starred = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => FoldersCompanion(
                 id: id,
@@ -5588,6 +6211,7 @@ class $$FoldersTableTableManager
                 trashedAt: trashedAt,
                 hidden: hidden,
                 manifestExtra: manifestExtra,
+                starred: starred,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -5601,6 +6225,7 @@ class $$FoldersTableTableManager
                 Value<DateTime?> trashedAt = const Value.absent(),
                 Value<bool> hidden = const Value.absent(),
                 Value<String?> manifestExtra = const Value.absent(),
+                Value<bool> starred = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => FoldersCompanion.insert(
                 id: id,
@@ -5612,6 +6237,7 @@ class $$FoldersTableTableManager
                 trashedAt: trashedAt,
                 hidden: hidden,
                 manifestExtra: manifestExtra,
+                starred: starred,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
@@ -5663,6 +6289,8 @@ typedef $$DriveFilesTableCreateCompanionBuilder = DriveFilesCompanion Function({
   Value<DateTime?> trashedAt,
   Value<bool> hidden,
   Value<String?> manifestExtra,
+  Value<int?> durationSeconds,
+  Value<String?> replacedBy,
   Value<int> rowid,
 });
 typedef $$DriveFilesTableUpdateCompanionBuilder = DriveFilesCompanion Function({
@@ -5683,6 +6311,8 @@ typedef $$DriveFilesTableUpdateCompanionBuilder = DriveFilesCompanion Function({
   Value<DateTime?> trashedAt,
   Value<bool> hidden,
   Value<String?> manifestExtra,
+  Value<int?> durationSeconds,
+  Value<String?> replacedBy,
   Value<int> rowid,
 });
 
@@ -5780,6 +6410,16 @@ class $$DriveFilesTableFilterComposer
     column: $table.manifestExtra,
     builder: (column) => ColumnFilters(column),
   );
+
+  ColumnFilters<int> get durationSeconds => $composableBuilder(
+    column: $table.durationSeconds,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get replacedBy => $composableBuilder(
+    column: $table.replacedBy,
+    builder: (column) => ColumnFilters(column),
+  );
 }
 
 class $$DriveFilesTableOrderingComposer
@@ -5875,6 +6515,16 @@ class $$DriveFilesTableOrderingComposer
     column: $table.manifestExtra,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<int> get durationSeconds => $composableBuilder(
+    column: $table.durationSeconds,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get replacedBy => $composableBuilder(
+    column: $table.replacedBy,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$DriveFilesTableAnnotationComposer
@@ -5946,6 +6596,16 @@ class $$DriveFilesTableAnnotationComposer
     column: $table.manifestExtra,
     builder: (column) => column,
   );
+
+  GeneratedColumn<int> get durationSeconds => $composableBuilder(
+    column: $table.durationSeconds,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get replacedBy => $composableBuilder(
+    column: $table.replacedBy,
+    builder: (column) => column,
+  );
 }
 
 class $$DriveFilesTableTableManager
@@ -5993,6 +6653,8 @@ class $$DriveFilesTableTableManager
                 Value<DateTime?> trashedAt = const Value.absent(),
                 Value<bool> hidden = const Value.absent(),
                 Value<String?> manifestExtra = const Value.absent(),
+                Value<int?> durationSeconds = const Value.absent(),
+                Value<String?> replacedBy = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => DriveFilesCompanion(
                 id: id,
@@ -6012,6 +6674,8 @@ class $$DriveFilesTableTableManager
                 trashedAt: trashedAt,
                 hidden: hidden,
                 manifestExtra: manifestExtra,
+                durationSeconds: durationSeconds,
+                replacedBy: replacedBy,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -6033,6 +6697,8 @@ class $$DriveFilesTableTableManager
                 Value<DateTime?> trashedAt = const Value.absent(),
                 Value<bool> hidden = const Value.absent(),
                 Value<String?> manifestExtra = const Value.absent(),
+                Value<int?> durationSeconds = const Value.absent(),
+                Value<String?> replacedBy = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => DriveFilesCompanion.insert(
                 id: id,
@@ -6052,6 +6718,8 @@ class $$DriveFilesTableTableManager
                 trashedAt: trashedAt,
                 hidden: hidden,
                 manifestExtra: manifestExtra,
+                durationSeconds: durationSeconds,
+                replacedBy: replacedBy,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
@@ -6311,6 +6979,8 @@ typedef $$TransfersTableCreateCompanionBuilder = TransfersCompanion Function({
   Value<SaveTarget?> saveTo,
   Value<String?> saveFolder,
   Value<bool> wifiOnly,
+  Value<int?> durationSeconds,
+  Value<String?> replacesFileId,
   Value<int> rowid,
 });
 typedef $$TransfersTableUpdateCompanionBuilder = TransfersCompanion Function({
@@ -6338,6 +7008,8 @@ typedef $$TransfersTableUpdateCompanionBuilder = TransfersCompanion Function({
   Value<SaveTarget?> saveTo,
   Value<String?> saveFolder,
   Value<bool> wifiOnly,
+  Value<int?> durationSeconds,
+  Value<String?> replacesFileId,
   Value<int> rowid,
 });
 
@@ -6473,6 +7145,16 @@ class $$TransfersTableFilterComposer
     column: $table.wifiOnly,
     builder: (column) => ColumnFilters(column),
   );
+
+  ColumnFilters<int> get durationSeconds => $composableBuilder(
+    column: $table.durationSeconds,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get replacesFileId => $composableBuilder(
+    column: $table.replacesFileId,
+    builder: (column) => ColumnFilters(column),
+  );
 }
 
 class $$TransfersTableOrderingComposer
@@ -6603,6 +7285,16 @@ class $$TransfersTableOrderingComposer
     column: $table.wifiOnly,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<int> get durationSeconds => $composableBuilder(
+    column: $table.durationSeconds,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get replacesFileId => $composableBuilder(
+    column: $table.replacesFileId,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$TransfersTableAnnotationComposer
@@ -6701,6 +7393,16 @@ class $$TransfersTableAnnotationComposer
 
   GeneratedColumn<bool> get wifiOnly =>
       $composableBuilder(column: $table.wifiOnly, builder: (column) => column);
+
+  GeneratedColumn<int> get durationSeconds => $composableBuilder(
+    column: $table.durationSeconds,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get replacesFileId => $composableBuilder(
+    column: $table.replacesFileId,
+    builder: (column) => column,
+  );
 }
 
 class $$TransfersTableTableManager
@@ -6758,6 +7460,8 @@ class $$TransfersTableTableManager
                 Value<SaveTarget?> saveTo = const Value.absent(),
                 Value<String?> saveFolder = const Value.absent(),
                 Value<bool> wifiOnly = const Value.absent(),
+                Value<int?> durationSeconds = const Value.absent(),
+                Value<String?> replacesFileId = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => TransfersCompanion(
                 id: id,
@@ -6784,6 +7488,8 @@ class $$TransfersTableTableManager
                 saveTo: saveTo,
                 saveFolder: saveFolder,
                 wifiOnly: wifiOnly,
+                durationSeconds: durationSeconds,
+                replacesFileId: replacesFileId,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -6812,6 +7518,8 @@ class $$TransfersTableTableManager
                 Value<SaveTarget?> saveTo = const Value.absent(),
                 Value<String?> saveFolder = const Value.absent(),
                 Value<bool> wifiOnly = const Value.absent(),
+                Value<int?> durationSeconds = const Value.absent(),
+                Value<String?> replacesFileId = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => TransfersCompanion.insert(
                 id: id,
@@ -6838,6 +7546,8 @@ class $$TransfersTableTableManager
                 saveTo: saveTo,
                 saveFolder: saveFolder,
                 wifiOnly: wifiOnly,
+                durationSeconds: durationSeconds,
+                replacesFileId: replacesFileId,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
@@ -8138,6 +8848,200 @@ typedef $$FileOpensTableProcessedTableManager =
       FileOpenRow,
       PrefetchHooks Function()
     >;
+typedef $$PlayPositionsTableCreateCompanionBuilder =
+    PlayPositionsCompanion Function({
+      required String fileId,
+      required int positionMs,
+      required int durationMs,
+      required DateTime updatedAt,
+      Value<int> rowid,
+    });
+typedef $$PlayPositionsTableUpdateCompanionBuilder =
+    PlayPositionsCompanion Function({
+      Value<String> fileId,
+      Value<int> positionMs,
+      Value<int> durationMs,
+      Value<DateTime> updatedAt,
+      Value<int> rowid,
+    });
+
+class $$PlayPositionsTableFilterComposer
+    extends Composer<_$AppDatabase, $PlayPositionsTable> {
+  $$PlayPositionsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get fileId => $composableBuilder(
+    column: $table.fileId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get positionMs => $composableBuilder(
+    column: $table.positionMs,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get durationMs => $composableBuilder(
+    column: $table.durationMs,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$PlayPositionsTableOrderingComposer
+    extends Composer<_$AppDatabase, $PlayPositionsTable> {
+  $$PlayPositionsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get fileId => $composableBuilder(
+    column: $table.fileId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get positionMs => $composableBuilder(
+    column: $table.positionMs,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get durationMs => $composableBuilder(
+    column: $table.durationMs,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$PlayPositionsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $PlayPositionsTable> {
+  $$PlayPositionsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get fileId =>
+      $composableBuilder(column: $table.fileId, builder: (column) => column);
+
+  GeneratedColumn<int> get positionMs => $composableBuilder(
+    column: $table.positionMs,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get durationMs => $composableBuilder(
+    column: $table.durationMs,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+}
+
+class $$PlayPositionsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $PlayPositionsTable,
+          PlayPositionRow,
+          $$PlayPositionsTableFilterComposer,
+          $$PlayPositionsTableOrderingComposer,
+          $$PlayPositionsTableAnnotationComposer,
+          $$PlayPositionsTableCreateCompanionBuilder,
+          $$PlayPositionsTableUpdateCompanionBuilder,
+          (
+            PlayPositionRow,
+            BaseReferences<_$AppDatabase, $PlayPositionsTable, PlayPositionRow>,
+          ),
+          PlayPositionRow,
+          PrefetchHooks Function()
+        > {
+  $$PlayPositionsTableTableManager(_$AppDatabase db, $PlayPositionsTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$PlayPositionsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$PlayPositionsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$PlayPositionsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> fileId = const Value.absent(),
+                Value<int> positionMs = const Value.absent(),
+                Value<int> durationMs = const Value.absent(),
+                Value<DateTime> updatedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => PlayPositionsCompanion(
+                fileId: fileId,
+                positionMs: positionMs,
+                durationMs: durationMs,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String fileId,
+                required int positionMs,
+                required int durationMs,
+                required DateTime updatedAt,
+                Value<int> rowid = const Value.absent(),
+              }) => PlayPositionsCompanion.insert(
+                fileId: fileId,
+                positionMs: positionMs,
+                durationMs: durationMs,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable<$PlayPositionsTable, PlayPositionRow>(table),
+                  BaseReferences<
+                    _$AppDatabase,
+                    $PlayPositionsTable,
+                    PlayPositionRow
+                  >(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$PlayPositionsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $PlayPositionsTable,
+      PlayPositionRow,
+      $$PlayPositionsTableFilterComposer,
+      $$PlayPositionsTableOrderingComposer,
+      $$PlayPositionsTableAnnotationComposer,
+      $$PlayPositionsTableCreateCompanionBuilder,
+      $$PlayPositionsTableUpdateCompanionBuilder,
+      (
+        PlayPositionRow,
+        BaseReferences<_$AppDatabase, $PlayPositionsTable, PlayPositionRow>,
+      ),
+      PlayPositionRow,
+      PrefetchHooks Function()
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -8164,4 +9068,6 @@ class $AppDatabaseManager {
       $$FileContentsTableTableManager(_db, _db.fileContents);
   $$FileOpensTableTableManager get fileOpens =>
       $$FileOpensTableTableManager(_db, _db.fileOpens);
+  $$PlayPositionsTableTableManager get playPositions =>
+      $$PlayPositionsTableTableManager(_db, _db.playPositions);
 }

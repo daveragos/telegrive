@@ -96,6 +96,7 @@ abstract final class MessageIndexer {
           createdAt: folder.createdAt,
           modifiedAt: folder.modifiedAt,
           trashedAt: Value(folder.trashedAt),
+          starred: Value(folder.starred),
           manifestExtra: Value(ManifestCodec.encodeExtra(folder.extra)),
         ),
       );
@@ -126,6 +127,10 @@ abstract final class MessageIndexer {
         starred: Value(manifest.starred),
         takenAt: Value(manifest.takenAt),
         trashedAt: Value(manifest.trashedAt),
+        // A length learned on this phone stays when the caption has none;
+        // a replacement is only what the caption says.
+        durationSeconds: Value.absentIfNull(manifest.durationSeconds),
+        replacedBy: Value(manifest.replacedBy),
         manifestExtra: Value(ManifestCodec.encodeExtra(manifest.extra)),
         // Previews come from the first part only; later parts of a split
         // video have nothing meaningful to show.

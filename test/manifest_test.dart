@@ -10,6 +10,8 @@ void main() {
     int partCount = 1,
     int partIndex = 0,
     bool starred = false,
+    int? durationSeconds,
+    String? replacedBy,
   }) => FileManifest(
     id: 'file-1',
     name: name,
@@ -21,6 +23,8 @@ void main() {
     partCount: partCount,
     partIndex: partIndex,
     starred: starred,
+    durationSeconds: durationSeconds,
+    replacedBy: replacedBy,
   );
 
   group('file captions', () {
@@ -69,6 +73,38 @@ void main() {
         takenAt: taken,
       );
       expect(original.copyWith(name: 'x.jpg', clearFolder: true).takenAt, taken);
+    });
+
+    test('a length round-trips, is left out when unknown and survives a move', () {
+      final clip = file(name: 'clip.mp4', durationSeconds: 84);
+      final decoded = ManifestCodec.decodeFile(ManifestCodec.encodeFile(clip).text)!;
+      expect(decoded.durationSeconds, 84);
+      expect(ManifestCodec.encodeFile(file()).text, isNot(contains('"du"')));
+      expect(ManifestCodec.decodeFile(ManifestCodec.encodeFile(file()).text)!.durationSeconds, isNull);
+
+      final moved = decoded.copyWith(name: 'trip.mp4', clearFolder: true);
+      expect(ManifestCodec.decodeFile(ManifestCodec.encodeFile(moved).text)!.durationSeconds, 84);
+    });
+
+    test('a length that is zero or not a number is no length', () {
+      for (final du in ['0', '"90"', '-5', '1.5']) {
+        final decoded = ManifestCodec.decodeFile('x\ntgr1:{"id":"a","n":"b","s":1,"du":$du}')!;
+        expect(decoded.durationSeconds, isNull, reason: du);
+        expect(decoded.extra, isEmpty, reason: du);
+      }
+    });
+
+    test('a replaced file carries rb and restores clean', () {
+      final replaced = file(replacedBy: 'new-id').copyWith(trashedAt: created);
+      final decoded = ManifestCodec.decodeFile(ManifestCodec.encodeFile(replaced).text)!;
+      expect(decoded.replacedBy, 'new-id');
+      expect(decoded.trashedAt, created);
+
+      final restored = decoded.copyWith(restore: true);
+      expect(restored.replacedBy, isNull);
+      expect(restored.trashedAt, isNull);
+      expect(ManifestCodec.encodeFile(restored).text, isNot(contains('"rb"')));
+      expect(ManifestCodec.encodeFile(file()).text, isNot(contains('"rb"')));
     });
 
     test('root files carry no folder', () {
@@ -150,6 +186,27 @@ void main() {
       expect(decoded.parentId, 'folder-1');
     });
 
+    test('a starred folder round-trips, and the key is left out otherwise', () {
+      FolderManifest folder({bool starred = false}) => FolderManifest(
+        id: 'folder-2',
+        name: 'Invoices',
+        parentId: null,
+        createdAt: created,
+        modifiedAt: created,
+        starred: starred,
+      );
+      final starredText = ManifestCodec.encodeFolder(folder(starred: true)).text;
+      expect(ManifestCodec.decodeFolder(starredText)!.starred, isTrue);
+
+      final plainText = ManifestCodec.encodeFolder(folder()).text;
+      expect(plainText, isNot(contains('"st"')));
+      expect(ManifestCodec.decodeFolder(plainText)!.starred, isFalse);
+
+      final old = ManifestCodec.decodeFolder('📁 Old\ngrf1:{"id":"f","n":"Old"}')!;
+      expect(old.starred, isFalse);
+      expect(old.extra, isEmpty);
+    });
+
     test('file and folder formats never mistake each other', () {
       final fileText = ManifestCodec.encodeFile(file()).text;
       final folderText = ManifestCodec.encodeFolder(
@@ -169,32 +226,35 @@ void main() {
   group('keys from newer versions', () {
     test('an unknown file key survives decode, copyWith and encode', () {
       final decoded = ManifestCodec.decodeFile(
-        'clip.mp4\ntgr1:{"id":"v","n":"clip.mp4","s":9,"du":84,"x":{"a":[1,"b"]}}',
+        'clip.mp4\ntgr1:{"id":"v","n":"clip.mp4","s":9,"lt":123456,"x":{"a":[1,"b"]}}',
       )!;
-      expect(decoded.extra, {'du': 84, 'x': {'a': [1, 'b']}});
+      expect(decoded.extra, {'lt': 123456, 'x': {'a': [1, 'b']}});
 
       final renamed = decoded.copyWith(name: 'trip.mp4', clearFolder: true);
       final again = ManifestCodec.decodeFile(ManifestCodec.encodeFile(renamed).text)!;
       expect(again.name, 'trip.mp4');
-      expect(again.extra, {'du': 84, 'x': {'a': [1, 'b']}});
+      expect(again.extra, {'lt': 123456, 'x': {'a': [1, 'b']}});
     });
 
     test('an unknown folder key survives decode and encode', () {
       final decoded = ManifestCodec.decodeFolder(
-        '📁 Invoices\ntgrf1:{"id":"f","n":"Invoices","st":1}',
+        '📁 Invoices\ntgrf1:{"id":"f","n":"Invoices","c":"blue"}',
       )!;
-      expect(decoded.extra, {'st': 1});
+      expect(decoded.extra, {'c': 'blue'});
       final text = ManifestCodec.encodeFolder(decoded).text;
-      expect(ManifestCodec.decodeFolder(text)!.extra, {'st': 1});
+      expect(ManifestCodec.decodeFolder(text)!.extra, {'c': 'blue'});
     });
 
     // Every new manifest field must be set on the manifests this test checks,
     // or a key missing from _keys goes unnoticed.
     test('keys this version knows never land in extra', () {
-      final everything = file(partCount: 3, partIndex: 2, starred: true).copyWith(
-        trashedAt: created,
-        albums: ['a1b2c3'],
-      );
+      final everything = file(
+        partCount: 3,
+        partIndex: 2,
+        starred: true,
+        durationSeconds: 84,
+        replacedBy: 'new-id',
+      ).copyWith(trashedAt: created, albums: ['a1b2c3']);
       final withTime = FileManifest(
         id: 'p',
         name: 'IMG_1.jpg',
@@ -216,6 +276,7 @@ void main() {
         createdAt: created,
         modifiedAt: created,
         trashedAt: created,
+        starred: true,
       );
       final text = ManifestCodec.encodeFolder(folder).text;
       expect(ManifestCodec.decodeFolder(text)!.extra, isEmpty);
@@ -232,13 +293,18 @@ void main() {
         modifiedAt: created,
         starred: true,
         trashedAt: created,
-        extra: const {'n': 'Before.pdf', 'f': 'old', 'st': 0, 'tr': 5, 'du': 84},
+        durationSeconds: 90,
+        replacedBy: 'new-id',
+        extra: const {
+          'n': 'Before.pdf', 'f': 'old', 'st': 0, 'tr': 5, 'du': 84, 'rb': 'old-id',
+        },
       ).toJson();
       expect(json['n'], 'Now.pdf');
       expect(json['f'], 'docs');
       expect(json['st'], 1);
       expect(json['tr'], created.millisecondsSinceEpoch);
-      expect(json['du'], 84);
+      expect(json['du'], 90);
+      expect(json['rb'], 'new-id');
 
       final folder = FolderManifest(
         id: 'f',
@@ -246,7 +312,8 @@ void main() {
         parentId: 'work',
         createdAt: created,
         modifiedAt: created,
-        extra: const {'n': 'Before', 'p': 'old', 'st': 1},
+        starred: true,
+        extra: const {'n': 'Before', 'p': 'old', 'st': 0},
       ).toJson();
       expect(folder['n'], 'Now');
       expect(folder['p'], 'work');
@@ -271,8 +338,8 @@ void main() {
 
     test('the index keeps extras as JSON, and none as null', () {
       expect(ManifestCodec.encodeExtra(const {}), isNull);
-      final stored = ManifestCodec.encodeExtra(const {'du': 84, 'rb': 'new'});
-      expect(ManifestCodec.decodeExtra(stored), {'du': 84, 'rb': 'new'});
+      final stored = ManifestCodec.encodeExtra(const {'lt': 123456, 'c': 'blue'});
+      expect(ManifestCodec.decodeExtra(stored), {'lt': 123456, 'c': 'blue'});
       expect(ManifestCodec.decodeExtra(null), isEmpty);
       expect(ManifestCodec.decodeExtra('not json'), isEmpty);
       expect(ManifestCodec.decodeExtra('[1]'), isEmpty);

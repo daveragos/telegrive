@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:drift_dev/api/migrations_native.dart';
@@ -53,9 +55,65 @@ void main() {
     expect(file.name, 'a.pdf');
     expect(file.folderId, 'docs');
     expect(file.manifestExtra, isNull);
-    expect((await db.folderById('docs'))!.manifestExtra, isNull);
+    expect(file.durationSeconds, isNull);
+    expect(file.replacedBy, isNull);
+    final folder = (await db.folderById('docs'))!;
+    expect(folder.manifestExtra, isNull);
+    expect(folder.starred, isFalse);
     expect(await db.select(db.fileOpens).get(), isEmpty);
+    expect(await db.select(db.playPositions).get(), isEmpty);
   });
+
+  // Versions 4 to 6 kept the keys they didn't know in manifest_extra, so a
+  // star, length or replacement written by a newer phone is already in the
+  // index and moves into its column, and out of the extras, at version 7.
+  for (final from in GeneratedHelper.versions.where((v) => v >= 4 && v < 7)) {
+    test('keys kept as extras at version $from move into their columns', () async {
+      final schema = await verifier.schemaAt(from);
+      schema.rawDatabase.execute(r'''
+        INSERT INTO folders (id, name, message_id, created_at, modified_at, manifest_extra)
+        VALUES ('inv', 'Invoices', 1, 0, 0, '{"st":1}'),
+               ('work', 'Work', 2, 0, 0, '{"st":true,"c":"blue"}'),
+               ('old', 'Old', 3, 0, 0, '{"st":0}'),
+               ('plain', 'Plain', 4, 0, 0, NULL)
+      ''');
+      schema.rawDatabase.execute(r'''
+        INSERT INTO drive_files (id, name, mime_type, kind, size, created_at,
+                                 modified_at, part_count, parts_present, manifest_extra)
+        VALUES ('v', 'clip.mp4', 'video/mp4', 'video', 9, 0, 0, 1, 1, '{"du":84,"rb":"w","lt":5}'),
+               ('z', 'zero.mp4', 'video/mp4', 'video', 9, 0, 0, 1, 1, '{"du":0}'),
+               ('t', 'text.mp4', 'video/mp4', 'video', 9, 0, 0, 1, 1, '{"du":"90"}'),
+               ('p', 'plain.pdf', 'application/pdf', 'document', 9, 0, 0, 1, 1, NULL)
+      ''');
+
+      final db = AppDatabase(schema.newConnection());
+      addTearDown(db.close);
+      await verifier.migrateAndValidate(db, latest);
+
+      final inv = (await db.folderById('inv'))!;
+      expect(inv.starred, isTrue);
+      expect(inv.manifestExtra, isNull);
+      final work = (await db.folderById('work'))!;
+      expect(work.starred, isTrue);
+      expect(jsonDecode(work.manifestExtra!), {'c': 'blue'});
+      for (final id in ['old', 'plain']) {
+        final folder = (await db.folderById(id))!;
+        expect(folder.starred, isFalse, reason: id);
+        expect(folder.manifestExtra, isNull, reason: id);
+      }
+
+      final clip = (await db.fileById('v'))!;
+      expect(clip.durationSeconds, 84);
+      expect(clip.replacedBy, 'w');
+      expect(jsonDecode(clip.manifestExtra!), {'lt': 5});
+      for (final id in ['z', 't', 'p']) {
+        final file = (await db.fileById(id))!;
+        expect(file.durationSeconds, isNull, reason: id);
+        expect(file.replacedBy, isNull, reason: id);
+        expect(file.manifestExtra, isNull, reason: id);
+      }
+    });
+  }
 
   for (final from in GeneratedHelper.versions.where((v) => v < latest)) {
     test('a transfer queued at version $from is still queued, not waiting for Wi-Fi',
@@ -74,8 +132,19 @@ void main() {
       final row = (await db.allTransfers()).single;
       expect(row.status, TransferStatus.queued);
       expect(row.wifiOnly, isFalse);
-      await db.saveTransfer(row.copyWith(wifiOnly: true));
-      expect((await db.allTransfers()).single.wifiOnly, isTrue);
+      expect(row.durationSeconds, isNull);
+      expect(row.replacesFileId, isNull);
+      await db.saveTransfer(
+        row.copyWith(
+          wifiOnly: true,
+          durationSeconds: const Value(84),
+          replacesFileId: const Value('old'),
+        ),
+      );
+      final saved = (await db.allTransfers()).single;
+      expect(saved.wifiOnly, isTrue);
+      expect(saved.durationSeconds, 84);
+      expect(saved.replacesFileId, 'old');
     });
   }
 

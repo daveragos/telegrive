@@ -45,6 +45,7 @@ class AlbumSummary {
     OfflineCopies,
     FileContents,
     FileOpens,
+    PlayPositions,
   ],
 )
 class AppDatabase extends _$AppDatabase {
@@ -78,7 +79,7 @@ class AppDatabase extends _$AppDatabase {
   }
 
   @override
-  int get schemaVersion => 6;
+  int get schemaVersion => 7;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -115,6 +116,42 @@ class AppDatabase extends _$AppDatabase {
       }
       if (from < 5) await m.addColumn(transfers, transfers.wifiOnly);
       if (from < 6) await m.addColumn(backupAssets, backupAssets.reason);
+      if (from < 7) {
+        await m.addColumn(driveFiles, driveFiles.durationSeconds);
+        await m.addColumn(transfers, transfers.durationSeconds);
+        await m.addColumn(folders, folders.starred);
+        await m.addColumn(driveFiles, driveFiles.replacedBy);
+        await m.addColumn(transfers, transfers.replacesFileId);
+        await m.createTable(playPositions);
+        // Schemas 4 to 6 keep st, du and rb among the extras, so a star,
+        // length or replacement written by another phone may already be in
+        // the index. Each moves into its column and out of the extras, which
+        // hold only the keys this schema has no column for.
+        await customStatement(
+          'UPDATE folders SET starred = 1 '
+          "WHERE json_extract(manifest_extra, '\$.st') = 1",
+        );
+        await customStatement(
+          'UPDATE folders SET manifest_extra = '
+          "NULLIF(json_remove(manifest_extra, '\$.st'), '{}') "
+          "WHERE json_type(manifest_extra, '\$.st') IS NOT NULL",
+        );
+        await customStatement(
+          "UPDATE drive_files SET duration_seconds = json_extract(manifest_extra, '\$.du') "
+          "WHERE json_type(manifest_extra, '\$.du') = 'integer' "
+          "AND json_extract(manifest_extra, '\$.du') > 0",
+        );
+        await customStatement(
+          "UPDATE drive_files SET replaced_by = json_extract(manifest_extra, '\$.rb') "
+          "WHERE json_type(manifest_extra, '\$.rb') = 'text'",
+        );
+        await customStatement(
+          'UPDATE drive_files SET manifest_extra = '
+          "NULLIF(json_remove(manifest_extra, '\$.du', '\$.rb'), '{}') "
+          "WHERE json_type(manifest_extra, '\$.du') IS NOT NULL "
+          "OR json_type(manifest_extra, '\$.rb') IS NOT NULL",
+        );
+      }
     },
   );
 
@@ -736,6 +773,7 @@ class AppDatabase extends _$AppDatabase {
     await delete(offlineCopies).go();
     await delete(fileContents).go();
     await delete(fileOpens).go();
+    await delete(playPositions).go();
   });
 
   // ---------------------------------------------------------------------------

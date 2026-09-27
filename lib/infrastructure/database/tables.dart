@@ -28,6 +28,10 @@ class Folders extends Table {
   /// stored. Null when there are none.
   TextColumn get manifestExtra => text().nullable()();
 
+  /// Starred like a file is, and kept in the folder's own message, so the
+  /// star follows the drive to another phone.
+  BoolColumn get starred => boolean().withDefault(const Constant(false))();
+
   @override
   Set<Column> get primaryKey => {id};
 }
@@ -66,6 +70,14 @@ class DriveFiles extends Table {
 
   /// Manifest keys this version doesn't know; see [Folders.manifestExtra].
   TextColumn get manifestExtra => text().nullable()();
+
+  /// Length in seconds for video and audio; from the manifest, or learned
+  /// on first play. Null until either happens.
+  IntColumn get durationSeconds => integer().nullable()();
+
+  /// Id of the file that took this one's place when Replace moved it to the
+  /// trash. Only meaningful while [trashedAt] is set.
+  TextColumn get replacedBy => text().nullable()();
 
   @override
   Set<Column> get primaryKey => {id};
@@ -142,6 +154,20 @@ class FileContents extends Table {
 class FileOpens extends Table {
   TextColumn get fileId => text()();
   DateTimeColumn get openedAt => dateTime()();
+
+  @override
+  Set<Column> get primaryKey => {fileId};
+}
+
+/// Where playback of a video or long recording stopped on this phone, so it
+/// can pick up there. Per phone, like [FileOpens], so it is not in the
+/// channel; rebuilding the index keeps it and signing out drops it.
+@DataClassName('PlayPositionRow')
+class PlayPositions extends Table {
+  TextColumn get fileId => text()();
+  IntColumn get positionMs => integer()();
+  IntColumn get durationMs => integer()();
+  DateTimeColumn get updatedAt => dateTime()();
 
   @override
   Set<Column> get primaryKey => {fileId};
@@ -243,6 +269,14 @@ class Transfers extends Table {
   /// Waits for an unmetered network: chosen as "Later, on Wi-Fi", or big and
   /// started on Wi-Fi. A phone's hotspot counts as mobile data.
   BoolColumn get wifiOnly => boolean().withDefault(const Constant(false))();
+
+  /// Length in seconds of a video or audio upload, carried into its
+  /// manifest.
+  IntColumn get durationSeconds => integer().nullable()();
+
+  /// Drive file this upload replaces: once it lands, that one goes to the
+  /// trash pointing back at the new one.
+  TextColumn get replacesFileId => text().nullable()();
 
   @override
   Set<Column> get primaryKey => {id};

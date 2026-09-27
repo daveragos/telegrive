@@ -118,7 +118,7 @@ void main() {
     addTearDown(() => dir.delete(recursive: true));
     final file = File('${dir.path}/telegrive.sqlite');
 
-    // Version 1 is today's schema without what versions 2 to 6 added.
+    // Version 1 is today's schema without what versions 2 to 7 added.
     var db = AppDatabase(NativeDatabase(file));
     await db.allTransfers();
     for (final statement in [
@@ -138,6 +138,12 @@ void main() {
       'DROP TABLE file_opens',
       'ALTER TABLE transfers DROP COLUMN wifi_only',
       'ALTER TABLE backup_assets DROP COLUMN reason',
+      'ALTER TABLE drive_files DROP COLUMN duration_seconds',
+      'ALTER TABLE transfers DROP COLUMN duration_seconds',
+      'ALTER TABLE folders DROP COLUMN starred',
+      'ALTER TABLE drive_files DROP COLUMN replaced_by',
+      'ALTER TABLE transfers DROP COLUMN replaces_file_id',
+      'DROP TABLE play_positions',
       'PRAGMA user_version = 1',
     ]) {
       await db.customStatement(statement);
@@ -172,6 +178,7 @@ void main() {
     expect(await db.watchTrashedFiles().first, isEmpty);
     expect(await db.watchAlbums().first, isEmpty);
     expect(await db.select(db.fileOpens).get(), isEmpty);
+    expect(await db.select(db.playPositions).get(), isEmpty);
   });
 
   group('DeviceStorage names', () {

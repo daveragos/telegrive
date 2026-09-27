@@ -350,6 +350,7 @@ class DriveRepository {
       createdAt: folder.createdAt,
       modifiedAt: DateTime.now(),
       trashedAt: restore ? null : (trashedAt ?? row.trashedAt),
+      starred: row.starred,
       extra: ManifestCodec.decodeExtra(row.manifestExtra),
     );
     final message = await _ignoreUnchanged(
@@ -476,6 +477,8 @@ class DriveRepository {
         takenAt: row.takenAt,
         trashedAt: row.trashedAt,
         albums: await _db.albumIdsOf(row.id),
+        durationSeconds: row.durationSeconds,
+        replacedBy: row.replacedBy,
         extra: ManifestCodec.decodeExtra(row.manifestExtra),
       ),
     ).copyWith(modifiedAt: DateTime.now());

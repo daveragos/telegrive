@@ -15,6 +15,7 @@ class DriveFolder {
     required this.createdAt,
     required this.modifiedAt,
     this.trashedAt,
+    this.starred = false,
   });
 
   factory DriveFolder.fromRow(FolderRow row) => DriveFolder(
@@ -24,6 +25,7 @@ class DriveFolder {
     createdAt: row.createdAt,
     modifiedAt: row.modifiedAt,
     trashedAt: row.trashedAt,
+    starred: row.starred,
   );
 
   final String id;
@@ -35,16 +37,20 @@ class DriveFolder {
   /// When it was moved to the trash, for items listed in Trash.
   final DateTime? trashedAt;
 
+  /// Starred like a file; the star lives in the folder's message.
+  final bool starred;
+
   @override
   bool operator ==(Object other) =>
       other is DriveFolder &&
       other.id == id &&
       other.name == name &&
       other.parentId == parentId &&
+      other.starred == starred &&
       other.modifiedAt == modifiedAt;
 
   @override
-  int get hashCode => Object.hash(id, name, parentId, modifiedAt);
+  int get hashCode => Object.hash(id, name, parentId, starred, modifiedAt);
 }
 
 @immutable
@@ -64,6 +70,8 @@ class DriveFile {
     this.thumbnailFileId,
     this.takenAt,
     this.trashedAt,
+    this.durationSeconds,
+    this.replacedBy,
   });
 
   factory DriveFile.fromRow(FileRow row) => DriveFile(
@@ -81,6 +89,8 @@ class DriveFile {
     thumbnailFileId: row.thumbnailFileId,
     takenAt: row.takenAt,
     trashedAt: row.trashedAt,
+    durationSeconds: row.durationSeconds,
+    replacedBy: row.replacedBy,
   );
 
   final String id;
@@ -106,9 +116,18 @@ class DriveFile {
   /// When it was moved to the trash, for items listed in Trash.
   final DateTime? trashedAt;
 
+  /// Length in seconds, for video and audio whose length is known.
+  final int? durationSeconds;
+
+  /// The file that replaced this one, while it sits in the trash.
+  final String? replacedBy;
+
   /// When the moment happened, as far as we know — what the Photos
   /// timeline sorts and groups by.
   DateTime get momentAt => takenAt ?? createdAt;
+
+  Duration? get duration =>
+      durationSeconds == null ? null : Duration(seconds: durationSeconds!);
 
   String get extension =>
       p.extension(name).replaceFirst('.', '').toUpperCase();
@@ -142,11 +161,13 @@ class DriveFile {
       other.folderId == folderId &&
       other.starred == starred &&
       other.modifiedAt == modifiedAt &&
-      other.thumbnailFileId == thumbnailFileId;
+      other.thumbnailFileId == thumbnailFileId &&
+      other.durationSeconds == durationSeconds;
 
   @override
-  int get hashCode =>
-      Object.hash(id, name, folderId, starred, modifiedAt, thumbnailFileId);
+  int get hashCode => Object.hash(
+    id, name, folderId, starred, modifiedAt, thumbnailFileId, durationSeconds, //
+  );
 }
 
 /// A file on Home's Recent list, with whichever happened later: the last

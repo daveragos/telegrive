@@ -96,6 +96,47 @@ void main() {
     expect(entry.file.kind.value, FileKind.audio);
   });
 
+  test('a length and a replacement in the caption land in their columns', () {
+    final at = DateTime(2025, 9, 12);
+    FileManifest manifest({int? durationSeconds, String? replacedBy}) => FileManifest(
+      id: 'k3v9',
+      name: 'clip.mp4',
+      folderId: null,
+      mimeType: 'video/mp4',
+      size: 9,
+      createdAt: at,
+      modifiedAt: at,
+      trashedAt: replacedBy == null ? null : at,
+      durationSeconds: durationSeconds,
+      replacedBy: replacedBy,
+    );
+    FilePartEntry entry(FileManifest m) =>
+        MessageIndexer.entryFor(
+              documentMessage(_id, ManifestCodec.encodeFile(m).text),
+            )
+            as FilePartEntry;
+
+    final known = entry(manifest(durationSeconds: 90, replacedBy: 'new')).file;
+    expect(known.durationSeconds.value, 90);
+    expect(known.replacedBy.value, 'new');
+
+    // No length in the caption leaves one learned on this phone alone,
+    // while no replacement means there is none.
+    final plain = entry(manifest()).file;
+    expect(plain.durationSeconds.present, isFalse);
+    expect(plain.replacedBy.present, isTrue);
+    expect(plain.replacedBy.value, isNull);
+  });
+
+  test('a starred folder is indexed starred', () {
+    FolderEntry entry(String json) =>
+        MessageIndexer.entryFor(textMessage(_id, '📁 Invoices\ntgrf1:$json'))
+            as FolderEntry;
+
+    expect(entry('{"id":"inv","n":"Invoices","st":1}').folder.starred.value, isTrue);
+    expect(entry('{"id":"inv","n":"Invoices"}').folder.starred.value, isFalse);
+  });
+
   test('the voice file is what gets downloaded and streamed', () {
     final message = _voice();
     final voice = (message.content as td.MessageVoiceNote).voiceNote.voice;

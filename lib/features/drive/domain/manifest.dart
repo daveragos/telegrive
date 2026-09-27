@@ -149,6 +149,8 @@ class FileManifest {
     this.takenAt,
     this.trashedAt,
     this.albums = const [],
+    this.durationSeconds,
+    this.replacedBy,
     this.extra = const {},
   });
 
@@ -156,7 +158,8 @@ class FileManifest {
   /// [extra]. A key toJson writes that is missing here is also copied into
   /// [extra], and comes back after it is cleared.
   static const Set<String> _keys = {
-    'id', 'n', 'f', 'm', 's', 'ct', 'mt', 'pc', 'pi', 'st', 'tk', 'tr', 'al',
+    'id', 'n', 'f', 'm', 's', 'ct', 'mt', 'pc', 'pi', 'st', 'tk', 'tr', 'al', //
+    'du', 'rb',
   };
 
   final String id;
@@ -172,6 +175,16 @@ class FileManifest {
 
   /// Capture time of a photo or video from the camera roll.
   final DateTime? takenAt;
+
+  /// Length of a video or audio file, in seconds. Written when it is known,
+  /// and never worth a caption edit of its own.
+  final int? durationSeconds;
+
+  /// Id of the file that took this one's place when Replace moved it to the
+  /// trash. It means something only while [trashedAt] is set: a version
+  /// that didn't know the key keeps it as an extra when it restores the
+  /// file.
+  final String? replacedBy;
 
   /// Size of the whole file, not of this part.
   final int size;
@@ -195,6 +208,7 @@ class FileManifest {
     DateTime? trashedAt,
     bool restore = false,
     List<String>? albums,
+    String? replacedBy,
   }) => FileManifest(
     id: id,
     name: name ?? this.name,
@@ -209,6 +223,8 @@ class FileManifest {
     takenAt: takenAt,
     trashedAt: restore ? null : (trashedAt ?? this.trashedAt),
     albums: albums ?? this.albums,
+    durationSeconds: durationSeconds,
+    replacedBy: restore ? null : (replacedBy ?? this.replacedBy),
     extra: extra,
   );
 
@@ -232,6 +248,8 @@ class FileManifest {
     if (takenAt != null) 'tk': takenAt!.millisecondsSinceEpoch,
     if (trashedAt != null) 'tr': trashedAt!.millisecondsSinceEpoch,
     if (albums.isNotEmpty) 'al': albums,
+    if (durationSeconds != null) 'du': durationSeconds,
+    if (replacedBy != null) 'rb': replacedBy,
   };
 
   static FileManifest? tryFromJson(Map<String, dynamic> json) {
@@ -260,6 +278,11 @@ class FileManifest {
           for (final id in ids)
             if (id is String) id,
       ],
+      durationSeconds: switch (json['du']) {
+        final int seconds when seconds > 0 => seconds,
+        _ => null,
+      },
+      replacedBy: json['rb'] as String?,
       extra: Map.unmodifiable(_unknown(json, _keys)),
     );
   }
@@ -274,12 +297,13 @@ class FolderManifest {
     required this.createdAt,
     required this.modifiedAt,
     this.trashedAt,
+    this.starred = false,
     this.extra = const {},
   });
 
   /// Every key [toJson] can write. A key toJson writes that is missing here
   /// is also copied into [extra], and comes back after it is cleared.
-  static const Set<String> _keys = {'id', 'n', 'p', 'ct', 'mt', 'tr'};
+  static const Set<String> _keys = {'id', 'n', 'p', 'ct', 'mt', 'tr', 'st'};
 
   final String id;
   final String name;
@@ -289,6 +313,9 @@ class FolderManifest {
 
   /// When it was moved to the trash, with everything inside it.
   final DateTime? trashedAt;
+
+  /// Starred, the way a file is; omitted from the message otherwise.
+  final bool starred;
 
   /// Keys a newer version wrote that this one doesn't know; see
   /// [FileManifest.extra].
@@ -304,6 +331,7 @@ class FolderManifest {
     'ct': createdAt.millisecondsSinceEpoch,
     'mt': modifiedAt.millisecondsSinceEpoch,
     if (trashedAt != null) 'tr': trashedAt!.millisecondsSinceEpoch,
+    if (starred) 'st': 1,
   };
 
   static FolderManifest? tryFromJson(Map<String, dynamic> json) {
@@ -317,6 +345,7 @@ class FolderManifest {
       createdAt: _time(json['ct']),
       modifiedAt: _time(json['mt'] ?? json['ct']),
       trashedAt: json['tr'] is int ? _time(json['tr']) : null,
+      starred: json['st'] == 1 || json['st'] == true,
       extra: Map.unmodifiable(_unknown(json, _keys)),
     );
   }
