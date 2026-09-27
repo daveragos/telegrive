@@ -36,8 +36,8 @@ phone number.
 - **Fast and offline-friendly.** A local index (SQLite) makes browsing and
   search instant; the channel stays the source of truth.
 - **Syncs itself.** New, edited or deleted messages flow in live. Anything you
-  **forward into the channel from Telegram** (documents, videos, audio, photos)
-  shows up in the drive with no re-upload.
+  **forward into the channel from Telegram** (documents, videos, audio, voice
+  messages, photos) shows up in the drive with no re-upload.
 - **Rebuildable.** Names, folders, stars, albums and the trash live in each
   message's caption. Reinstall, sign in on another phone, or sign out and
   back in, and the whole drive comes back.
@@ -66,9 +66,10 @@ phone number.
   down and carry on by themselves. Moving, starring, trashing or adding many
   items to an album shows its progress above the bar, or at the foot of a
   screen opened over it, with Stop, and waits out Telegram the same way.
-- **Watch and read without downloading.** Videos and music stream as they
-  play, with seeking, even across a split file's parts. PDFs and text files
-  open in the app. Everything else opens in the right app on your phone.
+- **Watch and read without downloading.** Videos, music, call recordings
+  and audiobooks stream as they play, with seeking, even across a split
+  file's parts. PDFs and text files open in the app. Everything else opens
+  in the right app on your phone.
 - **Search inside documents.** The words in PDFs and text files are read on
   the phone, so search finds documents by what they say. Dates work too:
   "march 2024", "last week".

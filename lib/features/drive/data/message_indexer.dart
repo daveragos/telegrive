@@ -56,11 +56,17 @@ class _Media {
 /// Turns channel messages into index rows.
 ///
 /// Messages the app wrote carry a manifest and map exactly. Anything else
-/// someone forwarded into the channel — a document, video, audio file or
-/// photo — is adopted as a file at the root under a stable id derived from
-/// its message, so forwarding from Telegram is a zero-upload way to add to
-/// the drive. The first rename or move writes a proper manifest onto it.
+/// someone forwarded into the channel — a document, video, audio file,
+/// voice message or photo — is adopted as a file at the root under a stable
+/// id derived from its message, so forwarding from Telegram is a zero-upload
+/// way to add to the drive. The first rename or move writes a proper
+/// manifest onto it.
 abstract final class MessageIndexer {
+  /// Bump when what a message becomes in the index changes, including the
+  /// kind FileKind.detect gives it; the next open reads the channel again
+  /// in full.
+  static const int version = 2;
+
   static IndexEntry? entryFor(td.Message message) {
     // Still sending: the permanent message will arrive separately.
     if (message.sendingState != null) return null;
@@ -203,6 +209,22 @@ abstract final class MessageIndexer {
           minithumbnail: animation.minithumbnail,
           thumbnailFileId: animation.thumbnail?.file.id,
         );
+      // A voice message forwarded from a chat. Round video notes stay out:
+      // they have no caption, so they could never carry a manifest.
+      case td.MessageVoiceNote(:final voiceNote, :final caption):
+        return _Media(
+          file: voiceNote.voice,
+          fileName: _nameOr(
+            '',
+            message,
+            'voice',
+            _audioExtension(voiceNote.mimeType),
+          ),
+          mimeType: voiceNote.mimeType.isEmpty
+              ? 'audio/ogg'
+              : voiceNote.mimeType,
+          caption: caption.text,
+        );
       case td.MessagePhoto(:final photo, :final caption):
         if (photo.sizes.isEmpty) return null;
         final largest = photo.sizes.reduce(
@@ -228,6 +250,14 @@ abstract final class MessageIndexer {
         return null;
     }
   }
+
+  /// The extension for a voice message recorded as [mime]. Telegram's own
+  /// apps record Opus in an Ogg container, which is also the fallback.
+  static String _audioExtension(String mime) => switch (mime) {
+    'audio/mpeg' => 'mp3',
+    'audio/mp4' || 'audio/aac' => 'm4a',
+    _ => 'ogg',
+  };
 
   static String _nameOr(
     String name,

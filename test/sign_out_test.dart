@@ -40,6 +40,7 @@ void main() {
       'drive_chat_1': _chatId,
       'synced_upto_$_chatId': 900,
       'full_sync_$_chatId': DateTime(2026, 9, 26).millisecondsSinceEpoch,
+      'indexed_with_$_chatId': 2,
       'synced_upto_$_oldChatId': 40,
       'theme_mode': 'dark',
       'backup_enabled': true,
@@ -98,6 +99,7 @@ void main() {
     expect(prefs.lastFullSync(_chatId), isNull);
     expect(prefs.lastSyncedMessageId(_chatId), 0);
     expect(prefs.lastSyncedMessageId(_oldChatId), 0);
+    expect(shared.containsKey('indexed_with_$_chatId'), isFalse);
     expect(prefs.syncedChatIds, isEmpty);
 
     // Deleting phone copies along with the trash starts off again.

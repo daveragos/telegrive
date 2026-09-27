@@ -93,8 +93,14 @@ td.File tdFile(int id, {int size = 10, String path = '', bool downloaded = false
       ),
     );
 
-/// A message the drive account posted in [testChatId].
-td.Message channelMessage(int id, td.MessageContent content) => td.Message(
+/// A message the drive account posted in [testChatId], at [date] and last
+/// edited at [editDate] (Unix seconds, 0 for never).
+td.Message channelMessage(
+  int id,
+  td.MessageContent content, {
+  int date = 1_700_000_000,
+  int editDate = 0,
+}) => td.Message(
   id: id,
   senderId: const td.MessageSenderChat(chatId: testChatId),
   chatId: testChatId,
@@ -106,8 +112,8 @@ td.Message channelMessage(int id, td.MessageContent content) => td.Message(
   isChannelPost: true,
   isTopicMessage: false,
   containsUnreadMention: false,
-  date: 1_700_000_000,
-  editDate: 0,
+  date: date,
+  editDate: editDate,
   unreadReactions: const [],
   messageThreadId: 0,
   savedMessagesTopicId: 0,

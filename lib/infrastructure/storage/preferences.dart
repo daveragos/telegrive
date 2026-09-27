@@ -81,9 +81,19 @@ class Preferences {
   Future<void> setLastFullSync(int chatId, DateTime at) =>
       _prefs.setInt('full_sync_$chatId', at.millisecondsSinceEpoch);
 
+  /// The MessageIndexer.version of the last full read of the channel. An
+  /// index from before this was recorded was built by version 1.
+  int indexedWith(int chatId) => _prefs.getInt('indexed_with_$chatId') ?? 1;
+  Future<void> setIndexedWith(int chatId, int version) =>
+      _prefs.setInt('indexed_with_$chatId', version);
+
   /// Per-channel keys that describe what the local index holds, so they
   /// are only true while it is.
-  static const List<String> _syncKeys = ['synced_upto_', 'full_sync_'];
+  static const List<String> _syncKeys = [
+    'synced_upto_',
+    'full_sync_',
+    'indexed_with_',
+  ];
 
   Future<void> clearSyncState(int chatId) async {
     for (final key in _syncKeys) {

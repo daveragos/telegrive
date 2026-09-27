@@ -23,6 +23,32 @@ void main() {
       expect(kind('notes.md'), FileKind.document);
       expect(kind('mystery.bin'), FileKind.other);
     });
+
+    test('call recordings and audiobooks are audio', () {
+      for (final name in ['call.amr', 'wide.awb', 'rec.3ga', 'book.m4b']) {
+        expect(kind(name, 'application/octet-stream'), FileKind.audio, reason: name);
+        expect(kind(name), FileKind.audio, reason: name);
+      }
+      expect(kind('x', 'application/ogg'), FileKind.audio);
+    });
+
+    test('uploads carry an audio type the player understands', () {
+      expect(mimeTypeFor('call.amr'), 'audio/amr');
+      expect(mimeTypeFor('book.m4b'), 'audio/mp4');
+      expect(mimeTypeFor('note.opus'), 'audio/ogg');
+    });
+
+    test('a call recording opens in the player', () {
+      expect(
+        Preview.of(
+          name: 'rec.3ga',
+          mimeType: 'application/octet-stream',
+          kind: FileKind.audio,
+          size: 1,
+        ),
+        Preview.media,
+      );
+    });
   });
 
   group('Formatters', () {

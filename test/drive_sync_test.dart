@@ -5,6 +5,7 @@ import 'package:handy_tdlib/api.dart' as td;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:telegrive/features/drive/data/drive_session.dart';
 import 'package:telegrive/features/drive/data/drive_sync.dart';
+import 'package:telegrive/features/drive/data/message_indexer.dart';
 import 'package:telegrive/infrastructure/database/app_database.dart';
 import 'package:telegrive/infrastructure/storage/preferences.dart';
 import 'package:telegrive/infrastructure/telegram/secure_store.dart';
@@ -51,10 +52,11 @@ class _FakeTelegram extends TelegramClient {
 
 void main() {
   Future<(ProviderContainer, _FakeTelegram, Preferences)> start(
-    List<TelegramException> failures,
-  ) async {
+    List<TelegramException> failures, {
+    Map<String, Object> stored = const {},
+  }) async {
     // ignore: invalid_use_of_visible_for_testing_member
-    SharedPreferences.setMockInitialValues({});
+    SharedPreferences.setMockInitialValues(stored);
     final prefs = await SharedPreferences.getInstance();
     final db = AppDatabase(NativeDatabase.memory());
     final telegram = _FakeTelegram(failures);
@@ -113,5 +115,38 @@ void main() {
     expect(whileRunning, isNotEmpty);
     expect(whileRunning, everyElement(isNotNull));
     expect(container.read(driveSyncProvider).error, isNull);
+  });
+
+  test('an index built by an older indexer is read again in full', () async {
+    final readToday = DateTime.now().subtract(const Duration(minutes: 5));
+    // A phone updated from a build that didn't record the version: its
+    // index was read in full today, by indexer version 1.
+    final (container, _, prefs) = await start(
+      [],
+      stored: {'full_sync_$_chatId': readToday.millisecondsSinceEpoch},
+    );
+    expect(prefs.indexedWith(_chatId), 1);
+
+    await container.read(driveSyncProvider.notifier).syncOnOpen();
+
+    expect(prefs.indexedWith(_chatId), MessageIndexer.version);
+    expect(prefs.lastFullSync(_chatId)!.isAfter(readToday), isTrue);
+  });
+
+  test('an index built by this indexer and read today only catches up', () async {
+    final readToday = DateTime.now().subtract(const Duration(minutes: 5));
+    final (container, _, prefs) = await start(
+      [],
+      stored: {
+        'full_sync_$_chatId': readToday.millisecondsSinceEpoch,
+        'indexed_with_$_chatId': MessageIndexer.version,
+      },
+    );
+    await container.read(driveSyncProvider.notifier).syncOnOpen();
+
+    expect(
+      prefs.lastFullSync(_chatId)!.millisecondsSinceEpoch,
+      readToday.millisecondsSinceEpoch,
+    );
   });
 }

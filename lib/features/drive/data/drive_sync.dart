@@ -9,6 +9,7 @@ import '../../../infrastructure/telegram/telegram_client.dart';
 import '../../../infrastructure/telegram/telegram_exception.dart';
 import 'drive_repository.dart';
 import 'drive_session.dart';
+import 'message_indexer.dart';
 
 @immutable
 class SyncState {
@@ -53,7 +54,8 @@ class SyncState {
 ///   newest message to the last one already indexed.
 /// * **Full** — reads the whole channel and drops anything the index has
 ///   that the channel no longer does, then empties what has been in the
-///   trash for 30 days. Runs on first open, daily, and from Settings →
+///   trash for 30 days. Runs on first open, daily, on the first open after
+///   an update that changes [MessageIndexer.version], and from Settings →
 ///   Rebuild index.
 class DriveSync extends Notifier<SyncState> {
   StreamSubscription<td.TdObject>? _live;
@@ -88,9 +90,12 @@ class DriveSync extends Notifier<SyncState> {
     final chatId = ref.read(driveSessionProvider)?.chatId;
     if (chatId == null) return Future.value();
     final lastFull = _prefs.lastFullSync(chatId);
+    // An index an older indexer built may hold files it classified
+    // differently or messages it skipped, so it is read again in full.
     final stale =
         lastFull == null ||
-        DateTime.now().difference(lastFull) > _fullSyncInterval;
+        DateTime.now().difference(lastFull) > _fullSyncInterval ||
+        _prefs.indexedWith(chatId) < MessageIndexer.version;
     return stale ? fullSync() : refresh();
   }
 
@@ -160,6 +165,7 @@ class DriveSync extends Notifier<SyncState> {
         final gone = known.where((id) => id <= newest && !seen.contains(id));
         await _repository.forget(gone);
         await _prefs.setLastFullSync(chatId, DateTime.now());
+        await _prefs.setIndexedWith(chatId, MessageIndexer.version);
         // Once a day, like the full read: what has sat in the trash for 30
         // days goes for good.
         try {

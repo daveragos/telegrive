@@ -24,13 +24,15 @@ enum FileKind {
   /// recognise.
   static FileKind detect({required String fileName, String? mimeType}) {
     final mime = (mimeType == null || mimeType == _octetStream)
-        ? (lookupMimeType(fileName) ?? '')
+        ? (lookupMime(fileName) ?? '')
         : mimeType;
     final ext = p.extension(fileName).toLowerCase().replaceFirst('.', '');
 
     if (mime.startsWith('image/')) return FileKind.image;
     if (mime.startsWith('video/')) return FileKind.video;
-    if (mime.startsWith('audio/')) return FileKind.audio;
+    if (mime.startsWith('audio/') || mime == 'application/ogg') {
+      return FileKind.audio;
+    }
     if (_archiveExtensions.contains(ext) || _archiveMimes.contains(mime)) {
       return FileKind.archive;
     }
@@ -70,9 +72,28 @@ enum FileKind {
   };
 }
 
+/// Audio formats phones record or sell that the mime package doesn't
+/// know: call recordings (.amr, .awb, .3ga), audiobooks (.m4b) and
+/// ringtones (.m4r). Without them these files would count as Other and
+/// open in no app.
+const Map<String, String> _appMimeTypes = {
+  'amr': 'audio/amr',
+  'awb': 'audio/amr-wb',
+  '3ga': 'audio/3gpp',
+  'm4b': 'audio/mp4',
+  'm4r': 'audio/mp4',
+};
+
+/// The MIME type [fileName]'s extension stands for, or null when it is
+/// unknown.
+String? lookupMime(String fileName) {
+  final ext = p.extension(fileName).toLowerCase().replaceFirst('.', '');
+  return _appMimeTypes[ext] ?? lookupMimeType(fileName);
+}
+
 /// Best-effort MIME type for a file about to be uploaded.
 String mimeTypeFor(String fileName) =>
-    lookupMimeType(fileName) ?? 'application/octet-stream';
+    lookupMime(fileName) ?? 'application/octet-stream';
 
 /// How the app shows a file itself, without handing it to another app.
 enum Preview {
