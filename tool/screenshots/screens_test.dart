@@ -10,7 +10,7 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show FontLoader;
+import 'package:flutter/services.dart' show FontLoader, MethodChannel;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
@@ -426,6 +426,12 @@ void main() {
     });
     final shared = await SharedPreferences.getInstance();
 
+    // Three of the photos were backed up from this phone.
+    final db = AppDatabase(NativeDatabase.memory());
+    for (var i = 1; i <= 3; i++) {
+      await db.markAssetBackedUp('asset-$i', photos[i].id);
+    }
+
     final summary = StorageSummary(
       totals: [
         for (final kind in FileKind.values)
@@ -476,7 +482,7 @@ void main() {
       ProviderScope(
         overrides: [
           sharedPreferencesProvider.overrideWithValue(shared),
-          appDatabaseProvider.overrideWithValue(AppDatabase(NativeDatabase.memory())),
+          appDatabaseProvider.overrideWithValue(db),
           deviceStorageProvider.overrideWithValue(_Storage()),
           driveSessionProvider.overrideWith(_Session.new),
           driveSyncProvider.overrideWith(_Sync.new),
@@ -770,6 +776,32 @@ void main() {
     await gesture.up();
     await tester.pump(const Duration(milliseconds: 300));
     await snap(tester, 'photos_selection');
+  });
+
+  testWidgets('trash sheet', (tester) async {
+    await prepareData(tester);
+    await pumpApp(tester, location: '/photos');
+    // The phone's library still holds whatever backup took from it.
+    const library = MethodChannel('com.fluttercandies/photo_manager');
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      library,
+      (call) async => call.method == 'fetchEntityProperties'
+          ? {'id': (call.arguments as Map)['id'], 'type': 1, 'width': 4000, 'height': 3000}
+          : null,
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(library, null),
+    );
+    final tiles = find.byType(FileThumbnail);
+    final gesture = await tester.startGesture(tester.getCenter(tiles.at(1)));
+    await tester.pump(const Duration(milliseconds: 700));
+    await gesture.moveTo(tester.getCenter(tiles.at(6)));
+    await tester.pump(const Duration(milliseconds: 100));
+    await gesture.up();
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.tap(find.byTooltip('Move to Trash'));
+    await tester.pump(const Duration(milliseconds: 400));
+    await snap(tester, 'trash_sheet');
   });
 
   testWidgets('send sheet', (tester) async {

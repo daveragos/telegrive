@@ -211,6 +211,32 @@ class AppDatabase extends _$AppDatabase {
           .map((a) => a.assetId)
           .getSingleOrNull();
 
+  /// Drive file id to the phone's media ids, for those of [fileIds] backed
+  /// up from this phone. One drive file can stand for several of the
+  /// phone's photos, when backup found one with the same name and size
+  /// already in the drive. Only finished backups count, so a photo whose
+  /// drive copy isn't whole is never offered for deleting from the phone.
+  /// In slices, since a big selection is more ids than SQLite takes in one
+  /// statement.
+  Future<Map<String, List<String>>> localAssetsOf(Iterable<String> fileIds) async {
+    final ids = fileIds.toList();
+    final found = <String, List<String>>{};
+    for (var i = 0; i < ids.length; i += 500) {
+      final slice = ids.sublist(i, (i + 500).clamp(0, ids.length));
+      final rows = await (select(backupAssets)
+            ..where(
+              (a) =>
+                  a.fileId.isIn(slice) &
+                  a.state.equalsValue(BackupAssetState.done),
+            ))
+          .get();
+      for (final row in rows) {
+        (found[row.fileId!] ??= []).add(row.assetId);
+      }
+    }
+    return found;
+  }
+
   Stream<List<FileRow>> watchKind(FileKind kind) =>
       (select(driveFiles)
             ..where((f) => _shown(f) & f.kind.equalsValue(kind))

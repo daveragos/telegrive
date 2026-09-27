@@ -98,15 +98,17 @@ class AuthController extends Notifier<AuthUiState> {
   /// before the index, so a wipe cut short still ends in a full read.
   ///
   /// App settings (theme, app lock, photo backup choices) and the drive
-  /// channel remembered per account stay. Anything new that the phone keeps
-  /// per drive, whether a table, a preference or a file, adds its cleanup
-  /// here.
+  /// channel remembered per account stay. The 'Also delete from this phone'
+  /// answer doesn't: whoever signs in next starts with it off. Anything new
+  /// that the phone keeps per drive, whether a table, a preference or a
+  /// file, adds its cleanup here.
   Future<void> wipeDeviceState() async {
     ref.read(driveSessionProvider.notifier).close();
     final prefs = ref.read(preferencesProvider);
     for (final chatId in prefs.syncedChatIds) {
       await prefs.clearSyncState(chatId);
     }
+    await prefs.setDeletePhoneCopyToo(false);
     await ref.read(appDatabaseProvider).clearAll();
     state = const AuthUiState();
   }

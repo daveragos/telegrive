@@ -43,6 +43,11 @@ phone number.
   back in, and the whole drive comes back.
 - **Trash.** Deleting moves things to the trash for 30 days; restore or
   delete for good from Trash. Moving more than 100 items there asks first.
+  Photos and videos this phone still has can leave the phone too: tick
+  "Also delete from this phone" and, once Undo has had its time without
+  being tapped, Android asks to delete them (if you have left the app by
+  then, it asks when you are back). Undo leaves the phone untouched, and
+  the box remembers your last answer.
 - **Undo for every change.** Moving, renaming, starring, adding to or
   removing from an album, restoring and moving to the trash all offer Undo
   for six seconds, and an Undo that can't go through says why. Delete for

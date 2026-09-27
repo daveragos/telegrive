@@ -43,6 +43,7 @@ void main() {
       'synced_upto_$_oldChatId': 40,
       'theme_mode': 'dark',
       'backup_enabled': true,
+      'delete_phone_copy_too': true,
     });
     final shared = await SharedPreferences.getInstance();
     final db = AppDatabase(NativeDatabase.memory());
@@ -98,6 +99,9 @@ void main() {
     expect(prefs.lastSyncedMessageId(_chatId), 0);
     expect(prefs.lastSyncedMessageId(_oldChatId), 0);
     expect(prefs.syncedChatIds, isEmpty);
+
+    // Deleting phone copies along with the trash starts off again.
+    expect(prefs.deletePhoneCopyToo, isFalse);
 
     // App settings and the channel remembered for the account stay.
     expect(prefs.driveChatId(1), _chatId);

@@ -195,6 +195,47 @@ void main() {
     expect(await db.localAssetOf('q'), isNull);
   });
 
+  test('the phone copies of several files, only for finished backups', () async {
+    await db.markAssetBackedUp('asset-1', 'p');
+    // Backup matched a second photo to the same drive file.
+    await db.markAssetBackedUp('asset-1b', 'p');
+    await db.markAssetBackedUp('asset-2', 'q');
+    await db.markAssetBackedUp('asset-3', 'not-asked');
+    await db.into(db.backupAssets).insert(
+      BackupAssetsCompanion.insert(
+        assetId: 'asset-4',
+        state: BackupAssetState.failed,
+        fileId: const Value('r'),
+        updatedAt: now,
+      ),
+    );
+
+    final found = await db.localAssetsOf(['p', 'q', 'r', 'unknown']);
+    expect(found.keys, unorderedEquals(['p', 'q']));
+    expect(found['p'], unorderedEquals(['asset-1', 'asset-1b']));
+    expect(found['q'], ['asset-2']);
+    expect(await db.localAssetsOf(const []), isEmpty);
+  });
+
+  test('the phone copies of more files than SQLite takes in one statement', () async {
+    await db.batch(
+      (b) => b.insertAll(db.backupAssets, [
+        for (var i = 0; i < 1200; i++)
+          BackupAssetsCompanion.insert(
+            assetId: 'asset-$i',
+            state: BackupAssetState.done,
+            fileId: Value('f$i'),
+            updatedAt: now,
+          ),
+      ]),
+    );
+
+    final found = await db.localAssetsOf([for (var i = 0; i < 1200; i++) 'f$i']);
+    expect(found, hasLength(1200));
+    expect(found['f0'], ['asset-0']);
+    expect(found['f1199'], ['asset-1199']);
+  });
+
   test('complete files, everywhere or in given folders', () async {
     await db.upsertFilePart(file('root'), part('root', 0, 10));
     await db.upsertFilePart(file('in-a', folderId: 'a'), part('in-a', 0, 11));

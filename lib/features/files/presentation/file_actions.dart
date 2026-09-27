@@ -16,10 +16,12 @@ import '../../../core/format/formatters.dart';
 import '../../../core/widgets/common.dart';
 import '../../../core/widgets/file_visuals.dart';
 import '../../../infrastructure/database/app_database.dart'
-    show SaveTarget, TransferKind;
+    show SaveTarget, TransferKind, appDatabaseProvider;
 import '../../../infrastructure/storage/device_storage.dart';
+import '../../../infrastructure/storage/preferences.dart';
 import '../../../infrastructure/telegram/telegram_exception.dart';
 import '../../backup/data/backup_controller.dart';
+import '../../backup/data/free_up_space.dart';
 import '../../offline/data/offline_sync.dart';
 import '../../send/data/telegram_chats.dart';
 import '../../send/presentation/chat_picker.dart';
@@ -33,6 +35,7 @@ import '../../transfers/domain/transfer_wait.dart';
 import '../../trash/data/pending_deletes.dart';
 import '../data/bulk_edits.dart';
 import 'folder_picker.dart';
+import 'trash_sheet.dart';
 
 /// One item of a bulk change that mixes files and folders: how to make the
 /// change, and how to take it back.
@@ -523,6 +526,12 @@ abstract final class FileActions {
   /// Moves [files] and [folders] to the trash, with an Undo on the
   /// snackbar. Over 100 items it asks first, since undoing that many is one
   /// edit per item and takes a while. Returns whether it worked.
+  ///
+  /// When the files include photos or videos this phone still has, and
+  /// there are no folders, a sheet asks first and offers to delete the
+  /// phone's copies too. Those go only once the Undo has closed unused,
+  /// through [PendingDeletes], so Undo never has a phone delete to take
+  /// back.
   static Future<bool> delete(
     BuildContext context,
     WidgetRef ref, {
@@ -531,9 +540,30 @@ abstract final class FileActions {
   }) async {
     final repository = ref.read(driveRepositoryProvider);
     final edits = ref.read(bulkEditsProvider.notifier);
+    final pending = ref.read(pendingDeletesProvider.notifier);
+    final container = ProviderScope.containerOf(context, listen: false);
     final what = _describe(files, folders);
     final total = files.length + folders.length;
-    if (total > 100) {
+    var onPhone = const <String, List<String>>{};
+    var alsoPhone = false;
+    if (folders.isEmpty && files.isNotEmpty) {
+      onPhone = await _phoneCopies(ref, files);
+      if (!context.mounted) return false;
+    }
+    if (onPhone.isNotEmpty) {
+      final prefs = ref.read(preferencesProvider);
+      final choice = await showTrashSheet(
+        context,
+        what: what,
+        count: files.length,
+        onPhone: onPhone.length,
+        initialAlsoPhone: prefs.deletePhoneCopyToo,
+      );
+      if (choice == null || !context.mounted) return false;
+      alsoPhone = choice;
+      unawaited(prefs.setDeletePhoneCopyToo(choice));
+    } else if (total > 100) {
+      // Only when the sheet didn't show, since it asks the same question.
       final confirmed = await showConfirmDialog(
         context,
         title: 'Move $what to Trash?',
@@ -542,6 +572,7 @@ abstract final class FileActions {
       );
       if (!confirmed || !context.mounted) return false;
     }
+    String? phoneDelete;
     final outcome = await runBulk<_Step>(
       context,
       edits,
@@ -566,8 +597,60 @@ abstract final class FileActions {
         label: (done) => 'Restoring ${Formatters.count(done, 'item')}',
         apply: (step) => step.undo(),
       ),
+      onUndoClosed: (reason) {
+        final token = phoneDelete;
+        if (token == null) return;
+        if (shouldDeletePhoneCopy(reason, alsoPhone: alsoPhone)) {
+          unawaited(pending.commit(token));
+        } else {
+          pending.undo(token);
+        }
+      },
     );
-    return outcome?.complete ?? false;
+    final complete = outcome?.complete ?? false;
+    // Only a trash that went through takes the phone's copies with it; a
+    // failed or stopped one says so and leaves the phone alone.
+    if (alsoPhone && complete) {
+      final assetIds = [for (final ids in onPhone.values) ...ids];
+      final phoneWhat = onPhone.length == files.length
+          ? what
+          : Formatters.count(onPhone.length, 'item');
+      phoneDelete = pending.schedule(
+        label: '$phoneWhat from this phone',
+        failure: 'Couldn\'t delete $phoneWhat from this phone',
+        needsForeground: true,
+        run: () async {
+          // Checked again, since this can run long after the sheet asked
+          // and one the gallery let go meanwhile would fail them all.
+          final still = await stillOnPhone(assetIds);
+          final going = [for (final id in assetIds) if (still.contains(id)) id];
+          if (going.isNotEmpty) await deleteFromPhone(going);
+          container.invalidate(freeableProvider);
+        },
+      );
+    }
+    return complete;
+  }
+
+  /// Drive file id to phone media ids for those of [files] this phone still
+  /// has: backed up from it, and not deleted from it since. A file counts
+  /// when any of the phone's photos it stands for is still there, and
+  /// brings every one that is.
+  static Future<Map<String, List<String>>> _phoneCopies(
+    WidgetRef ref,
+    List<DriveFile> files,
+  ) async {
+    final recorded = await ref
+        .read(appDatabaseProvider)
+        .localAssetsOf(files.map((file) => file.id));
+    if (recorded.isEmpty) return const {};
+    final present = await stillOnPhone([for (final ids in recorded.values) ...ids]);
+    final copies = <String, List<String>>{};
+    for (final MapEntry(key: fileId, value: assetIds) in recorded.entries) {
+      final here = [for (final id in assetIds) if (present.contains(id)) id];
+      if (here.isNotEmpty) copies[fileId] = here;
+    }
+    return copies;
   }
 
   static Future<void> restore(
@@ -966,8 +1049,10 @@ abstract final class FileActions {
   /// With [undo], that sentence offers Undo for the items that did change,
   /// the first `done` of [items], however it ended: Undo runs undo.apply on
   /// each of them as a bulk change of its own, called undo.label, and says
-  /// 'Undone' or why it couldn't. Returns how it ended, or null when it
-  /// couldn't start.
+  /// 'Undone' or why it couldn't. [onUndoClosed] hears once how that offer
+  /// ended: [SnackBarClosedReason.action] as soon as Undo is tapped, or else
+  /// why the snack closed without it. With no offer on screen it isn't
+  /// called. Returns how it ended, or null when it couldn't start.
   ///
   /// [edits] is read up front because an Undo can run this after the screen
   /// that started it is gone.
@@ -980,6 +1065,7 @@ abstract final class FileActions {
     required Future<void> Function(T item) apply,
     String? success,
     ({String Function(int done) label, Future<void> Function(T item) apply})? undo,
+    ValueChanged<SnackBarClosedReason>? onUndoClosed,
     String failurePrefix = '',
   }) async {
     BulkOutcome? outcome;
@@ -1008,20 +1094,33 @@ abstract final class FileActions {
       showSnack(context, message);
     } else {
       final lasting = _lasting(context);
-      showUndoSnack(
+      // Told once. Undo is told the moment it is tapped: the snack it then
+      // shows would otherwise close this one with a reason of its own.
+      var told = false;
+      void tell(SnackBarClosedReason reason) {
+        if (told) return;
+        told = true;
+        onUndoClosed?.call(reason);
+      }
+
+      final snack = showUndoSnack(
         context,
         message,
-        onUndo: () => runBulk(
-          lasting,
-          edits,
-          label: undo.label(ended.done),
-          icon: Icons.undo_rounded,
-          items: items.take(ended.done).toList(),
-          apply: undo.apply,
-          success: 'Undone',
-          failurePrefix: _undoFailed,
-        ),
+        onUndo: () {
+          tell(SnackBarClosedReason.action);
+          runBulk(
+            lasting,
+            edits,
+            label: undo.label(ended.done),
+            icon: Icons.undo_rounded,
+            items: items.take(ended.done).toList(),
+            apply: undo.apply,
+            success: 'Undone',
+            failurePrefix: _undoFailed,
+          );
+        },
       );
+      if (snack != null) unawaited(snack.closed.then(tell));
     }
     return ended;
   }

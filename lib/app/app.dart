@@ -53,10 +53,13 @@ class _TelegriveAppState extends ConsumerState<TelegriveApp>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     // A delete for good waiting out its Undo runs now: once the app is in
     // the background the process can go at any moment, and the person has
-    // moved on from the snack.
+    // moved on from the snack. Deleting the phone's own copies waits for
+    // the app to come back, since Android asks about it over the app.
+    final pending = ref.read(pendingDeletesProvider.notifier);
     if (state == AppLifecycleState.paused || state == AppLifecycleState.detached) {
-      unawaited(ref.read(pendingDeletesProvider.notifier).flush());
+      unawaited(pending.appPaused());
     }
+    if (state == AppLifecycleState.resumed) unawaited(pending.appResumed());
     if (state == AppLifecycleState.resumed &&
         ref.read(driveSessionProvider) != null) {
       // Catch up on anything added from another device while away, and

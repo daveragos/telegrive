@@ -54,16 +54,41 @@ Future<Set<String>> _phoneAssetIds() async {
 
 /// Deletes [freeable] from the phone. Android 11+ and iOS show their own
 /// confirmation first. Returns how many went.
-Future<int> freeUpSpace(Freeable freeable) async {
-  final ids = freeable.assetIds;
+Future<int> freeUpSpace(Freeable freeable) => deleteFromPhone(freeable.assetIds);
+
+/// Deletes the photos and videos [assetIds] from the phone's library.
+/// Android 11+ and iOS show their own confirmation first, which needs the
+/// app in front. Returns how many went.
+Future<int> deleteFromPhone(List<String> assetIds) async {
   var deleted = 0;
-  for (var i = 0; i < ids.length; i += 500) {
+  for (var i = 0; i < assetIds.length; i += 500) {
     final gone = await PhotoManager.editor.deleteWithIds(
-      ids.sublist(i, math.min(i + 500, ids.length)),
+      assetIds.sublist(i, math.min(i + 500, assetIds.length)),
     );
     // An empty answer means the person said no.
     if (gone.isEmpty) break;
     deleted += gone.length;
   }
   return deleted;
+}
+
+/// Of [assetIds], the photos and videos the phone's library still has.
+/// Backup's records outlive the phone's copies, which Free up space or the
+/// gallery may have deleted since, and Android refuses a whole delete that
+/// names one it no longer has.
+///
+/// A few are looked up one by one. More than a page of them reads the
+/// library a page at a time instead, since a lookup each for thousands of
+/// photos keeps the person waiting for seconds.
+Future<Set<String>> stillOnPhone(Iterable<String> assetIds) async {
+  final ids = assetIds.toList();
+  if (ids.length > 500) {
+    final library = await _phoneAssetIds();
+    return {for (final id in ids) if (library.contains(id)) id};
+  }
+  final assets = await Future.wait(ids.map(AssetEntity.fromId));
+  return {
+    for (final (index, asset) in assets.indexed)
+      if (asset != null) ids[index],
+  };
 }

@@ -144,6 +144,12 @@ class Preferences {
   bool get backupPromptShown => _prefs.getBool('backup_prompt_shown') ?? false;
   Future<void> setBackupPromptShown() =>
       _prefs.setBool('backup_prompt_shown', true);
+
+  /// The last answer to 'Also delete from this phone' when trashing photos
+  /// this phone still has; off until someone ticks it.
+  bool get deletePhoneCopyToo => _prefs.getBool('delete_phone_copy_too') ?? false;
+  Future<void> setDeletePhoneCopyToo(bool on) =>
+      _prefs.setBool('delete_phone_copy_too', on);
 }
 
 /// Preference keys the background worker reads without the rest of the app.
