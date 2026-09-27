@@ -28,6 +28,16 @@ enum AppPhase {
   static bool isGateLocation(String location) => values.any(
     (phase) => phase != ready && location.startsWith(phase.location),
   );
+
+  /// Where a navigation to [location] goes in this phase, or null to let it
+  /// through. Until the drive is open this phase's screen is the only one;
+  /// once it is, the gate screens are out of reach and everything else is
+  /// ordinary navigation. A redirect replaces the stack, so the gate a
+  /// person just came through is not left under Home for back to return to.
+  String? redirect(String location) {
+    if (this == ready) return isGateLocation(location) ? ready.location : null;
+    return location == this.location ? null : this.location;
+  }
 }
 
 Provider<T> _listenable<T>(ValueListenable<T> Function(Ref) pick) =>

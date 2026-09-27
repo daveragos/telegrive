@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../app/launch_action.dart';
 import '../../../core/format/formatters.dart';
 import '../../../infrastructure/database/app_database.dart'
     show TransferKind, TransferOrigin;
@@ -116,7 +117,9 @@ class TransferKeepAlive {
         serviceTypes: const [ForegroundServiceTypes.dataSync],
         notificationTitle: title,
         notificationText: text,
-        notificationInitialRoute: '/transfers',
+        // Rides on the notification's launch intent; the app reads it as
+        // a LaunchAction and opens Transfers over Home.
+        notificationInitialRoute: LaunchAction.transfersRoute,
         callback: transferServiceEntryPoint,
       );
       _running = result is ServiceRequestSuccess;
@@ -184,7 +187,8 @@ class _IdleTaskHandler extends TaskHandler {
   Future<void> onDestroy(DateTime timestamp, bool isTimeout) async {}
 
   @override
-  void onNotificationPressed() => FlutterForegroundTask.launchApp('/transfers');
+  void onNotificationPressed() =>
+      FlutterForegroundTask.launchApp(LaunchAction.transfersRoute);
 }
 
 /// Watched from the app root; does nothing off Android.

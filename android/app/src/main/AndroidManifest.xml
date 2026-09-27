@@ -19,9 +19,12 @@
         android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="28"/>
 
+    <!-- Predictive back: a back gesture previews the screen behind, and the
+         app's own back handling (Home asks twice) keeps working through it. -->
     <application
         android:label="Telegrive"
         android:allowBackup="false"
+        android:enableOnBackInvokedCallback="true"
         android:networkSecurityConfig="@xml/network_security_config"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">

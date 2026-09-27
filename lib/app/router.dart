@@ -47,15 +47,13 @@ final routerProvider = Provider<GoRouter>((ref) {
     navigatorKey: _rootKey,
     observers: [ref.watch(popupRoutesProvider)],
     initialLocation: AppPhase.starting.location,
+    // A notification launches the app with its own route as Android's
+    // initial route. Starting there would make it the only screen, with
+    // back closing the app, so the app always starts at the splash and the
+    // route becomes a LaunchAction the shell carries out over Home.
+    overridePlatformDefaultLocation: true,
     refreshListenable: phase,
-    redirect: (context, state) {
-      final current = phase.value;
-      final location = state.matchedLocation;
-      if (current == AppPhase.ready) {
-        return AppPhase.isGateLocation(location) ? AppPhase.ready.location : null;
-      }
-      return location == current.location ? null : current.location;
-    },
+    redirect: (_, state) => phase.value.redirect(state.matchedLocation),
     routes: [
       _gate(AppPhase.starting, const SplashScreen()),
       _gate(AppPhase.welcome, const WelcomeScreen()),

@@ -29,7 +29,7 @@ import 'theme/tokens.dart';
 /// avatar on Home.
 ///
 /// The shell is also the first screen of an open drive, so it asks the
-/// one-time "back up your photos?" question and acts on a tapped backup
+/// one-time "back up your photos?" question and acts on a tapped
 /// notification.
 class AppShell extends ConsumerStatefulWidget {
   const AppShell({super.key, required this.shell});
@@ -68,10 +68,16 @@ class _AppShellState extends ConsumerState<AppShell> {
   }
 
   void _carryOut(LaunchAction? action) {
-    if (action != LaunchAction.backup) return;
+    if (action == null) return;
     ref.read(pendingLaunchActionProvider.notifier).set(null);
-    _go(_photosBranch);
-    ref.read(backupControllerProvider.notifier).schedule(immediate: true);
+    switch (action) {
+      case LaunchAction.backup:
+        _go(_photosBranch);
+        ref.read(backupControllerProvider.notifier).schedule(immediate: true);
+      case LaunchAction.transfers:
+        // Over Home rather than in its place, so back lands on Home.
+        context.push('/transfers');
+    }
   }
 
   void _go(int index) =>

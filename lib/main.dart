@@ -21,6 +21,16 @@ Future<void> main() async {
     overrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
   );
 
+  // The transfer notification launches the app with its route as Android's
+  // initial route. The router starts at the splash regardless; the shell
+  // opens Transfers over Home once the drive is open.
+  final launchedInto = LaunchAction.fromRoute(
+    WidgetsBinding.instance.platformDispatcher.defaultRouteName,
+  );
+  if (launchedInto != null) {
+    container.read(pendingLaunchActionProvider.notifier).set(launchedInto);
+  }
+
   // Photo backup's background checks and its "new photos" notification.
   // Tapping that notification opens the app to back them up.
   void onBackupRequested() => container

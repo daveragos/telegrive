@@ -203,13 +203,15 @@ abstract final class FileActions {
         .read(transferQueueProvider.notifier)
         .enqueueSaves(requests);
     if (!context.mounted) return true;
+    // View can be tapped after the screen that asked is gone.
+    final router = GoRouter.of(context);
     showSnack(
       context,
       queued == 0
           ? 'Already downloading to this phone'
           : 'Downloading ${Formatters.count(queued, 'file')} to this phone',
       actionLabel: 'View',
-      onAction: () => context.push('/transfers'),
+      onAction: () => router.push('/transfers'),
     );
     return true;
   }
@@ -320,16 +322,18 @@ abstract final class FileActions {
     await ref
         .read(transferQueueProvider.notifier)
         .enqueueUploads(requests, folderId: folderId);
-    if (context.mounted) {
-      showSnack(
-        context,
-        requests.length == 1
-            ? 'Uploading ${requests.first.name}'
-            : 'Uploading ${requests.length} files',
-        actionLabel: 'View',
-        onAction: () => context.push('/transfers'),
-      );
-    }
+    if (!context.mounted) return;
+    // Transfers goes over the screen that started the upload, so back
+    // returns there; View can also be tapped after that screen is gone.
+    final router = GoRouter.of(context);
+    showSnack(
+      context,
+      requests.length == 1
+          ? 'Uploading ${requests.first.name}'
+          : 'Uploading ${requests.length} files',
+      actionLabel: 'View',
+      onAction: () => router.push('/transfers'),
+    );
   }
 
   static Future<void> createFolder(
