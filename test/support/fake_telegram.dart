@@ -37,6 +37,10 @@ class FakeTelegram extends TelegramClient {
   /// channel.
   Future<td.TdObject?> answer(td.TdFunction function) async => null;
 
+  /// Moves TDLib's connection to [state], the way its update would.
+  void setConnectionState(td.ConnectionState state) =>
+      receive(td.UpdateConnectionState(state: state).toJson());
+
   @override
   Future<T> send<T extends td.TdObject>(
     td.TdFunction function, {

@@ -5,6 +5,9 @@ import android.content.ContentValues
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.MediaScannerConnection
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -16,6 +19,7 @@ import android.provider.MediaStore
 import android.provider.OpenableColumns
 import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
 import java.io.File
 import java.io.IOException
@@ -33,6 +37,13 @@ class MainActivity : FlutterFragmentActivity() {
     /** Files other apps shared in, copied into the cache, until Dart takes them. */
     private val pendingShares = mutableListOf<Map<String, Any>>()
     private var shareChannel: MethodChannel? = null
+
+    /** Dart's listener on the network, and the Android callback feeding it. */
+    private var networkSink: EventChannel.EventSink? = null
+    private var networkCallback: ConnectivityManager.NetworkCallback? = null
+    private val connectivity: ConnectivityManager by lazy {
+        getSystemService(ConnectivityManager::class.java)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -93,11 +104,59 @@ class MainActivity : FlutterFragmentActivity() {
                     else -> result.notImplemented()
                 }
             }
+        // Our own callback rather than connectivity_plus: that plugin folds a
+        // move between two Wi-Fi networks into one "wifi", so a hotspot taking
+        // over from home Wi-Fi would never reach Dart.
+        EventChannel(messenger, "telegrive/network").setStreamHandler(
+            object : EventChannel.StreamHandler {
+                override fun onListen(arguments: Any?, events: EventChannel.EventSink) {
+                    stopWatchingNetwork()
+                    networkSink = events
+                    val callback = object : ConnectivityManager.NetworkCallback() {
+                        override fun onAvailable(network: Network) = emitNetwork()
+                        override fun onLost(network: Network) = emitNetwork()
+                        override fun onCapabilitiesChanged(
+                            network: Network,
+                            capabilities: NetworkCapabilities,
+                        ) = emitNetwork()
+                    }
+                    networkCallback = callback
+                    connectivity.registerDefaultNetworkCallback(callback)
+                    emitNetwork()
+                }
+
+                override fun onCancel(arguments: Any?) = stopWatchingNetwork()
+            },
+        )
     }
 
     override fun onDestroy() {
+        stopWatchingNetwork()
         io.shutdown()
         super.onDestroy()
+    }
+
+    /**
+     * Tells Dart whether the phone is online and whether its bytes are paid
+     * for. Android calls back on its own thread; the sink is only safe on the
+     * main one.
+     */
+    private fun emitNetwork() {
+        val capabilities = connectivity.getNetworkCapabilities(connectivity.activeNetwork)
+        val online = capabilities?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
+        val metered = connectivity.isActiveNetworkMetered
+        main.post { networkSink?.success(mapOf("online" to online, "metered" to metered)) }
+    }
+
+    private fun stopWatchingNetwork() {
+        networkSink = null
+        val callback = networkCallback ?: return
+        networkCallback = null
+        try {
+            connectivity.unregisterNetworkCallback(callback)
+        } catch (e: IllegalArgumentException) {
+            // Android had already let go of it.
+        }
     }
 
     /**

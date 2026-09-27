@@ -327,7 +327,7 @@ abstract final class FileActions {
             ? 'Uploading ${requests.first.name}'
             : 'Uploading ${requests.length} files',
         actionLabel: 'View',
-        onAction: () => context.go('/transfers'),
+        onAction: () => context.push('/transfers'),
       );
     }
   }

@@ -42,6 +42,8 @@ class TelegramClient {
   final _updates = StreamController<td.TdObject>.broadcast();
   final _authStates = StreamController<td.AuthorizationState>.broadcast();
   td.AuthorizationState? _authState;
+  final _connectionStates = StreamController<td.ConnectionState>.broadcast();
+  td.ConnectionState? _connectionState;
 
   /// Set when configuration itself failed — a missing native library, a
   /// corrupt database that could not be recovered. Shown on the splash screen.
@@ -56,6 +58,19 @@ class TelegramClient {
     final current = _authState;
     if (current != null) yield current;
     yield* _authStates.stream;
+  }
+
+  /// TDLib's own view of the connection: waiting for a network, connecting,
+  /// catching up, ready. It is the one place the app asks whether Telegram
+  /// can be reached; the phone's network state only says whether there is
+  /// a connection at all.
+  td.ConnectionState? get connectionState => _connectionState;
+
+  /// Connection states, replaying the current one to each new listener.
+  Stream<td.ConnectionState> get connectionStates async* {
+    final current = _connectionState;
+    if (current != null) yield current;
+    yield* _connectionStates.stream;
   }
 
   /// File progress updates, for uploads and downloads alike.
@@ -166,7 +181,18 @@ class TelegramClient {
     if (object is td.UpdateAuthorizationState) {
       _onAuthorizationState(object.authorizationState);
     }
+    if (object is td.UpdateConnectionState) _onConnectionState(object.state);
     if (!_updates.isClosed) _updates.add(object);
+  }
+
+  /// Takes [payload] as if the receiver had brought it from TDLib. Tests
+  /// hand the client an update this way; nothing else needs to.
+  @visibleForTesting
+  void receive(Map<String, dynamic> payload) => _handlePayload(payload);
+
+  void _onConnectionState(td.ConnectionState state) {
+    _connectionState = state;
+    if (!_connectionStates.isClosed) _connectionStates.add(state);
   }
 
   void _onAuthorizationState(td.AuthorizationState state) {
@@ -283,6 +309,7 @@ class TelegramClient {
     _failPending();
     await _updates.close();
     await _authStates.close();
+    await _connectionStates.close();
     fatalError.dispose();
   }
 }
@@ -296,4 +323,9 @@ final telegramClientProvider = Provider<TelegramClient>((ref) {
 /// The live TDLib authorization state.
 final authStateProvider = StreamProvider<td.AuthorizationState>((ref) {
   return ref.watch(telegramClientProvider).authStates;
+});
+
+/// The live TDLib connection state: whether Telegram can be reached.
+final connectionStateProvider = StreamProvider<td.ConnectionState>((ref) {
+  return ref.watch(telegramClientProvider).connectionStates;
 });
