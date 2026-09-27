@@ -72,7 +72,7 @@ final hiddenBackupFoldersProvider = StreamProvider.autoDispose<Map<String, Strin
 });
 
 /// Whether the Photos view shows the kept-out folders after all. It lasts
-/// until the app is closed.
+/// until the app is closed or the account signs out.
 class RevealHidden extends Notifier<bool> {
   @override
   bool build() => false;

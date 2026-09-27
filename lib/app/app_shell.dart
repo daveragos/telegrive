@@ -95,10 +95,10 @@ class _AppShellState extends ConsumerState<AppShell> {
     });
     // A delete for good runs after its Undo has had its time, often once
     // the screen that asked for it is gone, so a failure is said here.
-    ref.listen<String?>(
+    ref.listen<DeleteFailure?>(
       pendingDeletesProvider.select((s) => s.lastFailure),
       (previous, next) {
-        if (next != null && next != previous) showSnack(context, next);
+        if (next != null && next != previous) showSnack(context, next.message);
       },
     );
 

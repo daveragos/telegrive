@@ -273,26 +273,39 @@ class _CountdownState extends State<Countdown> {
 /// How long Undo is offered after a change that can be taken back.
 const undoWindow = Duration(seconds: 6);
 
+/// How long a snack takes to come in, and again to leave. Its duration
+/// counts from the moment it is fully in.
+const snackTransition = Duration(milliseconds: 250);
+
 /// Shows [message] at the foot of the screen for [duration], in place of
-/// any snack already there. Every snack leaves when its time is up, one
-/// with an action too, so an Undo is never offered after its window has
-/// closed. Returns the snack's controller, whose `closed` says how it went,
-/// or null when there is nowhere to show it.
+/// any snack already there, or after it with [queue]. Its time starts once
+/// it is fully in, which [onVisible] hears. Every snack leaves when its
+/// time is up, one with an action too, so an Undo is never offered after
+/// its window has closed. With TalkBack or another screen reader on, one
+/// with an action stays until it is used or dismissed instead, since it
+/// takes longer to reach; what the action stands for keeps its own time,
+/// so a delete for good still runs and a late Undo says it was too late.
+/// Returns the snack's controller, whose `closed` says how it went, or null
+/// when there is nowhere to show it.
 ScaffoldFeatureController<SnackBar, SnackBarClosedReason>? showSnack(
   BuildContext context,
   String message, {
   String? actionLabel,
   VoidCallback? onAction,
   Duration duration = const Duration(seconds: 4),
+  bool queue = false,
+  VoidCallback? onVisible,
 }) {
   final messenger = ScaffoldMessenger.maybeOf(context);
   if (messenger == null) return null;
-  messenger.hideCurrentSnackBar();
+  final screenReader = MediaQuery.maybeAccessibleNavigationOf(context) ?? false;
+  if (!queue) messenger.hideCurrentSnackBar();
   return messenger.showSnackBar(
     SnackBar(
       content: Text(message),
       duration: duration,
-      persist: false,
+      persist: screenReader ? null : false,
+      onVisible: onVisible,
       action: actionLabel == null
           ? null
           : SnackBarAction(label: actionLabel, onPressed: onAction ?? () {}),
@@ -307,12 +320,14 @@ ScaffoldFeatureController<SnackBar, SnackBarClosedReason>? showUndoSnack(
   String message, {
   required VoidCallback onUndo,
   Duration duration = undoWindow,
+  VoidCallback? onVisible,
 }) => showSnack(
   context,
   message,
   actionLabel: 'Undo',
   onAction: onUndo,
   duration: duration,
+  onVisible: onVisible,
 );
 
 /// Asks for a single line of text (folder name, rename).

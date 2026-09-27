@@ -135,4 +135,24 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
     expect(find.text(failure), findsOneWidget);
   });
+
+  testWidgets('the same failure twice is said twice', (tester) async {
+    await pumpShell(tester);
+    const failure = 'Couldn\'t delete 3 items from this phone';
+    final pending = ProviderScope.containerOf(
+      tester.element(find.byType(AppShell)),
+    ).read(pendingDeletesProvider.notifier);
+    pending.reportFailure(failure);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text(failure), findsOneWidget);
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pumpAndSettle();
+    expect(find.text(failure), findsNothing);
+
+    pending.reportFailure(failure);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text(failure), findsOneWidget);
+  });
 }

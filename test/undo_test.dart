@@ -1,22 +1,48 @@
+import 'dart:async';
+
+import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'package:drift/native.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:handy_tdlib/api.dart' as td;
+import 'package:telegrive/app/theme/app_theme.dart';
+import 'package:telegrive/core/widgets/common.dart';
 import 'package:telegrive/features/drive/data/drive_repository.dart';
 import 'package:telegrive/features/drive/data/drive_session.dart';
 import 'package:telegrive/features/drive/domain/drive_models.dart';
+import 'package:telegrive/features/files/presentation/file_actions.dart';
+import 'package:telegrive/features/photos/presentation/album_actions.dart';
 import 'package:telegrive/infrastructure/database/app_database.dart';
 import 'package:telegrive/infrastructure/telegram/telegram_client.dart';
+import 'package:telegrive/infrastructure/telegram/telegram_exception.dart';
 
 import 'support/fake_telegram.dart';
 
+/// A channel that stops taking caption edits when [online] is off, and
+/// won't take an edit to an album's own message when [albumsStuck] is on.
+class _Channel extends FakeTelegram {
+  bool online = true;
+  bool albumsStuck = false;
+
+  @override
+  Future<td.TdObject?> answer(td.TdFunction function) async {
+    if ((!online && function is td.EditMessageCaption) ||
+        (albumsStuck && function is td.EditMessageText)) {
+      throw const TelegramException(408, 'Request timeout');
+    }
+    return null;
+  }
+}
+
 /// An Undo applies the opposite change to the file as the index holds it
-/// now. These check why: the repository passes over a file whose folder,
-/// star or name already matches the one asked for, and the file the screen
-/// held before the change still shows the old values.
+/// now. The repository tests check why: the repository passes over a file
+/// whose folder, star or name already matches the one asked for, and the
+/// file the screen held before the change still shows the old values. The
+/// screen tests check what the person sees.
 void main() {
   late AppDatabase db;
-  late FakeTelegram telegram;
+  late _Channel telegram;
   late ProviderContainer container;
   late DriveRepository repository;
 
@@ -29,9 +55,9 @@ void main() {
   Future<DriveFolder> folder() async => (await repository.folderById('sub'))!;
   String caption() => (telegram.messages[10]!.content as td.MessageDocument).caption.text;
 
-  setUp(() async {
+  Future<void> open() async {
     db = AppDatabase(NativeDatabase.memory());
-    telegram = FakeTelegram();
+    telegram = _Channel();
     container = ProviderContainer(
       overrides: [
         appDatabaseProvider.overrideWithValue(db),
@@ -39,12 +65,17 @@ void main() {
         driveSessionProvider.overrideWith(TestSession.new),
       ],
     );
+    // The screen tests leave the in-memory database open, as the screenshot
+    // harness does: it closes only once its watchers have let go, on a timer
+    // that a widget test's clock no longer runs by then.
+    addTearDown(container.dispose);
     repository = container.read(driveRepositoryProvider);
     await receive(textMessage(1, '📁 Work\ntgrf1:{"id":"work","n":"Work","ct":1700000000000}'));
     await receive(textMessage(2, '📁 Home\ntgrf1:{"id":"home","n":"Home","ct":1700000000000}'));
     await receive(
       textMessage(3, '📁 Sub\ntgrf1:{"id":"sub","n":"Sub","p":"work","ct":1700000000000}'),
     );
+    await receive(textMessage(4, '🖼 Trip\ntgra1:{"id":"trip","n":"Trip","ct":1700000000000}'));
     await receive(
       documentMessage(
         10,
@@ -54,71 +85,195 @@ void main() {
         mimeType: 'application/msword',
       ),
     );
+  }
+
+  group('the repository', () {
+    setUp(open);
+    tearDown(() async {
+      container.dispose();
+      await db.close();
+    });
+
+    test('a move is undone from the file as it is now, not as it was', () async {
+      final before = await file();
+      await repository.moveFiles([before], 'home');
+      expect((await file()).folderId, 'home');
+
+      // The file in hand still says Work, so moving it to Work looks like no
+      // change at all.
+      await repository.moveFiles([before], before.folderId);
+      expect((await file()).folderId, 'home');
+
+      await repository.moveFiles([await file()], before.folderId);
+      expect((await file()).folderId, 'work');
+      expect(caption(), contains('"f":"work"'));
+    });
+
+    test('a star is undone the same way', () async {
+      final before = await file();
+      await repository.setStarred([before], starred: true);
+      expect((await file()).starred, isTrue);
+
+      await repository.setStarred([before], starred: before.starred);
+      expect((await file()).starred, isTrue);
+
+      await repository.setStarred([await file()], starred: before.starred);
+      expect((await file()).starred, isFalse);
+      expect(caption(), isNot(contains('"st"')));
+    });
+
+    test('a rename is undone the same way', () async {
+      final before = await file();
+      await repository.renameFile(before, 'Thesis finall.docx');
+      expect((await file()).name, 'Thesis finall.docx');
+
+      await repository.renameFile(before, before.name);
+      expect((await file()).name, 'Thesis finall.docx');
+
+      await repository.renameFile(await file(), before.name);
+      expect((await file()).name, 'Thesis final.docx');
+    });
+
+    test('a folder move is undone from the folder as it is now', () async {
+      final before = await folder();
+      await repository.moveFolder(before, 'home');
+      expect((await folder()).parentId, 'home');
+
+      await repository.moveFolder(before, before.parentId);
+      expect((await folder()).parentId, 'home');
+
+      await repository.moveFolder(await folder(), before.parentId);
+      expect((await folder()).parentId, 'work');
+    });
+
+    test('moving to Trash is undone by restoring', () async {
+      await repository.trash(files: [await file()]);
+      expect((await file()).trashedAt, isNotNull);
+
+      await repository.restore(files: [await file()]);
+      expect((await file()).trashedAt, isNull);
+      expect((await file()).folderId, 'work');
+    });
   });
 
-  tearDown(() async {
-    container.dispose();
-    await db.close();
-  });
+  group('on screen', () {
+    // Each test opens a database of its own and leaves it open.
+    setUpAll(() => driftRuntimeOptions.dontWarnAboutMultipleDatabases = true);
+    tearDownAll(() => driftRuntimeOptions.dontWarnAboutMultipleDatabases = false);
 
-  test('a move is undone from the file as it is now, not as it was', () async {
-    final before = await file();
-    await repository.moveFiles([before], 'home');
-    expect((await file()).folderId, 'home');
+    /// An empty screen, and the context and ref an action is started with.
+    Future<(BuildContext, WidgetRef)> pumpScreen(WidgetTester tester) async {
+      late BuildContext context;
+      late WidgetRef ref;
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            theme: AppTheme.light(),
+            home: Scaffold(
+              body: Consumer(
+                builder: (screen, screenRef, _) {
+                  context = screen;
+                  ref = screenRef;
+                  return const SizedBox.expand();
+                },
+              ),
+            ),
+          ),
+        ),
+      );
+      return (context, ref);
+    }
 
-    // The file in hand still says Work, so moving it to Work looks like no
-    // change at all.
-    await repository.moveFiles([before], before.folderId);
-    expect((await file()).folderId, 'home');
+    /// Moves the file from Work into Sub through the folder picker.
+    Future<void> moveIntoSub(WidgetTester tester) async {
+      final (context, ref) = await pumpScreen(tester);
+      unawaited(FileActions.move(context, ref, files: [await file()]));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Sub'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Move to Sub'));
+      await tester.pumpAndSettle();
+    }
 
-    await repository.moveFiles([await file()], before.folderId);
-    expect((await file()).folderId, 'work');
-    expect(caption(), contains('"f":"work"'));
-  });
+    testWidgets('a move offers Undo, which puts the file back', (tester) async {
+      await open();
+      await moveIntoSub(tester);
 
-  test('a star is undone the same way', () async {
-    final before = await file();
-    await repository.setStarred([before], starred: true);
-    expect((await file()).starred, isTrue);
+      expect(find.text('Moved to Sub'), findsOneWidget);
+      expect((await file()).folderId, 'sub');
 
-    await repository.setStarred([before], starred: before.starred);
-    expect((await file()).starred, isTrue);
+      await tester.tap(find.text('Undo'));
+      await tester.pumpAndSettle();
+      expect(find.text('Undone'), findsOneWidget);
+      expect((await file()).folderId, 'work');
+    });
 
-    await repository.setStarred([await file()], starred: before.starred);
-    expect((await file()).starred, isFalse);
-    expect(caption(), isNot(contains('"st"')));
-  });
+    testWidgets('an Undo that can\'t go through says why', (tester) async {
+      await open();
+      await moveIntoSub(tester);
+      telegram.online = false;
 
-  test('a rename is undone the same way', () async {
-    final before = await file();
-    await repository.renameFile(before, 'Thesis finall.docx');
-    expect((await file()).name, 'Thesis finall.docx');
+      await tester.tap(find.text('Undo'));
+      await tester.pumpAndSettle();
+      expect(find.text('Couldn\'t undo: Telegram took too long to answer.'), findsOneWidget);
+      expect((await file()).folderId, 'sub');
+    });
 
-    await repository.renameFile(before, before.name);
-    expect((await file()).name, 'Thesis finall.docx');
+    testWidgets('an album that can\'t move to the top keeps the Undo', (tester) async {
+      await open();
+      telegram.albumsStuck = true;
+      final (context, ref) = await pumpScreen(tester);
+      const stuck =
+          'Couldn\'t move "Trip" to the top of Albums: Telegram took too long to answer.';
 
-    await repository.renameFile(await file(), before.name);
-    expect((await file()).name, 'Thesis final.docx');
-  });
+      // The album's members are read from a database stream first, which
+      // answers outside the test's clock.
+      final photo = await file();
+      await tester.runAsync(
+        () => AlbumActions.add(context, ref, [photo], albumId: 'trip', name: 'Trip'),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Added 1 item to "Trip"'), findsOneWidget);
+      expect(find.text('Undo'), findsOneWidget);
+      expect(find.text(stuck), findsNothing);
 
-  test('a folder move is undone from the folder as it is now', () async {
-    final before = await folder();
-    await repository.moveFolder(before, 'home');
-    expect((await folder()).parentId, 'home');
+      // Said once the Undo has had its time.
+      await tester.pump(undoWindow);
+      await tester.pumpAndSettle();
+      expect(find.text('Added 1 item to "Trip"'), findsNothing);
+      expect(find.text(stuck), findsOneWidget);
+    });
 
-    await repository.moveFolder(before, before.parentId);
-    expect((await folder()).parentId, 'home');
+    testWidgets('the Undo on a delete for good is gone before the delete runs', (tester) async {
+      await open();
+      final (context, ref) = await pumpScreen(tester);
+      // A sentence already on screen, which has to leave before the Undo
+      // comes in.
+      showSnack(context, 'Moved to Work');
+      await tester.pump(const Duration(seconds: 1));
 
-    await repository.moveFolder(await folder(), before.parentId);
-    expect((await folder()).parentId, 'work');
-  });
+      var deleted = false;
+      FileActions.deleteLater(
+        context,
+        ref,
+        fileIds: {'a'},
+        label: '"Thesis final.docx"',
+        message: 'Deleting "Thesis final.docx" for good',
+        run: () async => deleted = true,
+      );
+      var offered = Duration.zero;
+      var waited = Duration.zero;
+      while (!deleted) {
+        expect(waited, lessThan(const Duration(seconds: 12)));
+        await tester.pump(const Duration(milliseconds: 50));
+        waited += const Duration(milliseconds: 50);
+        if (!deleted && find.text('Undo').evaluate().isNotEmpty) offered = waited;
+      }
 
-  test('moving to Trash is undone by restoring', () async {
-    await repository.trash(files: [await file()]);
-    expect((await file()).trashedAt, isNotNull);
-
-    await repository.restore(files: [await file()]);
-    expect((await file()).trashedAt, isNull);
-    expect((await file()).folderId, 'work');
+      expect(find.text('Undo'), findsNothing);
+      // Undo had nearly all of its window.
+      expect(offered, greaterThan(const Duration(seconds: 9)));
+    });
   });
 }

@@ -10,7 +10,6 @@ import '../../drive/data/drive_repository.dart';
 import '../../drive/domain/drive_models.dart';
 import '../../files/data/bulk_edits.dart';
 import '../../files/presentation/file_actions.dart';
-import '../../transfers/domain/transfer_error.dart';
 import '../../trash/data/pending_deletes.dart';
 
 /// Making, filling and tidying photo albums.
@@ -84,12 +83,19 @@ abstract final class AlbumActions {
     if (outcome == null || outcome.done == 0) return false;
     // Lifting the album to the top is one edit of its own, made once for
     // however many files went in, even when the change stopped part way or
-    // the screen that asked for it is gone.
+    // the screen that asked for it is gone. If it fails, that is said after
+    // the snack offering Undo, which stays.
     try {
       await repository.touchAlbum(albumId);
     } catch (e) {
       debugPrint('[Albums] Could not lift "$name" to the top: $e');
-      if (context.mounted) showSnack(context, describeTransferError(e));
+      if (context.mounted) {
+        showSnack(
+          context,
+          'Couldn\'t move "$name" to the top of Albums: ${FileActions.failureOf(e)}',
+          queue: true,
+        );
+      }
     }
     return outcome.complete;
   }

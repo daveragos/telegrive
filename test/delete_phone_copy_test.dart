@@ -51,6 +51,9 @@ void main() {
   late int lookups;
   late List<List<String>> phoneDeletes;
 
+  /// The library can't be read, as when photo access is taken back.
+  late bool libraryLocked;
+
   Future<void> receive(td.Message message) async {
     telegram.messages[message.id] = message;
     await repository.ingest(message);
@@ -106,11 +109,15 @@ void main() {
 
     lookups = 0;
     phoneDeletes = [];
+    libraryLocked = false;
     Map<String, Object> asset(String id) => {'id': id, 'type': 1, 'width': 4000, 'height': 3000};
     tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(photoManager, (
       call,
     ) async {
       final arguments = call.arguments as Map;
+      if (libraryLocked && call.method != 'deleteWithIds') {
+        throw PlatformException(code: 'denied', message: 'Permission is not granted');
+      }
       switch (call.method) {
         case 'fetchEntityProperties':
           lookups++;
@@ -151,7 +158,11 @@ void main() {
 
   Future<bool> trashed(String id) async => (await repository.fileById(id))!.trashedAt != null;
 
-  /// A screen whose one button moves [files] and [folders] to the trash.
+  /// What the screen's Restore button takes out of the Trash.
+  var restoring = <DriveFile>[];
+
+  /// A screen whose Trash button moves [files] and [folders] to the trash,
+  /// and whose Restore button takes [restoring] out again.
   Future<void> tapTrash(
     WidgetTester tester,
     List<DriveFile> files, {
@@ -164,9 +175,18 @@ void main() {
           theme: AppTheme.light(),
           home: Scaffold(
             body: Consumer(
-              builder: (context, ref, _) => TextButton(
-                onPressed: () => FileActions.delete(context, ref, files: files, folders: folders),
-                child: const Text('Trash'),
+              builder: (context, ref, _) => Column(
+                children: [
+                  TextButton(
+                    onPressed: () =>
+                        FileActions.delete(context, ref, files: files, folders: folders),
+                    child: const Text('Trash'),
+                  ),
+                  TextButton(
+                    onPressed: () => FileActions.restore(context, ref, files: restoring),
+                    child: const Text('Restore'),
+                  ),
+                ],
               ),
             ),
           ),
@@ -247,6 +267,74 @@ void main() {
     expect(await trashed('a'), isFalse);
     expect(await trashed('b'), isFalse);
     expect(phoneDeletes, isEmpty);
+  });
+
+  testWidgets('restoring a photo before Undo has had its time keeps it on the phone', (
+    tester,
+  ) async {
+    await open(tester);
+    await tapTrash(tester, await filesOf(['a', 'b']));
+    await moveToTrash(tester, tick: true);
+
+    // Restored from the Trash screen: its sentence takes the place of the
+    // one offering Undo.
+    restoring = await filesOf(['a']);
+    await tester.tap(find.text('Restore'));
+    await tester.pumpAndSettle();
+    expect(find.text('Restored "a.jpg"'), findsOneWidget);
+    await tester.pump(const Duration(seconds: 30));
+    await tester.pumpAndSettle();
+
+    expect(await trashed('a'), isFalse);
+    expect(phoneDeletes, [
+      ['asset-b'],
+    ]);
+  });
+
+  testWidgets('restoring them all leaves the phone alone', (tester) async {
+    await open(tester);
+    await tapTrash(tester, await filesOf(['a', 'b']));
+    await moveToTrash(tester, tick: true);
+
+    restoring = await filesOf(['a', 'b']);
+    await tester.tap(find.text('Restore'));
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(seconds: 30));
+    await tester.pumpAndSettle();
+
+    expect(await trashed('a'), isFalse);
+    expect(await trashed('b'), isFalse);
+    expect(phoneDeletes, isEmpty);
+  });
+
+  testWidgets('a library that can\'t be read means no sheet, and the trash goes ahead', (
+    tester,
+  ) async {
+    await open(tester);
+    libraryLocked = true;
+    await tapTrash(tester, await filesOf(['a', 'b']));
+
+    expect(find.byType(TrashSheet), findsNothing);
+    expect(find.text('Moved 2 items to Trash'), findsOneWidget);
+    expect(await trashed('a'), isTrue);
+    await tester.pump(const Duration(seconds: 30));
+    expect(phoneDeletes, isEmpty);
+  });
+
+  testWidgets('many photos in a library that can\'t be read don\'t hold up the trash', (
+    tester,
+  ) async {
+    await open(tester);
+    // Backup matched a.jpg to more photos than one lookup each would take.
+    for (var i = 0; i < 600; i++) {
+      await db.markAssetBackedUp('asset-a$i', 'a');
+    }
+    libraryLocked = true;
+    await tapTrash(tester, await filesOf(['a']));
+
+    expect(find.byType(TrashSheet), findsNothing);
+    expect(find.text('Moved "a.jpg" to Trash'), findsOneWidget);
+    expect(await trashed('a'), isTrue);
   });
 
   testWidgets('with the box left clear only the drive copies move', (tester) async {

@@ -622,15 +622,14 @@ abstract final class FileActions {
     // Only a trash that went through takes the phone's copies with it; a
     // failed or stopped one says so and leaves the phone alone.
     if (alsoPhone && complete) {
-      final assetIds = [for (final ids in onPhone.values) ...ids];
       final phoneWhat = onPhone.length == files.length
           ? what
           : Formatters.count(onPhone.length, 'item');
-      phoneDelete = pending.schedule(
+      phoneDelete = pending.schedulePhoneDelete(
+        copies: onPhone,
         label: '$phoneWhat from this phone',
         failure: 'Couldn\'t delete $phoneWhat from this phone',
-        needsForeground: true,
-        run: () async {
+        run: (assetIds) async {
           // Checked again, since this can run long after the sheet asked
           // and one the gallery let go meanwhile would fail them all.
           final still = await stillOnPhone(assetIds);
@@ -646,7 +645,9 @@ abstract final class FileActions {
   /// Drive file id to phone media ids for those of [files] this phone still
   /// has: backed up from it, and not deleted from it since. A file counts
   /// when any of the phone's photos it stands for is still there, and
-  /// brings every one that is.
+  /// brings every one that is. When the phone's library can't be read (its
+  /// access taken back, say), none count: the trash goes ahead without
+  /// offering to delete copies it can't check.
   static Future<Map<String, List<String>>> _phoneCopies(
     WidgetRef ref,
     List<DriveFile> files,
@@ -655,7 +656,13 @@ abstract final class FileActions {
         .read(appDatabaseProvider)
         .localAssetsOf(files.map((file) => file.id));
     if (recorded.isEmpty) return const {};
-    final present = await stillOnPhone([for (final ids in recorded.values) ...ids]);
+    final Set<String> present;
+    try {
+      present = await stillOnPhone([for (final ids in recorded.values) ...ids]);
+    } catch (e) {
+      debugPrint('[Trash] Could not look for copies on this phone: $e');
+      return const {};
+    }
     final copies = <String, List<String>>{};
     for (final MapEntry(key: fileId, value: assetIds) in recorded.entries) {
       final here = [for (final id in assetIds) if (present.contains(id)) id];
@@ -664,6 +671,11 @@ abstract final class FileActions {
     return copies;
   }
 
+  /// Takes [files] and [folders] out of the Trash, with Undo. A file whose
+  /// copy on this phone was waiting to go with it keeps that copy. That is
+  /// settled first, because the snack this shows takes the place of the one
+  /// offering Undo on the trash, and that one closing unused lets the phone
+  /// delete go.
   static Future<void> restore(
     BuildContext context,
     WidgetRef ref, {
@@ -671,6 +683,7 @@ abstract final class FileActions {
     List<DriveFolder> folders = const [],
   }) {
     final repository = ref.read(driveRepositoryProvider);
+    ref.read(pendingDeletesProvider.notifier).keepPhoneCopies(files.map((file) => file.id));
     return _guard(
       context,
       () => repository.restore(files: files, folders: folders),
@@ -751,7 +764,12 @@ abstract final class FileActions {
     showUndoSnack(
       context,
       message,
-      duration: PendingDeletes.wait,
+      // The snack's time and the delete's both start once the snack is
+      // fully in. The snack starts to leave early enough to be gone, with
+      // time to spare, when the delete runs, so Undo is never offered
+      // after it.
+      duration: PendingDeletes.wait - snackTransition * 2,
+      onVisible: () => pending.shown(token),
       onUndo: () {
         final kept = pending.undo(token);
         if (!lasting.mounted) return;
@@ -1016,7 +1034,7 @@ abstract final class FileActions {
       }
       return true;
     } catch (e) {
-      if (context.mounted) showSnack(context, '$failurePrefix${_failure(e)}');
+      if (context.mounted) showSnack(context, '$failurePrefix${failureOf(e)}');
     }
     return false;
   }
@@ -1048,7 +1066,8 @@ abstract final class FileActions {
     Iterable<DriveFolder> folders,
   ) async => [for (final folder in folders) ?await repository.folderById(folder.id)];
 
-  static String _failure(Object error) => switch (error) {
+  /// Why [error] stopped an action, in the words every snack here uses.
+  static String failureOf(Object error) => switch (error) {
     DriveException(:final message) => message,
     TelegramException e => e.friendlyMessage,
     _ => 'Something went wrong: $error',
@@ -1096,7 +1115,7 @@ abstract final class FileActions {
           'Telegram asked us to wait ${Formatters.inWords(wait)}. '
           '$done are done; try the rest later.';
     } else if (error != null) {
-      message = '$failurePrefix${_failure(error)}';
+      message = '$failurePrefix${failureOf(error)}';
     } else {
       message = success;
     }

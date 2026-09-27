@@ -1,11 +1,16 @@
+import 'dart:io';
+
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart' show ThemeMode;
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:handy_tdlib/api.dart' as td;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:telegrive/features/auth/data/auth_controller.dart';
 import 'package:telegrive/features/drive/data/drive_session.dart';
+import 'package:telegrive/features/photos/data/photos_visibility.dart';
+import 'package:telegrive/features/trash/data/pending_deletes.dart';
 import 'package:telegrive/infrastructure/database/app_database.dart';
 import 'package:telegrive/infrastructure/storage/preferences.dart';
 import 'package:telegrive/infrastructure/telegram/secure_store.dart';
@@ -34,6 +39,26 @@ class _FakeTelegram extends TelegramClient {
 }
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  const pathProvider = MethodChannel('plugins.flutter.io/path_provider');
+  late Directory support;
+
+  setUp(() {
+    support = Directory.systemTemp.createTempSync('sign_out_test');
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
+      pathProvider,
+      (call) async => support.path,
+    );
+  });
+
+  tearDown(() {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
+      pathProvider,
+      null,
+    );
+    support.deleteSync(recursive: true);
+  });
+
   test('signing out clears the sync checkpoints with the index', () async {
     // ignore: invalid_use_of_visible_for_testing_member
     SharedPreferences.setMockInitialValues({
@@ -87,6 +112,32 @@ void main() {
     );
     await db.markAssetBackedUp('asset-1', null);
     expect(prefs.syncedChatIds, {_chatId, _oldChatId});
+    final kept = File('${support.path}/offline/report/report.pdf')
+      ..createSync(recursive: true)
+      ..writeAsStringSync('kept offline');
+    container.read(revealHiddenProvider.notifier).toggle();
+
+    // A delete of phone copies whose window closed while the app was away,
+    // and a delete for good still waiting out its Undo.
+    final pending = container.read(pendingDeletesProvider.notifier);
+    final deleted = <String>[];
+    final phone = pending.schedulePhoneDelete(
+      copies: {
+        'photo': ['asset-1'],
+      },
+      label: '"photo.jpg" from this phone',
+      failure: 'Couldn\'t delete "photo.jpg" from this phone',
+      run: (assetIds) async => deleted.addAll(assetIds),
+    );
+    await pending.appPaused();
+    await pending.commit(phone);
+    final forGood = pending.schedule(
+      fileIds: {'report'},
+      label: '"report.pdf"',
+      run: () async => deleted.add('report'),
+    );
+    expect(container.read(pendingDeletesProvider).hiddenIds, {'report'});
+    pending.reportFailure('Couldn\'t delete "notes.txt" for good: Telegram took too long.');
 
     await container.read(authControllerProvider.notifier).signOut();
 
@@ -103,8 +154,23 @@ void main() {
     expect(shared.containsKey('indexed_with_$_chatId'), isFalse);
     expect(prefs.syncedChatIds, isEmpty);
 
-    // Deleting phone copies along with the trash starts off again.
+    // Deleting phone copies along with the trash starts off again, and so
+    // does showing the folders Photos keeps out.
     expect(prefs.deletePhoneCopyToo, isFalse);
+    expect(container.read(revealHiddenProvider), isFalse);
+
+    // Nothing that was waiting to be deleted goes after signing out, from
+    // Telegram or from the phone; it is all still in the channel.
+    await pending.appResumed();
+    await pending.flush();
+    expect(deleted, isEmpty);
+    expect(pending.undo(forGood), isFalse);
+    expect(container.read(pendingDeletesProvider).hiddenIds, isEmpty);
+    expect(container.read(pendingDeletesProvider).lastFailure, isNull);
+
+    // Files kept offline go with the index that knew them.
+    expect(kept.existsSync(), isFalse);
+    expect(Directory('${support.path}/offline').existsSync(), isFalse);
 
     // App settings and the channel remembered for the account stay.
     expect(prefs.driveChatId(1), _chatId);

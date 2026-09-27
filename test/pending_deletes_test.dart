@@ -128,8 +128,34 @@ void main() {
       async.elapse(const Duration(seconds: 10));
 
       expect(state().hiddenIds, isEmpty);
-      expect(state().lastFailure, startsWith('Couldn\'t delete 3 items for good: '));
-      expect(state().lastFailure, contains('Too many attempts'));
+      expect(state().lastFailure?.message, startsWith('Couldn\'t delete 3 items for good: '));
+      expect(state().lastFailure?.message, contains('Too many attempts'));
+    });
+  });
+
+  test('the same failure twice is a new failure each time', () {
+    fakeAsync((async) {
+      final failures = <DeleteFailure?>[];
+      container.listen(
+        pendingDeletesProvider.select((s) => s.lastFailure),
+        (_, next) => failures.add(next),
+      );
+      for (var i = 0; i < 2; i++) {
+        pending().commit(
+          pending().schedule(
+            label: '3 items from this phone',
+            failure: 'Couldn\'t delete 3 items from this phone',
+            needsForeground: true,
+            run: () async => throw Exception('deleteWithIds failed'),
+          ),
+        );
+        async.flushMicrotasks();
+      }
+
+      expect(failures.nonNulls.map((f) => f.message), [
+        'Couldn\'t delete 3 items from this phone',
+        'Couldn\'t delete 3 items from this phone',
+      ]);
     });
   });
 
@@ -308,7 +334,7 @@ void main() {
           return first.future;
         },
       );
-      final b = pending().schedule(
+      pending().schedule(
         label: '"b.jpg" from this phone',
         needsForeground: true,
         run: () {
@@ -328,7 +354,6 @@ void main() {
       async.flushMicrotasks();
       expect(started, ['a']);
       expect(pending().undo(a), isFalse);
-      expect(pending().undo(b), isFalse);
 
       first.completeError(Exception('deleteWithIds failed'));
       async.flushMicrotasks();
@@ -352,7 +377,174 @@ void main() {
 
       pending().commit(token);
       async.flushMicrotasks();
-      expect(state().lastFailure, 'Couldn\'t delete 3 items from this phone');
+      expect(state().lastFailure?.message, 'Couldn\'t delete 3 items from this phone');
+    });
+  });
+
+  test('a phone delete waiting its turn can still be undone', () {
+    fakeAsync((async) {
+      final first = Completer<void>();
+      final started = <String>[];
+      final a = pending().schedule(
+        label: '"a.jpg" from this phone',
+        needsForeground: true,
+        run: () {
+          started.add('a');
+          return first.future;
+        },
+      );
+      final b = pending().schedule(
+        label: '"b.jpg" from this phone',
+        needsForeground: true,
+        run: () async => started.add('b'),
+      );
+      pending().commit(a);
+      pending().commit(b);
+      async.flushMicrotasks();
+      expect(started, ['a']);
+
+      expect(pending().undo(b), isTrue);
+      first.complete();
+      async.elapse(const Duration(minutes: 1));
+      expect(started, ['a']);
+    });
+  });
+
+  test('a phone delete whose turn comes in the background waits for the app', () {
+    fakeAsync((async) {
+      final first = Completer<void>();
+      final started = <String>[];
+      final a = pending().schedule(
+        label: '"a.jpg" from this phone',
+        needsForeground: true,
+        run: () {
+          started.add('a');
+          return first.future;
+        },
+      );
+      final b = pending().schedule(
+        label: '"b.jpg" from this phone',
+        needsForeground: true,
+        run: () async => started.add('b'),
+      );
+      pending().commit(a);
+      pending().commit(b);
+      async.flushMicrotasks();
+
+      // The person answers about a and leaves the app before b's turn.
+      pending().appPaused();
+      first.complete();
+      async.elapse(const Duration(minutes: 1));
+      expect(started, ['a']);
+
+      pending().appResumed();
+      async.flushMicrotasks();
+      expect(started, ['a', 'b']);
+    });
+  });
+
+  test('restoring a file keeps its phone copy out of the delete', () {
+    fakeAsync((async) {
+      final asked = <List<String>>[];
+      final token = pending().schedulePhoneDelete(
+        copies: {
+          'a': ['asset-a'],
+          'b': ['asset-b', 'asset-b2'],
+        },
+        label: '2 items from this phone',
+        failure: 'Couldn\'t delete 2 items from this phone',
+        run: (assetIds) async => asked.add(assetIds),
+      );
+
+      pending().keepPhoneCopies(['b', 'c']);
+      pending().commit(token);
+      async.flushMicrotasks();
+      expect(asked, [
+        ['asset-a'],
+      ]);
+    });
+  });
+
+  test('restoring every file drops the phone delete', () {
+    fakeAsync((async) {
+      final asked = <List<String>>[];
+      final token = pending().schedulePhoneDelete(
+        copies: {
+          'a': ['asset-a'],
+        },
+        label: '"a.jpg" from this phone',
+        failure: 'Couldn\'t delete "a.jpg" from this phone',
+        run: (assetIds) async => asked.add(assetIds),
+      );
+      pending().appPaused();
+      pending().commit(token);
+
+      // Due, and waiting for the app to come back.
+      pending().keepPhoneCopies(['a']);
+      pending().appResumed();
+      async.elapse(const Duration(minutes: 1));
+      expect(asked, isEmpty);
+      expect(pending().undo(token), isFalse);
+    });
+  });
+
+  test('the wait starts again once the snack is on screen', () {
+    fakeAsync((async) {
+      var runs = 0;
+      final token = pending().schedule(
+        fileIds: {'a'},
+        label: '"a.pdf"',
+        run: () async => runs++,
+      );
+      async.elapse(const Duration(milliseconds: 500));
+      pending().shown(token);
+
+      async.elapse(const Duration(milliseconds: 9900));
+      expect(runs, 0);
+      async.elapse(const Duration(milliseconds: 100));
+      expect(runs, 1);
+    });
+  });
+
+  test('signing out drops what is waiting and forgets what failed', () {
+    fakeAsync((async) {
+      final answer = Completer<void>();
+      var runs = 0;
+      pending().schedule(
+        fileIds: {'a'},
+        label: '"a.pdf"',
+        run: () => answer.future,
+      );
+      async.elapse(const Duration(seconds: 10));
+      final phone = pending().schedule(
+        label: '"c.jpg" from this phone',
+        needsForeground: true,
+        run: () async => runs++,
+      );
+      pending().appPaused();
+      pending().commit(phone);
+      final forGood = pending().schedule(
+        fileIds: {'b'},
+        label: '"b.pdf"',
+        run: () async => runs++,
+      );
+      async.flushMicrotasks();
+      expect(state().hiddenIds, {'a', 'b'});
+      pending().reportFailure('Couldn\'t delete "d.pdf" for good: Telegram took too long.');
+
+      pending().discardAll();
+      expect(state().hiddenIds, isEmpty);
+      expect(state().lastFailure, isNull);
+
+      // The delete already under way ends, but says nothing any more.
+      answer.completeError(const TelegramException(408, 'Request timeout'));
+      pending().appResumed();
+      pending().flush();
+      async.elapse(const Duration(minutes: 1));
+      expect(runs, 0);
+      expect(state().lastFailure, isNull);
+      expect(pending().undo(forGood), isFalse);
+      expect(pending().undo(phone), isFalse);
     });
   });
 

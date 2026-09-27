@@ -7,6 +7,9 @@ import '../../../infrastructure/storage/preferences.dart';
 import '../../../infrastructure/telegram/telegram_client.dart';
 import '../../../infrastructure/telegram/telegram_exception.dart';
 import '../../drive/data/drive_session.dart';
+import '../../photos/data/photos_visibility.dart';
+import '../../transfers/data/transfer_queue.dart';
+import '../../trash/data/pending_deletes.dart';
 
 /// Choices the person made on the sign-in screens that TDLib's state alone
 /// can't express.
@@ -97,20 +100,42 @@ class AuthController extends Notifier<AuthUiState> {
   /// open an empty drive and back every photo up again. They are cleared
   /// before the index, so a wipe cut short still ends in a full read.
   ///
+  /// Deletes still waiting out their Undo are dropped before anything
+  /// else, so nothing is deleted once the drive has gone, from Telegram or
+  /// from the phone over the Welcome screen. What they would have deleted is
+  /// still in the channel for the next sign-in. Files kept available offline
+  /// go with the index that knew about them, or nothing would find them
+  /// again.
+  ///
   /// App settings (theme, app lock, photo backup choices, the folders Photos
   /// keeps out) and the drive channel remembered per account stay. The 'Also
-  /// delete from this phone' answer doesn't: whoever signs in next starts
-  /// with it off. Anything new that the phone keeps per drive, whether a
-  /// table, a preference or a file, adds its cleanup here.
+  /// delete from this phone' answer and Photos' Show for kept-out folders
+  /// don't: whoever signs in next starts with both off. Anything new that
+  /// the phone keeps per drive, whether a table, a preference or a file,
+  /// adds its cleanup here.
   Future<void> wipeDeviceState() async {
+    ref.read(pendingDeletesProvider.notifier).discardAll();
     ref.read(driveSessionProvider.notifier).close();
     final prefs = ref.read(preferencesProvider);
     for (final chatId in prefs.syncedChatIds) {
       await prefs.clearSyncState(chatId);
     }
     await prefs.setDeletePhoneCopyToo(false);
+    ref.invalidate(revealHiddenProvider);
     await ref.read(appDatabaseProvider).clearAll();
+    await _deleteOfflineCopies();
     state = const AuthUiState();
+  }
+
+  /// A copy that can't be deleted now stays behind rather than stopping the
+  /// rest of the sign-out.
+  static Future<void> _deleteOfflineCopies() async {
+    try {
+      final offline = await TransferQueue.offlineDirectory();
+      if (await offline.exists()) await offline.delete(recursive: true);
+    } catch (e) {
+      debugPrint('[Auth] Could not delete the offline copies: $e');
+    }
   }
 }
 

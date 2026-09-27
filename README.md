@@ -45,20 +45,24 @@ phone number.
   messages, photos) shows up in the drive with no re-upload.
 - **Rebuildable.** Names, folders, stars, albums and the trash live in each
   message's caption. Reinstall, sign in on another phone, or sign out and
-  back in, and the whole drive comes back.
+  back in, and the whole drive comes back. Signing out takes the drive off
+  this phone, files kept offline included, and drops any delete still
+  waiting out its Undo, so nothing is deleted after you have left.
 - **Trash.** Deleting moves things to the trash for 30 days; restore or
   delete for good from Trash. Moving more than 100 items there asks first.
   Photos and videos this phone still has can leave the phone too: tick
   "Also delete from this phone" and, once Undo has had its time without
   being tapped, Android asks to delete them (if you have left the app by
-  then, it asks when you are back). Undo leaves the phone untouched, and
-  the box remembers your last answer.
+  then, it asks when you are back). Undo, or restoring them from Trash
+  before then, leaves the phone's copies untouched, and the box remembers
+  your last answer.
 - **Undo for every change.** Moving, renaming, starring, adding to or
   removing from an album, restoring and moving to the trash all offer Undo
-  for six seconds, and an Undo that can't go through says why. Delete for
-  good, Empty trash and Delete album take the items away at once but wait
-  ten seconds, with Undo, before anything leaves Telegram; sending the app
-  to the background deletes them straight away.
+  for six seconds (with TalkBack on, until you dismiss it), and an Undo
+  that can't go through says why. Delete for good, Empty trash and Delete
+  album take the items away at once but wait ten seconds, with Undo, before
+  anything leaves Telegram; sending the app to the background deletes them
+  straight away.
 - **Tidy in Telegram too.** Captions lead with the plain file name; the
   machine-readable part sits in a spoiler, so the channel still reads like a
   file list.
