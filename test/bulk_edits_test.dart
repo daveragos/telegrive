@@ -42,7 +42,8 @@ class _FakeTelegram extends FakeTelegram {
 /// A channel where message 10 was forwarded in, so its caption can't be
 /// edited. Telegram turns the first copy of it away with a flood wait once
 /// the copy is being sent, and TDLib keeps that failed copy under
-/// [failedId]; the next copy is delivered as [copyId].
+/// [failedId]; the next copy is delivered as [copyId], carrying the caption
+/// it was asked for.
 class _CopyTelegram extends _FakeTelegram {
   _CopyTelegram() : super(floods: 0, seconds: 2);
 
@@ -61,10 +62,14 @@ class _CopyTelegram extends _FakeTelegram {
     switch (function) {
       case td.EditMessageCaption(messageId: 10):
         throw const TelegramException(400, "Message can't be edited");
-      case td.ForwardMessages():
+      case td.SendMessage(
+        inputMessageContent: td.InputMessageForwarded(
+          copyOptions: td.MessageCopyOptions(:final newCaption?),
+        ),
+      ):
         copies++;
         td.Message copy(int id) =>
-            documentMessage(id, '', fileName: 'a.jpg', mimeType: 'image/jpeg');
+            documentMessage(id, newCaption.text, fileName: 'a.jpg', mimeType: 'image/jpeg');
         final td.TdObject outcome;
         if (copies == 1) {
           messages[failedId] = copy(failedId);
@@ -78,13 +83,8 @@ class _CopyTelegram extends _FakeTelegram {
           outcome = td.UpdateMessageSendSucceeded(message: copy(copyId), oldMessageId: pendingId);
         }
         Timer.run(() => _updates.add(outcome));
-        return td.Messages(
-          totalCount: 1,
-          messages: [
-            copy(pendingId).copyWith(
-              sendingState: const td.MessageSendingStatePending(sendingId: 0),
-            ),
-          ],
+        return copy(pendingId).copyWith(
+          sendingState: const td.MessageSendingStatePending(sendingId: 0),
         );
       default:
         return super.answer(function);
@@ -171,6 +171,7 @@ void main() {
 
     expect((await repository.fileById('a'))!.folderId, 'trips');
     expect(channel.copies, 2);
+    expect(channel.captionEdits, 0);
     expect(channel.messages.keys, contains(_CopyTelegram.copyId));
     expect(channel.messages.keys, isNot(contains(_CopyTelegram.failedId)));
     expect(channel.messages.keys, isNot(contains(10)));

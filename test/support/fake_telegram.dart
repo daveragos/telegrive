@@ -22,13 +22,16 @@ class TestSession extends DriveSessionNotifier {
 }
 
 /// Telegram for tests: a channel that holds [messages], applies caption and
-/// text edits to them the way Telegram hands the edited message back, and
-/// deletes them. Anything else goes to [answer], which a test overrides for
-/// what it needs (downloads, failures).
+/// text edits to them the way Telegram hands the edited message back, copies
+/// them under new ids when asked to, and deletes them. Anything else goes to
+/// [answer], which a test overrides for what it needs (downloads, failures).
 class FakeTelegram extends TelegramClient {
   FakeTelegram() : super(SecureStore());
 
   final Map<int, td.Message> messages = {};
+
+  /// Ids the fake gives the copies it makes, counting up from 1000.
+  int nextId = 1000;
 
   /// Answers [function] when a test cares about it; null leaves it to the
   /// channel.
@@ -62,9 +65,51 @@ class FakeTelegram extends TelegramClient {
       case td.DeleteMessages(:final messageIds):
         messageIds.forEach(messages.remove);
         return const td.Ok() as T;
+      case td.ForwardMessages(
+        :final chatId,
+        :final messageIds,
+        sendCopy: true,
+        removeCaption: true,
+      ):
+        const none = td.FormattedText(text: '', entities: []);
+        return td.Messages(
+          totalCount: messageIds.length,
+          messages: [for (final id in messageIds) _copy(messages[id]!, chatId, none)],
+        ) as T;
+      case td.SendMessage(
+        :final chatId,
+        inputMessageContent: td.InputMessageForwarded(
+          :final messageId,
+          copyOptions: td.MessageCopyOptions(
+            sendCopy: true,
+            replaceCaption: true,
+            :final newCaption?,
+          ),
+        ),
+      ):
+        return _copy(messages[messageId]!, chatId, newCaption) as T;
       default:
         throw UnsupportedError('$function');
     }
+  }
+
+  /// A copy of [source] in [chatId] the way Telegram makes one: a new
+  /// message with [caption] in place of the original's, delivered at once
+  /// and kept in [messages].
+  td.Message _copy(td.Message source, int chatId, td.FormattedText caption) {
+    final id = nextId++;
+    final content = source.content;
+    return messages[id] = source.copyWith(
+      id: id,
+      chatId: chatId,
+      content: switch (content) {
+        td.MessageDocument() => content.copyWith(caption: caption),
+        td.MessagePhoto() => content.copyWith(caption: caption),
+        td.MessageVideo() => content.copyWith(caption: caption),
+        td.MessageAudio() => content.copyWith(caption: caption),
+        _ => content,
+      },
+    );
   }
 }
 

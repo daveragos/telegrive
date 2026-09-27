@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:collection';
+import 'dart:math' as math;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:handy_tdlib/api.dart' as td;
@@ -7,6 +8,7 @@ import 'package:handy_tdlib/api.dart' as td;
 import '../../../infrastructure/telegram/telegram_client.dart';
 import '../../../infrastructure/telegram/telegram_exception.dart';
 import '../domain/manifest.dart';
+import 'telegram_wait.dart';
 
 /// Thrown into a pending send when the person cancels it.
 class SendCancelled implements Exception {
@@ -28,12 +30,17 @@ class SendFailed extends TelegramException {
 /// *temporary* message immediately, and the real one — with its permanent id —
 /// only arrives later as `updateMessageSendSucceeded`. [send] hides that: it
 /// resolves with the delivered message, or fails with Telegram's error.
+///
+/// Copies are Telegram's own work, with nothing uploaded: [sendCopy] turns a
+/// message anywhere into one of the drive's own, manifest and all, and
+/// [forwardCopies] sends files on to any chat without the drive's captions.
 class ChannelMessenger {
-  ChannelMessenger(this._client) {
+  ChannelMessenger(this._client, this._ref) {
     _subscription = _client.updates.listen(_onUpdate);
   }
 
   final TelegramClient _client;
+  final Ref _ref;
   late final StreamSubscription<td.TdObject> _subscription;
 
   final Map<int, Completer<td.Message>> _waiters = {};
@@ -92,6 +99,86 @@ class ChannelMessenger {
       ),
       onPending: onPending,
     );
+  }
+
+  /// Has Telegram copy [messageId] of [fromChatId] into [chatId] with
+  /// [caption] in place of the original's, in one request: a photo stays a
+  /// photo, a document a document, and the copy never sits in the channel
+  /// without its manifest. A flood wait is the caller's to sit out, since
+  /// the transfer queue shows it on the row and the drive's edits go
+  /// through [patiently].
+  Future<td.Message> sendCopy(
+    int chatId, {
+    required int fromChatId,
+    required int messageId,
+    required EncodedText caption,
+    void Function(td.Message pending)? onPending,
+  }) {
+    return _send(
+      chatId,
+      td.InputMessageForwarded(
+        fromChatId: fromChatId,
+        messageId: messageId,
+        inGameShare: false,
+        copyOptions: td.MessageCopyOptions(
+          sendCopy: true,
+          replaceCaption: true,
+          newCaption: formatted(caption),
+          newShowCaptionAboveMedia: false,
+        ),
+      ),
+      onPending: onPending,
+    );
+  }
+
+  /// Sends copies of [messageIds] from [fromChatId] to [chatId], the way
+  /// files leave the drive for a chat: Telegram already has them, so nothing
+  /// is uploaded, and the drive's captions stay behind. Telegram forwards at
+  /// most 100 messages at a time, and a flood wait of up to [longestWait]
+  /// between requests is sat out before the same slice goes again, so
+  /// nothing already sent is sent twice.
+  Future<void> forwardCopies(
+    int chatId, {
+    required int fromChatId,
+    required List<int> messageIds,
+    required Duration longestWait,
+  }) async {
+    for (final batch in _batches(messageIds)) {
+      await patiently(
+        () => _client.send<td.Messages>(
+          td.ForwardMessages(
+            chatId: chatId,
+            messageThreadId: 0,
+            fromChatId: fromChatId,
+            messageIds: batch,
+            sendCopy: true,
+            removeCaption: true,
+          ),
+        ),
+        longestWait: longestWait,
+      );
+    }
+  }
+
+  /// Runs [action], sitting out Telegram's flood waits of up to
+  /// [longestWait] through [TelegramWait] instead of failing, so a long run
+  /// of requests carries on by itself; a longer wait, or a third refusal in
+  /// a row, is thrown as it came. The wait shows above the bar, where Stop
+  /// can cut it short when [stoppable].
+  Future<T> patiently<T>(
+    Future<T> Function() action, {
+    required Duration longestWait,
+    bool stoppable = true,
+  }) async {
+    for (var attempt = 1; ; attempt++) {
+      try {
+        return await action();
+      } on TelegramException catch (e) {
+        final wait = Duration(seconds: e.retryAfterSeconds ?? 30);
+        if (!e.isFloodWait || wait > longestWait || attempt >= 3) rethrow;
+        await _ref.read(telegramWaitProvider.notifier).sleep(wait, stoppable: stoppable);
+      }
+    }
   }
 
   Future<td.Message> sendText(int chatId, EncodedText text) {
@@ -196,14 +283,17 @@ class ChannelMessenger {
 
   /// Deletes for everyone, in the batches Telegram accepts.
   Future<void> deleteMessages(int chatId, List<int> messageIds) async {
-    for (var i = 0; i < messageIds.length; i += 100) {
-      final batch = messageIds.sublist(
-        i,
-        i + 100 > messageIds.length ? messageIds.length : i + 100,
-      );
+    for (final batch in _batches(messageIds)) {
       await _client.send<td.Ok>(
         td.DeleteMessages(chatId: chatId, messageIds: batch, revoke: true),
       );
+    }
+  }
+
+  /// Telegram takes at most 100 messages in one forward or delete.
+  static Iterable<List<int>> _batches(List<int> ids) sync* {
+    for (var i = 0; i < ids.length; i += 100) {
+      yield ids.sublist(i, math.min(i + 100, ids.length));
     }
   }
 
@@ -247,7 +337,7 @@ class ChannelMessenger {
 }
 
 final channelMessengerProvider = Provider<ChannelMessenger>((ref) {
-  final messenger = ChannelMessenger(ref.watch(telegramClientProvider));
+  final messenger = ChannelMessenger(ref.watch(telegramClientProvider), ref);
   ref.onDispose(messenger.dispose);
   return messenger;
 });

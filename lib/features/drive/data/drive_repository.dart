@@ -505,34 +505,25 @@ class DriveRepository {
   /// Telegram won't edit a message forwarded into the channel, so a file
   /// that arrived that way can't be renamed, moved, starred or trashed as
   /// it is. This swaps it for the drive's own copy of the same message,
-  /// made by Telegram with no upload, which can be: the copy gets
-  /// [caption] and the original goes. The file keeps its id throughout.
+  /// made by Telegram with no upload, which can be: the copy arrives with
+  /// [caption] already on it, so it is never a caption-less forward the
+  /// drive could take for a new one, and the original goes. The file keeps
+  /// its id throughout.
   Future<td.Message> _replaceWithOwnCopy(
     int messageId,
     EncodedText caption, {
     bool stoppable = true,
   }) async {
-    final client = _ref.read(telegramClientProvider);
     // Telegram usually turns a copy away only once it is being sent, so the
     // wait covers the delivery as well as the request.
     final copy = await _patiently(() async {
-      final sent = await client.send<td.Messages>(
-        td.ForwardMessages(
-          chatId: _chatId,
-          messageThreadId: 0,
-          fromChatId: _chatId,
-          messageIds: [messageId],
-          sendCopy: true,
-          removeCaption: true,
-        ),
-      );
-      final pending = sent.messages.firstOrNull;
-      if (pending == null) {
-        throw const DriveException('Telegram wouldn\'t copy this file.');
-      }
-      if (pending.sendingState == null) return pending;
       try {
-        return await _messenger.awaitDelivery(pending.id);
+        return await _messenger.sendCopy(
+          _chatId,
+          fromChatId: _chatId,
+          messageId: messageId,
+          caption: caption,
+        );
       } on SendFailed catch (e) {
         // TDLib keeps the copy that failed, under a new id. It never reached
         // the channel, so deleting it only drops that local copy, and the
@@ -545,15 +536,10 @@ class DriveRepository {
         rethrow;
       }
     }, stoppable: stoppable);
-    // The copy has no caption yet, so it is finished even through a Stop.
-    final edited = await _patiently(
-      () => _messenger.editCaption(_chatId, copy.id, caption),
-      stoppable: false,
-    );
-    await ingest(edited);
+    await ingest(copy);
     await _messenger.deleteMessages(_chatId, [messageId]);
     await _db.removeMessages([messageId]);
-    return edited;
+    return copy;
   }
 
   // ---------------------------------------------------------------------------
@@ -877,19 +863,12 @@ class DriveRepository {
   /// instead of failing, so a long run of edits carries on by itself. The
   /// wait is announced through [telegramWaitProvider], whose Stop can cut
   /// it short when [stoppable].
-  Future<T> _patiently<T>(Future<T> Function() action, {bool stoppable = true}) async {
-    for (var attempt = 1; ; attempt++) {
-      try {
-        return await action();
-      } on TelegramException catch (e) {
-        final seconds = e.retryAfterSeconds ?? 30;
-        if (!e.isFloodWait || seconds > _longestWaitSeconds || attempt >= 3) rethrow;
-        await _ref
-            .read(telegramWaitProvider.notifier)
-            .sleep(Duration(seconds: seconds), stoppable: stoppable);
-      }
-    }
-  }
+  Future<T> _patiently<T>(Future<T> Function() action, {bool stoppable = true}) =>
+      _messenger.patiently(
+        action,
+        longestWait: const Duration(seconds: _longestWaitSeconds),
+        stoppable: stoppable,
+      );
 
   Future<td.Message?> _ignoreUnchanged(
     Future<td.Message> Function() edit,
