@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:photo_manager/photo_manager.dart';
 
 import '../../../app/theme/file_style.dart';
 import '../../../app/theme/tokens.dart';
@@ -8,8 +9,7 @@ import '../../../core/files/file_kind.dart';
 import '../../../core/format/formatters.dart';
 import '../../../core/widgets/brand_mark.dart';
 import '../../../core/widgets/common.dart';
-import '../../../infrastructure/database/app_database.dart'
-    show KindTotal, TransferOrigin, TransferStatus;
+import '../../../infrastructure/database/app_database.dart' show KindTotal;
 import '../../../infrastructure/storage/preferences.dart';
 import '../../backup/data/backup_controller.dart';
 import '../../backup/presentation/backup_card.dart';
@@ -20,6 +20,7 @@ import '../../drive/domain/drive_models.dart';
 import '../../files/presentation/file_actions.dart';
 import '../../files/presentation/file_tiles.dart';
 import '../../transfers/data/transfer_queue.dart';
+import 'drive_health.dart';
 
 /// What is in the drive and what is happening to it. Where the space goes
 /// first, which doubles as the way into each kind of file; then recent
@@ -177,85 +178,85 @@ class _Header extends ConsumerWidget {
   }
 }
 
-/// Only here while something needs saying: transfers in flight or failed,
-/// and backup when it is off, blocked or busy. Quiet once all is well.
-class _Activity extends ConsumerStatefulWidget {
+/// One line that says whether the drive is safe, always there, plus at most
+/// one more for a different concern that needs doing. What they say is
+/// worked out in [describeDriveHealth] and [secondaryHealth]; this only
+/// draws them.
+class _Activity extends ConsumerWidget {
   const _Activity();
 
   @override
-  ConsumerState<_Activity> createState() => _ActivityState();
-}
-
-class _ActivityState extends ConsumerState<_Activity> {
-  late bool _backupHidden = () {
-    final until = ref.read(preferencesProvider).backupCardHiddenUntil;
-    return until != null && until.isAfter(DateTime.now());
-  }();
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
+  Widget build(BuildContext context, WidgetRef ref) {
     final backup = ref.watch(backupControllerProvider);
+    final sync = ref.watch(driveSyncProvider);
     final transfers = ref.watch(transferQueueProvider);
-    final active = transfers.active
-        .where((t) => t.origin != TransferOrigin.backup)
-        .toList();
-    final failed = transfers.finished
-        .where((t) => t.status == TransferStatus.failed && t.origin != TransferOrigin.backup)
-        .length;
-    final paused = transfers.pausedCount;
+    final chatId = ref.watch(driveSessionProvider)?.chatId;
 
-    final showBackup = backup.isWorking ||
-        backup.phase == BackupPhase.waitingForWifi ||
-        backup.phase == BackupPhase.needsPermission ||
-        (backup.phase == BackupPhase.off && !_backupHidden);
-
-    final rows = <Widget>[
-      if (active.isNotEmpty)
-        StatusLine(
-          icon: Icons.swap_vert_rounded,
-          color: colors.accent,
-          text: '${Formatters.count(active.length, 'transfer')} in progress',
-          detail: '${(_progress(active) * 100).round()}% done',
-          progress: _progress(active),
-          onTap: () => context.push('/transfers'),
-        ),
-      if (paused > 0 && active.isEmpty)
-        StatusLine(
-          icon: Icons.pause_circle_outline_rounded,
-          color: colors.text2,
-          text: paused == 1 ? '1 transfer paused' : '$paused transfers paused',
-          detail: 'Open Transfers to resume.',
-          onTap: () => context.push('/transfers'),
-        ),
-      if (failed > 0)
-        StatusLine(
-          icon: Icons.error_outline_rounded,
-          color: colors.danger,
-          text: failed == 1 ? '1 transfer failed' : '$failed transfers failed',
-          detail: 'Open Transfers to retry.',
-          onTap: () => context.push('/transfers'),
-        ),
-      if (showBackup)
-        BackupStatusLine(
-          onDismiss: () {
-            ref.read(preferencesProvider).hideBackupCard(const Duration(days: 7));
-            setState(() => _backupHidden = true);
-          },
-        ),
-    ];
-    if (rows.isEmpty) return const SizedBox(height: Space.s);
+    final top = describeDriveHealth(
+      backup: backup,
+      sync: sync,
+      transfers: transfers,
+      lastFullSync: chatId == null ? null : ref.read(preferencesProvider).lastFullSync(chatId),
+      backupSpeed: transfers.backupActive.fold<double>(0, (sum, t) => sum + t.bytesPerSecond),
+    );
+    final second = secondaryHealth(top, backup: backup, transfers: transfers);
 
     return Padding(
       padding: const EdgeInsets.only(top: Space.l),
-      child: ListGroup(children: rows),
+      child: ListGroup(
+        children: [
+          _line(context, ref, top),
+          if (second != null) _line(context, ref, second),
+        ],
+      ),
     );
   }
 
-  static double _progress(List<TransferItem> items) {
-    final total = items.fold<int>(0, (sum, t) => sum + t.row.totalBytes);
-    final done = items.fold<int>(0, (sum, t) => sum + t.row.doneBytes);
-    return total == 0 ? 0 : done / total;
+  static Widget _line(BuildContext context, WidgetRef ref, DriveHealth health) {
+    final colors = context.colors;
+    final controller = ref.read(backupControllerProvider.notifier);
+    return StatusLine(
+      icon: health.icon,
+      color: switch (health.tone) {
+        HealthTone.busy => colors.accent,
+        HealthTone.good => colors.success,
+        HealthTone.bad => colors.danger,
+        HealthTone.neutral => null,
+      },
+      text: health.text,
+      detail: health.detail,
+      progress: health.progress,
+      trailing: switch (health.action) {
+        HealthAction.turnOn => TextButton(
+          onPressed: () => enableBackup(context, ref),
+          child: const Text('Turn on'),
+        ),
+        HealthAction.allow => TextButton(
+          onPressed: () async {
+            if (!await controller.enable()) await PhotoManager.openSetting();
+          },
+          child: const Text('Allow'),
+        ),
+        HealthAction.useData => TextButton(
+          onPressed: () => controller.setWifiOnly(false),
+          child: const Text('Use data'),
+        ),
+        HealthAction.retryBackup => TextButton(
+          onPressed: () => controller.schedule(immediate: true),
+          child: const Text('Retry'),
+        ),
+        HealthAction.retryFailed => TextButton(
+          onPressed: controller.retryFailed,
+          child: const Text('Retry'),
+        ),
+        HealthAction.none => null,
+      },
+      onTap: switch (health.target) {
+        HealthTarget.backup => () => context.push('/backup'),
+        HealthTarget.transfers => () => context.push('/transfers'),
+        HealthTarget.refresh => () => ref.read(driveSyncProvider.notifier).refresh(),
+      },
+    );
   }
 }
 

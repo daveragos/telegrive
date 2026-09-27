@@ -94,4 +94,24 @@ void main() {
     // Backup reads this to know the index can't be trusted yet.
     expect(prefs.lastFullSync(_chatId), isNull);
   });
+
+  test('a failure stays while the next try runs, and clears when it succeeds', () async {
+    final (container, _, _) = await start([
+      const TelegramException(400, 'CHANNEL_INVALID'),
+    ]);
+    final sync = container.read(driveSyncProvider.notifier);
+    await sync.refresh();
+    expect(container.read(driveSyncProvider).error, isNotNull);
+
+    final whileRunning = <String?>[];
+    container.listen<SyncState>(driveSyncProvider, (_, next) {
+      if (next.running) whileRunning.add(next.error);
+    });
+    await sync.refresh();
+
+    // Home keeps saying Telegram can't be reached until a try gets through.
+    expect(whileRunning, isNotEmpty);
+    expect(whileRunning, everyElement(isNotNull));
+    expect(container.read(driveSyncProvider).error, isNull);
+  });
 }

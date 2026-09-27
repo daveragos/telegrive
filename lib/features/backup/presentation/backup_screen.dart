@@ -32,7 +32,10 @@ class BackupScreen extends ConsumerWidget {
         padding: const EdgeInsets.only(bottom: Space.x4),
         children: [
           const BackupStatusPanel(),
-          if (backup.phase == BackupPhase.off || backup.phase == BackupPhase.needsPermission)
+          // Home's "Backup stopped" line opens this screen, so the way to
+          // run the pass again is here too, not only back on Home.
+          if (backup.phase
+              case BackupPhase.off || BackupPhase.needsPermission || BackupPhase.stopped)
             Padding(
               padding: const EdgeInsets.fromLTRB(Space.gutter, 0, Space.gutter, Space.s),
               child: SizedBox(
@@ -41,13 +44,17 @@ class BackupScreen extends ConsumerWidget {
                   onPressed: () async {
                     if (backup.phase == BackupPhase.needsPermission) {
                       if (!await controller.enable()) await PhotoManager.openSetting();
+                    } else if (backup.phase == BackupPhase.stopped) {
+                      controller.schedule(immediate: true);
                     } else if (context.mounted) {
                       await enableBackup(context, ref);
                     }
                   },
-                  child: Text(
-                    backup.phase == BackupPhase.off ? 'Turn on backup' : 'Allow photo access',
-                  ),
+                  child: Text(switch (backup.phase) {
+                    BackupPhase.off => 'Turn on backup',
+                    BackupPhase.stopped => 'Try again',
+                    _ => 'Allow photo access',
+                  }),
                 ),
               ),
             ),

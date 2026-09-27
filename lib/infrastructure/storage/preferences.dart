@@ -140,17 +140,6 @@ class Preferences {
     await _prefs.remove(BackupPrefKeys.notifiedCount);
   }
 
-  /// Home stops suggesting backup until this moment after "Not now".
-  DateTime? get backupCardHiddenUntil {
-    final millis = _prefs.getInt('backup_card_hidden_until');
-    return millis == null ? null : DateTime.fromMillisecondsSinceEpoch(millis);
-  }
-
-  Future<void> hideBackupCard(Duration duration) => _prefs.setInt(
-    'backup_card_hidden_until',
-    DateTime.now().add(duration).millisecondsSinceEpoch,
-  );
-
   /// Whether the "back up your photos?" question has been asked.
   bool get backupPromptShown => _prefs.getBool('backup_prompt_shown') ?? false;
   Future<void> setBackupPromptShown() =>

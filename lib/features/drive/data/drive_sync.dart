@@ -23,6 +23,10 @@ class SyncState {
 
   /// Messages read so far in the current pass.
   final int scanned;
+
+  /// Why the latest sync failed. It stays through the next try and clears
+  /// only when one succeeds, so a retry that is still offline doesn't read
+  /// as in sync while it runs.
   final String? error;
   final DateTime? lastSynced;
 
@@ -117,7 +121,7 @@ class DriveSync extends Notifier<SyncState> {
   Future<void> _sync({required bool full}) async {
     final chatId = ref.read(driveSessionProvider)?.chatId;
     if (chatId == null) return;
-    state = state.copyWith(running: true, scanned: 0, clearError: true);
+    state = state.copyWith(running: true, scanned: 0);
 
     try {
       final stopAt = full ? 0 : _prefs.lastSyncedMessageId(chatId);
@@ -167,7 +171,7 @@ class DriveSync extends Notifier<SyncState> {
       if (newest > 0) await _prefs.setLastSyncedMessageId(chatId, newest);
 
       _failedFullSyncs = 0;
-      state = state.copyWith(running: false, lastSynced: DateTime.now());
+      state = state.copyWith(running: false, lastSynced: DateTime.now(), clearError: true);
     } on TelegramException catch (e) {
       state = state.copyWith(running: false, error: e.friendlyMessage);
       if (full) _retryFullSync();

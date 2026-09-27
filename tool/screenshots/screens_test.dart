@@ -571,6 +571,35 @@ void main() {
     await snap(tester, 'home_dark');
   });
 
+  testWidgets('home all good', (tester) async {
+    await prepareData(tester);
+    transfers = TransfersState.empty;
+    await pumpApp(
+      tester,
+      location: '/home',
+      backup: BackupState(
+        phase: BackupPhase.upToDate,
+        total: 4847,
+        done: 4847,
+        lastCompleted: DateTime.now().subtract(const Duration(minutes: 3)),
+      ),
+    );
+    await snap(tester, 'home_all_good');
+  });
+
+  testWidgets('home backup stopped', (tester) async {
+    await prepareData(tester);
+    await pumpApp(
+      tester,
+      location: '/home',
+      backup: const BackupState(
+        phase: BackupPhase.stopped,
+        error: 'Telegram took too long to answer.',
+      ),
+    );
+    await snap(tester, 'home_stopped');
+  });
+
   testWidgets('search', (tester) async {
     await prepareData(tester);
     await pumpApp(tester, location: '/home');

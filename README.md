@@ -26,7 +26,9 @@ phone number.
   data. A Photos tab shows everything as a timeline grouped by month, with a
   swipeable full-screen viewer. Long-press and drag to select a run of
   photos, pinch to change the grid, and keep albums (a photo can be in
-  several without being copied), plus Favorites and Videos.
+  several without being copied), plus Favorites and Videos. Home opens with
+  one line that says whether everything is backed up and in sync, and when
+  that was last checked.
 - **Free up space.** Delete the phone's copies of photos and videos that are
   safely backed up; they stay in the drive.
 - **Real folders.** Create, rename, move and delete folders; breadcrumbs;

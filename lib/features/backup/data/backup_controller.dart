@@ -12,6 +12,7 @@ import 'package:photo_manager/photo_manager.dart';
 
 import '../../../infrastructure/database/app_database.dart';
 import '../../../infrastructure/storage/preferences.dart';
+import '../../../infrastructure/telegram/telegram_exception.dart';
 import '../../drive/data/drive_repository.dart';
 import '../../drive/data/drive_session.dart';
 import '../../drive/data/drive_sync.dart';
@@ -40,6 +41,9 @@ enum BackupPhase {
 
   /// Everything in scope is in the drive.
   upToDate,
+
+  /// A pass hit an error it couldn't get past; Retry runs it again.
+  stopped,
 }
 
 @immutable
@@ -51,6 +55,7 @@ class BackupState {
     this.failed = 0,
     this.current,
     this.lastCompleted,
+    this.error,
   });
 
   final BackupPhase phase;
@@ -68,6 +73,9 @@ class BackupState {
   final String? current;
   final DateTime? lastCompleted;
 
+  /// Why the last pass stopped, while [phase] is [BackupPhase.stopped].
+  final String? error;
+
   bool get enabled => phase != BackupPhase.off;
   bool get isWorking =>
       phase == BackupPhase.scanning || phase == BackupPhase.uploading;
@@ -82,6 +90,8 @@ class BackupState {
     String? current,
     bool clearCurrent = false,
     DateTime? lastCompleted,
+    String? error,
+    bool clearError = false,
   }) => BackupState(
     phase: phase ?? this.phase,
     total: total ?? this.total,
@@ -89,6 +99,7 @@ class BackupState {
     failed: failed ?? this.failed,
     current: clearCurrent ? null : (current ?? this.current),
     lastCompleted: lastCompleted ?? this.lastCompleted,
+    error: clearError ? null : (error ?? this.error),
   );
 }
 
@@ -301,13 +312,26 @@ class BackupController extends Notifier<BackupState> {
       } while (_rerun && _prefs.backupEnabled);
     } catch (e, stack) {
       debugPrint('[Backup] pass failed: $e\n$stack');
+      // A crashed pass says so, with the reason. Calling it up to date
+      // would claim photos are in the drive that were never looked at.
       if (_prefs.backupEnabled) {
-        state = state.copyWith(phase: BackupPhase.upToDate, clearCurrent: true);
+        state = state.copyWith(
+          phase: BackupPhase.stopped,
+          error: _describeError(e),
+          clearCurrent: true,
+        );
       }
     } finally {
       _running = false;
     }
   }
+
+  /// Why a pass stopped, as a sentence for the status line.
+  static String _describeError(Object e) => switch (e) {
+    TelegramException(:final friendlyMessage) => friendlyMessage,
+    DriveException(:final message) => message,
+    _ => '$e',
+  };
 
   Future<void> _pass() async {
     if (ref.read(driveSessionProvider) == null) {
@@ -328,7 +352,11 @@ class BackupController extends Notifier<BackupState> {
     }
 
     final startedAt = DateTime.now();
-    state = state.copyWith(phase: BackupPhase.scanning, clearCurrent: true);
+    state = state.copyWith(
+      phase: BackupPhase.scanning,
+      clearCurrent: true,
+      clearError: true,
+    );
     await ref.read(driveSyncProvider.notifier).whenIdle();
     // "Already in the drive" is judged against the index, so it has to hold
     // the whole channel. After a reinstall, a first read that stopped short

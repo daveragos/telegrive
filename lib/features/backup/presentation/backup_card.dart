@@ -9,14 +9,12 @@ import '../../../core/widgets/common.dart';
 import '../../transfers/data/transfer_queue.dart';
 import '../data/backup_controller.dart';
 
-/// Where backup stands, said in one line — on Home, Photos and Transfers.
-/// It opens the Backup screen, and carries at most one action: whatever
-/// would unblock backup right now.
+/// Where backup stands, said in one line — on Photos and Transfers. It
+/// opens the Backup screen, and carries at most one action: whatever would
+/// unblock backup right now.
 class BackupStatusLine extends ConsumerWidget {
-  const BackupStatusLine({super.key, this.onDismiss, this.linkToSettings = true});
+  const BackupStatusLine({super.key, this.linkToSettings = true});
 
-  /// Offered as a close button while backup is off (Home uses it).
-  final VoidCallback? onDismiss;
   final bool linkToSettings;
 
   @override
@@ -29,29 +27,19 @@ class BackupStatusLine extends ConsumerWidget {
       ),
     );
     final status = describeBackup(backup, speed: speed);
-    final action = _action(context, ref, backup);
 
     return StatusLine(
       icon: status.icon,
-      color: status.done ? colors.success : (backup.isWorking ? colors.accent : null),
+      color: status.done
+          ? colors.success
+          : backup.phase == BackupPhase.stopped
+          ? colors.danger
+          : (backup.isWorking ? colors.accent : null),
       text: status.title,
       detail: status.detail,
       progress: status.progress,
       onTap: linkToSettings ? () => context.push('/backup') : null,
-      trailing: action == null && onDismiss == null
-          ? null
-          : Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                ?action,
-                if (onDismiss != null && !backup.enabled)
-                  IconButton(
-                    onPressed: onDismiss,
-                    icon: const Icon(Icons.close_rounded, size: 20),
-                    tooltip: 'Not now',
-                  ),
-              ],
-            ),
+      trailing: _action(context, ref, backup),
     );
   }
 
@@ -71,6 +59,10 @@ class BackupStatusLine extends ConsumerWidget {
       BackupPhase.waitingForWifi => TextButton(
         onPressed: () => controller.setWifiOnly(false),
         child: const Text('Use data'),
+      ),
+      BackupPhase.stopped => TextButton(
+        onPressed: () => controller.schedule(immediate: true),
+        child: const Text('Retry'),
       ),
       _ => null,
     };
@@ -104,6 +96,8 @@ class BackupStatusPanel extends ConsumerWidget {
                 size: 22,
                 color: status.done
                     ? colors.success
+                    : backup.phase == BackupPhase.stopped
+                    ? colors.danger
                     : (backup.isWorking ? colors.accent : colors.text2),
               ),
               const SizedBox(width: Space.m),
@@ -209,6 +203,13 @@ describeBackup(BackupState backup, {double speed = 0}) {
         if (speed > 0) Formatters.speed(speed),
       ].join(' · '),
       progress: backup.total == 0 ? -1 : backup.progress,
+      done: false,
+    ),
+    BackupPhase.stopped => (
+      icon: Icons.error_outline_rounded,
+      title: 'Backup stopped',
+      detail: backup.error ?? 'Something went wrong.',
+      progress: null,
       done: false,
     ),
     BackupPhase.upToDate => (
