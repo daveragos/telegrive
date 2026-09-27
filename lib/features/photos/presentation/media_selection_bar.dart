@@ -59,10 +59,7 @@ PreferredSizeWidget mediaSelectionBar(
         tooltip: 'More',
         onSelected: (choice) => switch (choice) {
           _More.star => then(
-            FileActions.guarded(
-              context,
-              () async => FileActions.setStarred(context, ref, picked, starred: !allStarred),
-            ),
+            FileActions.setStarred(context, ref, picked, starred: !allStarred),
           ),
           _More.removeFromAlbum => then(AlbumActions.removeFrom(context, ref, picked, albumId!)),
           _More.selectAll => selection.replace({for (final f in files) f.id}),

@@ -21,6 +21,7 @@ import '../../lock/data/app_lock.dart';
 import '../../offline/data/offline_sync.dart';
 import '../../search/data/content_indexer.dart';
 import '../../transfers/data/transfer_queue.dart';
+import '../../trash/data/pending_deletes.dart';
 import '../data/settings_providers.dart';
 
 class SettingsScreen extends ConsumerWidget {
@@ -37,7 +38,8 @@ class SettingsScreen extends ConsumerWidget {
     final viewMode = ref.watch(browsePreferencesProvider.select((p) => p.viewMode));
     final cache = ref.watch(cacheSizeProvider);
     final busyTransfers = ref.watch(transferQueueProvider.select((s) => s.activeCount)) > 0;
-    final trashCount = ref.watch(trashProvider).value?.count ?? 0;
+    final hidden = ref.watch(pendingDeletesProvider.select((s) => s.hiddenIds));
+    final trashCount = ref.watch(trashProvider).value?.without(hidden).count ?? 0;
     final lock = ref.watch(appLockProvider);
     final freeable = ref.watch(freeableProvider);
     final offline = ref.watch(offlineUsageProvider);

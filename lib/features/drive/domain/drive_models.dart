@@ -271,6 +271,15 @@ class TrashContents {
 
   bool get isEmpty => folders.isEmpty && files.isEmpty;
   int get count => folders.length + files.length;
+
+  /// What is left once [ids] are taken out, e.g. what is being deleted for
+  /// good.
+  TrashContents without(Set<String> ids) => ids.isEmpty
+      ? this
+      : TrashContents(
+          folders: [for (final folder in folders) if (!ids.contains(folder.id)) folder],
+          files: [for (final file in files) if (!ids.contains(file.id)) file],
+        );
 }
 
 /// A file to download to the phone, with the names of the folders leading

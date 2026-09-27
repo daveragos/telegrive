@@ -8,7 +8,7 @@ import '../../../core/format/formatters.dart';
 import '../../../core/widgets/common.dart';
 import '../../drive/data/drive_repository.dart';
 import '../../drive/domain/drive_models.dart';
-import '../../files/presentation/file_actions.dart';
+import '../../trash/data/pending_deletes.dart';
 import 'album_actions.dart';
 import 'media_grid.dart';
 import 'media_selection_bar.dart';
@@ -20,6 +20,8 @@ class AlbumsScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final albums = ref.watch(albumsProvider);
+    // An album being deleted leaves the list at once, while its Undo lasts.
+    final hidden = ref.watch(pendingDeletesProvider.select((s) => s.hiddenIds));
     final media = ref.watch(mediaTimelineProvider).value ?? const <DriveFile>[];
     final favorites = media.where((f) => f.starred).toList();
     final videos = media.where((f) => f.kind == FileKind.video).toList();
@@ -56,12 +58,13 @@ class AlbumsScreen extends ConsumerWidget {
               onTap: () => context.push('/albums/${SmartAlbum.videos}'),
             ),
             for (final album in albums)
-              _AlbumCard(
-                name: album.name,
-                count: album.count,
-                album: album,
-                onTap: () => context.push('/albums/${album.id}'),
-              ),
+              if (!hidden.contains(album.id))
+                _AlbumCard(
+                  name: album.name,
+                  count: album.count,
+                  album: album,
+                  onTap: () => context.push('/albums/${album.id}'),
+                ),
           ],
         ),
       ),
@@ -259,11 +262,12 @@ class _AddToAlbumScreenState extends ConsumerState<AddToAlbumScreen> {
                   ? null
                   : () async {
                       setState(() => _adding = true);
-                      final added = await FileActions.guarded(
+                      final added = await AlbumActions.add(
                         context,
-                        () => ref
-                            .read(driveRepositoryProvider)
-                            .addToAlbum(_selection.pick(media), widget.albumId),
+                        ref,
+                        _selection.pick(media),
+                        albumId: widget.albumId,
+                        name: album?.name ?? 'album',
                       );
                       if (!context.mounted) return;
                       if (added) {

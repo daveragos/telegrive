@@ -741,6 +741,18 @@ void main() {
     await snap(tester, 'trash');
   });
 
+  testWidgets('trash deleting', (tester) async {
+    await prepareData(tester);
+    await pumpApp(tester, location: '/trash');
+    await tester.tap(find.text('Draft v1.docx'));
+    for (var i = 0; i < 4; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    await tester.tap(find.text('Delete for good'));
+    await tester.pump(const Duration(milliseconds: 300));
+    await snap(tester, 'trash_deleting');
+  });
+
   testWidgets('albums', (tester) async {
     await prepareData(tester);
     await pumpApp(tester, location: '/albums');

@@ -8,6 +8,7 @@ import '../../drive/data/drive_repository.dart';
 import '../../drive/domain/drive_models.dart';
 import '../../files/presentation/file_actions.dart';
 import '../../files/presentation/file_tiles.dart';
+import '../data/pending_deletes.dart';
 
 /// What was deleted in the last 30 days, to restore or delete for good.
 class TrashScreen extends ConsumerWidget {
@@ -15,7 +16,10 @@ class TrashScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final trash = ref.watch(trashProvider);
+    // What is being deleted for good is gone from here at once, while its
+    // Undo lasts.
+    final hidden = ref.watch(pendingDeletesProvider.select((s) => s.hiddenIds));
+    final trash = ref.watch(trashProvider).whenData((c) => c.without(hidden));
     final contents = trash.value;
 
     return Scaffold(

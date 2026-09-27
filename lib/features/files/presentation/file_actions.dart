@@ -30,8 +30,13 @@ import '../../drive/domain/drive_models.dart';
 import '../../transfers/data/transfer_queue.dart';
 import '../../transfers/domain/transfer_error.dart';
 import '../../transfers/domain/transfer_wait.dart';
+import '../../trash/data/pending_deletes.dart';
 import '../data/bulk_edits.dart';
 import 'folder_picker.dart';
+
+/// One item of a bulk change that mixes files and folders: how to make the
+/// change, and how to take it back.
+typedef _Step = ({Future<void> Function() apply, Future<void> Function() undo});
 
 /// Every action a person can take on files and folders, in one place so the
 /// home screen, the browser and search all behave identically.
@@ -397,8 +402,18 @@ abstract final class FileActions {
       selectStem: true,
       confirmLabel: 'Rename',
     );
-    if (name == null || !context.mounted) return;
-    await _guard(context, () => ref.read(driveRepositoryProvider).renameFile(file, name));
+    if (name == null || name == file.name || !context.mounted) return;
+    final repository = ref.read(driveRepositoryProvider);
+    await _guard(
+      context,
+      () => repository.renameFile(file, name),
+      success: 'Renamed to "$name"',
+      undo: () async {
+        for (final current in await _current(repository, [file])) {
+          await repository.renameFile(current, file.name);
+        }
+      },
+    );
   }
 
   static Future<void> renameFolder(
@@ -412,10 +427,17 @@ abstract final class FileActions {
       initialValue: folder.name,
       confirmLabel: 'Rename',
     );
-    if (name == null || !context.mounted) return;
+    if (name == null || name == folder.name || !context.mounted) return;
+    final repository = ref.read(driveRepositoryProvider);
     await _guard(
       context,
-      () => ref.read(driveRepositoryProvider).renameFolder(folder, name),
+      () => repository.renameFolder(folder, name),
+      success: 'Renamed to "$name"',
+      undo: () async {
+        for (final current in await _currentFolders(repository, [folder])) {
+          await repository.renameFolder(current, folder.name);
+        }
+      },
     );
   }
 
@@ -435,42 +457,72 @@ abstract final class FileActions {
     if (destination == null || !context.mounted) return false;
     final target = destination.folderId;
     final repository = ref.read(driveRepositoryProvider);
-    final outcome = await runBulk(
+    final outcome = await runBulk<_Step>(
       context,
       ref.read(bulkEditsProvider.notifier),
       label: 'Moving ${Formatters.count(count, 'item')}',
       icon: Icons.drive_file_move_outline,
-      items: <Future<void> Function()>[
-        for (final file in files) () => repository.moveFiles([file], target),
-        for (final folder in folders) () => repository.moveFolder(folder, target),
+      items: <_Step>[
+        for (final file in files)
+          (
+            apply: () => repository.moveFiles([file], target),
+            undo: () async =>
+                repository.moveFiles(await _current(repository, [file]), file.folderId),
+          ),
+        for (final folder in folders)
+          (
+            apply: () => repository.moveFolder(folder, target),
+            undo: () async {
+              for (final current in await _currentFolders(repository, [folder])) {
+                await repository.moveFolder(current, folder.parentId);
+              }
+            },
+          ),
       ],
-      apply: (move) => move(),
+      apply: (step) => step.apply(),
       success: 'Moved to ${destination.name}',
+      undo: (
+        label: (done) => 'Moving ${Formatters.count(done, 'item')} back',
+        apply: (step) => step.undo(),
+      ),
     );
     return outcome?.complete ?? false;
   }
 
-  static Future<void> setStarred(
+  /// Stars or unstars [files], with Undo. Returns whether every file
+  /// changed.
+  static Future<bool> setStarred(
     BuildContext context,
     WidgetRef ref,
     List<DriveFile> files, {
     required bool starred,
   }) async {
     final repository = ref.read(driveRepositoryProvider);
-    final count = Formatters.count(files.length, 'item');
-    await runBulk(
+    String label(int count, {required bool starring}) => starring
+        ? 'Starring ${Formatters.count(count, 'item')}'
+        : 'Removing ${Formatters.count(count, 'item')} from Starred';
+    final outcome = await runBulk<DriveFile>(
       context,
       ref.read(bulkEditsProvider.notifier),
-      label: starred ? 'Starring $count' : 'Removing $count from Starred',
+      label: label(files.length, starring: starred),
       icon: Icons.star_outline_rounded,
       items: files,
       apply: (file) => repository.setStarred([file], starred: starred),
       success: starred ? 'Added to Starred' : 'Removed from Starred',
+      // Each file goes back to how it was, so one that was starred before
+      // stays starred.
+      undo: (
+        label: (done) => label(done, starring: !starred),
+        apply: (file) async =>
+            repository.setStarred(await _current(repository, [file]), starred: file.starred),
+      ),
     );
+    return outcome?.complete ?? false;
   }
 
   /// Moves [files] and [folders] to the trash, with an Undo on the
-  /// snackbar. Returns whether it worked.
+  /// snackbar. Over 100 items it asks first, since undoing that many is one
+  /// edit per item and takes a while. Returns whether it worked.
   static Future<bool> delete(
     BuildContext context,
     WidgetRef ref, {
@@ -480,36 +532,40 @@ abstract final class FileActions {
     final repository = ref.read(driveRepositoryProvider);
     final edits = ref.read(bulkEditsProvider.notifier);
     final what = _describe(files, folders);
-    final count = Formatters.count(files.length + folders.length, 'item');
-    final outcome = await runBulk(
+    final total = files.length + folders.length;
+    if (total > 100) {
+      final confirmed = await showConfirmDialog(
+        context,
+        title: 'Move $what to Trash?',
+        message: 'Undo takes a while for this many, one edit per file.',
+        confirmLabel: 'Move to Trash',
+      );
+      if (!confirmed || !context.mounted) return false;
+    }
+    final outcome = await runBulk<_Step>(
       context,
       edits,
-      label: 'Moving $count to Trash',
+      label: 'Moving ${Formatters.count(total, 'item')} to Trash',
       icon: Icons.delete_outline_rounded,
-      items: <Future<void> Function()>[
-        for (final folder in folders) () => repository.trash(folders: [folder]),
-        for (final file in files) () => repository.trash(files: [file]),
+      items: <_Step>[
+        for (final folder in folders)
+          (
+            apply: () => repository.trash(folders: [folder]),
+            undo: () async =>
+                repository.restore(folders: await _currentFolders(repository, [folder])),
+          ),
+        for (final file in files)
+          (
+            apply: () => repository.trash(files: [file]),
+            undo: () async => repository.restore(files: await _current(repository, [file])),
+          ),
       ],
-      apply: (trash) => trash(),
+      apply: (step) => step.apply(),
       success: 'Moved $what to Trash',
-      // Folders go first, so what reached the Trash is the first `done` of
-      // the folders and then the files, even when the change stopped part
-      // way.
-      undo: (done) {
-        final trashedFolders = folders.take(done).toList();
-        final trashedFiles = files.take(done - trashedFolders.length).toList();
-        return runBulk(
-          context,
-          edits,
-          label: 'Restoring ${Formatters.count(done, 'item')}',
-          icon: Icons.restore_rounded,
-          items: <Future<void> Function()>[
-            for (final folder in trashedFolders) () => repository.restore(folders: [folder]),
-            for (final file in trashedFiles) () => repository.restore(files: [file]),
-          ],
-          apply: (restore) => restore(),
-        );
-      },
+      undo: (
+        label: (done) => 'Restoring ${Formatters.count(done, 'item')}',
+        apply: (step) => step.undo(),
+      ),
     );
     return outcome?.complete ?? false;
   }
@@ -519,54 +575,97 @@ abstract final class FileActions {
     WidgetRef ref, {
     List<DriveFile> files = const [],
     List<DriveFolder> folders = const [],
-  }) => _guard(
-    context,
-    () => ref.read(driveRepositoryProvider).restore(files: files, folders: folders),
-    success: 'Restored ${_describe(files, folders)}',
-  );
+  }) {
+    final repository = ref.read(driveRepositoryProvider);
+    return _guard(
+      context,
+      () => repository.restore(files: files, folders: folders),
+      success: 'Restored ${_describe(files, folders)}',
+      undo: () async => repository.trash(
+        files: await _current(repository, files),
+        folders: await _currentFolders(repository, folders),
+      ),
+    );
+  }
 
+  /// Deletes [files] and [folders] for good, and everything inside the
+  /// folders. They leave the list at once, and the messages go once Undo
+  /// has had its time. Returns true: there is nothing left to confirm.
   static Future<bool> deleteForever(
     BuildContext context,
     WidgetRef ref, {
     List<DriveFile> files = const [],
     List<DriveFolder> folders = const [],
   }) async {
-    final confirmed = await showConfirmDialog(
+    final repository = ref.read(driveRepositoryProvider);
+    final what = _describe(files, folders);
+    deleteLater(
       context,
-      title: 'Delete ${_describe(files, folders)} for good?',
-      message: folders.isEmpty
-          ? 'It will be removed from your Telegram channel. This can\'t be undone.'
-          : 'Folders go with everything inside them. This can\'t be undone.',
-      confirmLabel: 'Delete',
-      destructive: true,
+      ref,
+      fileIds: {for (final file in files) file.id},
+      folderIds: {for (final folder in folders) folder.id},
+      label: what,
+      message: 'Deleting $what for good',
+      run: () => repository.delete(files: files, folders: folders),
     );
-    if (!confirmed || !context.mounted) return false;
-    return _guard(
-      context,
-      () => ref.read(driveRepositoryProvider).delete(files: files, folders: folders),
-      success: 'Deleted for good',
-    );
+    return true;
   }
 
+  /// Deletes what the trash holds now, [contents], for good, the same way
+  /// as [deleteForever]. Whatever reaches the trash during the wait stays.
   static Future<void> emptyTrash(
     BuildContext context,
     WidgetRef ref,
     TrashContents contents,
   ) async {
-    final confirmed = await showConfirmDialog(
+    final repository = ref.read(driveRepositoryProvider);
+    final count = Formatters.count(contents.count, 'item');
+    deleteLater(
       context,
-      title: 'Empty the trash?',
-      message:
-          '${Formatters.count(contents.count, 'item')} will be removed from your '
-          'Telegram channel for good. This can\'t be undone.',
-      confirmLabel: 'Empty trash',
-      destructive: true,
+      ref,
+      fileIds: {for (final file in contents.files) file.id},
+      folderIds: {for (final folder in contents.folders) folder.id},
+      label: count,
+      message: 'Emptying the trash · $count',
+      run: () => repository.delete(files: contents.files, folders: contents.folders),
     );
-    if (!confirmed || !context.mounted) return;
-    await _guard(
+  }
+
+  /// Hides [fileIds], [folderIds] and [albumIds] at once and runs [run],
+  /// which deletes them for good, only once the Undo on [message] has had
+  /// [PendingDeletes.wait]. Undo keeps them. [label] names what goes, for
+  /// the sentence the shell shows if the delete fails later.
+  static void deleteLater(
+    BuildContext context,
+    WidgetRef ref, {
+    Set<String> fileIds = const {},
+    Set<String> folderIds = const {},
+    Set<String> albumIds = const {},
+    required String label,
+    required String message,
+    required Future<void> Function() run,
+  }) {
+    final pending = ref.read(pendingDeletesProvider.notifier);
+    final token = pending.schedule(
+      fileIds: fileIds,
+      folderIds: folderIds,
+      albumIds: albumIds,
+      label: label,
+      run: run,
+    );
+    final lasting = _lasting(context);
+    showUndoSnack(
       context,
-      () => ref.read(driveRepositoryProvider).emptyTrash(),
-      success: 'Trash emptied',
+      message,
+      duration: PendingDeletes.wait,
+      onUndo: () {
+        final kept = pending.undo(token);
+        if (!lasting.mounted) return;
+        showSnack(
+          lasting,
+          kept ? 'Kept' : 'Too late to undo. The delete had already started.',
+        );
+      },
     );
   }
 
@@ -790,27 +889,70 @@ abstract final class FileActions {
     if (!opened && context.mounted) showSnack(context, 'Couldn\'t open Telegram.');
   }
 
-  /// Runs [action], turning failures into a snackbar. Returns success.
+  /// Runs [action], turning failures into a snackbar. With [undo], the
+  /// [success] sentence offers Undo, which runs [undo] the same way and says
+  /// how that went. Returns success.
   static Future<bool> guarded(
     BuildContext context,
     Future<void> Function() action, {
     String? success,
-  }) => _guard(context, action, success: success);
+    Future<void> Function()? undo,
+  }) => _guard(context, action, success: success, undo: undo);
 
   static Future<bool> _guard(
     BuildContext context,
     Future<void> Function() action, {
     String? success,
+    Future<void> Function()? undo,
+    String failurePrefix = '',
   }) async {
     try {
       await action();
-      if (success != null && context.mounted) showSnack(context, success);
+      if (success != null && context.mounted) {
+        if (undo == null) {
+          showSnack(context, success);
+        } else {
+          final lasting = _lasting(context);
+          showUndoSnack(
+            context,
+            success,
+            onUndo: () => _guard(lasting, undo, success: 'Undone', failurePrefix: _undoFailed),
+          );
+        }
+      }
       return true;
     } catch (e) {
-      if (context.mounted) showSnack(context, _failure(e));
+      if (context.mounted) showSnack(context, '$failurePrefix${_failure(e)}');
     }
     return false;
   }
+
+  /// What a failed Undo leads with, before the reason.
+  static const _undoFailed = 'Couldn\'t undo: ';
+
+  /// Where an Undo says how it went. Undo can be tapped after the screen
+  /// that offered it has gone (a sheet, the viewer, an album's Add photos),
+  /// so it speaks through the app's root navigator, which lasts as long as
+  /// the app.
+  static BuildContext _lasting(BuildContext context) =>
+      Navigator.maybeOf(context, rootNavigator: true)?.context ?? context;
+
+  /// [files] as the index holds them now; those gone since are left out.
+  /// An undo starts from these because moveFiles, setStarred and renameFile
+  /// pass over a file whose folder, star or name already matches the one
+  /// asked for, and the file in hand still shows how it was before.
+  static Future<List<DriveFile>> _current(
+    DriveRepository repository,
+    Iterable<DriveFile> files,
+  ) async => [for (final file in files) ?await repository.fileById(file.id)];
+
+  /// [folders] as the index holds them now, for the same reason as
+  /// [_current]: moveFolder passes over a folder already in its parent, and
+  /// a folder is rewritten from the name and parent in hand.
+  static Future<List<DriveFolder>> _currentFolders(
+    DriveRepository repository,
+    Iterable<DriveFolder> folders,
+  ) async => [for (final folder in folders) ?await repository.folderById(folder.id)];
 
   static String _failure(Object error) => switch (error) {
     DriveException(:final message) => message,
@@ -822,8 +964,10 @@ abstract final class FileActions {
   /// line above the bar follows when it is big or Telegram asks for a wait,
   /// and says how it ended: [success], where it stopped, or why it failed.
   /// With [undo], that sentence offers Undo for the items that did change,
-  /// the first `done` of [items], however it ended. Returns how it ended,
-  /// or null when it couldn't start.
+  /// the first `done` of [items], however it ended: Undo runs undo.apply on
+  /// each of them as a bulk change of its own, called undo.label, and says
+  /// 'Undone' or why it couldn't. Returns how it ended, or null when it
+  /// couldn't start.
   ///
   /// [edits] is read up front because an Undo can run this after the screen
   /// that started it is gone.
@@ -835,12 +979,13 @@ abstract final class FileActions {
     required List<T> items,
     required Future<void> Function(T item) apply,
     String? success,
-    Future<void> Function(int done)? undo,
+    ({String Function(int done) label, Future<void> Function(T item) apply})? undo,
+    String failurePrefix = '',
   }) async {
     BulkOutcome? outcome;
     await _guard(context, () async {
       outcome = await edits.run(label: label, icon: icon, items: items, apply: apply);
-    });
+    }, failurePrefix: failurePrefix);
     final ended = outcome;
     if (ended == null) return null;
     final error = ended.error;
@@ -854,16 +999,28 @@ abstract final class FileActions {
           'Telegram asked us to wait ${Formatters.inWords(wait)}. '
           '$done are done; try the rest later.';
     } else if (error != null) {
-      message = _failure(error);
+      message = '$failurePrefix${_failure(error)}';
     } else {
       message = success;
     }
-    if (message != null && context.mounted) {
-      showSnack(
+    if (message == null || !context.mounted) return ended;
+    if (undo == null || ended.done == 0) {
+      showSnack(context, message);
+    } else {
+      final lasting = _lasting(context);
+      showUndoSnack(
         context,
         message,
-        actionLabel: undo != null && ended.done > 0 ? 'Undo' : null,
-        onAction: undo == null ? null : () => undo(ended.done),
+        onUndo: () => runBulk(
+          lasting,
+          edits,
+          label: undo.label(ended.done),
+          icon: Icons.undo_rounded,
+          items: items.take(ended.done).toList(),
+          apply: undo.apply,
+          success: 'Undone',
+          failurePrefix: _undoFailed,
+        ),
       );
     }
     return ended;

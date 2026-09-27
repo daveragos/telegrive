@@ -270,25 +270,50 @@ class _CountdownState extends State<Countdown> {
   }
 }
 
-void showSnack(
+/// How long Undo is offered after a change that can be taken back.
+const undoWindow = Duration(seconds: 6);
+
+/// Shows [message] at the foot of the screen for [duration], in place of
+/// any snack already there. Every snack leaves when its time is up, one
+/// with an action too, so an Undo is never offered after its window has
+/// closed. Returns the snack's controller, whose `closed` says how it went,
+/// or null when there is nowhere to show it.
+ScaffoldFeatureController<SnackBar, SnackBarClosedReason>? showSnack(
   BuildContext context,
   String message, {
   String? actionLabel,
   VoidCallback? onAction,
+  Duration duration = const Duration(seconds: 4),
 }) {
   final messenger = ScaffoldMessenger.maybeOf(context);
-  if (messenger == null) return;
-  messenger
-    ..hideCurrentSnackBar()
-    ..showSnackBar(
-      SnackBar(
-        content: Text(message),
-        action: actionLabel == null
-            ? null
-            : SnackBarAction(label: actionLabel, onPressed: onAction ?? () {}),
-      ),
-    );
+  if (messenger == null) return null;
+  messenger.hideCurrentSnackBar();
+  return messenger.showSnackBar(
+    SnackBar(
+      content: Text(message),
+      duration: duration,
+      persist: false,
+      action: actionLabel == null
+          ? null
+          : SnackBarAction(label: actionLabel, onPressed: onAction ?? () {}),
+    ),
+  );
 }
+
+/// A change that can be taken back: [message] says what happened, in the
+/// past tense, and Undo calls [onUndo] for [duration].
+ScaffoldFeatureController<SnackBar, SnackBarClosedReason>? showUndoSnack(
+  BuildContext context,
+  String message, {
+  required VoidCallback onUndo,
+  Duration duration = undoWindow,
+}) => showSnack(
+  context,
+  message,
+  actionLabel: 'Undo',
+  onAction: onUndo,
+  duration: duration,
+);
 
 /// Asks for a single line of text (folder name, rename).
 Future<String?> showTextInputDialog(

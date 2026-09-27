@@ -237,6 +237,11 @@ class DriveRepository {
     return row == null ? null : DriveFile.fromRow(row);
   }
 
+  Future<DriveFolder?> folderById(String id) async {
+    final row = await _db.folderById(id);
+    return row == null ? null : DriveFolder.fromRow(row);
+  }
+
   Future<List<PartRow>> partsOf(String fileId) => _db.partsOf(fileId);
 
   Future<void> rememberTdFileId(String fileId, int partIndex, int tdFileId) =>

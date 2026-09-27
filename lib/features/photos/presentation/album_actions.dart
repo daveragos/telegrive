@@ -11,6 +11,7 @@ import '../../drive/domain/drive_models.dart';
 import '../../files/data/bulk_edits.dart';
 import '../../files/presentation/file_actions.dart';
 import '../../transfers/domain/transfer_error.dart';
+import '../../trash/data/pending_deletes.dart';
 
 /// Making, filling and tidying photo albums.
 abstract final class AlbumActions {
@@ -44,15 +45,41 @@ abstract final class AlbumActions {
       );
       if (!created || !context.mounted) return false;
     }
+    return add(context, ref, files, albumId: albumId, name: name ?? 'album');
+  }
+
+  /// Adds [files] to the album [albumId], called [name], as one bulk change
+  /// with Undo, then lifts the album to the top. Returns whether they all
+  /// went in.
+  static Future<bool> add(
+    BuildContext context,
+    WidgetRef ref,
+    List<DriveFile> files, {
+    required String albumId,
+    required String name,
+  }) async {
+    final repository = ref.read(driveRepositoryProvider);
+    final edits = ref.read(bulkEditsProvider.notifier);
+    // Undo takes out only what this change put in; a photo that was in the
+    // album already stays. The repository reads membership from the index,
+    // so the files in hand serve as they are.
+    final members = {for (final file in await repository.watchAlbumFiles(albumId).first) file.id};
+    if (!context.mounted) return false;
     final count = Formatters.count(files.length, 'item');
-    final outcome = await FileActions.runBulk(
+    final outcome = await FileActions.runBulk<DriveFile>(
       context,
-      ref.read(bulkEditsProvider.notifier),
+      edits,
       label: 'Adding $count to "$name"',
       icon: Icons.photo_album_outlined,
       items: files,
       apply: (file) => repository.addToAlbum([file], albumId, touch: false),
       success: 'Added $count to "$name"',
+      undo: (
+        label: (done) => 'Removing ${Formatters.count(done, 'item')} from "$name"',
+        apply: (file) async {
+          if (!members.contains(file.id)) await repository.removeFromAlbum([file], albumId);
+        },
+      ),
     );
     if (outcome == null || outcome.done == 0) return false;
     // Lifting the album to the top is one edit of its own, made once for
@@ -86,28 +113,30 @@ abstract final class AlbumActions {
       confirm: 'Rename',
       initial: album.name,
     );
-    if (name == null || !context.mounted) return;
+    if (name == null || name == album.name || !context.mounted) return;
+    final repository = ref.read(driveRepositoryProvider);
     await FileActions.guarded(
       context,
-      () => ref.read(driveRepositoryProvider).renameAlbum(album.id, name),
+      () => repository.renameAlbum(album.id, name),
+      success: 'Renamed to "$name"',
+      undo: () => repository.renameAlbum(album.id, album.name),
     );
   }
 
-  /// Returns whether the album went.
+  /// Takes the album off the list at once and deletes it once its Undo has
+  /// had its time; its photos and videos stay in the drive. Returns true,
+  /// so the album's screen closes.
   static Future<bool> delete(BuildContext context, WidgetRef ref, DriveAlbum album) async {
-    final confirmed = await showConfirmDialog(
+    final repository = ref.read(driveRepositoryProvider);
+    FileActions.deleteLater(
       context,
-      title: 'Delete "${album.name}"?',
-      message: 'Only the album goes. Its photos and videos stay in your drive.',
-      confirmLabel: 'Delete album',
-      destructive: true,
+      ref,
+      albumIds: {album.id},
+      label: '"${album.name}"',
+      message: 'Deleting "${album.name}"',
+      run: () => repository.deleteAlbum(album.id),
     );
-    if (!confirmed || !context.mounted) return false;
-    return FileActions.guarded(
-      context,
-      () => ref.read(driveRepositoryProvider).deleteAlbum(album.id),
-      success: 'Album deleted',
-    );
+    return true;
   }
 
   static Future<bool> removeFrom(
@@ -118,7 +147,7 @@ abstract final class AlbumActions {
   ) async {
     final repository = ref.read(driveRepositoryProvider);
     final count = Formatters.count(files.length, 'item');
-    final outcome = await FileActions.runBulk(
+    final outcome = await FileActions.runBulk<DriveFile>(
       context,
       ref.read(bulkEditsProvider.notifier),
       label: 'Removing $count from the album',
@@ -126,6 +155,10 @@ abstract final class AlbumActions {
       items: files,
       apply: (file) => repository.removeFromAlbum([file], albumId),
       success: 'Removed $count from the album',
+      undo: (
+        label: (done) => 'Adding ${Formatters.count(done, 'item')} back to the album',
+        apply: (file) => repository.addToAlbum([file], albumId, touch: false),
+      ),
     );
     return outcome?.complete ?? false;
   }
@@ -155,7 +188,11 @@ class _AlbumPicker extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final albums = ref.watch(albumsProvider).value ?? const <DriveAlbum>[];
+    final hidden = ref.watch(pendingDeletesProvider.select((s) => s.hiddenIds));
+    final albums = [
+      for (final album in ref.watch(albumsProvider).value ?? const <DriveAlbum>[])
+        if (!hidden.contains(album.id)) album,
+    ];
     return SafeArea(
       child: ConstrainedBox(
         constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * 0.7),

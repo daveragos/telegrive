@@ -41,8 +41,14 @@ phone number.
 - **Rebuildable.** Names, folders, stars, albums and the trash live in each
   message's caption. Reinstall, sign in on another phone, or sign out and
   back in, and the whole drive comes back.
-- **Trash with undo.** Deleting moves things to the trash for 30 days, with
-  an Undo straight away; restore or delete for good from Trash.
+- **Trash.** Deleting moves things to the trash for 30 days; restore or
+  delete for good from Trash. Moving more than 100 items there asks first.
+- **Undo for every change.** Moving, renaming, starring, adding to or
+  removing from an album, restoring and moving to the trash all offer Undo
+  for six seconds, and an Undo that can't go through says why. Delete for
+  good, Empty trash and Delete album take the items away at once but wait
+  ten seconds, with Undo, before anything leaves Telegram; sending the app
+  to the background deletes them straight away.
 - **Tidy in Telegram too.** Captions lead with the plain file name; the
   machine-readable part sits in a spoiler, so the channel still reads like a
   file list.

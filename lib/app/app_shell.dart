@@ -18,6 +18,7 @@ import '../features/share/data/share_intake.dart';
 import '../features/share/presentation/share_sheet.dart';
 import '../features/transfers/data/transfer_queue.dart';
 import '../features/transfers/domain/transfer_wait.dart';
+import '../features/trash/data/pending_deletes.dart';
 import '../infrastructure/database/app_database.dart' show TransferKind, TransferOrigin;
 import 'launch_action.dart';
 import 'theme/tokens.dart';
@@ -92,6 +93,14 @@ class _AppShellState extends ConsumerState<AppShell> {
         showShareSheet(context, ref);
       }
     });
+    // A delete for good runs after its Undo has had its time, often once
+    // the screen that asked for it is gone, so a failure is said here.
+    ref.listen<String?>(
+      pendingDeletesProvider.select((s) => s.lastFailure),
+      (previous, next) {
+        if (next != null && next != previous) showSnack(context, next);
+      },
+    );
 
     final colors = context.colors;
     // Backup has its own home on the Photos tab; the strip is for things the

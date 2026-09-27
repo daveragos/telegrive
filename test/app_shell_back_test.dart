@@ -8,6 +8,7 @@ import 'package:telegrive/app/app_shell.dart';
 import 'package:telegrive/app/theme/app_theme.dart';
 import 'package:telegrive/features/backup/data/backup_controller.dart';
 import 'package:telegrive/features/transfers/data/transfer_queue.dart';
+import 'package:telegrive/features/trash/data/pending_deletes.dart';
 import 'package:telegrive/infrastructure/storage/preferences.dart';
 
 class _Backup extends BackupController {
@@ -121,5 +122,17 @@ void main() {
     await tester.pump(const Duration(seconds: 3));
     await back(tester);
     expect(platformCalls, isNot(contains('SystemNavigator.pop')));
+  });
+
+  testWidgets('a late delete failure is said in the shell', (tester) async {
+    await pumpShell(tester);
+    const failure =
+        'Couldn\'t delete 3 items for good: Telegram took too long to answer.';
+    ProviderScope.containerOf(tester.element(find.byType(AppShell)))
+        .read(pendingDeletesProvider.notifier)
+        .reportFailure(failure);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text(failure), findsOneWidget);
   });
 }

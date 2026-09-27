@@ -13,6 +13,7 @@ import '../features/drive/data/drive_sync.dart';
 import '../features/settings/data/settings_providers.dart';
 import '../features/transfers/data/transfer_keep_alive.dart';
 import '../features/transfers/data/transfer_queue.dart';
+import '../features/trash/data/pending_deletes.dart';
 import '../infrastructure/telegram/telegram_client.dart';
 import 'app_shell.dart';
 import 'router.dart';
@@ -50,6 +51,12 @@ class _TelegriveAppState extends ConsumerState<TelegriveApp>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    // A delete for good waiting out its Undo runs now: once the app is in
+    // the background the process can go at any moment, and the person has
+    // moved on from the snack.
+    if (state == AppLifecycleState.paused || state == AppLifecycleState.detached) {
+      unawaited(ref.read(pendingDeletesProvider.notifier).flush());
+    }
     if (state == AppLifecycleState.resumed &&
         ref.read(driveSessionProvider) != null) {
       // Catch up on anything added from another device while away, and
