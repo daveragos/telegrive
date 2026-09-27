@@ -36,6 +36,7 @@ import 'package:telegrive/features/drive/data/drive_sync.dart';
 import 'package:telegrive/features/drive/data/telegram_wait.dart';
 import 'package:telegrive/features/drive/domain/drive_models.dart';
 import 'package:telegrive/features/files/data/bulk_edits.dart';
+import 'package:telegrive/features/files/presentation/file_list_screen.dart';
 import 'package:telegrive/features/files/presentation/files_screen.dart';
 import 'package:telegrive/features/home/presentation/home_screen.dart';
 import 'package:telegrive/features/settings/data/settings_providers.dart';
@@ -269,6 +270,7 @@ void main() {
   late List<DriveFile> files;
   late List<DriveFile> photos;
   late List<DriveFolder> folders;
+  late List<(DriveFile, DateTime)> opens;
   late TransfersState transfers;
 
   setUpAll(() async {
@@ -338,6 +340,11 @@ void main() {
         _file('gramx-release.apk', 62 * _mb, 120),
       ];
     });
+    // Opened on this phone, most recent first.
+    opens = [
+      for (final (index, hoursAgo) in [(2, 20), (5, 74), (6, 150), (4, 290), (0, 960)])
+        (files[index], DateTime.now().subtract(Duration(hours: hoursAgo))),
+    ];
     folders = [
       _folder('Documents', 3),
       _folder('Photos', 1),
@@ -481,6 +488,7 @@ void main() {
         GoRoute(path: '/albums', builder: (_, _) => const AlbumsScreen()),
         GoRoute(path: '/transfers', builder: (_, _) => const TransfersScreen()),
         GoRoute(path: '/settings', builder: (_, _) => const SettingsScreen()),
+        GoRoute(path: '/recent', builder: (_, _) => const FileListScreen.recent()),
       ],
     );
 
@@ -494,7 +502,21 @@ void main() {
           driveSyncProvider.overrideWith(_Sync.new),
           transferQueueProvider.overrideWith(() => _Queue(transfers)),
           storageSummaryProvider.overrideWith((ref) => Stream.value(summary)),
-          recentFilesProvider.overrideWith(
+          recentActivityProvider(12).overrideWith(
+            (ref) => Stream.value(
+              RecentEntry.merge(
+                opened: opens.take(2).toList(),
+                added: files.take(4).toList(),
+                limit: 12,
+              ),
+            ),
+          ),
+          recentOpenedProvider.overrideWith(
+            (ref) => Stream.value([
+              for (final (file, at) in opens) RecentEntry(file, at: at, opened: true),
+            ]),
+          ),
+          recentAddedProvider.overrideWith(
             (ref) => Stream.value(files.take(5).toList()),
           ),
           starredFilesProvider.overrideWith(
@@ -622,6 +644,16 @@ void main() {
     await snap(tester, 'home_dark');
   });
 
+  testWidgets('home recent', (tester) async {
+    await prepareData(tester);
+    await pumpApp(tester, location: '/home');
+    await tester.drag(find.byType(CustomScrollView).first, const Offset(0, -900));
+    for (var i = 0; i < 4; i++) {
+      await tester.pump(const Duration(milliseconds: 200));
+    }
+    await snap(tester, 'home_recent');
+  });
+
   testWidgets('home all good', (tester) async {
     await prepareData(tester);
     transfers = TransfersState.empty;
@@ -659,6 +691,12 @@ void main() {
       await tester.pump(const Duration(milliseconds: 100));
     }
     await snap(tester, 'search');
+  });
+
+  testWidgets('recent', (tester) async {
+    await prepareData(tester);
+    await pumpApp(tester, location: '/recent');
+    await snap(tester, 'recent');
   });
 
   testWidgets('files list', (tester) async {

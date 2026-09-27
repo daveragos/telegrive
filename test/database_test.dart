@@ -115,6 +115,54 @@ void main() {
     expect(await opened(), isEmpty);
   });
 
+  test('opens are remembered, pruned and follow the file', () async {
+    await db.upsertFilePart(file('a'), part('a', 0, 10));
+    await db.upsertFilePart(file('b'), part('b', 0, 11));
+    await db.upsertFilePart(
+      file('c').copyWith(takenAt: Value(DateTime(2026, 9, 20))),
+      part('c', 0, 12),
+    );
+    expect(db.schemaVersion, 4);
+
+    await db.recordOpen('a');
+    expect((await db.watchRecentOpens().first).map((o) => o.$1.id), ['a']);
+
+    // Camera-roll backups are the only files with a capture time.
+    expect(
+      (await db.watchRecent(excludeCameraRoll: true).first).map((f) => f.id),
+      unorderedEquals(['a', 'b']),
+    );
+    expect((await db.watchRecent().first).map((f) => f.id), unorderedEquals(['a', 'b', 'c']));
+
+    // A trashed file is not shown as opened.
+    await db.updateFile('a', const DriveFilesCompanion(hidden: Value(true)));
+    expect(await db.watchRecentOpens().first, isEmpty);
+    await db.updateFile('a', const DriveFilesCompanion(hidden: Value(false)));
+
+    await db.removeMessages([10]);
+    expect(await db.watchRecentOpens().first, isEmpty);
+    expect(await db.select(db.fileOpens).get(), isEmpty);
+
+    // A full history drops the oldest open to make room for a new one.
+    final earlier = DateTime.now().subtract(const Duration(days: 1));
+    await db.batch(
+      (b) => b.insertAll(db.fileOpens, [
+        for (var i = 0; i < AppDatabase.keptOpens; i++)
+          FileOpensCompanion.insert(
+            fileId: 'old-$i',
+            openedAt: earlier.subtract(Duration(minutes: i)),
+          ),
+      ]),
+    );
+    await db.recordOpen('b');
+    final kept = {for (final row in await db.select(db.fileOpens).get()) row.fileId};
+    expect(kept, hasLength(AppDatabase.keptOpens));
+    expect(kept, contains('b'));
+    expect(kept, contains('old-0'));
+    expect(kept, isNot(contains('old-${AppDatabase.keptOpens - 1}')));
+    expect((await db.watchRecentOpens().first).map((o) => o.$1.id), ['b']);
+  });
+
   test('totals group by kind and skip incomplete files', () async {
     await db.upsertFilePart(file('a'), part('a', 0, 10));
     await db.upsertFilePart(file('b', partCount: 2), part('b', 0, 11));

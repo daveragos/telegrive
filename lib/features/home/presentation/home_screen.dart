@@ -24,16 +24,29 @@ import '../../transfers/data/transfer_queue.dart';
 import 'drive_health.dart';
 
 /// What is in the drive and what is happening to it. Where the space goes
-/// first, which doubles as the way into each kind of file; then recent
-/// files.
+/// first, which doubles as the way into each kind of file; then the files
+/// this phone opened or added lately.
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final summary = ref.watch(storageSummaryProvider).value;
-    final recent = ref.watch(recentFilesProvider);
+    final recent = ref.watch(recentActivityProvider(12));
     final starred = ref.watch(starredFilesProvider).value?.length ?? 0;
+    final starredRow = starred > 0
+        ? ListTile(
+            leading: const Icon(Icons.star_outline_rounded),
+            title: const Text('Starred'),
+            trailing: Text(
+              Formatters.number(starred),
+              style: context.text.bodyMedium?.copyWith(
+                fontFeatures: tabularFigures,
+              ),
+            ),
+            onTap: () => context.push('/starred'),
+          )
+        : null;
 
     return Scaffold(
       floatingActionButton: FloatingActionButton.extended(
@@ -69,28 +82,33 @@ class HomeScreen extends ConsumerWidget {
             ),
             SliverToBoxAdapter(
               child: switch (recent) {
-                AsyncData(value: final files) when files.isEmpty => const _NothingYet(),
-                AsyncData(value: final files) => ListGroup(
-                  children: [
-                    for (final file in files.take(5))
-                      FileListTile(
-                        file: file,
-                        onTap: () => FileActions.open(context, ref, file),
-                        onLongPress: () => FileActions.showFileSheet(context, ref, file),
-                        onMore: () => FileActions.showFileSheet(context, ref, file),
-                      ),
-                    if (starred > 0)
-                      ListTile(
-                        leading: const Icon(Icons.star_outline_rounded),
-                        title: const Text('Starred'),
-                        trailing: Text(
-                          Formatters.number(starred),
-                          style: context.text.bodyMedium?.copyWith(
-                            fontFeatures: tabularFigures,
-                          ),
+                AsyncData(value: final entries) when entries.isEmpty =>
+                  (summary?.fileCount ?? 0) == 0
+                      ? const _NothingYet()
+                      : Column(
+                          children: [
+                            const EmptyState(
+                              title: 'Nothing opened yet',
+                              message: 'Files you open, share or add show up here.',
+                              compact: true,
+                            ),
+                            if (starredRow != null) ListGroup(children: [starredRow]),
+                          ],
                         ),
-                        onTap: () => context.push('/starred'),
+                AsyncData(value: final entries) => ListGroup(
+                  children: [
+                    for (final entry in entries.take(5))
+                      FileListTile(
+                        file: entry.file,
+                        subtitle:
+                            '${Formatters.bytes(entry.file.size)} · '
+                            '${entry.verb} ${Formatters.date(entry.at)}',
+                        onTap: () => FileActions.open(context, ref, entry.file),
+                        onLongPress: () =>
+                            FileActions.showFileSheet(context, ref, entry.file),
+                        onMore: () => FileActions.showFileSheet(context, ref, entry.file),
                       ),
+                    ?starredRow,
                   ],
                 ),
                 _ => const Padding(

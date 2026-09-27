@@ -146,12 +146,52 @@ class AppDatabase extends _$AppDatabase {
             ..where((f) => _shown(f) & _inFolder(f.folderId, folderId)))
           .watch();
 
-  Stream<List<FileRow>> watchRecent({int limit = 20}) =>
+  /// Newest additions first. With [excludeCameraRoll], only files added by
+  /// hand or forwarded in: photo backup is the only thing that records a
+  /// capture time, and a batch of new photos shouldn't bury the rest.
+  Stream<List<FileRow>> watchRecent({
+    int limit = 20,
+    bool excludeCameraRoll = false,
+  }) =>
       (select(driveFiles)
-            ..where(_shown)
+            ..where(
+              (f) => excludeCameraRoll ? _shown(f) & f.takenAt.isNull() : _shown(f),
+            )
             ..orderBy([(f) => OrderingTerm.desc(f.createdAt)])
             ..limit(limit))
           .watch();
+
+  /// How many opened files this phone remembers.
+  static const int keptOpens = 200;
+
+  /// Remembers that this phone just opened, shared or sent [fileId], and
+  /// forgets all but the newest [keptOpens].
+  Future<void> recordOpen(String fileId) => transaction(() async {
+    await into(fileOpens).insertOnConflictUpdate(
+      FileOpensCompanion.insert(fileId: fileId, openedAt: DateTime.now()),
+    );
+    await customUpdate(
+      'DELETE FROM file_opens WHERE file_id NOT IN '
+      '(SELECT file_id FROM file_opens ORDER BY opened_at DESC LIMIT $keptOpens)',
+      updates: {fileOpens},
+    );
+  });
+
+  /// Files this phone opened, shared or sent, with when, most recent first.
+  Stream<List<(FileRow, DateTime)>> watchRecentOpens({int limit = 20}) {
+    final query = select(fileOpens).join([
+      innerJoin(driveFiles, driveFiles.id.equalsExp(fileOpens.fileId)),
+    ])
+      ..where(_shown(driveFiles))
+      ..orderBy([OrderingTerm.desc(fileOpens.openedAt)])
+      ..limit(limit);
+    return query.watch().map(
+      (rows) => [
+        for (final row in rows)
+          (row.readTable(driveFiles), row.readTable(fileOpens).openedAt),
+      ],
+    );
+  }
 
   Stream<List<FileRow>> watchStarred() =>
       (select(driveFiles)

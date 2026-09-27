@@ -118,6 +118,70 @@ void main() {
     });
   });
 
+  group('RecentEntry.merge', () {
+    DriveFile file(String name, DateTime added) => DriveFile(
+      id: name,
+      folderId: null,
+      name: name,
+      mimeType: 'application/pdf',
+      kind: FileKind.document,
+      size: 100,
+      createdAt: added,
+      modifiedAt: added,
+      partCount: 1,
+      starred: false,
+    );
+
+    final yesterday = DateTime(2026, 9, 26, 18);
+    final today = DateTime(2026, 9, 27, 9);
+
+    test('an open from yesterday and an add from today, newest first', () {
+      final lease = file('lease.pdf', DateTime(2026, 8, 1));
+      final invoice = file('invoice.pdf', today);
+      final entries = RecentEntry.merge(
+        opened: [(lease, yesterday)],
+        added: [invoice],
+        limit: 12,
+      );
+      expect(entries, [
+        RecentEntry(invoice, at: today, opened: false),
+        RecentEntry(lease, at: yesterday, opened: true),
+      ]);
+      expect(entries.map((e) => e.verb), ['Added', 'Opened']);
+    });
+
+    test('a file opened after it was added appears once, as opened', () {
+      final lease = file('lease.pdf', yesterday);
+      final entries = RecentEntry.merge(
+        opened: [(lease, today)],
+        added: [lease],
+        limit: 12,
+      );
+      expect(entries, [RecentEntry(lease, at: today, opened: true)]);
+    });
+
+    test('a file added after its recorded open appears once, as added', () {
+      final lease = file('lease.pdf', today);
+      final entries = RecentEntry.merge(
+        opened: [(lease, yesterday)],
+        added: [lease],
+        limit: 12,
+      );
+      expect(entries, [RecentEntry(lease, at: today, opened: false)]);
+    });
+
+    test('keeps to the limit, and orders ties by name', () {
+      final entries = RecentEntry.merge(
+        opened: [
+          for (final name in ['c.pdf', 'a.pdf', 'b.pdf']) (file(name, yesterday), today),
+        ],
+        added: [for (var i = 1; i <= 5; i++) file('added $i.pdf', DateTime(2026, 9, i))],
+        limit: 4,
+      );
+      expect(entries.map((e) => e.file.name), ['a.pdf', 'b.pdf', 'c.pdf', 'added 5.pdf']);
+    });
+  });
+
   group('TelegramException', () {
     test('reads flood waits in both spellings', () {
       expect(const TelegramException(420, 'FLOOD_WAIT_37').retryAfterSeconds, 37);

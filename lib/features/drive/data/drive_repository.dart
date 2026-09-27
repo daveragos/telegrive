@@ -122,8 +122,31 @@ class DriveRepository {
   Stream<DriveFile?> watchFile(String id) =>
       _db.watchFile(id).map((r) => r == null ? null : DriveFile.fromRow(r));
 
-  Stream<List<DriveFile>> watchRecent({int limit = 20}) =>
-      _db.watchRecent(limit: limit).map(_files);
+  Stream<List<DriveFile>> watchRecent({
+    int limit = 20,
+    bool excludeCameraRoll = false,
+  }) => _db
+      .watchRecent(limit: limit, excludeCameraRoll: excludeCameraRoll)
+      .map(_files);
+
+  /// Remembers, on this phone only, that [fileId] was just opened, shared
+  /// or sent.
+  Future<void> recordOpen(String fileId) => _db.recordOpen(fileId);
+
+  Stream<List<(DriveFile, DateTime)>> watchRecentOpens({int limit = 20}) =>
+      _db.watchRecentOpens(limit: limit).map(
+        (rows) => [for (final (row, at) in rows) (DriveFile.fromRow(row), at)],
+      );
+
+  /// What this phone opened lately merged with what was added lately,
+  /// leaving out camera-roll backups, which Photos shows.
+  Stream<List<RecentEntry>> watchRecentActivity({int limit = 12}) =>
+      combineLatest2(
+        watchRecentOpens(limit: limit),
+        watchRecent(limit: limit, excludeCameraRoll: true),
+        (opened, added) =>
+            RecentEntry.merge(opened: opened, added: added, limit: limit),
+      );
 
   Stream<List<DriveFile>> watchStarred() => _db.watchStarred().map(_files);
 
@@ -911,9 +934,12 @@ final breadcrumbsProvider = FutureProvider.autoDispose
       return ref.watch(driveRepositoryProvider).pathTo(folderId);
     });
 
-final recentFilesProvider = StreamProvider.autoDispose<List<DriveFile>>(
-  (ref) => ref.watch(driveRepositoryProvider).watchRecent(limit: 12),
-);
+/// Home's Recent: up to [limit] files opened or added lately.
+final recentActivityProvider = StreamProvider.autoDispose
+    .family<List<RecentEntry>, int>(
+      (ref, limit) =>
+          ref.watch(driveRepositoryProvider).watchRecentActivity(limit: limit),
+    );
 
 final starredFilesProvider = StreamProvider.autoDispose<List<DriveFile>>(
   (ref) => ref.watch(driveRepositoryProvider).watchStarred(),

@@ -34,6 +34,10 @@ phone number.
   safely backed up; they stay in the drive.
 - **Real folders.** Create, rename, move and delete folders; breadcrumbs;
   list and grid views; sort by name, date, size or type.
+- **Recent, as you use it.** Home lists the files you last opened, shared
+  or sent on this phone together with the ones you added, each saying which
+  and when. Backed-up photos stay in Photos, so a batch of them never
+  pushes the rest out. See all splits the list into Opened and Added.
 - **Fast and offline-friendly.** A local index (SQLite) makes browsing and
   search instant; the channel stays the source of truth.
 - **Syncs itself.** New, edited or deleted messages flow in live. Anything you

@@ -50,12 +50,14 @@ abstract final class FileActions {
 
   /// Shows [file] in the app when it can: photos in the viewer, video and
   /// audio in the player (streaming), PDFs and text in a reader. Anything
-  /// else downloads and opens in whichever app handles it.
+  /// else downloads and opens in whichever app handles it. Home's Recent
+  /// remembers it either way, without holding the file up.
   static Future<void> open(
     BuildContext context,
     WidgetRef ref,
     DriveFile file,
   ) async {
+    unawaited(ref.read(driveRepositoryProvider).recordOpen(file.id));
     switch (Preview.of(
       name: file.name,
       mimeType: file.mimeType,
@@ -98,8 +100,10 @@ abstract final class FileActions {
     WidgetRef ref,
     DriveFile file,
   ) async {
+    final repository = ref.read(driveRepositoryProvider);
     final path = await _obtain(context, ref, file);
     if (path == null) return;
+    unawaited(repository.recordOpen(file.id));
     await _sharePath(path, file);
   }
 
@@ -267,9 +271,16 @@ abstract final class FileActions {
           : null,
     );
     if (chats == null || chats.isEmpty || !context.mounted) return false;
+    final repository = ref.read(driveRepositoryProvider);
+    final telegram = ref.read(telegramChatsProvider);
     return _guard(
       context,
-      () => ref.read(telegramChatsProvider).send(files, chats.map((c) => c.id).toList()),
+      () async {
+        await telegram.send(files, chats.map((c) => c.id).toList());
+        for (final f in files) {
+          await repository.recordOpen(f.id);
+        }
+      },
       success: chats.length == 1
           ? 'Sent to ${chats.single.title}'
           : 'Sent to ${Formatters.count(chats.length, 'chat')}',

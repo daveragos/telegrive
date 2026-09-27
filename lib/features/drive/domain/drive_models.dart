@@ -149,6 +149,56 @@ class DriveFile {
       Object.hash(id, name, folderId, starred, modifiedAt, thumbnailFileId);
 }
 
+/// A file on Home's Recent list, with when it was last opened on this phone
+/// or, failing that, added to the drive.
+@immutable
+class RecentEntry {
+  const RecentEntry(this.file, {required this.at, required this.opened});
+
+  final DriveFile file;
+  final DateTime at;
+
+  /// Opened, shared or sent from this phone, rather than just added.
+  final bool opened;
+
+  String get verb => opened ? 'Opened' : 'Added';
+
+  /// One entry per file from what this phone [opened] and what was [added],
+  /// each at whichever happened last, newest first. Name breaks ties so the
+  /// order doesn't shuffle between rebuilds.
+  static List<RecentEntry> merge({
+    required List<(DriveFile, DateTime)> opened,
+    required List<DriveFile> added,
+    required int limit,
+  }) {
+    final byId = <String, RecentEntry>{
+      for (final (file, at) in opened) file.id: RecentEntry(file, at: at, opened: true),
+    };
+    for (final file in added) {
+      final known = byId[file.id];
+      if (known == null || file.createdAt.isAfter(known.at)) {
+        byId[file.id] = RecentEntry(file, at: file.createdAt, opened: false);
+      }
+    }
+    final entries = byId.values.toList()
+      ..sort((a, b) {
+        final byTime = b.at.compareTo(a.at);
+        return byTime != 0 ? byTime : a.file.name.compareTo(b.file.name);
+      });
+    return entries.take(limit).toList();
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is RecentEntry &&
+      other.file == file &&
+      other.at == at &&
+      other.opened == opened;
+
+  @override
+  int get hashCode => Object.hash(file, at, opened);
+}
+
 enum SortField {
   name('Name'),
   modified('Last modified'),
