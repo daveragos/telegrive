@@ -44,6 +44,7 @@ class AlbumSummary {
     OfflinePins,
     OfflineCopies,
     FileContents,
+    FileOpens,
   ],
 )
 class AppDatabase extends _$AppDatabase {
@@ -77,7 +78,7 @@ class AppDatabase extends _$AppDatabase {
   }
 
   @override
-  int get schemaVersion => 3;
+  int get schemaVersion => 4;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -106,6 +107,11 @@ class AppDatabase extends _$AppDatabase {
         await m.createTable(offlinePins);
         await m.createTable(offlineCopies);
         await m.createTable(fileContents);
+      }
+      if (from < 4) {
+        await m.createTable(fileOpens);
+        await m.addColumn(driveFiles, driveFiles.manifestExtra);
+        await m.addColumn(folders, folders.manifestExtra);
       }
     },
   );
@@ -602,6 +608,7 @@ class AppDatabase extends _$AppDatabase {
     if (present == 0) {
       await (delete(driveFiles)..where((f) => f.id.equals(fileId))).go();
       await (delete(albumFiles)..where((a) => a.fileId.equals(fileId))).go();
+      await (delete(fileOpens)..where((o) => o.fileId.equals(fileId))).go();
     } else {
       await (update(driveFiles)..where((f) => f.id.equals(fileId))).write(
         DriveFilesCompanion(partsPresent: Value(present)),
@@ -650,6 +657,7 @@ class AppDatabase extends _$AppDatabase {
     await delete(offlinePins).go();
     await delete(offlineCopies).go();
     await delete(fileContents).go();
+    await delete(fileOpens).go();
   });
 
   // ---------------------------------------------------------------------------

@@ -94,6 +94,27 @@ void main() {
     expect((await db.watchChildFolders(null).first).map((f) => f.id), ['inner']);
   });
 
+  test('opens follow their file, outlast a rebuilt index and go on sign-out', () async {
+    await db.upsertFilePart(file('a'), part('a', 0, 10));
+    await db.upsertFilePart(file('b'), part('b', 0, 11));
+    for (final id in ['a', 'b']) {
+      await db.into(db.fileOpens).insert(
+        FileOpensCompanion.insert(fileId: id, openedAt: now),
+      );
+    }
+    Future<List<String>> opened() async =>
+        [for (final row in await db.select(db.fileOpens).get()) row.fileId];
+
+    await db.removeMessages([10]);
+    expect(await opened(), ['b']);
+
+    await db.clearIndex();
+    expect(await opened(), ['b']);
+
+    await db.clearAll();
+    expect(await opened(), isEmpty);
+  });
+
   test('totals group by kind and skip incomplete files', () async {
     await db.upsertFilePart(file('a'), part('a', 0, 10));
     await db.upsertFilePart(file('b', partCount: 2), part('b', 0, 11));

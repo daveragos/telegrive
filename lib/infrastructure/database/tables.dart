@@ -23,6 +23,11 @@ class Folders extends Table {
   /// Worked out locally from [trashedAt] up the folder tree.
   BoolColumn get hidden => boolean().withDefault(const Constant(false))();
 
+  /// Manifest keys this version doesn't know, as JSON, so a rename or move
+  /// made here writes them back instead of dropping what a newer version
+  /// stored. Null when there are none.
+  TextColumn get manifestExtra => text().nullable()();
+
   @override
   Set<Column> get primaryKey => {id};
 }
@@ -58,6 +63,9 @@ class DriveFiles extends Table {
 
   /// In the trash itself or inside a trashed folder; see [Folders.hidden].
   BoolColumn get hidden => boolean().withDefault(const Constant(false))();
+
+  /// Manifest keys this version doesn't know; see [Folders.manifestExtra].
+  TextColumn get manifestExtra => text().nullable()();
 
   @override
   Set<Column> get primaryKey => {id};
@@ -122,6 +130,18 @@ class FileContents extends Table {
   /// Indexer version that produced it; older entries are redone.
   IntColumn get version => integer()();
   DateTimeColumn get indexedAt => dateTime()();
+
+  @override
+  Set<Column> get primaryKey => {fileId};
+}
+
+/// When this phone last opened, shared or sent each file. Per phone, so it
+/// is not in the channel; file ids are stable, so rebuilding the index
+/// keeps it.
+@DataClassName('FileOpenRow')
+class FileOpens extends Table {
+  TextColumn get fileId => text()();
+  DateTimeColumn get openedAt => dateTime()();
 
   @override
   Set<Column> get primaryKey => {fileId};

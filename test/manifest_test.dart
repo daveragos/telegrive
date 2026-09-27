@@ -166,6 +166,119 @@ void main() {
     });
   });
 
+  group('keys from newer versions', () {
+    test('an unknown file key survives decode, copyWith and encode', () {
+      final decoded = ManifestCodec.decodeFile(
+        'clip.mp4\ntgr1:{"id":"v","n":"clip.mp4","s":9,"du":84,"x":{"a":[1,"b"]}}',
+      )!;
+      expect(decoded.extra, {'du': 84, 'x': {'a': [1, 'b']}});
+
+      final renamed = decoded.copyWith(name: 'trip.mp4', clearFolder: true);
+      final again = ManifestCodec.decodeFile(ManifestCodec.encodeFile(renamed).text)!;
+      expect(again.name, 'trip.mp4');
+      expect(again.extra, {'du': 84, 'x': {'a': [1, 'b']}});
+    });
+
+    test('an unknown folder key survives decode and encode', () {
+      final decoded = ManifestCodec.decodeFolder(
+        '📁 Invoices\ntgrf1:{"id":"f","n":"Invoices","st":1}',
+      )!;
+      expect(decoded.extra, {'st': 1});
+      final text = ManifestCodec.encodeFolder(decoded).text;
+      expect(ManifestCodec.decodeFolder(text)!.extra, {'st': 1});
+    });
+
+    // Every new manifest field must be set on the manifests this test checks,
+    // or a key missing from _keys goes unnoticed.
+    test('keys this version knows never land in extra', () {
+      final everything = file(partCount: 3, partIndex: 2, starred: true).copyWith(
+        trashedAt: created,
+        albums: ['a1b2c3'],
+      );
+      final withTime = FileManifest(
+        id: 'p',
+        name: 'IMG_1.jpg',
+        folderId: 'a',
+        mimeType: 'image/jpeg',
+        size: 10,
+        createdAt: created,
+        modifiedAt: created,
+        takenAt: created,
+      );
+      for (final manifest in [everything, withTime]) {
+        final text = ManifestCodec.encodeFile(manifest).text;
+        expect(ManifestCodec.decodeFile(text)!.extra, isEmpty);
+      }
+      final folder = FolderManifest(
+        id: 'f',
+        name: 'A',
+        parentId: 'r',
+        createdAt: created,
+        modifiedAt: created,
+        trashedAt: created,
+      );
+      final text = ManifestCodec.encodeFolder(folder).text;
+      expect(ManifestCodec.decodeFolder(text)!.extra, isEmpty);
+    });
+
+    test('a known key wins over an extra of the same name', () {
+      final json = FileManifest(
+        id: 'file-1',
+        name: 'Now.pdf',
+        folderId: 'docs',
+        mimeType: 'application/pdf',
+        size: 10,
+        createdAt: created,
+        modifiedAt: created,
+        starred: true,
+        trashedAt: created,
+        extra: const {'n': 'Before.pdf', 'f': 'old', 'st': 0, 'tr': 5, 'du': 84},
+      ).toJson();
+      expect(json['n'], 'Now.pdf');
+      expect(json['f'], 'docs');
+      expect(json['st'], 1);
+      expect(json['tr'], created.millisecondsSinceEpoch);
+      expect(json['du'], 84);
+
+      final folder = FolderManifest(
+        id: 'f',
+        name: 'Now',
+        parentId: 'work',
+        createdAt: created,
+        modifiedAt: created,
+        extra: const {'n': 'Before', 'p': 'old', 'st': 1},
+      ).toJson();
+      expect(folder['n'], 'Now');
+      expect(folder['p'], 'work');
+      expect(folder['st'], 1);
+    });
+
+    test('an extra the manifest does not set still comes back out', () {
+      // An older version indexed the key before it knew it, and this
+      // version's own field for it was never filled in.
+      final json = FileManifest(
+        id: 'file-1',
+        name: 'IMG_1.jpg',
+        folderId: null,
+        mimeType: 'image/jpeg',
+        size: 10,
+        createdAt: created,
+        modifiedAt: created,
+        extra: const {'tk': 1_690_000_000_000},
+      ).toJson();
+      expect(json['tk'], 1_690_000_000_000);
+    });
+
+    test('the index keeps extras as JSON, and none as null', () {
+      expect(ManifestCodec.encodeExtra(const {}), isNull);
+      final stored = ManifestCodec.encodeExtra(const {'du': 84, 'rb': 'new'});
+      expect(ManifestCodec.decodeExtra(stored), {'du': 84, 'rb': 'new'});
+      expect(ManifestCodec.decodeExtra(null), isEmpty);
+      expect(ManifestCodec.decodeExtra('not json'), isEmpty);
+      expect(ManifestCodec.decodeExtra('[1]'), isEmpty);
+    });
+  });
+
   group('split policy', () {
     const mib = 1024 * 1024;
 

@@ -132,6 +132,9 @@ Telegram (source of truth)                 This device
 - **Folders** are small text messages carrying their own id, name and parent,
   so renames and moves are a single edit and two devices never overwrite each
   other's folder tree.
+- **Newer versions can add to a manifest.** Keys this install doesn't know
+  are kept in the index and written back on its own edits, so a rename or
+  move made here doesn't lose what a newer version stored.
 - **Changes go to Telegram first.** The index is written from the message
   Telegram sends back, so it never claims something the channel doesn't have.
 - **Sync** runs live while the app is open, catches up incrementally on launch
@@ -172,6 +175,10 @@ flutter test tool/icon/icon_test.dart --update-goldens && dart run flutter_launc
 
 The screenshot harness renders the signed-in screens with fake data, so UI
 work doesn't need a Telegram account.
+
+A schema version bump also dumps the new schema into `drift_schemas/` and
+regenerates the helpers `test/migration_test.dart` checks upgrades with; the
+two commands are at the top of that test.
 
 ## Roadmap
 

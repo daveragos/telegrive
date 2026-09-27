@@ -94,6 +94,17 @@ class $FoldersTable extends Folders with TableInfo<$FoldersTable, FolderRow> {
     ),
     defaultValue: const Constant(false),
   );
+  static const VerificationMeta _manifestExtraMeta = const VerificationMeta(
+    'manifestExtra',
+  );
+  @override
+  late final GeneratedColumn<String> manifestExtra = GeneratedColumn<String>(
+    'manifest_extra',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -104,6 +115,7 @@ class $FoldersTable extends Folders with TableInfo<$FoldersTable, FolderRow> {
     modifiedAt,
     trashedAt,
     hidden,
+    manifestExtra,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -172,6 +184,15 @@ class $FoldersTable extends Folders with TableInfo<$FoldersTable, FolderRow> {
         hidden.isAcceptableOrUnknown(data['hidden']!, _hiddenMeta),
       );
     }
+    if (data.containsKey('manifest_extra')) {
+      context.handle(
+        _manifestExtraMeta,
+        manifestExtra.isAcceptableOrUnknown(
+          data['manifest_extra']!,
+          _manifestExtraMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -213,6 +234,10 @@ class $FoldersTable extends Folders with TableInfo<$FoldersTable, FolderRow> {
         DriftSqlType.bool,
         data['${effectivePrefix}hidden'],
       )!,
+      manifestExtra: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}manifest_extra'],
+      ),
     );
   }
 
@@ -236,6 +261,11 @@ class FolderRow extends DataClass implements Insertable<FolderRow> {
   /// In the trash, or inside a folder that is: shown nowhere but Trash.
   /// Worked out locally from [trashedAt] up the folder tree.
   final bool hidden;
+
+  /// Manifest keys this version doesn't know, as JSON, so a rename or move
+  /// made here writes them back instead of dropping what a newer version
+  /// stored. Null when there are none.
+  final String? manifestExtra;
   const FolderRow({
     required this.id,
     this.parentId,
@@ -245,6 +275,7 @@ class FolderRow extends DataClass implements Insertable<FolderRow> {
     required this.modifiedAt,
     this.trashedAt,
     required this.hidden,
+    this.manifestExtra,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -261,6 +292,9 @@ class FolderRow extends DataClass implements Insertable<FolderRow> {
       map['trashed_at'] = Variable<DateTime>(trashedAt);
     }
     map['hidden'] = Variable<bool>(hidden);
+    if (!nullToAbsent || manifestExtra != null) {
+      map['manifest_extra'] = Variable<String>(manifestExtra);
+    }
     return map;
   }
 
@@ -278,6 +312,9 @@ class FolderRow extends DataClass implements Insertable<FolderRow> {
           ? const Value.absent()
           : Value(trashedAt),
       hidden: Value(hidden),
+      manifestExtra: manifestExtra == null && nullToAbsent
+          ? const Value.absent()
+          : Value(manifestExtra),
     );
   }
 
@@ -295,6 +332,7 @@ class FolderRow extends DataClass implements Insertable<FolderRow> {
       modifiedAt: serializer.fromJson<DateTime>(json['modifiedAt']),
       trashedAt: serializer.fromJson<DateTime?>(json['trashedAt']),
       hidden: serializer.fromJson<bool>(json['hidden']),
+      manifestExtra: serializer.fromJson<String?>(json['manifestExtra']),
     );
   }
   @override
@@ -309,6 +347,7 @@ class FolderRow extends DataClass implements Insertable<FolderRow> {
       'modifiedAt': serializer.toJson<DateTime>(modifiedAt),
       'trashedAt': serializer.toJson<DateTime?>(trashedAt),
       'hidden': serializer.toJson<bool>(hidden),
+      'manifestExtra': serializer.toJson<String?>(manifestExtra),
     };
   }
 
@@ -321,6 +360,7 @@ class FolderRow extends DataClass implements Insertable<FolderRow> {
     DateTime? modifiedAt,
     Value<DateTime?> trashedAt = const Value.absent(),
     bool? hidden,
+    Value<String?> manifestExtra = const Value.absent(),
   }) => FolderRow(
     id: id ?? this.id,
     parentId: parentId.present ? parentId.value : this.parentId,
@@ -330,6 +370,9 @@ class FolderRow extends DataClass implements Insertable<FolderRow> {
     modifiedAt: modifiedAt ?? this.modifiedAt,
     trashedAt: trashedAt.present ? trashedAt.value : this.trashedAt,
     hidden: hidden ?? this.hidden,
+    manifestExtra: manifestExtra.present
+        ? manifestExtra.value
+        : this.manifestExtra,
   );
   FolderRow copyWithCompanion(FoldersCompanion data) {
     return FolderRow(
@@ -343,6 +386,9 @@ class FolderRow extends DataClass implements Insertable<FolderRow> {
           : this.modifiedAt,
       trashedAt: data.trashedAt.present ? data.trashedAt.value : this.trashedAt,
       hidden: data.hidden.present ? data.hidden.value : this.hidden,
+      manifestExtra: data.manifestExtra.present
+          ? data.manifestExtra.value
+          : this.manifestExtra,
     );
   }
 
@@ -356,7 +402,8 @@ class FolderRow extends DataClass implements Insertable<FolderRow> {
           ..write('createdAt: $createdAt, ')
           ..write('modifiedAt: $modifiedAt, ')
           ..write('trashedAt: $trashedAt, ')
-          ..write('hidden: $hidden')
+          ..write('hidden: $hidden, ')
+          ..write('manifestExtra: $manifestExtra')
           ..write(')'))
         .toString();
   }
@@ -371,6 +418,7 @@ class FolderRow extends DataClass implements Insertable<FolderRow> {
     modifiedAt,
     trashedAt,
     hidden,
+    manifestExtra,
   );
   @override
   bool operator ==(Object other) =>
@@ -383,7 +431,8 @@ class FolderRow extends DataClass implements Insertable<FolderRow> {
           other.createdAt == this.createdAt &&
           other.modifiedAt == this.modifiedAt &&
           other.trashedAt == this.trashedAt &&
-          other.hidden == this.hidden);
+          other.hidden == this.hidden &&
+          other.manifestExtra == this.manifestExtra);
 }
 
 class FoldersCompanion extends UpdateCompanion<FolderRow> {
@@ -395,6 +444,7 @@ class FoldersCompanion extends UpdateCompanion<FolderRow> {
   final Value<DateTime> modifiedAt;
   final Value<DateTime?> trashedAt;
   final Value<bool> hidden;
+  final Value<String?> manifestExtra;
   final Value<int> rowid;
   const FoldersCompanion({
     this.id = const Value.absent(),
@@ -405,6 +455,7 @@ class FoldersCompanion extends UpdateCompanion<FolderRow> {
     this.modifiedAt = const Value.absent(),
     this.trashedAt = const Value.absent(),
     this.hidden = const Value.absent(),
+    this.manifestExtra = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   FoldersCompanion.insert({
@@ -416,6 +467,7 @@ class FoldersCompanion extends UpdateCompanion<FolderRow> {
     required DateTime modifiedAt,
     this.trashedAt = const Value.absent(),
     this.hidden = const Value.absent(),
+    this.manifestExtra = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        name = Value(name),
@@ -431,6 +483,7 @@ class FoldersCompanion extends UpdateCompanion<FolderRow> {
     Expression<DateTime>? modifiedAt,
     Expression<DateTime>? trashedAt,
     Expression<bool>? hidden,
+    Expression<String>? manifestExtra,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -442,6 +495,7 @@ class FoldersCompanion extends UpdateCompanion<FolderRow> {
       if (modifiedAt != null) 'modified_at': modifiedAt,
       if (trashedAt != null) 'trashed_at': trashedAt,
       if (hidden != null) 'hidden': hidden,
+      if (manifestExtra != null) 'manifest_extra': manifestExtra,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -455,6 +509,7 @@ class FoldersCompanion extends UpdateCompanion<FolderRow> {
     Value<DateTime>? modifiedAt,
     Value<DateTime?>? trashedAt,
     Value<bool>? hidden,
+    Value<String?>? manifestExtra,
     Value<int>? rowid,
   }) {
     return FoldersCompanion(
@@ -466,6 +521,7 @@ class FoldersCompanion extends UpdateCompanion<FolderRow> {
       modifiedAt: modifiedAt ?? this.modifiedAt,
       trashedAt: trashedAt ?? this.trashedAt,
       hidden: hidden ?? this.hidden,
+      manifestExtra: manifestExtra ?? this.manifestExtra,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -497,6 +553,9 @@ class FoldersCompanion extends UpdateCompanion<FolderRow> {
     if (hidden.present) {
       map['hidden'] = Variable<bool>(hidden.value);
     }
+    if (manifestExtra.present) {
+      map['manifest_extra'] = Variable<String>(manifestExtra.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -514,6 +573,7 @@ class FoldersCompanion extends UpdateCompanion<FolderRow> {
           ..write('modifiedAt: $modifiedAt, ')
           ..write('trashedAt: $trashedAt, ')
           ..write('hidden: $hidden, ')
+          ..write('manifestExtra: $manifestExtra, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -702,6 +762,17 @@ class $DriveFilesTable extends DriveFiles
     ),
     defaultValue: const Constant(false),
   );
+  static const VerificationMeta _manifestExtraMeta = const VerificationMeta(
+    'manifestExtra',
+  );
+  @override
+  late final GeneratedColumn<String> manifestExtra = GeneratedColumn<String>(
+    'manifest_extra',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -720,6 +791,7 @@ class $DriveFilesTable extends DriveFiles
     takenAt,
     trashedAt,
     hidden,
+    manifestExtra,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -841,6 +913,15 @@ class $DriveFilesTable extends DriveFiles
         hidden.isAcceptableOrUnknown(data['hidden']!, _hiddenMeta),
       );
     }
+    if (data.containsKey('manifest_extra')) {
+      context.handle(
+        _manifestExtraMeta,
+        manifestExtra.isAcceptableOrUnknown(
+          data['manifest_extra']!,
+          _manifestExtraMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -916,6 +997,10 @@ class $DriveFilesTable extends DriveFiles
         DriftSqlType.bool,
         data['${effectivePrefix}hidden'],
       )!,
+      manifestExtra: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}manifest_extra'],
+      ),
     );
   }
 
@@ -956,6 +1041,9 @@ class FileRow extends DataClass implements Insertable<FileRow> {
 
   /// In the trash itself or inside a trashed folder; see [Folders.hidden].
   final bool hidden;
+
+  /// Manifest keys this version doesn't know; see [Folders.manifestExtra].
+  final String? manifestExtra;
   const FileRow({
     required this.id,
     this.folderId,
@@ -973,6 +1061,7 @@ class FileRow extends DataClass implements Insertable<FileRow> {
     this.takenAt,
     this.trashedAt,
     required this.hidden,
+    this.manifestExtra,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -1007,6 +1096,9 @@ class FileRow extends DataClass implements Insertable<FileRow> {
       map['trashed_at'] = Variable<DateTime>(trashedAt);
     }
     map['hidden'] = Variable<bool>(hidden);
+    if (!nullToAbsent || manifestExtra != null) {
+      map['manifest_extra'] = Variable<String>(manifestExtra);
+    }
     return map;
   }
 
@@ -1038,6 +1130,9 @@ class FileRow extends DataClass implements Insertable<FileRow> {
           ? const Value.absent()
           : Value(trashedAt),
       hidden: Value(hidden),
+      manifestExtra: manifestExtra == null && nullToAbsent
+          ? const Value.absent()
+          : Value(manifestExtra),
     );
   }
 
@@ -1065,6 +1160,7 @@ class FileRow extends DataClass implements Insertable<FileRow> {
       takenAt: serializer.fromJson<DateTime?>(json['takenAt']),
       trashedAt: serializer.fromJson<DateTime?>(json['trashedAt']),
       hidden: serializer.fromJson<bool>(json['hidden']),
+      manifestExtra: serializer.fromJson<String?>(json['manifestExtra']),
     );
   }
   @override
@@ -1089,6 +1185,7 @@ class FileRow extends DataClass implements Insertable<FileRow> {
       'takenAt': serializer.toJson<DateTime?>(takenAt),
       'trashedAt': serializer.toJson<DateTime?>(trashedAt),
       'hidden': serializer.toJson<bool>(hidden),
+      'manifestExtra': serializer.toJson<String?>(manifestExtra),
     };
   }
 
@@ -1109,6 +1206,7 @@ class FileRow extends DataClass implements Insertable<FileRow> {
     Value<DateTime?> takenAt = const Value.absent(),
     Value<DateTime?> trashedAt = const Value.absent(),
     bool? hidden,
+    Value<String?> manifestExtra = const Value.absent(),
   }) => FileRow(
     id: id ?? this.id,
     folderId: folderId.present ? folderId.value : this.folderId,
@@ -1130,6 +1228,9 @@ class FileRow extends DataClass implements Insertable<FileRow> {
     takenAt: takenAt.present ? takenAt.value : this.takenAt,
     trashedAt: trashedAt.present ? trashedAt.value : this.trashedAt,
     hidden: hidden ?? this.hidden,
+    manifestExtra: manifestExtra.present
+        ? manifestExtra.value
+        : this.manifestExtra,
   );
   FileRow copyWithCompanion(DriveFilesCompanion data) {
     return FileRow(
@@ -1157,6 +1258,9 @@ class FileRow extends DataClass implements Insertable<FileRow> {
       takenAt: data.takenAt.present ? data.takenAt.value : this.takenAt,
       trashedAt: data.trashedAt.present ? data.trashedAt.value : this.trashedAt,
       hidden: data.hidden.present ? data.hidden.value : this.hidden,
+      manifestExtra: data.manifestExtra.present
+          ? data.manifestExtra.value
+          : this.manifestExtra,
     );
   }
 
@@ -1178,7 +1282,8 @@ class FileRow extends DataClass implements Insertable<FileRow> {
           ..write('thumbnailFileId: $thumbnailFileId, ')
           ..write('takenAt: $takenAt, ')
           ..write('trashedAt: $trashedAt, ')
-          ..write('hidden: $hidden')
+          ..write('hidden: $hidden, ')
+          ..write('manifestExtra: $manifestExtra')
           ..write(')'))
         .toString();
   }
@@ -1201,6 +1306,7 @@ class FileRow extends DataClass implements Insertable<FileRow> {
     takenAt,
     trashedAt,
     hidden,
+    manifestExtra,
   );
   @override
   bool operator ==(Object other) =>
@@ -1221,7 +1327,8 @@ class FileRow extends DataClass implements Insertable<FileRow> {
           other.thumbnailFileId == this.thumbnailFileId &&
           other.takenAt == this.takenAt &&
           other.trashedAt == this.trashedAt &&
-          other.hidden == this.hidden);
+          other.hidden == this.hidden &&
+          other.manifestExtra == this.manifestExtra);
 }
 
 class DriveFilesCompanion extends UpdateCompanion<FileRow> {
@@ -1241,6 +1348,7 @@ class DriveFilesCompanion extends UpdateCompanion<FileRow> {
   final Value<DateTime?> takenAt;
   final Value<DateTime?> trashedAt;
   final Value<bool> hidden;
+  final Value<String?> manifestExtra;
   final Value<int> rowid;
   const DriveFilesCompanion({
     this.id = const Value.absent(),
@@ -1259,6 +1367,7 @@ class DriveFilesCompanion extends UpdateCompanion<FileRow> {
     this.takenAt = const Value.absent(),
     this.trashedAt = const Value.absent(),
     this.hidden = const Value.absent(),
+    this.manifestExtra = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   DriveFilesCompanion.insert({
@@ -1278,6 +1387,7 @@ class DriveFilesCompanion extends UpdateCompanion<FileRow> {
     this.takenAt = const Value.absent(),
     this.trashedAt = const Value.absent(),
     this.hidden = const Value.absent(),
+    this.manifestExtra = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        name = Value(name),
@@ -1303,6 +1413,7 @@ class DriveFilesCompanion extends UpdateCompanion<FileRow> {
     Expression<DateTime>? takenAt,
     Expression<DateTime>? trashedAt,
     Expression<bool>? hidden,
+    Expression<String>? manifestExtra,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -1322,6 +1433,7 @@ class DriveFilesCompanion extends UpdateCompanion<FileRow> {
       if (takenAt != null) 'taken_at': takenAt,
       if (trashedAt != null) 'trashed_at': trashedAt,
       if (hidden != null) 'hidden': hidden,
+      if (manifestExtra != null) 'manifest_extra': manifestExtra,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -1343,6 +1455,7 @@ class DriveFilesCompanion extends UpdateCompanion<FileRow> {
     Value<DateTime?>? takenAt,
     Value<DateTime?>? trashedAt,
     Value<bool>? hidden,
+    Value<String?>? manifestExtra,
     Value<int>? rowid,
   }) {
     return DriveFilesCompanion(
@@ -1362,6 +1475,7 @@ class DriveFilesCompanion extends UpdateCompanion<FileRow> {
       takenAt: takenAt ?? this.takenAt,
       trashedAt: trashedAt ?? this.trashedAt,
       hidden: hidden ?? this.hidden,
+      manifestExtra: manifestExtra ?? this.manifestExtra,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -1419,6 +1533,9 @@ class DriveFilesCompanion extends UpdateCompanion<FileRow> {
     if (hidden.present) {
       map['hidden'] = Variable<bool>(hidden.value);
     }
+    if (manifestExtra.present) {
+      map['manifest_extra'] = Variable<String>(manifestExtra.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -1444,6 +1561,7 @@ class DriveFilesCompanion extends UpdateCompanion<FileRow> {
           ..write('takenAt: $takenAt, ')
           ..write('trashedAt: $trashedAt, ')
           ..write('hidden: $hidden, ')
+          ..write('manifestExtra: $manifestExtra, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -4899,6 +5017,218 @@ class FileContentsCompanion extends UpdateCompanion<FileContentRow> {
   }
 }
 
+class $FileOpensTable extends FileOpens
+    with TableInfo<$FileOpensTable, FileOpenRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $FileOpensTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _fileIdMeta = const VerificationMeta('fileId');
+  @override
+  late final GeneratedColumn<String> fileId = GeneratedColumn<String>(
+    'file_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _openedAtMeta = const VerificationMeta(
+    'openedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> openedAt = GeneratedColumn<DateTime>(
+    'opened_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [fileId, openedAt];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'file_opens';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<FileOpenRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('file_id')) {
+      context.handle(
+        _fileIdMeta,
+        fileId.isAcceptableOrUnknown(data['file_id']!, _fileIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_fileIdMeta);
+    }
+    if (data.containsKey('opened_at')) {
+      context.handle(
+        _openedAtMeta,
+        openedAt.isAcceptableOrUnknown(data['opened_at']!, _openedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_openedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {fileId};
+  @override
+  FileOpenRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return FileOpenRow(
+      fileId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}file_id'],
+      )!,
+      openedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}opened_at'],
+      )!,
+    );
+  }
+
+  @override
+  $FileOpensTable createAlias(String alias) {
+    return $FileOpensTable(attachedDatabase, alias);
+  }
+}
+
+class FileOpenRow extends DataClass implements Insertable<FileOpenRow> {
+  final String fileId;
+  final DateTime openedAt;
+  const FileOpenRow({required this.fileId, required this.openedAt});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['file_id'] = Variable<String>(fileId);
+    map['opened_at'] = Variable<DateTime>(openedAt);
+    return map;
+  }
+
+  FileOpensCompanion toCompanion(bool nullToAbsent) {
+    return FileOpensCompanion(fileId: Value(fileId), openedAt: Value(openedAt));
+  }
+
+  factory FileOpenRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return FileOpenRow(
+      fileId: serializer.fromJson<String>(json['fileId']),
+      openedAt: serializer.fromJson<DateTime>(json['openedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'fileId': serializer.toJson<String>(fileId),
+      'openedAt': serializer.toJson<DateTime>(openedAt),
+    };
+  }
+
+  FileOpenRow copyWith({String? fileId, DateTime? openedAt}) => FileOpenRow(
+    fileId: fileId ?? this.fileId,
+    openedAt: openedAt ?? this.openedAt,
+  );
+  FileOpenRow copyWithCompanion(FileOpensCompanion data) {
+    return FileOpenRow(
+      fileId: data.fileId.present ? data.fileId.value : this.fileId,
+      openedAt: data.openedAt.present ? data.openedAt.value : this.openedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('FileOpenRow(')
+          ..write('fileId: $fileId, ')
+          ..write('openedAt: $openedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(fileId, openedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is FileOpenRow &&
+          other.fileId == this.fileId &&
+          other.openedAt == this.openedAt);
+}
+
+class FileOpensCompanion extends UpdateCompanion<FileOpenRow> {
+  final Value<String> fileId;
+  final Value<DateTime> openedAt;
+  final Value<int> rowid;
+  const FileOpensCompanion({
+    this.fileId = const Value.absent(),
+    this.openedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  FileOpensCompanion.insert({
+    required String fileId,
+    required DateTime openedAt,
+    this.rowid = const Value.absent(),
+  }) : fileId = Value(fileId),
+       openedAt = Value(openedAt);
+  static Insertable<FileOpenRow> custom({
+    Expression<String>? fileId,
+    Expression<DateTime>? openedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (fileId != null) 'file_id': fileId,
+      if (openedAt != null) 'opened_at': openedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  FileOpensCompanion copyWith({
+    Value<String>? fileId,
+    Value<DateTime>? openedAt,
+    Value<int>? rowid,
+  }) {
+    return FileOpensCompanion(
+      fileId: fileId ?? this.fileId,
+      openedAt: openedAt ?? this.openedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (fileId.present) {
+      map['file_id'] = Variable<String>(fileId.value);
+    }
+    if (openedAt.present) {
+      map['opened_at'] = Variable<DateTime>(openedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('FileOpensCompanion(')
+          ..write('fileId: $fileId, ')
+          ..write('openedAt: $openedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
@@ -4912,6 +5242,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $OfflinePinsTable offlinePins = $OfflinePinsTable(this);
   late final $OfflineCopiesTable offlineCopies = $OfflineCopiesTable(this);
   late final $FileContentsTable fileContents = $FileContentsTable(this);
+  late final $FileOpensTable fileOpens = $FileOpensTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -4927,6 +5258,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     offlinePins,
     offlineCopies,
     fileContents,
+    fileOpens,
   ];
 }
 
@@ -4939,6 +5271,7 @@ typedef $$FoldersTableCreateCompanionBuilder = FoldersCompanion Function({
   required DateTime modifiedAt,
   Value<DateTime?> trashedAt,
   Value<bool> hidden,
+  Value<String?> manifestExtra,
   Value<int> rowid,
 });
 typedef $$FoldersTableUpdateCompanionBuilder = FoldersCompanion Function({
@@ -4950,6 +5283,7 @@ typedef $$FoldersTableUpdateCompanionBuilder = FoldersCompanion Function({
   Value<DateTime> modifiedAt,
   Value<DateTime?> trashedAt,
   Value<bool> hidden,
+  Value<String?> manifestExtra,
   Value<int> rowid,
 });
 
@@ -4999,6 +5333,11 @@ class $$FoldersTableFilterComposer
 
   ColumnFilters<bool> get hidden => $composableBuilder(
     column: $table.hidden,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get manifestExtra => $composableBuilder(
+    column: $table.manifestExtra,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -5051,6 +5390,11 @@ class $$FoldersTableOrderingComposer
     column: $table.hidden,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get manifestExtra => $composableBuilder(
+    column: $table.manifestExtra,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$FoldersTableAnnotationComposer
@@ -5087,6 +5431,11 @@ class $$FoldersTableAnnotationComposer
 
   GeneratedColumn<bool> get hidden =>
       $composableBuilder(column: $table.hidden, builder: (column) => column);
+
+  GeneratedColumn<String> get manifestExtra => $composableBuilder(
+    column: $table.manifestExtra,
+    builder: (column) => column,
+  );
 }
 
 class $$FoldersTableTableManager
@@ -5125,6 +5474,7 @@ class $$FoldersTableTableManager
                 Value<DateTime> modifiedAt = const Value.absent(),
                 Value<DateTime?> trashedAt = const Value.absent(),
                 Value<bool> hidden = const Value.absent(),
+                Value<String?> manifestExtra = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => FoldersCompanion(
                 id: id,
@@ -5135,6 +5485,7 @@ class $$FoldersTableTableManager
                 modifiedAt: modifiedAt,
                 trashedAt: trashedAt,
                 hidden: hidden,
+                manifestExtra: manifestExtra,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -5147,6 +5498,7 @@ class $$FoldersTableTableManager
                 required DateTime modifiedAt,
                 Value<DateTime?> trashedAt = const Value.absent(),
                 Value<bool> hidden = const Value.absent(),
+                Value<String?> manifestExtra = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => FoldersCompanion.insert(
                 id: id,
@@ -5157,6 +5509,7 @@ class $$FoldersTableTableManager
                 modifiedAt: modifiedAt,
                 trashedAt: trashedAt,
                 hidden: hidden,
+                manifestExtra: manifestExtra,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
@@ -5207,6 +5560,7 @@ typedef $$DriveFilesTableCreateCompanionBuilder = DriveFilesCompanion Function({
   Value<DateTime?> takenAt,
   Value<DateTime?> trashedAt,
   Value<bool> hidden,
+  Value<String?> manifestExtra,
   Value<int> rowid,
 });
 typedef $$DriveFilesTableUpdateCompanionBuilder = DriveFilesCompanion Function({
@@ -5226,6 +5580,7 @@ typedef $$DriveFilesTableUpdateCompanionBuilder = DriveFilesCompanion Function({
   Value<DateTime?> takenAt,
   Value<DateTime?> trashedAt,
   Value<bool> hidden,
+  Value<String?> manifestExtra,
   Value<int> rowid,
 });
 
@@ -5318,6 +5673,11 @@ class $$DriveFilesTableFilterComposer
     column: $table.hidden,
     builder: (column) => ColumnFilters(column),
   );
+
+  ColumnFilters<String> get manifestExtra => $composableBuilder(
+    column: $table.manifestExtra,
+    builder: (column) => ColumnFilters(column),
+  );
 }
 
 class $$DriveFilesTableOrderingComposer
@@ -5408,6 +5768,11 @@ class $$DriveFilesTableOrderingComposer
     column: $table.hidden,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get manifestExtra => $composableBuilder(
+    column: $table.manifestExtra,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$DriveFilesTableAnnotationComposer
@@ -5474,6 +5839,11 @@ class $$DriveFilesTableAnnotationComposer
 
   GeneratedColumn<bool> get hidden =>
       $composableBuilder(column: $table.hidden, builder: (column) => column);
+
+  GeneratedColumn<String> get manifestExtra => $composableBuilder(
+    column: $table.manifestExtra,
+    builder: (column) => column,
+  );
 }
 
 class $$DriveFilesTableTableManager
@@ -5520,6 +5890,7 @@ class $$DriveFilesTableTableManager
                 Value<DateTime?> takenAt = const Value.absent(),
                 Value<DateTime?> trashedAt = const Value.absent(),
                 Value<bool> hidden = const Value.absent(),
+                Value<String?> manifestExtra = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => DriveFilesCompanion(
                 id: id,
@@ -5538,6 +5909,7 @@ class $$DriveFilesTableTableManager
                 takenAt: takenAt,
                 trashedAt: trashedAt,
                 hidden: hidden,
+                manifestExtra: manifestExtra,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -5558,6 +5930,7 @@ class $$DriveFilesTableTableManager
                 Value<DateTime?> takenAt = const Value.absent(),
                 Value<DateTime?> trashedAt = const Value.absent(),
                 Value<bool> hidden = const Value.absent(),
+                Value<String?> manifestExtra = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => DriveFilesCompanion.insert(
                 id: id,
@@ -5576,6 +5949,7 @@ class $$DriveFilesTableTableManager
                 takenAt: takenAt,
                 trashedAt: trashedAt,
                 hidden: hidden,
+                manifestExtra: manifestExtra,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
@@ -7474,6 +7848,156 @@ typedef $$FileContentsTableProcessedTableManager =
       FileContentRow,
       PrefetchHooks Function()
     >;
+typedef $$FileOpensTableCreateCompanionBuilder = FileOpensCompanion Function({
+  required String fileId,
+  required DateTime openedAt,
+  Value<int> rowid,
+});
+typedef $$FileOpensTableUpdateCompanionBuilder = FileOpensCompanion Function({
+  Value<String> fileId,
+  Value<DateTime> openedAt,
+  Value<int> rowid,
+});
+
+class $$FileOpensTableFilterComposer
+    extends Composer<_$AppDatabase, $FileOpensTable> {
+  $$FileOpensTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get fileId => $composableBuilder(
+    column: $table.fileId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get openedAt => $composableBuilder(
+    column: $table.openedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$FileOpensTableOrderingComposer
+    extends Composer<_$AppDatabase, $FileOpensTable> {
+  $$FileOpensTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get fileId => $composableBuilder(
+    column: $table.fileId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get openedAt => $composableBuilder(
+    column: $table.openedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$FileOpensTableAnnotationComposer
+    extends Composer<_$AppDatabase, $FileOpensTable> {
+  $$FileOpensTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get fileId =>
+      $composableBuilder(column: $table.fileId, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get openedAt =>
+      $composableBuilder(column: $table.openedAt, builder: (column) => column);
+}
+
+class $$FileOpensTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $FileOpensTable,
+          FileOpenRow,
+          $$FileOpensTableFilterComposer,
+          $$FileOpensTableOrderingComposer,
+          $$FileOpensTableAnnotationComposer,
+          $$FileOpensTableCreateCompanionBuilder,
+          $$FileOpensTableUpdateCompanionBuilder,
+          (
+            FileOpenRow,
+            BaseReferences<_$AppDatabase, $FileOpensTable, FileOpenRow>,
+          ),
+          FileOpenRow,
+          PrefetchHooks Function()
+        > {
+  $$FileOpensTableTableManager(_$AppDatabase db, $FileOpensTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$FileOpensTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$FileOpensTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$FileOpensTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> fileId = const Value.absent(),
+                Value<DateTime> openedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => FileOpensCompanion(
+                fileId: fileId,
+                openedAt: openedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String fileId,
+                required DateTime openedAt,
+                Value<int> rowid = const Value.absent(),
+              }) => FileOpensCompanion.insert(
+                fileId: fileId,
+                openedAt: openedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable<$FileOpensTable, FileOpenRow>(table),
+                  BaseReferences<_$AppDatabase, $FileOpensTable, FileOpenRow>(
+                    db,
+                    table,
+                    e,
+                  ),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$FileOpensTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $FileOpensTable,
+      FileOpenRow,
+      $$FileOpensTableFilterComposer,
+      $$FileOpensTableOrderingComposer,
+      $$FileOpensTableAnnotationComposer,
+      $$FileOpensTableCreateCompanionBuilder,
+      $$FileOpensTableUpdateCompanionBuilder,
+      (
+        FileOpenRow,
+        BaseReferences<_$AppDatabase, $FileOpensTable, FileOpenRow>,
+      ),
+      FileOpenRow,
+      PrefetchHooks Function()
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -7498,4 +8022,6 @@ class $AppDatabaseManager {
       $$OfflineCopiesTableTableManager(_db, _db.offlineCopies);
   $$FileContentsTableTableManager get fileContents =>
       $$FileContentsTableTableManager(_db, _db.fileContents);
+  $$FileOpensTableTableManager get fileOpens =>
+      $$FileOpensTableTableManager(_db, _db.fileOpens);
 }

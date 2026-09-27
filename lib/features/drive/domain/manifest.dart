@@ -21,6 +21,11 @@ import 'package:flutter/foundation.dart';
 /// Captions written before the rename to Telegrive used `gr1:` / `grf1:`;
 /// those still decode. Albums are text messages like folders, under
 /// `tgra1:`.
+///
+/// Keys a manifest carries that this version doesn't know were written by a
+/// newer one. They are kept in `extra`, stored in the index, and written
+/// back on every edit, so renaming or moving something here never drops
+/// them.
 abstract final class ManifestCodec {
   static const String filePrefix = 'tgr1:';
   static const String folderPrefix = 'tgrf1:';
@@ -66,6 +71,25 @@ abstract final class ManifestCodec {
   static FolderManifest? decodeFolder(String text) {
     final json = _extract(_folderLine, text);
     return json == null ? null : FolderManifest.tryFromJson(json);
+  }
+
+  /// Unknown keys as the index stores them: JSON, or null when there are
+  /// none.
+  static String? encodeExtra(Map<String, Object?> extra) =>
+      extra.isEmpty ? null : jsonEncode(extra);
+
+  /// What [encodeExtra] stored. Anything unreadable counts as none rather
+  /// than failing the edit it is read for.
+  static Map<String, Object?> decodeExtra(String? stored) {
+    if (stored == null) return const {};
+    try {
+      final decoded = jsonDecode(stored);
+      return decoded is Map<String, dynamic>
+          ? Map.unmodifiable(decoded)
+          : const {};
+    } catch (_) {
+      return const {};
+    }
   }
 
   static EncodedText _withMachineLine(String head, String machine) {
@@ -125,7 +149,15 @@ class FileManifest {
     this.takenAt,
     this.trashedAt,
     this.albums = const [],
+    this.extra = const {},
   });
+
+  /// Every key [toJson] can write. Anything else in a caption goes to
+  /// [extra]. A key toJson writes that is missing here is also copied into
+  /// [extra], and comes back after it is cleared.
+  static const Set<String> _keys = {
+    'id', 'n', 'f', 'm', 's', 'ct', 'mt', 'pc', 'pi', 'st', 'tk', 'tr', 'al',
+  };
 
   final String id;
   final String name;
@@ -148,6 +180,10 @@ class FileManifest {
   final int partCount;
   final int partIndex;
   final bool starred;
+
+  /// Keys a newer version wrote that this one doesn't know, kept as they
+  /// were. A key [toJson] writes wins over one of the same name here.
+  final Map<String, Object?> extra;
 
   FileManifest copyWith({
     String? name,
@@ -173,10 +209,16 @@ class FileManifest {
     takenAt: takenAt,
     trashedAt: restore ? null : (trashedAt ?? this.trashedAt),
     albums: albums ?? this.albums,
+    extra: extra,
   );
 
   /// Short keys keep captions well under Telegram's 1024-character limit.
+  /// [extra] goes first so the known keys written after it win. A key this
+  /// version leaves out can still come from [extra]. Decoding keeps this
+  /// version's own keys out of it, so that only happens for a key an older
+  /// version indexed before it knew it, and writing it back keeps it.
   Map<String, dynamic> toJson() => {
+    ...extra,
     'id': id,
     'n': name,
     if (folderId != null) 'f': folderId,
@@ -218,6 +260,7 @@ class FileManifest {
           for (final id in ids)
             if (id is String) id,
       ],
+      extra: Map.unmodifiable(_unknown(json, _keys)),
     );
   }
 }
@@ -231,7 +274,12 @@ class FolderManifest {
     required this.createdAt,
     required this.modifiedAt,
     this.trashedAt,
+    this.extra = const {},
   });
+
+  /// Every key [toJson] can write. A key toJson writes that is missing here
+  /// is also copied into [extra], and comes back after it is cleared.
+  static const Set<String> _keys = {'id', 'n', 'p', 'ct', 'mt', 'tr'};
 
   final String id;
   final String name;
@@ -242,7 +290,14 @@ class FolderManifest {
   /// When it was moved to the trash, with everything inside it.
   final DateTime? trashedAt;
 
+  /// Keys a newer version wrote that this one doesn't know; see
+  /// [FileManifest.extra].
+  final Map<String, Object?> extra;
+
+  /// [extra] goes first so the known keys written after it win; see
+  /// [FileManifest.toJson].
   Map<String, dynamic> toJson() => {
+    ...extra,
     'id': id,
     'n': name,
     if (parentId != null) 'p': parentId,
@@ -262,6 +317,7 @@ class FolderManifest {
       createdAt: _time(json['ct']),
       modifiedAt: _time(json['mt'] ?? json['ct']),
       trashedAt: json['tr'] is int ? _time(json['tr']) : null,
+      extra: Map.unmodifiable(_unknown(json, _keys)),
     );
   }
 }
@@ -300,6 +356,13 @@ class AlbumManifest {
     );
   }
 }
+
+/// The entries of [json] whose key isn't one of [known]. Decoding keeps only
+/// these as `extra`, so this version never indexes a key it writes itself.
+Map<String, Object?> _unknown(Map<String, Object?> json, Set<String> known) => {
+  for (final MapEntry(:key, :value) in json.entries)
+    if (!known.contains(key)) key: value,
+};
 
 DateTime _time(Object? millis) => millis is int
     ? DateTime.fromMillisecondsSinceEpoch(millis)

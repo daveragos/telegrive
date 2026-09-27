@@ -317,6 +317,7 @@ class DriveRepository {
       createdAt: folder.createdAt,
       modifiedAt: DateTime.now(),
       trashedAt: restore ? null : (trashedAt ?? row.trashedAt),
+      extra: ManifestCodec.decodeExtra(row.manifestExtra),
     );
     final message = await _ignoreUnchanged(
       () => _messenger.editText(
@@ -417,7 +418,8 @@ class DriveRepository {
   }
 
   /// Rewrites the manifest on every part of [file], starting from what the
-  /// index holds so nothing the caller doesn't touch is lost.
+  /// index holds so nothing the caller doesn't touch is lost, including
+  /// keys only a newer version knows.
   Future<void> _rewriteFile(
     DriveFile file,
     FileManifest Function(FileManifest current) change,
@@ -439,6 +441,7 @@ class DriveRepository {
         takenAt: row.takenAt,
         trashedAt: row.trashedAt,
         albums: await _db.albumIdsOf(row.id),
+        extra: ManifestCodec.decodeExtra(row.manifestExtra),
       ),
     ).copyWith(modifiedAt: DateTime.now());
 
