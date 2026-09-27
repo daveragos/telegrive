@@ -62,16 +62,17 @@ class DriveHealth {
 }
 
 /// Home's first line: the one thing worth knowing about the drive, first
-/// match wins. Not reaching Telegram comes first, since nothing else moves
-/// until it does; then work in progress, what blocks backup, what failed,
-/// and only when none of that applies, that everything is backed up and in
-/// sync.
+/// match wins. Not reaching Telegram comes first, since the drive then
+/// shows only what it last synced and anything else the line said couldn't
+/// be checked; then work in progress, what blocks backup, what didn't back
+/// up, and only when none of that applies, that everything is backed up
+/// and in sync.
 ///
 /// Transfers someone started by hand rank above a stopped backup because
 /// they are what that person is waiting on, and the stopped backup keeps
-/// its Retry on the second row. A failed transfer can be the main sentence
-/// too, so the line never turns green, or asks to turn backup on, over
-/// something the person asked for that didn't happen.
+/// its Retry on the second row. Failed transfers never take this line,
+/// since they say nothing about whether the drive is backed up and in sync;
+/// they are a second-row concern, with their Retry (see [secondaryHealth]).
 ///
 /// Telegram asking for a long pause ranks below a backup that is stopped,
 /// can't see the photos or waits for Wi-Fi, since each of those has a
@@ -87,7 +88,6 @@ DriveHealth describeDriveHealth({
 }) {
   final at = now ?? DateTime.now();
   final active = _manualActive(transfers, at);
-  final failedTransfers = transfers.failedCount;
 
   if (sync.error != null) {
     return _unreachable(_latest([sync.lastSynced, lastFullSync]), at, retrying: sync.running);
@@ -154,7 +154,6 @@ DriveHealth describeDriveHealth({
   if (backup.phase == BackupPhase.needsPermission) return _needsPermission;
   if (backup.phase == BackupPhase.waitingForWifi) return _waitingForWifi(backup);
   if (backup.enabled && backup.failed > 0) return _failedItems(backup);
-  if (failedTransfers > 0) return _failedTransfers(transfers);
   if (backup.phase == BackupPhase.waitingForDrive) {
     return const DriveHealth(
       icon: Icons.cloud_queue_rounded,

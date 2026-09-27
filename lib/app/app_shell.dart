@@ -294,15 +294,64 @@ bool _bulkLineShows(WidgetRef ref) {
   return big || waiting;
 }
 
+/// Keeps track of the dialogs, sheets and menus open on the navigator it
+/// observes, for [BulkStripOverShell], which sits outside that navigator.
+class PopupRoutes extends NavigatorObserver with ChangeNotifier {
+  final List<PopupRoute<Object?>> _open = [];
+
+  /// The popup on top, or null when none is open. A navigator that goes
+  /// away takes its popups with it without saying so, hence the check.
+  PopupRoute<Object?>? get top => _open.where((route) => route.isActive).lastOrNull;
+
+  @override
+  void didPush(Route<Object?> route, Route<Object?>? previousRoute) => _opened(route);
+
+  @override
+  void didPop(Route<Object?> route, Route<Object?>? previousRoute) => _closed(route);
+
+  @override
+  void didRemove(Route<Object?> route, Route<Object?>? previousRoute) => _closed(route);
+
+  @override
+  void didReplace({Route<Object?>? newRoute, Route<Object?>? oldRoute}) {
+    _closed(oldRoute);
+    _opened(newRoute);
+  }
+
+  void _opened(Route<Object?>? route) {
+    if (route is! PopupRoute<Object?>) return;
+    _open.add(route);
+    notifyListeners();
+  }
+
+  void _closed(Route<Object?>? route) {
+    if (route is PopupRoute<Object?> && _open.remove(route)) notifyListeners();
+  }
+}
+
 /// Screens opened over the shell, such as an album or the Trash, have no
 /// bar for the bulk line to sit above, so it sits at their foot instead: a
 /// change started there still shows how far it got, and can be stopped.
 /// Wraps everything [router] shows; on the shell itself it stays out of the
 /// way, since the shell has its own line.
+///
+/// Being outside the navigator, the line is out of reach of a dialog's or
+/// sheet's barrier, so while one is open the line gets the same barrier
+/// over it: dimmed like the screen, and a tap there does what a tap on the
+/// barrier does, rather than stop the change behind the dialog's back.
 class BulkStripOverShell extends ConsumerStatefulWidget {
-  const BulkStripOverShell({super.key, required this.router, required this.child});
+  const BulkStripOverShell({
+    super.key,
+    required this.router,
+    required this.popups,
+    required this.child,
+  });
 
   final GoRouter router;
+
+  /// The popups open on [router]'s navigator, which must have it among its
+  /// observers.
+  final PopupRoutes popups;
   final Widget child;
 
   @override
@@ -312,10 +361,15 @@ class BulkStripOverShell extends ConsumerStatefulWidget {
 class _BulkStripOverShellState extends ConsumerState<BulkStripOverShell> {
   bool _overShell = false;
 
+  /// The popup whose barrier covers the line: the one on top, or, while it
+  /// closes, the one that was.
+  PopupRoute<Object?>? _popup;
+
   @override
   void initState() {
     super.initState();
     widget.router.routerDelegate.addListener(_onRoute);
+    widget.popups.addListener(_onPopups);
   }
 
   @override
@@ -325,30 +379,80 @@ class _BulkStripOverShellState extends ConsumerState<BulkStripOverShell> {
       oldWidget.router.routerDelegate.removeListener(_onRoute);
       widget.router.routerDelegate.addListener(_onRoute);
     }
+    if (oldWidget.popups != widget.popups) {
+      oldWidget.popups.removeListener(_onPopups);
+      widget.popups.addListener(_onPopups);
+      _onPopups();
+    }
   }
 
   @override
   void dispose() {
     widget.router.routerDelegate.removeListener(_onRoute);
+    widget.popups.removeListener(_onPopups);
     super.dispose();
   }
 
-  /// The router changes pages while the screens below this are building,
-  /// so the line follows once that frame is done.
-  void _onRoute() {
+  void _onRoute() => _afterFrame(() {
+    final matches = widget.router.routerDelegate.currentConfiguration.matches;
+    final overShell = matches.lastOrNull is! ShellRouteMatch;
+    if (overShell != _overShell) setState(() => _overShell = overShell);
+  });
+
+  void _onPopups() => _afterFrame(() {
+    final popup = widget.popups.top;
+    final closing = _popup;
+    // A popup's barrier fades out over the screen as it closes, so the
+    // line keeps its own until then rather than brighten ahead of the rest.
+    if (popup == null && closing != null && !(closing.animation?.isDismissed ?? true)) {
+      unawaited(
+        closing.completed.whenComplete(
+          () => _afterFrame(() {
+            if (_popup == closing) setState(() => _popup = widget.popups.top);
+          }),
+        ),
+      );
+      return;
+    }
+    if (popup != _popup) setState(() => _popup = popup);
+  });
+
+  /// The router changes pages, and with them can drop popups, while the
+  /// screens below this are building, so the line follows once that frame
+  /// is done.
+  void _afterFrame(VoidCallback update) {
     SchedulerBinding.instance
       ..addPostFrameCallback((_) {
-        if (!mounted) return;
-        final matches = widget.router.routerDelegate.currentConfiguration.matches;
-        final overShell = matches.lastOrNull is! ShellRouteMatch;
-        if (overShell != _overShell) setState(() => _overShell = overShell);
+        if (mounted) update();
       })
       ..ensureVisualUpdate();
+  }
+
+  /// [popup]'s barrier, as the navigator draws it over the screen. Its own
+  /// dismissal would look for a navigator above the line and find none, so
+  /// it closes [popup] directly, and only while [popup] is still on top.
+  static Widget _barrier(PopupRoute<Object?> popup) {
+    final color = popup.barrierColor ?? Colors.transparent;
+    return AnimatedModalBarrier(
+      color: (popup.animation ?? kAlwaysCompleteAnimation).drive(
+        ColorTween(
+          begin: color.withValues(alpha: 0),
+          end: color,
+        ).chain(CurveTween(curve: popup.barrierCurve)),
+      ),
+      dismissible: popup.barrierDismissible,
+      semanticsLabel: popup.barrierLabel,
+      barrierSemanticsDismissible: popup.semanticsDismissible,
+      onDismiss: () {
+        if (popup.isCurrent) popup.navigator?.maybePop();
+      },
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final visible = _overShell && _bulkLineShows(ref);
+    final popup = _popup;
     return Column(
       children: [
         Expanded(
@@ -363,9 +467,20 @@ class _BulkStripOverShellState extends ConsumerState<BulkStripOverShell> {
           duration: const Duration(milliseconds: 200),
           curve: Curves.easeOut,
           child: visible
-              ? ColoredBox(
-                  color: context.colors.surface,
-                  child: const SafeArea(top: false, child: _BulkStrip()),
+              ? Semantics(
+                  // The barrier hides from screen readers whatever is painted
+                  // before it, up to the nearest container. Without one here
+                  // that takes in the dialog or sheet it sits under.
+                  container: true,
+                  child: Stack(
+                    children: [
+                      ColoredBox(
+                        color: context.colors.surface,
+                        child: const SafeArea(top: false, child: _BulkStrip()),
+                      ),
+                      if (popup != null) Positioned.fill(child: _barrier(popup)),
+                    ],
+                  ),
                 )
               : const SizedBox(width: double.infinity),
         ),

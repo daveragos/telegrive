@@ -153,30 +153,20 @@ void main() {
       expect(health.action, HealthAction.retryFailed);
     });
 
-    test('failed transfers open Transfers and retry in place', () {
-      final health = _top(
-        transfers: TransfersState([
-          _transfer('a.zip', TransferStatus.failed, error: 'Not enough space on this phone.'),
-          _transfer('b.zip', TransferStatus.failed),
-        ]),
+    test('failed transfers never take the main line', () {
+      final failed = TransfersState([_transfer('a.zip', TransferStatus.failed)]);
+      expect(_top(transfers: failed).text, 'Backed up and in sync');
+      expect(_top(transfers: failed).tone, HealthTone.good);
+      expect(_top(backup: _off, transfers: failed).text, 'Photo backup is off');
+      expect(
+        _top(backup: const BackupState(phase: BackupPhase.waitingForDrive), transfers: failed)
+            .text,
+        'Backup is starting',
       );
-      expect(health.text, '2 transfers failed');
-      expect(health.detail, 'Open Transfers to see why.');
-      expect(health.tone, HealthTone.bad);
-      expect(health.action, HealthAction.retryTransfers);
-      expect(health.target, HealthTarget.transfers);
-    });
-
-    test('one failed transfer says why', () {
-      final health = _top(
-        transfers: TransfersState([
-          _transfer('a.zip', TransferStatus.failed, error: 'Not enough space on this phone.'),
-          _transfer('IMG_1.jpg', TransferStatus.failed, origin: TransferOrigin.backup),
-        ]),
+      expect(
+        _top(sync: const SyncState(running: true), transfers: failed).text,
+        'Checking with Telegram',
       );
-      expect(health.text, '1 transfer failed');
-      expect(health.detail, 'Not enough space on this phone.');
-      expect(health.action, HealthAction.retryTransfers);
     });
 
     test('a long Telegram wait is said, not taken for all good', () {
@@ -390,11 +380,34 @@ void main() {
     });
 
     test('is null when the top line already is that concern', () {
-      final failed = TransfersState([_transfer('a.zip', TransferStatus.failed)]);
-      expect(_top(transfers: failed).text, '1 transfer failed');
-      expect(second(_upToDate, failed), isNull);
       expect(second(const BackupState(phase: BackupPhase.stopped), TransfersState.empty), isNull);
       expect(second(_upToDate, TransfersState.empty), isNull);
+    });
+
+    test('a failed transfer sits under all good, and retries in place', () {
+      final failed = TransfersState([
+        _transfer('a.zip', TransferStatus.failed, error: 'Not enough space on this phone.'),
+        _transfer('IMG_1.jpg', TransferStatus.failed, origin: TransferOrigin.backup),
+      ]);
+      expect(_top(transfers: failed).text, 'Backed up and in sync');
+      final row = second(_upToDate, failed);
+      expect(row?.text, '1 transfer failed');
+      expect(row?.detail, 'Not enough space on this phone.');
+      expect(row?.tone, HealthTone.bad);
+      expect(row?.action, HealthAction.retryTransfers);
+      expect(row?.target, HealthTarget.transfers);
+    });
+
+    test('several failed transfers say where to read why', () {
+      final failed = TransfersState([
+        _transfer('a.zip', TransferStatus.failed, error: 'Not enough space on this phone.'),
+        _transfer('b.zip', TransferStatus.failed),
+      ]);
+      final row = second(_off, failed);
+      expect(_top(backup: _off, transfers: failed).text, 'Photo backup is off');
+      expect(row?.text, '2 transfers failed');
+      expect(row?.detail, 'Open Transfers to see why.');
+      expect(row?.action, HealthAction.retryTransfers);
     });
 
     test('shows failed transfers under transfers in progress', () {

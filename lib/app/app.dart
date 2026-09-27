@@ -89,6 +89,7 @@ class _TelegriveAppState extends ConsumerState<TelegriveApp>
     ref.watch(backupControllerProvider.select((b) => b.phase));
 
     final router = ref.watch(routerProvider);
+    final popups = ref.watch(popupRoutesProvider);
     return MaterialApp.router(
       title: AppConfig.appName,
       debugShowCheckedModeBanner: false,
@@ -97,7 +98,11 @@ class _TelegriveAppState extends ConsumerState<TelegriveApp>
       themeMode: ref.watch(themeModeProvider),
       routerConfig: router,
       builder: (context, child) => LockGate(
-        child: BulkStripOverShell(router: router, child: child ?? const SizedBox.shrink()),
+        child: BulkStripOverShell(
+          router: router,
+          popups: popups,
+          child: child ?? const SizedBox.shrink(),
+        ),
       ),
       localizationsDelegates: GlobalMaterialLocalizations.delegates,
       supportedLocales: const [Locale('en')],

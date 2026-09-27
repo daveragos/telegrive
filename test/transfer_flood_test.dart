@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:handy_tdlib/api.dart' as td;
+import 'package:path/path.dart' as p;
 import 'package:telegrive/core/files/file_kind.dart';
 import 'package:telegrive/features/drive/data/channel_messenger.dart';
 import 'package:telegrive/features/drive/data/drive_repository.dart';
@@ -50,16 +51,39 @@ class _FakeTelegram extends FakeTelegram {
 }
 
 /// Sends the way TDLib does: a pending message at once, and the outcome
-/// later as an update. The first send fails with a flood wait and leaves
-/// the failed message behind under [failedId]; the next one is delivered.
+/// later as an update. The sends numbered in [floods], counting from 1, fail
+/// with a flood wait of [floodSeconds] and leave the failed message behind;
+/// the rest are delivered into the channel. The outcome for a file named in
+/// [holding] waits for [release]. Downloads of TDLib file 7 finish at once
+/// from [downloadPath].
 class _UploadTelegram extends FakeTelegram {
-  static const pendingId = 500;
-  static const failedId = 501;
-  static const deliveredId = 502;
+  _UploadTelegram({
+    this.floods = const {1},
+    this.floodSeconds = 2,
+    this.holding = const {},
+    this.downloadPath = '',
+  });
+
+  final Set<int> floods;
+  final int floodSeconds;
+  final Set<String> holding;
+  final String downloadPath;
 
   final _updates = StreamController<td.TdObject>.broadcast();
+  final _released = Completer<void>();
   final List<int> deleted = [];
-  int sends = 0;
+
+  /// The file names sent, in order.
+  final List<String> sent = [];
+
+  /// The messages TDLib kept after a failed send, and those delivered.
+  final List<int> failedIds = [];
+  final List<int> deliveredIds = [];
+
+  int get sends => sent.length;
+
+  /// Lets through the outcomes [holding] kept back.
+  void release() => _released.complete();
 
   @override
   Stream<td.TdObject> get updates => _updates.stream;
@@ -67,31 +91,48 @@ class _UploadTelegram extends FakeTelegram {
   @override
   Future<td.TdObject?> answer(td.TdFunction function) async {
     switch (function) {
-      case td.SendMessage(inputMessageContent: td.InputMessageDocument(:final caption?)):
-        sends++;
+      case td.SendMessage(
+        inputMessageContent: td.InputMessageDocument(
+          document: td.InputFileLocal(:final path),
+          :final caption?,
+        ),
+      ):
+        sent.add(p.basename(path));
+        final send = sent.length;
         td.Message message(int id) =>
-            documentMessage(id, caption.text, fileName: 'notes.txt', mimeType: 'text/plain');
+            documentMessage(id, caption.text, fileName: p.basename(path), mimeType: 'text/plain');
+        final pendingId = 1000 + send;
         final td.TdObject outcome;
-        if (sends == 1) {
-          messages[failedId] = message(failedId);
+        if (floods.contains(send)) {
+          final failed = message(2000 + send);
+          messages[failed.id] = failed;
+          failedIds.add(failed.id);
           outcome = td.UpdateMessageSendFailed(
-            message: message(failedId),
+            message: failed,
             oldMessageId: pendingId,
-            error: const td.TdError(code: 429, message: 'Too Many Requests: retry after 2'),
+            error: td.TdError(code: 429, message: 'Too Many Requests: retry after $floodSeconds'),
           );
         } else {
-          outcome = td.UpdateMessageSendSucceeded(
-            message: message(deliveredId),
-            oldMessageId: pendingId,
-          );
+          final delivered = message(3000 + send);
+          messages[delivered.id] = delivered;
+          deliveredIds.add(delivered.id);
+          outcome = td.UpdateMessageSendSucceeded(message: delivered, oldMessageId: pendingId);
         }
-        Timer.run(() => _updates.add(outcome));
+        if (holding.contains(p.basename(path))) {
+          unawaited(_released.future.then((_) => _updates.add(outcome)));
+        } else {
+          Timer.run(() => _updates.add(outcome));
+        }
         return message(pendingId).copyWith(
           sendingState: const td.MessageSendingStatePending(sendingId: 0),
         );
       case td.DeleteMessages(:final messageIds):
         deleted.addAll(messageIds);
         return null;
+      case td.GetFile():
+        return tdFile(7);
+      case td.DownloadFile():
+        return tdFile(7, path: downloadPath, downloaded: true);
       default:
         return null;
     }
@@ -245,16 +286,20 @@ void main() {
     expect(state().held, isEmpty);
   });
 
-  test('an upload turned away drops the failed message and goes again', () async {
-    final source = File('${dir.path}/notes.txt')..writeAsStringSync('0123456789');
-    final telegram = _UploadTelegram();
+  /// The queue for [telegram], once it has read its saved rows.
+  Future<(ProviderContainer, TransferQueue)> openQueue(FakeTelegram telegram) async {
     final container = open(telegram);
-    // The queue reads its saved rows first; this waits for that.
     var loaded = false;
     container.listen<TransfersState>(transferQueueProvider, (_, _) => loaded = true);
     container.read(transferQueueProvider);
     await until(() => loaded);
-    final queue = container.read(transferQueueProvider.notifier);
+    return (container, container.read(transferQueueProvider.notifier));
+  }
+
+  test('an upload turned away drops the failed message and goes again', () async {
+    final source = File('${dir.path}/notes.txt')..writeAsStringSync('0123456789');
+    final telegram = _UploadTelegram();
+    final (_, queue) = await openQueue(telegram);
 
     final [id] = await queue.enqueueUploads([
       UploadRequest(name: 'notes.txt', path: source.path),
@@ -263,8 +308,87 @@ void main() {
 
     expect(finished.status, TransferStatus.completed);
     expect(telegram.sends, 2);
-    expect(telegram.deleted, [_UploadTelegram.failedId]);
-    expect(telegram.messages, isEmpty);
+    expect(telegram.deleted, telegram.failedIds);
+    expect(telegram.messages.keys, telegram.deliveredIds);
+  });
+
+  test('uploads queued behind one Telegram turned away wait with it', () async {
+    // A wait of a second, long enough to see what happens while it lasts.
+    TransferQueue.waitUnit = const Duration(milliseconds: 100);
+    final fetched = File('${dir.path}/report.pdf')..writeAsStringSync('0123456789');
+    await addFile('report');
+    final telegram = _UploadTelegram(floodSeconds: 9, downloadPath: fetched.path);
+    final (container, queue) = await openQueue(telegram);
+    TransferItem item(String id) => container.read(transferQueueProvider).byId(id)!;
+
+    final ids = await queue.enqueueUploads([
+      for (final name in ['a.txt', 'b.txt', 'c.txt'])
+        UploadRequest(
+          name: name,
+          path: (File('${dir.path}/$name')..writeAsStringSync(name)).path,
+        ),
+    ]);
+    // Two go up at once. When the first is turned away, the third waits
+    // too, rather than send all its bytes to be turned away at the end.
+    await until(() => item(ids[2]).wait is WaitingForTelegram);
+    expect(telegram.sent, unorderedEquals(['a.txt', 'b.txt']));
+    expect(item(ids[2]).status, TransferStatus.queued);
+
+    // Downloads don't wait on the uploads' pause.
+    final file = (await container.read(driveRepositoryProvider).fileById('report'))!;
+    expect(await queue.download(file), fetched.path);
+    expect(telegram.sends, 2);
+
+    for (final id in ids) {
+      expect((await queue.whenFinished(id)).status, TransferStatus.completed);
+    }
+    // Once the wait is over, the one turned away goes again, and so does c.
+    expect(telegram.sent.skip(2), unorderedEquals([telegram.sent.first, 'c.txt']));
+  });
+
+  test('a split upload under way sends no more parts while uploads wait', () async {
+    // A wait of a second, long enough to see what happens while it lasts.
+    TransferQueue.waitUnit = const Duration(milliseconds: 100);
+    final source = File('${dir.path}/big.pdf')..writeAsStringSync('0123456789');
+    await db.saveTransfers([
+      row(
+        'big',
+        TransferStatus.queued,
+        kind: TransferKind.upload,
+        fileId: 'big',
+        parts: 3,
+        completedParts: 1,
+      ).copyWith(sourcePath: Value(source.path)),
+    ]);
+    // The split upload's next part stays in flight until the upload sent
+    // after it has been turned away.
+    final telegram = _UploadTelegram(
+      floods: const {2},
+      floodSeconds: 9,
+      holding: const {'big.pdf.002'},
+    );
+    final (container, queue) = await openQueue(telegram);
+    TransferItem item(String id) => container.read(transferQueueProvider).byId(id)!;
+    await until(() => telegram.sent.contains('big.pdf.002'));
+
+    final [id] = await queue.enqueueUploads([
+      UploadRequest(
+        name: 'notes.txt',
+        path: (File('${dir.path}/notes.txt')..writeAsStringSync('notes')).path,
+      ),
+    ]);
+    await until(() => item(id).wait is WaitingForTelegram);
+    // The part in flight lands, and the next one waits with the rest rather
+    // than go up in full to be turned away at the end.
+    telegram.release();
+    await until(() => item('big').wait is WaitingForTelegram);
+    expect(item('big').status, TransferStatus.queued);
+    expect(item('big').row.completedParts, 2);
+    expect(telegram.sent, ['big.pdf.002', 'notes.txt']);
+
+    expect((await queue.whenFinished('big')).status, TransferStatus.completed);
+    expect((await queue.whenFinished(id)).status, TransferStatus.completed);
+    expect(telegram.sent.skip(2), unorderedEquals(['big.pdf.003', 'notes.txt']));
   });
 
   test('retryAll queues again only the failed transfers it picks', () async {
@@ -343,6 +467,32 @@ void main() {
     expect(telegram.downloads, 1);
     expect(container.read(transferQueueProvider).items, isEmpty);
     expect(await db.allTransfers(), isEmpty);
+  });
+
+  test('an upload cancelled as it lands is taken back out of the channel', () async {
+    final source = File('${dir.path}/notes.txt')..writeAsStringSync('0123456789');
+    final telegram = _UploadTelegram(floods: const {});
+    final (container, queue) = await openQueue(telegram);
+    // The cancel comes just after the delivery reaches the drive's
+    // messenger, which listens first, and before the part is indexed: there
+    // is no send left to stop.
+    container.read(channelMessengerProvider);
+    Future<void>? cancelled;
+    telegram.updates.listen((update) {
+      if (update is td.UpdateMessageSendSucceeded) {
+        cancelled ??= queue.cancel(container.read(transferQueueProvider).items.single.id);
+      }
+    });
+
+    await queue.enqueueUploads([UploadRequest(name: 'notes.txt', path: source.path)]);
+    await until(() => cancelled != null);
+    await cancelled;
+    final fileId = container.read(transferQueueProvider).items.single.row.fileId;
+    await until(() => telegram.messages.isEmpty);
+
+    expect(telegram.deleted, containsAll(telegram.deliveredIds));
+    expect(await db.partsOf(fileId), isEmpty);
+    expect(await db.fileById(fileId), isNull);
   });
 
   test('removing a paused split upload deletes the parts already sent', () async {

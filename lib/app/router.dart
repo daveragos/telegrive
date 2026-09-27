@@ -29,6 +29,14 @@ import 'app_shell.dart';
 
 final _rootKey = GlobalKey<NavigatorState>(debugLabel: 'root');
 
+/// The dialogs, sheets and menus open on the root navigator, which the bulk
+/// line at the foot of screens opened over the shell needs to know about.
+final popupRoutesProvider = Provider<PopupRoutes>((ref) {
+  final popups = PopupRoutes();
+  ref.onDispose(popups.dispose);
+  return popups;
+});
+
 /// Routes follow [appPhaseProvider]: until the drive is open, the phase
 /// alone decides which screen shows; after that, normal navigation.
 final routerProvider = Provider<GoRouter>((ref) {
@@ -37,6 +45,7 @@ final routerProvider = Provider<GoRouter>((ref) {
 
   final router = GoRouter(
     navigatorKey: _rootKey,
+    observers: [ref.watch(popupRoutesProvider)],
     initialLocation: AppPhase.starting.location,
     refreshListenable: phase,
     redirect: (context, state) {

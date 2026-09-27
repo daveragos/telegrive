@@ -13,6 +13,7 @@ import '../../../core/files/file_kind.dart';
 import '../../../infrastructure/database/app_database.dart';
 import '../../../infrastructure/storage/device_storage.dart';
 import '../../../infrastructure/telegram/telegram_client.dart';
+import '../../../infrastructure/telegram/telegram_exception.dart';
 import '../../drive/data/channel_messenger.dart';
 import '../../drive/data/drive_repository.dart';
 import '../../drive/data/drive_session.dart';
@@ -203,7 +204,9 @@ class _Tracked {
 /// last run stopped: queued work runs again, split uploads resume at the last
 /// finished part, and a single upload TDLib is still sending on its own is
 /// re-attached rather than sent twice. When Telegram asks for a pause, the
-/// transfer waits in the queue and starts again by itself.
+/// transfer waits in the queue and starts again by itself; when it asks an
+/// upload, every other upload waits with it, a split one under way before
+/// its next part.
 class TransferQueue extends Notifier<TransfersState> {
   static const int _maxUploads = 2;
   static const int _maxDownloads = 3;
@@ -233,14 +236,21 @@ class TransferQueue extends Notifier<TransfersState> {
   final Map<String, Completer<TransferRow>> _finished = {};
   final Set<String> _preparing = {};
 
-  /// Queued transfers Telegram asked to wait, and when they may start again.
+  /// Queued downloads Telegram asked to wait, and when they may start again.
   final Map<String, DateTime> _notBefore = {};
+
+  /// When uploads may start again, or send their next part, after Telegram
+  /// asked one of them to wait.
+  /// The limit is the account's, so the next upload would send all its
+  /// bytes only to be told the same at the end, which on mobile data spends
+  /// the person's data for nothing. Downloads carry on.
+  DateTime? _uploadsNotBefore;
 
   StreamSubscription<td.File>? _fileSubscription;
   StreamSubscription<String>? _ingestSubscription;
   Timer? _emitTimer;
 
-  /// Fires when the next of [_notBefore] comes due.
+  /// Fires when the next of [_notBefore] or [_uploadsNotBefore] comes due.
   Timer? _wakeTimer;
   int? _loadedFor;
 
@@ -637,7 +647,7 @@ class TransferQueue extends Notifier<TransfersState> {
           (r) =>
               r.status == TransferStatus.queued &&
               !_running.contains(r.id) &&
-              !(_notBefore[r.id]?.isAfter(now) ?? false),
+              !(_notBeforeOf(r)?.isAfter(now) ?? false),
         )
         .toList()
       ..sort((a, b) {
@@ -708,7 +718,8 @@ class TransferQueue extends Notifier<TransfersState> {
 
   /// Telegram asked for a pause. The transfer goes back in the queue with
   /// the parts and bytes it has, and starts again by itself once the time
-  /// is up, rather than failing halfway.
+  /// is up, rather than failing halfway. An upload's pause holds every
+  /// upload; see [_uploadsNotBefore].
   Future<void> _waitOut(TransferRow row, Duration wait, Object error) async {
     // TDLib keeps the message that failed to send, under a new id. It never
     // reached the channel, so deleting it only drops that local copy.
@@ -720,10 +731,19 @@ class TransferQueue extends Notifier<TransfersState> {
     if (_cancelled.contains(row.id)) return;
     await _save((_rows[row.id] ?? row).copyWith(status: TransferStatus.queued));
     // A second over what was asked, so the next try doesn't land early.
-    _notBefore[row.id] = DateTime.now().add(waitUnit * (wait.inSeconds + 1));
+    final until = DateTime.now().add(waitUnit * (wait.inSeconds + 1));
+    if (row.kind == TransferKind.download) {
+      _notBefore[row.id] = until;
+    } else if (!(_uploadsNotBefore?.isAfter(until) ?? false)) {
+      _uploadsNotBefore = until;
+    }
     _scheduleWake();
     _emit();
   }
+
+  /// When [row] may start, if Telegram asked it, or every upload, to wait.
+  DateTime? _notBeforeOf(TransferRow row) =>
+      row.kind == TransferKind.upload ? _uploadsNotBefore : _notBefore[row.id];
 
   /// Sets one timer for the next transfer whose wait is over.
   void _scheduleWake() {
@@ -731,8 +751,10 @@ class TransferQueue extends Notifier<TransfersState> {
     _wakeTimer = null;
     final now = DateTime.now();
     _notBefore.removeWhere((_, at) => !at.isAfter(now));
-    if (_notBefore.isEmpty) return;
-    final next = _notBefore.values.reduce((a, b) => a.isBefore(b) ? a : b);
+    if (!(_uploadsNotBefore?.isAfter(now) ?? false)) _uploadsNotBefore = null;
+    final waits = [..._notBefore.values, ?_uploadsNotBefore];
+    if (waits.isEmpty) return;
+    final next = waits.reduce((a, b) => a.isBefore(b) ? a : b);
     _wakeTimer = Timer(next.difference(now), () {
       _wakeTimer = null;
       _scheduleWake();
@@ -795,6 +817,7 @@ class TransferQueue extends Notifier<TransfersState> {
         _trackMessage(resume, row.id, base);
         delivered = await _messenger.awaitDelivery(resume.id);
       } else {
+        _stopIfUploadsWait();
         final path = partCount == 1
             ? source!.path
             : await _writePart(row, source!, index);
@@ -815,6 +838,7 @@ class TransferQueue extends Notifier<TransfersState> {
           // Cancelled while the part was being written: it isn't sent.
           if (_cancelled.contains(row.id)) return;
           _stopIfPausing(row.id);
+          _stopIfUploadsWait();
           delivered = await _messenger.sendDocument(
             session.chatId,
             path: path,
@@ -836,9 +860,14 @@ class TransferQueue extends Notifier<TransfersState> {
 
       _pendingMessages.remove(row.id);
       await _repository.ingest(delivered);
-      // Cancelled, or removed from the list, while the part was being
-      // indexed: saving now would bring the row back.
-      if (_cancelled.contains(row.id)) return;
+      // Cancelled, or removed from the list, as the part landed or while it
+      // was being indexed: too late for the send to be stopped, so it and
+      // any parts before it are taken back out, rather than leave half a
+      // file in the channel. Saving now would bring the row back.
+      if (_cancelled.contains(row.id)) {
+        await _quietly(() => _repository.deleteFileById(row.fileId));
+        return;
+      }
       final partEnd = partCount == 1
           ? row.totalBytes
           : base + SplitPolicy.sizeOf(index, row.totalBytes);
@@ -862,6 +891,17 @@ class TransferQueue extends Notifier<TransfersState> {
   /// Ends the work for [id] if it was asked to pause.
   void _stopIfPausing(String id) {
     if (_pausing.contains(id)) throw const DriveException('Paused.');
+  }
+
+  /// Ends an upload's run before it sends another part while Telegram has
+  /// every upload waiting: the part would go up in full only to be turned
+  /// away at the end. The run goes back in the queue with the parts it has,
+  /// as if turned away itself.
+  void _stopIfUploadsWait() {
+    final left = _uploadsNotBefore?.difference(DateTime.now());
+    if (left == null || left <= Duration.zero) return;
+    final seconds = left.inMicroseconds ~/ waitUnit.inMicroseconds;
+    throw TelegramException(429, 'Too Many Requests: retry after $seconds');
   }
 
   Future<TransferRow> _stage(
@@ -1213,6 +1253,7 @@ class TransferQueue extends Notifier<TransfersState> {
     _rows.clear();
     _running.clear();
     _notBefore.clear();
+    _uploadsNotBefore = null;
     _wakeTimer?.cancel();
     _wakeTimer = null;
     _tracked.clear();
@@ -1297,7 +1338,7 @@ class TransferQueue extends Notifier<TransfersState> {
             preparing: _preparing.contains(r.id),
             // Only a queued transfer waits on the clock; paused and
             // finished ones don't start by themselves.
-            wait: switch (_notBefore[r.id]) {
+            wait: switch (_notBeforeOf(r)) {
               final until? when r.status == TransferStatus.queued && until.isAfter(now) =>
                 WaitingForTelegram(until),
               _ => null,

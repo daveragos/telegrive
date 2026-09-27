@@ -57,6 +57,17 @@ void main() {
     expect(entry.file.kind.value, FileKind.audio);
   });
 
+  test('a voice message recorded as MP4 or AAC is named .m4a', () {
+    for (final mimeType in ['audio/mp4', 'audio/aac']) {
+      final entry =
+          MessageIndexer.entryFor(_voice(mimeType: mimeType)) as FilePartEntry;
+
+      expect(entry.file.name.value, 'voice_5.m4a');
+      expect(entry.file.mimeType.value, mimeType);
+      expect(entry.file.kind.value, FileKind.audio);
+    }
+  });
+
   test('a voice message with no type is Ogg', () {
     final entry = MessageIndexer.entryFor(_voice(mimeType: '')) as FilePartEntry;
 

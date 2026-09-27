@@ -52,7 +52,7 @@ class BackupScreen extends ConsumerWidget {
                   },
                   child: Text(switch (backup.phase) {
                     BackupPhase.off => 'Turn on backup',
-                    BackupPhase.stopped => 'Try again',
+                    BackupPhase.stopped => 'Retry',
                     _ => 'Allow photo access',
                   }),
                 ),

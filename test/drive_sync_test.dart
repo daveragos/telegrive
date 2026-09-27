@@ -12,6 +12,8 @@ import 'package:telegrive/infrastructure/telegram/secure_store.dart';
 import 'package:telegrive/infrastructure/telegram/telegram_client.dart';
 import 'package:telegrive/infrastructure/telegram/telegram_exception.dart';
 
+import 'support/fake_telegram.dart';
+
 const _chatId = -1001234567890;
 
 class _Session extends DriveSessionNotifier {
@@ -28,11 +30,13 @@ class _Session extends DriveSessionNotifier {
   );
 }
 
-/// Answers history requests with [failures] first, then an empty channel.
+/// Answers history requests with [failures] first, then a channel holding
+/// [history], newest first, in a single page.
 class _FakeTelegram extends TelegramClient {
-  _FakeTelegram(this.failures) : super(SecureStore());
+  _FakeTelegram(this.failures, {this.history = const []}) : super(SecureStore());
 
   final List<TelegramException> failures;
+  final List<td.Message> history;
   int historyCalls = 0;
 
   @override
@@ -43,7 +47,8 @@ class _FakeTelegram extends TelegramClient {
     if (function is td.GetChatHistory) {
       historyCalls++;
       if (failures.isNotEmpty) throw failures.removeAt(0);
-      return const td.Messages(totalCount: 0, messages: []) as T;
+      final page = function.fromMessageId == 0 ? history : const <td.Message>[];
+      return td.Messages(totalCount: history.length, messages: page) as T;
     }
     if (function is td.OpenChat || function is td.CloseChat) return const td.Ok() as T;
     throw UnsupportedError('$function');
@@ -54,12 +59,13 @@ void main() {
   Future<(ProviderContainer, _FakeTelegram, Preferences)> start(
     List<TelegramException> failures, {
     Map<String, Object> stored = const {},
+    List<td.Message> history = const [],
   }) async {
     // ignore: invalid_use_of_visible_for_testing_member
     SharedPreferences.setMockInitialValues(stored);
     final prefs = await SharedPreferences.getInstance();
     final db = AppDatabase(NativeDatabase.memory());
-    final telegram = _FakeTelegram(failures);
+    final telegram = _FakeTelegram(failures, history: history);
     final container = ProviderContainer(
       overrides: [
         sharedPreferencesProvider.overrideWithValue(prefs),
@@ -135,12 +141,15 @@ void main() {
 
   test('an index built by this indexer and read today only catches up', () async {
     final readToday = DateTime.now().subtract(const Duration(minutes: 5));
+    // The index holds the channel up to message 10; 11 came after.
     final (container, _, prefs) = await start(
       [],
       stored: {
         'full_sync_$_chatId': readToday.millisecondsSinceEpoch,
         'indexed_with_$_chatId': MessageIndexer.version,
+        'synced_upto_$_chatId': 10,
       },
+      history: [documentMessage(11, ''), documentMessage(10, '')],
     );
     await container.read(driveSyncProvider.notifier).syncOnOpen();
 
@@ -148,5 +157,10 @@ void main() {
       prefs.lastFullSync(_chatId)!.millisecondsSinceEpoch,
       readToday.millisecondsSinceEpoch,
     );
+    // The catch-up read what came after the index and stopped there.
+    final db = container.read(appDatabaseProvider);
+    expect(await db.fileById(MessageIndexer.adoptedId(11)), isNotNull);
+    expect(await db.fileById(MessageIndexer.adoptedId(10)), isNull);
+    expect(prefs.lastSyncedMessageId(_chatId), 11);
   });
 }

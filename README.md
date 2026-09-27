@@ -72,9 +72,12 @@ phone number.
   the background, and interrupted split uploads resume at the last finished
   part.
 - **Patient with Telegram.** When Telegram asks for a pause, transfers count
-  down and carry on by themselves. Moving, starring, trashing or adding many
-  items to an album shows its progress above the bar, or at the foot of a
-  screen opened over it, with Stop, and waits out Telegram the same way.
+  down and carry on by themselves; when it asks an upload, the other
+  uploads hold off too, a split one before its next part, rather than send
+  their bytes only to be turned away. Moving, starring, trashing or adding
+  many items to an album shows its progress above the bar, or at the foot
+  of a screen opened over it, with Stop, and waits out Telegram the same
+  way.
 - **Watch and read without downloading.** Videos, music, call recordings
   and audiobooks stream as they play, with seeking, even across a split
   file's parts. PDFs and text files open in the app. Everything else opens
@@ -170,8 +173,9 @@ Telegram (source of truth)                 This device
 - **Changes go to Telegram first.** The index is written from the message
   Telegram sends back, so it never claims something the channel doesn't have.
 - **Sync** runs live while the app is open, catches up incrementally on launch
-  and on pull-to-refresh, and does a full reconciliation daily (or from
-  Settings → Rebuild index).
+  and on pull-to-refresh, and does a full reconciliation daily, once on the
+  first launch after an update that changes how messages are indexed, and
+  from Settings → Rebuild index.
 
 ## Project layout
 
