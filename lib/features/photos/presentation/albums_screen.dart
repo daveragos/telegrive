@@ -9,6 +9,7 @@ import '../../../core/widgets/common.dart';
 import '../../drive/data/drive_repository.dart';
 import '../../drive/domain/drive_models.dart';
 import '../../trash/data/pending_deletes.dart';
+import '../data/photos_visibility.dart';
 import 'album_actions.dart';
 import 'media_grid.dart';
 import 'media_selection_bar.dart';
@@ -22,7 +23,8 @@ class AlbumsScreen extends ConsumerWidget {
     final albums = ref.watch(albumsProvider);
     // An album being deleted leaves the list at once, while its Undo lasts.
     final hidden = ref.watch(pendingDeletesProvider.select((s) => s.hiddenIds));
-    final media = ref.watch(mediaTimelineProvider).value ?? const <DriveFile>[];
+    // Favorites and Videos leave out what the Photos tab keeps out.
+    final media = ref.watch(photosTimelineProvider).value ?? const <DriveFile>[];
     final favorites = media.where((f) => f.starred).toList();
     final videos = media.where((f) => f.kind == FileKind.video).toList();
 
@@ -138,7 +140,7 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> {
   @override
   Widget build(BuildContext context) {
     final id = widget.albumId;
-    final media = ref.watch(mediaTimelineProvider).value;
+    final media = ref.watch(photosTimelineProvider).value;
     final album = ref.watch(albumsProvider).value?.where((a) => a.id == id).firstOrNull;
     final (String title, List<DriveFile>? files) = switch (id) {
       SmartAlbum.favorites => ('Favorites', media?.where((f) => f.starred).toList()),
@@ -238,6 +240,7 @@ class _AddToAlbumScreenState extends ConsumerState<AddToAlbumScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Every photo, kept-out folders too: a screenshot can belong in an album.
     final media = ref.watch(mediaTimelineProvider).value;
     final album = ref.watch(albumsProvider).value?.where((a) => a.id == widget.albumId).firstOrNull;
 

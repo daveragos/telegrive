@@ -319,6 +319,16 @@ void main() {
       expect(await db.watchRecent().first, isEmpty);
     });
 
+    test('every folder is watched, trashed ones too', () async {
+      await db.upsertFolder(folder('pb', 1));
+      await db.upsertFolder(folder('scr', 2, parentId: 'pb'));
+      await trashFolder('old', 3);
+
+      final all = await db.watchAllFolders().first;
+      expect(all.map((f) => f.id), unorderedEquals(['pb', 'scr', 'old']));
+      expect(all.firstWhere((f) => f.id == 'scr').parentId, 'pb');
+    });
+
     test('trashed photos are not safe to delete from the phone', () async {
       await db.upsertFilePart(file('p'), part('p', 0, 10));
       await db.upsertFilePart(file('q').copyWith(trashedAt: Value(now)), part('q', 0, 11));

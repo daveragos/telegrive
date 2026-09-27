@@ -316,6 +316,9 @@ class AppDatabase extends _$AppDatabase {
 
   Future<List<FolderRow>> allFolders() => select(folders).get();
 
+  /// Every folder, trashed ones too; the table is small enough to read whole.
+  Stream<List<FolderRow>> watchAllFolders() => select(folders).watch();
+
   Future<List<PartRow>> partsOf(String fileId) =>
       (select(fileParts)
             ..where((p) => p.fileId.equals(fileId))

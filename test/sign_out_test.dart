@@ -44,6 +44,7 @@ void main() {
       'synced_upto_$_oldChatId': 40,
       'theme_mode': 'dark',
       'backup_enabled': true,
+      'photos_hidden_folders': ['Screenshots'],
       'delete_phone_copy_too': true,
     });
     final shared = await SharedPreferences.getInstance();
@@ -109,5 +110,6 @@ void main() {
     expect(prefs.driveChatId(1), _chatId);
     expect(prefs.themeMode, ThemeMode.dark);
     expect(prefs.backupEnabled, isTrue);
+    expect(prefs.photosHiddenFolders, {'Screenshots'});
   });
 }

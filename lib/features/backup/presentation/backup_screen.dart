@@ -89,7 +89,7 @@ class BackupScreen extends ConsumerWidget {
                     ref.invalidate(_deviceFoldersProvider);
                   },
                 ),
-                _FolderList(excluded: prefs.backupExcludedFolders),
+                const _FolderList(),
               ],
             ),
             const SectionHeader('When'),
@@ -148,15 +148,15 @@ class BackupScreen extends ConsumerWidget {
 }
 
 class _FolderList extends ConsumerWidget {
-  const _FolderList({required this.excluded});
-
-  final Set<String> excluded;
+  const _FolderList();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final colors = context.colors;
     final folders = ref.watch(_deviceFoldersProvider);
+    // Rebuilds the rows once a choice is saved and the preferences reloaded.
+    ref.watch(preferencesProvider);
     final controller = ref.read(backupControllerProvider.notifier);
-    final lowerExcluded = excluded.map((f) => f.toLowerCase()).toSet();
 
     final header = Padding(
       padding: const EdgeInsets.fromLTRB(Space.gutter, Space.l, Space.gutter, Space.xs),
@@ -165,7 +165,7 @@ class _FolderList extends ConsumerWidget {
         children: [
           Text('Folders on this phone', style: context.text.titleSmall),
           const SizedBox(height: 2),
-          Text('New folders are included automatically.', style: context.text.bodySmall),
+          Text('New folders are backed up and shown in Photos.', style: context.text.bodySmall),
         ],
       ),
     );
@@ -180,19 +180,42 @@ class _FolderList extends ConsumerWidget {
               padding: const EdgeInsets.fromLTRB(Space.gutter, Space.s, Space.gutter, Space.l),
               child: Text('No photo folders found.', style: context.text.bodyMedium),
             ),
-          for (final folder in value)
-            CheckboxListTile(
-              value: !lowerExcluded.contains(folder.name.toLowerCase()),
+          for (final (folder, mode) in [
+            for (final folder in value) (folder, controller.modeOf(folder.name)),
+          ])
+            ListTile(
               title: Text(folder.name),
               subtitle: Text(
                 Formatters.count(folder.count, 'item'),
                 style: context.text.bodySmall?.copyWith(fontFeatures: tabularFigures),
               ),
-              controlAffinity: ListTileControlAffinity.trailing,
-              onChanged: (included) async {
-                await controller.setFolderIncluded(folder.name, included: included ?? true);
-                ref.invalidate(preferencesProvider);
-              },
+              trailing: PopupMenuButton<FolderBackupMode>(
+                initialValue: mode,
+                onSelected: (choice) async {
+                  await controller.setFolderMode(folder.name, choice);
+                  ref.invalidate(preferencesProvider);
+                },
+                itemBuilder: (_) => [
+                  for (final option in FolderBackupMode.values)
+                    PopupMenuItem(value: option, child: Text(option.label)),
+                ],
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(mode.shortLabel, style: context.text.bodyMedium),
+                    Icon(Icons.arrow_drop_down_rounded, color: colors.text3),
+                  ],
+                ),
+              ),
+            ),
+          if (value.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(Space.gutter, Space.xs, Space.gutter, 0),
+              child: Text(
+                'Kept-out folders still back up and stay in Files and Search. '
+                'This choice is kept on this phone only.',
+                style: context.text.bodySmall,
+              ),
             ),
           const SizedBox(height: Space.s),
         ],

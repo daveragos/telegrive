@@ -8,9 +8,9 @@ import '../../backup/data/backup_controller.dart';
 import '../../backup/presentation/backup_card.dart';
 import '../../backup/presentation/duplicates_sheet.dart';
 import '../../backup/presentation/free_up_space_sheet.dart';
-import '../../drive/data/drive_repository.dart';
 import '../../drive/data/drive_sync.dart';
 import '../../files/presentation/file_actions.dart';
+import '../data/photos_visibility.dart';
 import 'media_grid.dart';
 import 'media_selection_bar.dart';
 
@@ -36,8 +36,9 @@ class _PhotosScreenState extends ConsumerState<PhotosScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final media = ref.watch(mediaTimelineProvider);
+    final media = ref.watch(photosTimelineProvider);
     final backup = ref.watch(backupControllerProvider);
+    final keptOut = ref.watch(keptOutSummaryProvider);
     final files = media.value;
 
     return ListenableBuilder(
@@ -124,15 +125,75 @@ class _PhotosScreenState extends ConsumerState<PhotosScreen> {
                         child: const BackupStatusLine(),
                       ),
                     ),
+                    const SliverToBoxAdapter(child: _KeptOutRow()),
                   ],
-                  empty: EmptyState(
-                    title: 'No photos yet',
-                    message: backup.enabled
-                        ? 'Photos show up here as they back up.'
-                        : 'Turn on backup, or upload photos and videos.',
-                    compact: true,
+                  empty: keptOut.count > 0
+                      ? const EmptyState(
+                          title: 'No photos to show',
+                          message: 'Everything here is in folders kept out of this view. '
+                              'Tap Show above to see them.',
+                          compact: true,
+                        )
+                      : EmptyState(
+                          title: 'No photos yet',
+                          message: backup.enabled
+                              ? 'Photos show up here as they back up.'
+                              : 'Turn on backup, or upload photos and videos.',
+                          compact: true,
+                        ),
+                ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Says which folders the timeline leaves out, with Show to bring them in
+/// until the app closes. Only there while one of them has something in it.
+class _KeptOutRow extends ConsumerWidget {
+  const _KeptOutRow();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colors = context.colors;
+    final keptOut = ref.watch(keptOutSummaryProvider);
+    final revealed = ref.watch(revealHiddenProvider);
+    if (keptOut.count == 0) return const SizedBox.shrink();
+    void toggle() => ref.read(revealHiddenProvider.notifier).toggle();
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        border: Border(bottom: BorderSide(color: colors.line)),
+      ),
+      child: InkWell(
+        onTap: toggle,
+        child: SizedBox(
+          height: 44,
+          child: Padding(
+            padding: const EdgeInsets.only(left: Space.gutter, right: Space.s),
+            child: Row(
+              children: [
+                Icon(
+                  revealed ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+                  size: 20,
+                  color: colors.text3,
+                ),
+                const SizedBox(width: Space.m),
+                Expanded(
+                  child: Text(
+                    keptOutSentence(keptOut.names, revealed: revealed),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: context.text.bodySmall,
                   ),
                 ),
+                TextButton(
+                  onPressed: toggle,
+                  child: Text(revealed ? 'Hide' : 'Show'),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );

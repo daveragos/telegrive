@@ -24,7 +24,8 @@ phone number.
   roll goes up in full quality — then every new photo and video follows on
   its own. Choose device folders, videos on or off, Wi-Fi only or mobile
   data. A Photos tab shows everything as a timeline grouped by month, with a
-  swipeable full-screen viewer. Long-press and drag to select a run of
+  swipeable full-screen viewer; screenshots and chat folders back up too but
+  stay out of it until you tap Show. Long-press and drag to select a run of
   photos, pinch to change the grid, and keep albums (a photo can be in
   several without being copied), plus Favorites and Videos. Home opens with
   one line that says whether everything is backed up and in sync, and when
@@ -123,6 +124,9 @@ phone number.
 - **Where it goes.** `My Drive › Photo backup › <device folder>`, originals
   in full quality with their capture date and GPS data intact, plus a
   preview thumbnail so videos have posters too.
+- **Out of the way.** Screenshots and chat folders back up too but stay out
+  of the Photos view unless you show them; change this per folder in Backup
+  settings.
 - **Exactly once.** Each photo's device id is remembered, and anything
   already in the drive with the same name and size (after a reinstall, or
   from an old phone) is recognised and skipped.

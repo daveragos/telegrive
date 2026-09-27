@@ -137,6 +137,27 @@ class Preferences {
   Future<void> setBackupExcludedFolders(Set<String> folders) =>
       _prefs.setStringList('backup_excluded_folders', folders.toList()..sort());
 
+  /// Device folders whose backups stay out of the Photos timeline and its
+  /// Favorites and Videos. They still back up and show in Files and Search.
+  static const Set<String> defaultPhotosHiddenFolders = {
+    'Screenshots',
+    'WhatsApp Images',
+    'WhatsApp Video',
+    'Telegram',
+    'Telegram Images',
+    'Telegram Video',
+  };
+
+  /// [defaultPhotosHiddenFolders] until the person picks for themselves; an
+  /// empty set then means every folder shows in Photos.
+  Set<String> get photosHiddenFolders {
+    final list = _prefs.getStringList('photos_hidden_folders');
+    return list == null ? defaultPhotosHiddenFolders : list.toSet();
+  }
+
+  Future<void> setPhotosHiddenFolders(Set<String> folders) =>
+      _prefs.setStringList('photos_hidden_folders', folders.toList()..sort());
+
   DateTime? get backupLastCompleted {
     final millis = _prefs.getInt('backup_last_completed');
     return millis == null ? null : DateTime.fromMillisecondsSinceEpoch(millis);

@@ -12,6 +12,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show FontLoader, MethodChannel;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:telegrive/app/app_shell.dart';
@@ -20,6 +21,7 @@ import 'package:telegrive/features/auth/presentation/phone_screen.dart';
 import 'package:telegrive/features/auth/presentation/welcome_screen.dart';
 import 'package:telegrive/features/backup/data/backup_controller.dart';
 import 'package:telegrive/features/backup/presentation/backup_screen.dart';
+import 'package:telegrive/features/photos/data/photos_visibility.dart';
 import 'package:telegrive/features/photos/presentation/photos_screen.dart';
 import 'package:telegrive/features/search/presentation/search_screen.dart';
 import 'package:telegrive/features/photos/presentation/albums_screen.dart';
@@ -201,11 +203,12 @@ DriveFile _file(
   _FakePhoto? thumb,
   int parts = 1,
   int? takenDaysAgo,
+  String? folderId,
 }) {
   final at = DateTime.now().subtract(Duration(hours: hoursAgo));
   return DriveFile(
     id: name,
-    folderId: null,
+    folderId: folderId,
     name: name,
     mimeType: mimeTypeFor(name),
     kind: FileKind.detect(fileName: name, mimeType: mimeTypeFor(name)),
@@ -308,6 +311,8 @@ void main() {
             thumb: thumbs[i % thumbs.length],
             takenDaysAgo: i < 9 ? i : (i < 18 ? 32 + i : 70 + i * 2),
             starred: i == 4,
+            // A third came from the phone's Screenshots folder.
+            folderId: i % 3 == 2 ? 'scr' : null,
           ),
       ];
       files = [
@@ -413,6 +418,7 @@ void main() {
     BackupState backup = const BackupState(phase: BackupPhase.off),
     BulkEdit? bulk,
     DateTime? telegramWait,
+    List<Override> overrides = const [],
   }) async {
     debugDisableShadows = false;
     tester.view.physicalSize = const Size(1080, 2340);
@@ -548,6 +554,7 @@ void main() {
           ),
           for (final entry in _thumbPaths.entries)
             thumbnailPathProvider(entry.key).overrideWith((ref) async => entry.value),
+          ...overrides,
         ],
         child: MaterialApp.router(
           debugShowCheckedModeBanner: false,
@@ -869,9 +876,30 @@ void main() {
       prefs: {
         'backup_enabled': true,
         'backup_excluded_folders': ['WhatsApp Images'],
+        'photos_hidden_folders': ['Screenshots'],
       },
     );
     await snap(tester, 'backup_settings');
+  });
+
+  testWidgets('photos kept out', (tester) async {
+    await prepareData(tester);
+    await pumpApp(
+      tester,
+      location: '/photos',
+      backup: BackupState(
+        phase: BackupPhase.upToDate,
+        total: 4847,
+        done: 4847,
+        lastCompleted: DateTime.now().subtract(const Duration(minutes: 3)),
+      ),
+      overrides: [
+        hiddenBackupFoldersProvider.overrideWith(
+          (ref) => Stream.value({'scr': 'Screenshots'}),
+        ),
+      ],
+    );
+    await snap(tester, 'photos_kept_out');
   });
 
   testWidgets('transfers with backup', (tester) async {

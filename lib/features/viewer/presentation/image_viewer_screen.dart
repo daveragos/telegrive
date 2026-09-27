@@ -12,6 +12,7 @@ import '../../drive/data/drive_repository.dart';
 import '../../drive/data/previews.dart';
 import '../../drive/domain/drive_models.dart';
 import '../../files/presentation/file_actions.dart';
+import '../../photos/data/photos_visibility.dart';
 
 /// Full-screen viewer. Opened from the Photos timeline or an album it swipes
 /// through every photo and video there; opened on a single file it shows
@@ -57,7 +58,9 @@ class _ImageViewerScreenState extends ConsumerState<ImageViewerScreen> {
 
   @override
   Widget build(BuildContext context) {
-    List<DriveFile> timeline() => ref.watch(mediaTimelineProvider).value ?? const [];
+    // The same list the grid showed, so a swipe never lands on a photo it
+    // keeps out.
+    List<DriveFile> timeline() => ref.watch(photosTimelineProvider).value ?? const [];
     final List<DriveFile> files = switch (widget.source) {
       'photos' => timeline(),
       'favorites' => timeline().where((f) => f.starred).toList(),

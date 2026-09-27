@@ -97,11 +97,11 @@ class AuthController extends Notifier<AuthUiState> {
   /// open an empty drive and back every photo up again. They are cleared
   /// before the index, so a wipe cut short still ends in a full read.
   ///
-  /// App settings (theme, app lock, photo backup choices) and the drive
-  /// channel remembered per account stay. The 'Also delete from this phone'
-  /// answer doesn't: whoever signs in next starts with it off. Anything new
-  /// that the phone keeps per drive, whether a table, a preference or a
-  /// file, adds its cleanup here.
+  /// App settings (theme, app lock, photo backup choices, the folders Photos
+  /// keeps out) and the drive channel remembered per account stay. The 'Also
+  /// delete from this phone' answer doesn't: whoever signs in next starts
+  /// with it off. Anything new that the phone keeps per drive, whether a
+  /// table, a preference or a file, adds its cleanup here.
   Future<void> wipeDeviceState() async {
     ref.read(driveSessionProvider.notifier).close();
     final prefs = ref.read(preferencesProvider);

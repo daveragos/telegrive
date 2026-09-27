@@ -103,6 +103,21 @@ class BackupState {
   );
 }
 
+/// What happens to one of the phone's photo folders.
+enum FolderBackupMode {
+  shown('Back up and show in Photos', 'Shown in Photos'),
+  keptOut('Back up, keep out of Photos', 'Kept out of Photos'),
+  off("Don't back up", 'Not backed up');
+
+  const FolderBackupMode(this.label, this.shortLabel);
+
+  /// The choice as a sentence, for the menu.
+  final String label;
+
+  /// The choice as it stands, beside the folder's name.
+  final String shortLabel;
+}
+
 /// One of the phone's photo folders, for choosing what gets backed up.
 @immutable
 class DeviceFolder {
@@ -254,11 +269,32 @@ class BackupController extends Notifier<BackupState> {
     _restart();
   }
 
-  Future<void> setFolderIncluded(String folder, {required bool included}) async {
+  /// Where [folder] stands, compared by name without regard to case.
+  FolderBackupMode modeOf(String folder) {
+    bool named(String f) => f.toLowerCase() == folder.toLowerCase();
+    if (_prefs.backupExcludedFolders.any(named)) return FolderBackupMode.off;
+    if (_prefs.photosHiddenFolders.any(named)) return FolderBackupMode.keptOut;
+    return FolderBackupMode.shown;
+  }
+
+  /// Turning a folder off leaves its Photos choice alone, so what it already
+  /// backed up stays shown or kept out as before. Only a change to what gets
+  /// backed up starts a new pass.
+  Future<void> setFolderMode(String folder, FolderBackupMode mode) async {
+    bool named(String f) => f.toLowerCase() == folder.toLowerCase();
     final excluded = _prefs.backupExcludedFolders;
-    included ? excluded.remove(folder) : excluded.add(folder);
+    final hidden = {..._prefs.photosHiddenFolders};
+    final wasIncluded = !excluded.any(named);
+    excluded.removeWhere(named);
+    if (mode == FolderBackupMode.off) {
+      excluded.add(folder);
+    } else {
+      hidden.removeWhere(named);
+      if (mode == FolderBackupMode.keptOut) hidden.add(folder);
+    }
     await _prefs.setBackupExcludedFolders(excluded);
-    _restart();
+    await _prefs.setPhotosHiddenFolders(hidden);
+    if (wasIncluded != (mode != FolderBackupMode.off)) _restart();
   }
 
   /// Gives items that failed before another go.
