@@ -78,7 +78,7 @@ class AppDatabase extends _$AppDatabase {
   }
 
   @override
-  int get schemaVersion => 5;
+  int get schemaVersion => 6;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -114,6 +114,7 @@ class AppDatabase extends _$AppDatabase {
         await m.addColumn(folders, folders.manifestExtra);
       }
       if (from < 5) await m.addColumn(transfers, transfers.wifiOnly);
+      if (from < 6) await m.addColumn(backupAssets, backupAssets.reason);
     },
   );
 

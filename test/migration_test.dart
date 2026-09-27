@@ -1,3 +1,4 @@
+import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:drift_dev/api/migrations_native.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -75,6 +76,41 @@ void main() {
       expect(row.wifiOnly, isFalse);
       await db.saveTransfer(row.copyWith(wifiOnly: true));
       expect((await db.allTransfers()).single.wifiOnly, isTrue);
+    });
+  }
+
+  for (final from in GeneratedHelper.versions.where((v) => v < latest)) {
+    test('backup records from version $from keep their state, with no reason yet',
+        () async {
+      final schema = await verifier.schemaAt(from);
+      schema.rawDatabase.execute(
+        'INSERT INTO backup_assets (asset_id, state, file_id, failures, '
+        'updated_at) '
+        "VALUES ('kept', 'done', 'a', 0, 0), ('stuck', 'failed', NULL, 3, 0)",
+      );
+
+      final db = AppDatabase(schema.newConnection());
+      addTearDown(db.close);
+      await verifier.migrateAndValidate(db, latest);
+
+      final records = await db.backupAssetMap();
+      expect(records['kept']!.state, BackupAssetState.done);
+      expect(records['kept']!.fileId, 'a');
+      expect(records['stuck']!.state, BackupAssetState.failed);
+      expect(records['stuck']!.failures, 3);
+      expect(records.values.map((r) => r.reason), everyElement(isNull));
+
+      await (db.update(db.backupAssets)
+            ..where((a) => a.assetId.equals('stuck')))
+          .write(
+            const BackupAssetsCompanion(
+              state: Value(BackupAssetState.skipped),
+              reason: Value('Telegram took too long to answer.'),
+            ),
+          );
+      final stuck = (await db.backupAssetMap())['stuck']!;
+      expect(stuck.state, BackupAssetState.skipped);
+      expect(stuck.reason, 'Telegram took too long to answer.');
     });
   }
 }

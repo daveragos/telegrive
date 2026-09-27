@@ -3338,6 +3338,15 @@ class $BackupAssetsTable extends BackupAssets
     type: DriftSqlType.dateTime,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _reasonMeta = const VerificationMeta('reason');
+  @override
+  late final GeneratedColumn<String> reason = GeneratedColumn<String>(
+    'reason',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     assetId,
@@ -3345,6 +3354,7 @@ class $BackupAssetsTable extends BackupAssets
     fileId,
     failures,
     updatedAt,
+    reason,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -3386,6 +3396,12 @@ class $BackupAssetsTable extends BackupAssets
     } else if (isInserting) {
       context.missing(_updatedAtMeta);
     }
+    if (data.containsKey('reason')) {
+      context.handle(
+        _reasonMeta,
+        reason.isAcceptableOrUnknown(data['reason']!, _reasonMeta),
+      );
+    }
     return context;
   }
 
@@ -3417,6 +3433,10 @@ class $BackupAssetsTable extends BackupAssets
         DriftSqlType.dateTime,
         data['${effectivePrefix}updated_at'],
       )!,
+      reason: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}reason'],
+      ),
     );
   }
 
@@ -3437,12 +3457,17 @@ class BackupAssetRow extends DataClass implements Insertable<BackupAssetRow> {
   final String? fileId;
   final int failures;
   final DateTime updatedAt;
+
+  /// Why the last attempt failed, in the sentence the transfer would have
+  /// shown, so the Backup screen can say it per photo.
+  final String? reason;
   const BackupAssetRow({
     required this.assetId,
     required this.state,
     this.fileId,
     required this.failures,
     required this.updatedAt,
+    this.reason,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -3458,6 +3483,9 @@ class BackupAssetRow extends DataClass implements Insertable<BackupAssetRow> {
     }
     map['failures'] = Variable<int>(failures);
     map['updated_at'] = Variable<DateTime>(updatedAt);
+    if (!nullToAbsent || reason != null) {
+      map['reason'] = Variable<String>(reason);
+    }
     return map;
   }
 
@@ -3470,6 +3498,9 @@ class BackupAssetRow extends DataClass implements Insertable<BackupAssetRow> {
           : Value(fileId),
       failures: Value(failures),
       updatedAt: Value(updatedAt),
+      reason: reason == null && nullToAbsent
+          ? const Value.absent()
+          : Value(reason),
     );
   }
 
@@ -3486,6 +3517,7 @@ class BackupAssetRow extends DataClass implements Insertable<BackupAssetRow> {
       fileId: serializer.fromJson<String?>(json['fileId']),
       failures: serializer.fromJson<int>(json['failures']),
       updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
+      reason: serializer.fromJson<String?>(json['reason']),
     );
   }
   @override
@@ -3499,6 +3531,7 @@ class BackupAssetRow extends DataClass implements Insertable<BackupAssetRow> {
       'fileId': serializer.toJson<String?>(fileId),
       'failures': serializer.toJson<int>(failures),
       'updatedAt': serializer.toJson<DateTime>(updatedAt),
+      'reason': serializer.toJson<String?>(reason),
     };
   }
 
@@ -3508,12 +3541,14 @@ class BackupAssetRow extends DataClass implements Insertable<BackupAssetRow> {
     Value<String?> fileId = const Value.absent(),
     int? failures,
     DateTime? updatedAt,
+    Value<String?> reason = const Value.absent(),
   }) => BackupAssetRow(
     assetId: assetId ?? this.assetId,
     state: state ?? this.state,
     fileId: fileId.present ? fileId.value : this.fileId,
     failures: failures ?? this.failures,
     updatedAt: updatedAt ?? this.updatedAt,
+    reason: reason.present ? reason.value : this.reason,
   );
   BackupAssetRow copyWithCompanion(BackupAssetsCompanion data) {
     return BackupAssetRow(
@@ -3522,6 +3557,7 @@ class BackupAssetRow extends DataClass implements Insertable<BackupAssetRow> {
       fileId: data.fileId.present ? data.fileId.value : this.fileId,
       failures: data.failures.present ? data.failures.value : this.failures,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+      reason: data.reason.present ? data.reason.value : this.reason,
     );
   }
 
@@ -3532,13 +3568,15 @@ class BackupAssetRow extends DataClass implements Insertable<BackupAssetRow> {
           ..write('state: $state, ')
           ..write('fileId: $fileId, ')
           ..write('failures: $failures, ')
-          ..write('updatedAt: $updatedAt')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('reason: $reason')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(assetId, state, fileId, failures, updatedAt);
+  int get hashCode =>
+      Object.hash(assetId, state, fileId, failures, updatedAt, reason);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -3547,7 +3585,8 @@ class BackupAssetRow extends DataClass implements Insertable<BackupAssetRow> {
           other.state == this.state &&
           other.fileId == this.fileId &&
           other.failures == this.failures &&
-          other.updatedAt == this.updatedAt);
+          other.updatedAt == this.updatedAt &&
+          other.reason == this.reason);
 }
 
 class BackupAssetsCompanion extends UpdateCompanion<BackupAssetRow> {
@@ -3556,6 +3595,7 @@ class BackupAssetsCompanion extends UpdateCompanion<BackupAssetRow> {
   final Value<String?> fileId;
   final Value<int> failures;
   final Value<DateTime> updatedAt;
+  final Value<String?> reason;
   final Value<int> rowid;
   const BackupAssetsCompanion({
     this.assetId = const Value.absent(),
@@ -3563,6 +3603,7 @@ class BackupAssetsCompanion extends UpdateCompanion<BackupAssetRow> {
     this.fileId = const Value.absent(),
     this.failures = const Value.absent(),
     this.updatedAt = const Value.absent(),
+    this.reason = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   BackupAssetsCompanion.insert({
@@ -3571,6 +3612,7 @@ class BackupAssetsCompanion extends UpdateCompanion<BackupAssetRow> {
     this.fileId = const Value.absent(),
     this.failures = const Value.absent(),
     required DateTime updatedAt,
+    this.reason = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : assetId = Value(assetId),
        state = Value(state),
@@ -3581,6 +3623,7 @@ class BackupAssetsCompanion extends UpdateCompanion<BackupAssetRow> {
     Expression<String>? fileId,
     Expression<int>? failures,
     Expression<DateTime>? updatedAt,
+    Expression<String>? reason,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -3589,6 +3632,7 @@ class BackupAssetsCompanion extends UpdateCompanion<BackupAssetRow> {
       if (fileId != null) 'file_id': fileId,
       if (failures != null) 'failures': failures,
       if (updatedAt != null) 'updated_at': updatedAt,
+      if (reason != null) 'reason': reason,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -3599,6 +3643,7 @@ class BackupAssetsCompanion extends UpdateCompanion<BackupAssetRow> {
     Value<String?>? fileId,
     Value<int>? failures,
     Value<DateTime>? updatedAt,
+    Value<String?>? reason,
     Value<int>? rowid,
   }) {
     return BackupAssetsCompanion(
@@ -3607,6 +3652,7 @@ class BackupAssetsCompanion extends UpdateCompanion<BackupAssetRow> {
       fileId: fileId ?? this.fileId,
       failures: failures ?? this.failures,
       updatedAt: updatedAt ?? this.updatedAt,
+      reason: reason ?? this.reason,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -3631,6 +3677,9 @@ class BackupAssetsCompanion extends UpdateCompanion<BackupAssetRow> {
     if (updatedAt.present) {
       map['updated_at'] = Variable<DateTime>(updatedAt.value);
     }
+    if (reason.present) {
+      map['reason'] = Variable<String>(reason.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -3645,6 +3694,7 @@ class BackupAssetsCompanion extends UpdateCompanion<BackupAssetRow> {
           ..write('fileId: $fileId, ')
           ..write('failures: $failures, ')
           ..write('updatedAt: $updatedAt, ')
+          ..write('reason: $reason, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -6831,6 +6881,7 @@ typedef $$BackupAssetsTableCreateCompanionBuilder =
       Value<String?> fileId,
       Value<int> failures,
       required DateTime updatedAt,
+      Value<String?> reason,
       Value<int> rowid,
     });
 typedef $$BackupAssetsTableUpdateCompanionBuilder =
@@ -6840,6 +6891,7 @@ typedef $$BackupAssetsTableUpdateCompanionBuilder =
       Value<String?> fileId,
       Value<int> failures,
       Value<DateTime> updatedAt,
+      Value<String?> reason,
       Value<int> rowid,
     });
 
@@ -6877,6 +6929,11 @@ class $$BackupAssetsTableFilterComposer
     column: $table.updatedAt,
     builder: (column) => ColumnFilters(column),
   );
+
+  ColumnFilters<String> get reason => $composableBuilder(
+    column: $table.reason,
+    builder: (column) => ColumnFilters(column),
+  );
 }
 
 class $$BackupAssetsTableOrderingComposer
@@ -6912,6 +6969,11 @@ class $$BackupAssetsTableOrderingComposer
     column: $table.updatedAt,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get reason => $composableBuilder(
+    column: $table.reason,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$BackupAssetsTableAnnotationComposer
@@ -6937,6 +6999,9 @@ class $$BackupAssetsTableAnnotationComposer
 
   GeneratedColumn<DateTime> get updatedAt =>
       $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+
+  GeneratedColumn<String> get reason =>
+      $composableBuilder(column: $table.reason, builder: (column) => column);
 }
 
 class $$BackupAssetsTableTableManager
@@ -6975,6 +7040,7 @@ class $$BackupAssetsTableTableManager
                 Value<String?> fileId = const Value.absent(),
                 Value<int> failures = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
+                Value<String?> reason = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => BackupAssetsCompanion(
                 assetId: assetId,
@@ -6982,6 +7048,7 @@ class $$BackupAssetsTableTableManager
                 fileId: fileId,
                 failures: failures,
                 updatedAt: updatedAt,
+                reason: reason,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -6991,6 +7058,7 @@ class $$BackupAssetsTableTableManager
                 Value<String?> fileId = const Value.absent(),
                 Value<int> failures = const Value.absent(),
                 required DateTime updatedAt,
+                Value<String?> reason = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => BackupAssetsCompanion.insert(
                 assetId: assetId,
@@ -6998,6 +7066,7 @@ class $$BackupAssetsTableTableManager
                 fileId: fileId,
                 failures: failures,
                 updatedAt: updatedAt,
+                reason: reason,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0

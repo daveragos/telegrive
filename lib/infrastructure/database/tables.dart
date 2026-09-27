@@ -248,7 +248,7 @@ class Transfers extends Table {
   Set<Column> get primaryKey => {id};
 }
 
-enum BackupAssetState { done, failed }
+enum BackupAssetState { done, failed, skipped }
 
 /// Camera-roll assets photo backup has dealt with, keyed by the device's
 /// media id, so each photo goes up exactly once.
@@ -261,6 +261,10 @@ class BackupAssets extends Table {
   TextColumn get fileId => text().nullable()();
   IntColumn get failures => integer().withDefault(const Constant(0))();
   DateTimeColumn get updatedAt => dateTime()();
+
+  /// Why the last attempt failed, in the sentence the transfer would have
+  /// shown, so the Backup screen can say it per photo.
+  TextColumn get reason => text().nullable()();
 
   @override
   Set<Column> get primaryKey => {assetId};
