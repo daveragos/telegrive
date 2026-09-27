@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:handy_tdlib/api.dart' as td;
 
 import '../../../infrastructure/database/app_database.dart';
+import '../../../infrastructure/storage/preferences.dart';
 import '../../../infrastructure/telegram/telegram_client.dart';
 import '../../../infrastructure/telegram/telegram_exception.dart';
 import '../../drive/data/drive_session.dart';
@@ -82,7 +83,30 @@ class AuthController extends Notifier<AuthUiState> {
     // splash, so closing the drive afterwards can't bounce it back into
     // setup for the account that is leaving.
     await _client.logOut();
+    await wipeDeviceState();
+  }
+
+  /// Forgets everything this phone keeps about the drive, while the files
+  /// stay in the channel. Whatever has to forget a drive (signing out, a
+  /// session ended from Telegram, another account signing in) calls this
+  /// instead of clearing stores itself, so there is one list of what a drive
+  /// leaves on the phone.
+  ///
+  /// The sync checkpoints go with the index. Kept on their own, they would
+  /// tell the next sign-in that the channel was already read, and it would
+  /// open an empty drive and back every photo up again. They are cleared
+  /// before the index, so a wipe cut short still ends in a full read.
+  ///
+  /// App settings (theme, app lock, photo backup choices) and the drive
+  /// channel remembered per account stay. Anything new that the phone keeps
+  /// per drive, whether a table, a preference or a file, adds its cleanup
+  /// here.
+  Future<void> wipeDeviceState() async {
     ref.read(driveSessionProvider.notifier).close();
+    final prefs = ref.read(preferencesProvider);
+    for (final chatId in prefs.syncedChatIds) {
+      await prefs.clearSyncState(chatId);
+    }
     await ref.read(appDatabaseProvider).clearAll();
     state = const AuthUiState();
   }

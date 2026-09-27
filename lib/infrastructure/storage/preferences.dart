@@ -81,10 +81,23 @@ class Preferences {
   Future<void> setLastFullSync(int chatId, DateTime at) =>
       _prefs.setInt('full_sync_$chatId', at.millisecondsSinceEpoch);
 
+  /// Per-channel keys that describe what the local index holds, so they
+  /// are only true while it is.
+  static const List<String> _syncKeys = ['synced_upto_', 'full_sync_'];
+
   Future<void> clearSyncState(int chatId) async {
-    await _prefs.remove('synced_upto_$chatId');
-    await _prefs.remove('full_sync_$chatId');
+    for (final key in _syncKeys) {
+      await _prefs.remove('$key$chatId');
+    }
   }
+
+  /// Channels this phone keeps sync progress for, whichever account they
+  /// belong to.
+  Set<int> get syncedChatIds => {
+    for (final key in _prefs.getKeys())
+      for (final prefix in _syncKeys)
+        if (key.startsWith(prefix)) ?int.tryParse(key.substring(prefix.length)),
+  };
 
   bool get hasSeenWelcome => _prefs.getBool('seen_welcome') ?? false;
   Future<void> setSeenWelcome() => _prefs.setBool('seen_welcome', true);

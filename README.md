@@ -37,8 +37,8 @@ phone number.
   **forward into the channel from Telegram** (documents, videos, audio, photos)
   shows up in the drive with no re-upload.
 - **Rebuildable.** Names, folders, stars, albums and the trash live in each
-  message's caption. Reinstall or sign in on another phone and the whole
-  drive comes back.
+  message's caption. Reinstall, sign in on another phone, or sign out and
+  back in, and the whole drive comes back.
 - **Trash with undo.** Deleting moves things to the trash for 30 days, with
   an Undo straight away; restore or delete for good from Trash.
 - **Tidy in Telegram too.** Captions lead with the plain file name; the
