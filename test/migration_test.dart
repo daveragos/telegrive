@@ -58,6 +58,7 @@ void main() {
     expect(file.durationSeconds, isNull);
     expect(file.replacedBy, isNull);
     expect(file.adopted, isFalse);
+    expect(file.originalSize, isNull);
     final folder = (await db.folderById('docs'))!;
     expect(folder.manifestExtra, isNull);
     expect(folder.starred, isFalse);
@@ -65,6 +66,7 @@ void main() {
     expect(await db.select(db.playPositions).get(), isEmpty);
     expect(await db.select(db.watchedFolders).get(), isEmpty);
     expect(await db.select(db.watchedFiles).get(), isEmpty);
+    expect(await db.select(db.pendingEdits).get(), isEmpty);
   });
 
   // Versions 4 to 6 kept the keys they didn't know in manifest_extra, so a
@@ -280,6 +282,93 @@ void main() {
       expect(entry.transferId, 't');
       expect(entry.fileId, isNull);
       expect(entry.failures, 0);
+    });
+  }
+
+  // Waiting changes are new at version 10 and belong to this phone, so
+  // every earlier version arrives with none. The table takes a change with
+  // its defaults, and one item can wait under each target.
+  for (final from in GeneratedHelper.versions.where((v) => v < latest)) {
+    test('version $from arrives with nothing waiting and takes a change', () async {
+      final db = AppDatabase(await verifier.startAt(from));
+      addTearDown(db.close);
+      await verifier.migrateAndValidate(db, latest);
+
+      expect(await db.select(db.pendingEdits).get(), isEmpty);
+
+      await db.into(db.pendingEdits).insert(
+        PendingEditsCompanion.insert(
+          target: EditTarget.file,
+          itemId: 'scan',
+          patch: '{"n":{"b":"Scan 12.pdf","w":"Lease.pdf"}}',
+          createdAt: DateTime(2026, 9, 28, 8),
+          updatedAt: DateTime(2026, 9, 28, 8, 5),
+        ),
+      );
+      await db.into(db.pendingEdits).insert(
+        PendingEditsCompanion.insert(
+          target: EditTarget.folder,
+          itemId: 'scan',
+          patch: '{"tr":{"b":null,"w":1727430000000}}',
+          createdAt: DateTime(2026, 9, 28, 9),
+          updatedAt: DateTime(2026, 9, 28, 9),
+          attempts: const Value(3),
+          lastError: const Value('Telegram took too long to answer.'),
+        ),
+      );
+
+      final rows = await db.select(db.pendingEdits).get();
+      final rename = rows.singleWhere((r) => r.target == EditTarget.file);
+      expect(rename.itemId, 'scan');
+      expect(rename.attempts, 0);
+      expect(rename.lastError, isNull);
+      expect(rename.updatedAt, DateTime(2026, 9, 28, 8, 5));
+      final trash = rows.singleWhere((r) => r.target == EditTarget.folder);
+      expect(trash.attempts, 3);
+      expect(trash.lastError, 'Telegram took too long to answer.');
+    });
+  }
+
+  // Nothing before version 10 could tell a small copy from the photo it
+  // stands in for, so every file arrives whole. Once a row says only a
+  // small copy is in, its backup record stops counting as backed up, so
+  // Free up space never offers the phone's original.
+  for (final from in GeneratedHelper.versions.where((v) => v < latest)) {
+    test('a file indexed at version $from is whole until a small copy says otherwise',
+        () async {
+      final schema = await verifier.schemaAt(from);
+      schema.rawDatabase.execute(
+        'INSERT INTO drive_files (id, name, mime_type, kind, size, created_at, '
+        'modified_at, part_count, parts_present) '
+        "VALUES ('shot', 'IMG_2041.HEIC', 'image/jpeg', 'image', 312000, 0, 0, 1, 1)",
+      );
+      schema.rawDatabase.execute(
+        'INSERT INTO backup_assets (asset_id, state, file_id, failures, updated_at) '
+        "VALUES ('a2041', 'done', 'shot', 0, 0)",
+      );
+
+      final db = AppDatabase(schema.newConnection());
+      addTearDown(db.close);
+      await verifier.migrateAndValidate(db, latest);
+
+      expect((await db.fileById('shot'))!.originalSize, isNull);
+      expect(await db.safelyBackedUp(), {'a2041': 312000});
+
+      await db.updateFile(
+        'shot',
+        const DriveFilesCompanion(originalSize: Value(6100000)),
+      );
+      await (db.update(db.backupAssets)
+            ..where((a) => a.assetId.equals('a2041')))
+          .write(
+            const BackupAssetsCompanion(state: Value(BackupAssetState.smallCopy)),
+          );
+      final shot = (await db.fileById('shot'))!;
+      expect(shot.size, 312000);
+      expect(shot.originalSize, 6100000);
+      expect((await db.backupAssetMap())['a2041']!.state, BackupAssetState.smallCopy);
+      expect(await db.safelyBackedUp(), isEmpty);
+      expect(await db.watchBackedUpCount().first, 0);
     });
   }
 }

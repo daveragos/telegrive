@@ -48,6 +48,7 @@ class AlbumSummary {
     PlayPositions,
     WatchedFolders,
     WatchedFiles,
+    PendingEdits,
   ],
 )
 class AppDatabase extends _$AppDatabase {
@@ -89,7 +90,7 @@ class AppDatabase extends _$AppDatabase {
   }
 
   @override
-  int get schemaVersion => 9;
+  int get schemaVersion => 10;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -170,6 +171,10 @@ class AppDatabase extends _$AppDatabase {
       if (from < 9) {
         await m.createTable(watchedFolders);
         await m.createTable(watchedFiles);
+      }
+      if (from < 10) {
+        await m.createTable(pendingEdits);
+        await m.addColumn(driveFiles, driveFiles.originalSize);
       }
     },
   );
@@ -795,6 +800,7 @@ class AppDatabase extends _$AppDatabase {
     await delete(playPositions).go();
     await delete(watchedFiles).go();
     await delete(watchedFolders).go();
+    await delete(pendingEdits).go();
   });
 
   // ---------------------------------------------------------------------------

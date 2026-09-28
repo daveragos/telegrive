@@ -83,6 +83,12 @@ class DriveFiles extends Table {
   /// another Telegram app); lives at the root until filed.
   BoolColumn get adopted => boolean().withDefault(const Constant(false))();
 
+  /// Byte size of the original while only a small copy of it is in the
+  /// drive: backup sent a reduced photo on mobile data and the full one
+  /// follows. [size] stays the copy's own. Null once the original is in,
+  /// and for anything that was never a small copy.
+  IntColumn get originalSize => integer().nullable()();
+
   @override
   Set<Column> get primaryKey => {id};
 }
@@ -321,6 +327,11 @@ enum BackupAssetState {
   /// Deleted for good in Telegrive on this phone, or left out on purpose,
   /// so it is never offered back.
   removed,
+
+  /// Only a small copy is in the drive so far; the original still has to
+  /// go up from this phone, so its phone copy is never offered for
+  /// deleting.
+  smallCopy,
 }
 
 /// Camera-roll assets photo backup has dealt with, keyed by the device's
@@ -412,4 +423,41 @@ class WatchedFiles extends Table {
 
   @override
   Set<Column> get primaryKey => {ruleId, documentId};
+}
+
+/// What a waiting change is to: file, folder and album ids are separate
+/// namespaces. New targets go at the end, since the name is what the row
+/// stores.
+enum EditTarget { file, folder, album }
+
+/// A change made without a connection, shown on this phone and still to
+/// reach Telegram. One row per changed item rather than a list of
+/// operations: the patch records, per manifest key, the value before and
+/// the value wanted, so repeated edits merge into one caption edit, a
+/// trash followed by Undo cancels out, and a conflict with another phone
+/// is settled field by field. Per phone, so a rebuilt index keeps it and
+/// signing out drops it.
+@DataClassName('PendingEditRow')
+class PendingEdits extends Table {
+  TextColumn get target => textEnum<EditTarget>()();
+  TextColumn get itemId => text()();
+
+  /// JSON keyed by the manifest's short keys, each holding the value before
+  /// the change and the value wanted.
+  TextColumn get patch => text()();
+  DateTimeColumn get createdAt => dateTime()();
+
+  /// When the patch last changed, so a replay that finishes while a newer
+  /// edit comes in keeps the newer part instead of dropping the row.
+  DateTimeColumn get updatedAt => dateTime()();
+
+  /// Replays that failed for a reason other than the network; after a few,
+  /// the row waits for the person to try again.
+  IntColumn get attempts => integer().withDefault(const Constant(0))();
+
+  /// Why the last replay failed, in the sentence the screen shows.
+  TextColumn get lastError => text().nullable()();
+
+  @override
+  Set<Column> get primaryKey => {target, itemId};
 }

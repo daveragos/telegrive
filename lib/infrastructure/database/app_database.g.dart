@@ -862,6 +862,17 @@ class $DriveFilesTable extends DriveFiles
     ),
     defaultValue: const Constant(false),
   );
+  static const VerificationMeta _originalSizeMeta = const VerificationMeta(
+    'originalSize',
+  );
+  @override
+  late final GeneratedColumn<int> originalSize = GeneratedColumn<int>(
+    'original_size',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -884,6 +895,7 @@ class $DriveFilesTable extends DriveFiles
     durationSeconds,
     replacedBy,
     adopted,
+    originalSize,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -1035,6 +1047,15 @@ class $DriveFilesTable extends DriveFiles
         adopted.isAcceptableOrUnknown(data['adopted']!, _adoptedMeta),
       );
     }
+    if (data.containsKey('original_size')) {
+      context.handle(
+        _originalSizeMeta,
+        originalSize.isAcceptableOrUnknown(
+          data['original_size']!,
+          _originalSizeMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -1126,6 +1147,10 @@ class $DriveFilesTable extends DriveFiles
         DriftSqlType.bool,
         data['${effectivePrefix}adopted'],
       )!,
+      originalSize: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}original_size'],
+      ),
     );
   }
 
@@ -1181,6 +1206,12 @@ class FileRow extends DataClass implements Insertable<FileRow> {
   /// Came into the channel without a manifest (forwarded, or sent from
   /// another Telegram app); lives at the root until filed.
   final bool adopted;
+
+  /// Byte size of the original while only a small copy of it is in the
+  /// drive: backup sent a reduced photo on mobile data and the full one
+  /// follows. [size] stays the copy's own. Null once the original is in,
+  /// and for anything that was never a small copy.
+  final int? originalSize;
   const FileRow({
     required this.id,
     this.folderId,
@@ -1202,6 +1233,7 @@ class FileRow extends DataClass implements Insertable<FileRow> {
     this.durationSeconds,
     this.replacedBy,
     required this.adopted,
+    this.originalSize,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -1246,6 +1278,9 @@ class FileRow extends DataClass implements Insertable<FileRow> {
       map['replaced_by'] = Variable<String>(replacedBy);
     }
     map['adopted'] = Variable<bool>(adopted);
+    if (!nullToAbsent || originalSize != null) {
+      map['original_size'] = Variable<int>(originalSize);
+    }
     return map;
   }
 
@@ -1287,6 +1322,9 @@ class FileRow extends DataClass implements Insertable<FileRow> {
           ? const Value.absent()
           : Value(replacedBy),
       adopted: Value(adopted),
+      originalSize: originalSize == null && nullToAbsent
+          ? const Value.absent()
+          : Value(originalSize),
     );
   }
 
@@ -1318,6 +1356,7 @@ class FileRow extends DataClass implements Insertable<FileRow> {
       durationSeconds: serializer.fromJson<int?>(json['durationSeconds']),
       replacedBy: serializer.fromJson<String?>(json['replacedBy']),
       adopted: serializer.fromJson<bool>(json['adopted']),
+      originalSize: serializer.fromJson<int?>(json['originalSize']),
     );
   }
   @override
@@ -1346,6 +1385,7 @@ class FileRow extends DataClass implements Insertable<FileRow> {
       'durationSeconds': serializer.toJson<int?>(durationSeconds),
       'replacedBy': serializer.toJson<String?>(replacedBy),
       'adopted': serializer.toJson<bool>(adopted),
+      'originalSize': serializer.toJson<int?>(originalSize),
     };
   }
 
@@ -1370,6 +1410,7 @@ class FileRow extends DataClass implements Insertable<FileRow> {
     Value<int?> durationSeconds = const Value.absent(),
     Value<String?> replacedBy = const Value.absent(),
     bool? adopted,
+    Value<int?> originalSize = const Value.absent(),
   }) => FileRow(
     id: id ?? this.id,
     folderId: folderId.present ? folderId.value : this.folderId,
@@ -1399,6 +1440,7 @@ class FileRow extends DataClass implements Insertable<FileRow> {
         : this.durationSeconds,
     replacedBy: replacedBy.present ? replacedBy.value : this.replacedBy,
     adopted: adopted ?? this.adopted,
+    originalSize: originalSize.present ? originalSize.value : this.originalSize,
   );
   FileRow copyWithCompanion(DriveFilesCompanion data) {
     return FileRow(
@@ -1436,6 +1478,9 @@ class FileRow extends DataClass implements Insertable<FileRow> {
           ? data.replacedBy.value
           : this.replacedBy,
       adopted: data.adopted.present ? data.adopted.value : this.adopted,
+      originalSize: data.originalSize.present
+          ? data.originalSize.value
+          : this.originalSize,
     );
   }
 
@@ -1461,13 +1506,14 @@ class FileRow extends DataClass implements Insertable<FileRow> {
           ..write('manifestExtra: $manifestExtra, ')
           ..write('durationSeconds: $durationSeconds, ')
           ..write('replacedBy: $replacedBy, ')
-          ..write('adopted: $adopted')
+          ..write('adopted: $adopted, ')
+          ..write('originalSize: $originalSize')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(
+  int get hashCode => Object.hashAll([
     id,
     folderId,
     name,
@@ -1488,7 +1534,8 @@ class FileRow extends DataClass implements Insertable<FileRow> {
     durationSeconds,
     replacedBy,
     adopted,
-  );
+    originalSize,
+  ]);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -1512,7 +1559,8 @@ class FileRow extends DataClass implements Insertable<FileRow> {
           other.manifestExtra == this.manifestExtra &&
           other.durationSeconds == this.durationSeconds &&
           other.replacedBy == this.replacedBy &&
-          other.adopted == this.adopted);
+          other.adopted == this.adopted &&
+          other.originalSize == this.originalSize);
 }
 
 class DriveFilesCompanion extends UpdateCompanion<FileRow> {
@@ -1536,6 +1584,7 @@ class DriveFilesCompanion extends UpdateCompanion<FileRow> {
   final Value<int?> durationSeconds;
   final Value<String?> replacedBy;
   final Value<bool> adopted;
+  final Value<int?> originalSize;
   final Value<int> rowid;
   const DriveFilesCompanion({
     this.id = const Value.absent(),
@@ -1558,6 +1607,7 @@ class DriveFilesCompanion extends UpdateCompanion<FileRow> {
     this.durationSeconds = const Value.absent(),
     this.replacedBy = const Value.absent(),
     this.adopted = const Value.absent(),
+    this.originalSize = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   DriveFilesCompanion.insert({
@@ -1581,6 +1631,7 @@ class DriveFilesCompanion extends UpdateCompanion<FileRow> {
     this.durationSeconds = const Value.absent(),
     this.replacedBy = const Value.absent(),
     this.adopted = const Value.absent(),
+    this.originalSize = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        name = Value(name),
@@ -1610,6 +1661,7 @@ class DriveFilesCompanion extends UpdateCompanion<FileRow> {
     Expression<int>? durationSeconds,
     Expression<String>? replacedBy,
     Expression<bool>? adopted,
+    Expression<int>? originalSize,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -1633,6 +1685,7 @@ class DriveFilesCompanion extends UpdateCompanion<FileRow> {
       if (durationSeconds != null) 'duration_seconds': durationSeconds,
       if (replacedBy != null) 'replaced_by': replacedBy,
       if (adopted != null) 'adopted': adopted,
+      if (originalSize != null) 'original_size': originalSize,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -1658,6 +1711,7 @@ class DriveFilesCompanion extends UpdateCompanion<FileRow> {
     Value<int?>? durationSeconds,
     Value<String?>? replacedBy,
     Value<bool>? adopted,
+    Value<int?>? originalSize,
     Value<int>? rowid,
   }) {
     return DriveFilesCompanion(
@@ -1681,6 +1735,7 @@ class DriveFilesCompanion extends UpdateCompanion<FileRow> {
       durationSeconds: durationSeconds ?? this.durationSeconds,
       replacedBy: replacedBy ?? this.replacedBy,
       adopted: adopted ?? this.adopted,
+      originalSize: originalSize ?? this.originalSize,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -1750,6 +1805,9 @@ class DriveFilesCompanion extends UpdateCompanion<FileRow> {
     if (adopted.present) {
       map['adopted'] = Variable<bool>(adopted.value);
     }
+    if (originalSize.present) {
+      map['original_size'] = Variable<int>(originalSize.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -1779,6 +1837,7 @@ class DriveFilesCompanion extends UpdateCompanion<FileRow> {
           ..write('durationSeconds: $durationSeconds, ')
           ..write('replacedBy: $replacedBy, ')
           ..write('adopted: $adopted, ')
+          ..write('originalSize: $originalSize, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -7218,6 +7277,486 @@ class WatchedFilesCompanion extends UpdateCompanion<WatchedFileRow> {
   }
 }
 
+class $PendingEditsTable extends PendingEdits
+    with TableInfo<$PendingEditsTable, PendingEditRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $PendingEditsTable(this.attachedDatabase, [this._alias]);
+  @override
+  late final GeneratedColumnWithTypeConverter<EditTarget, String> target =
+      GeneratedColumn<String>(
+        'target',
+        aliasedName,
+        false,
+        type: DriftSqlType.string,
+        requiredDuringInsert: true,
+      ).withConverter<EditTarget>($PendingEditsTable.$convertertarget);
+  static const VerificationMeta _itemIdMeta = const VerificationMeta('itemId');
+  @override
+  late final GeneratedColumn<String> itemId = GeneratedColumn<String>(
+    'item_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _patchMeta = const VerificationMeta('patch');
+  @override
+  late final GeneratedColumn<String> patch = GeneratedColumn<String>(
+    'patch',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> updatedAt = GeneratedColumn<DateTime>(
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _attemptsMeta = const VerificationMeta(
+    'attempts',
+  );
+  @override
+  late final GeneratedColumn<int> attempts = GeneratedColumn<int>(
+    'attempts',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _lastErrorMeta = const VerificationMeta(
+    'lastError',
+  );
+  @override
+  late final GeneratedColumn<String> lastError = GeneratedColumn<String>(
+    'last_error',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    target,
+    itemId,
+    patch,
+    createdAt,
+    updatedAt,
+    attempts,
+    lastError,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'pending_edits';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<PendingEditRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('item_id')) {
+      context.handle(
+        _itemIdMeta,
+        itemId.isAcceptableOrUnknown(data['item_id']!, _itemIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_itemIdMeta);
+    }
+    if (data.containsKey('patch')) {
+      context.handle(
+        _patchMeta,
+        patch.isAcceptableOrUnknown(data['patch']!, _patchMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_patchMeta);
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_createdAtMeta);
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_updatedAtMeta);
+    }
+    if (data.containsKey('attempts')) {
+      context.handle(
+        _attemptsMeta,
+        attempts.isAcceptableOrUnknown(data['attempts']!, _attemptsMeta),
+      );
+    }
+    if (data.containsKey('last_error')) {
+      context.handle(
+        _lastErrorMeta,
+        lastError.isAcceptableOrUnknown(data['last_error']!, _lastErrorMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {target, itemId};
+  @override
+  PendingEditRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return PendingEditRow(
+      target: $PendingEditsTable.$convertertarget.fromSql(
+        attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}target'],
+        )!,
+      ),
+      itemId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}item_id'],
+      )!,
+      patch: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}patch'],
+      )!,
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}created_at'],
+      )!,
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}updated_at'],
+      )!,
+      attempts: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}attempts'],
+      )!,
+      lastError: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}last_error'],
+      ),
+    );
+  }
+
+  @override
+  $PendingEditsTable createAlias(String alias) {
+    return $PendingEditsTable(attachedDatabase, alias);
+  }
+
+  static JsonTypeConverter2<EditTarget, String, String> $convertertarget =
+      const EnumNameConverter<EditTarget>(EditTarget.values);
+}
+
+class PendingEditRow extends DataClass implements Insertable<PendingEditRow> {
+  final EditTarget target;
+  final String itemId;
+
+  /// JSON keyed by the manifest's short keys, each holding the value before
+  /// the change and the value wanted.
+  final String patch;
+  final DateTime createdAt;
+
+  /// When the patch last changed, so a replay that finishes while a newer
+  /// edit comes in keeps the newer part instead of dropping the row.
+  final DateTime updatedAt;
+
+  /// Replays that failed for a reason other than the network; after a few,
+  /// the row waits for the person to try again.
+  final int attempts;
+
+  /// Why the last replay failed, in the sentence the screen shows.
+  final String? lastError;
+  const PendingEditRow({
+    required this.target,
+    required this.itemId,
+    required this.patch,
+    required this.createdAt,
+    required this.updatedAt,
+    required this.attempts,
+    this.lastError,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    {
+      map['target'] = Variable<String>(
+        $PendingEditsTable.$convertertarget.toSql(target),
+      );
+    }
+    map['item_id'] = Variable<String>(itemId);
+    map['patch'] = Variable<String>(patch);
+    map['created_at'] = Variable<DateTime>(createdAt);
+    map['updated_at'] = Variable<DateTime>(updatedAt);
+    map['attempts'] = Variable<int>(attempts);
+    if (!nullToAbsent || lastError != null) {
+      map['last_error'] = Variable<String>(lastError);
+    }
+    return map;
+  }
+
+  PendingEditsCompanion toCompanion(bool nullToAbsent) {
+    return PendingEditsCompanion(
+      target: Value(target),
+      itemId: Value(itemId),
+      patch: Value(patch),
+      createdAt: Value(createdAt),
+      updatedAt: Value(updatedAt),
+      attempts: Value(attempts),
+      lastError: lastError == null && nullToAbsent
+          ? const Value.absent()
+          : Value(lastError),
+    );
+  }
+
+  factory PendingEditRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return PendingEditRow(
+      target: $PendingEditsTable.$convertertarget.fromJson(
+        serializer.fromJson<String>(json['target']),
+      ),
+      itemId: serializer.fromJson<String>(json['itemId']),
+      patch: serializer.fromJson<String>(json['patch']),
+      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
+      updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
+      attempts: serializer.fromJson<int>(json['attempts']),
+      lastError: serializer.fromJson<String?>(json['lastError']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'target': serializer.toJson<String>(
+        $PendingEditsTable.$convertertarget.toJson(target),
+      ),
+      'itemId': serializer.toJson<String>(itemId),
+      'patch': serializer.toJson<String>(patch),
+      'createdAt': serializer.toJson<DateTime>(createdAt),
+      'updatedAt': serializer.toJson<DateTime>(updatedAt),
+      'attempts': serializer.toJson<int>(attempts),
+      'lastError': serializer.toJson<String?>(lastError),
+    };
+  }
+
+  PendingEditRow copyWith({
+    EditTarget? target,
+    String? itemId,
+    String? patch,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+    int? attempts,
+    Value<String?> lastError = const Value.absent(),
+  }) => PendingEditRow(
+    target: target ?? this.target,
+    itemId: itemId ?? this.itemId,
+    patch: patch ?? this.patch,
+    createdAt: createdAt ?? this.createdAt,
+    updatedAt: updatedAt ?? this.updatedAt,
+    attempts: attempts ?? this.attempts,
+    lastError: lastError.present ? lastError.value : this.lastError,
+  );
+  PendingEditRow copyWithCompanion(PendingEditsCompanion data) {
+    return PendingEditRow(
+      target: data.target.present ? data.target.value : this.target,
+      itemId: data.itemId.present ? data.itemId.value : this.itemId,
+      patch: data.patch.present ? data.patch.value : this.patch,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+      attempts: data.attempts.present ? data.attempts.value : this.attempts,
+      lastError: data.lastError.present ? data.lastError.value : this.lastError,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('PendingEditRow(')
+          ..write('target: $target, ')
+          ..write('itemId: $itemId, ')
+          ..write('patch: $patch, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('attempts: $attempts, ')
+          ..write('lastError: $lastError')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    target,
+    itemId,
+    patch,
+    createdAt,
+    updatedAt,
+    attempts,
+    lastError,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is PendingEditRow &&
+          other.target == this.target &&
+          other.itemId == this.itemId &&
+          other.patch == this.patch &&
+          other.createdAt == this.createdAt &&
+          other.updatedAt == this.updatedAt &&
+          other.attempts == this.attempts &&
+          other.lastError == this.lastError);
+}
+
+class PendingEditsCompanion extends UpdateCompanion<PendingEditRow> {
+  final Value<EditTarget> target;
+  final Value<String> itemId;
+  final Value<String> patch;
+  final Value<DateTime> createdAt;
+  final Value<DateTime> updatedAt;
+  final Value<int> attempts;
+  final Value<String?> lastError;
+  final Value<int> rowid;
+  const PendingEditsCompanion({
+    this.target = const Value.absent(),
+    this.itemId = const Value.absent(),
+    this.patch = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.attempts = const Value.absent(),
+    this.lastError = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  PendingEditsCompanion.insert({
+    required EditTarget target,
+    required String itemId,
+    required String patch,
+    required DateTime createdAt,
+    required DateTime updatedAt,
+    this.attempts = const Value.absent(),
+    this.lastError = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : target = Value(target),
+       itemId = Value(itemId),
+       patch = Value(patch),
+       createdAt = Value(createdAt),
+       updatedAt = Value(updatedAt);
+  static Insertable<PendingEditRow> custom({
+    Expression<String>? target,
+    Expression<String>? itemId,
+    Expression<String>? patch,
+    Expression<DateTime>? createdAt,
+    Expression<DateTime>? updatedAt,
+    Expression<int>? attempts,
+    Expression<String>? lastError,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (target != null) 'target': target,
+      if (itemId != null) 'item_id': itemId,
+      if (patch != null) 'patch': patch,
+      if (createdAt != null) 'created_at': createdAt,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (attempts != null) 'attempts': attempts,
+      if (lastError != null) 'last_error': lastError,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  PendingEditsCompanion copyWith({
+    Value<EditTarget>? target,
+    Value<String>? itemId,
+    Value<String>? patch,
+    Value<DateTime>? createdAt,
+    Value<DateTime>? updatedAt,
+    Value<int>? attempts,
+    Value<String?>? lastError,
+    Value<int>? rowid,
+  }) {
+    return PendingEditsCompanion(
+      target: target ?? this.target,
+      itemId: itemId ?? this.itemId,
+      patch: patch ?? this.patch,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      attempts: attempts ?? this.attempts,
+      lastError: lastError ?? this.lastError,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (target.present) {
+      map['target'] = Variable<String>(
+        $PendingEditsTable.$convertertarget.toSql(target.value),
+      );
+    }
+    if (itemId.present) {
+      map['item_id'] = Variable<String>(itemId.value);
+    }
+    if (patch.present) {
+      map['patch'] = Variable<String>(patch.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<DateTime>(createdAt.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<DateTime>(updatedAt.value);
+    }
+    if (attempts.present) {
+      map['attempts'] = Variable<int>(attempts.value);
+    }
+    if (lastError.present) {
+      map['last_error'] = Variable<String>(lastError.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('PendingEditsCompanion(')
+          ..write('target: $target, ')
+          ..write('itemId: $itemId, ')
+          ..write('patch: $patch, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('attempts: $attempts, ')
+          ..write('lastError: $lastError, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
@@ -7235,6 +7774,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $PlayPositionsTable playPositions = $PlayPositionsTable(this);
   late final $WatchedFoldersTable watchedFolders = $WatchedFoldersTable(this);
   late final $WatchedFilesTable watchedFiles = $WatchedFilesTable(this);
+  late final $PendingEditsTable pendingEdits = $PendingEditsTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -7254,6 +7794,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     playPositions,
     watchedFolders,
     watchedFiles,
+    pendingEdits,
   ];
 }
 
@@ -7578,6 +8119,7 @@ typedef $$DriveFilesTableCreateCompanionBuilder = DriveFilesCompanion Function({
   Value<int?> durationSeconds,
   Value<String?> replacedBy,
   Value<bool> adopted,
+  Value<int?> originalSize,
   Value<int> rowid,
 });
 typedef $$DriveFilesTableUpdateCompanionBuilder = DriveFilesCompanion Function({
@@ -7601,6 +8143,7 @@ typedef $$DriveFilesTableUpdateCompanionBuilder = DriveFilesCompanion Function({
   Value<int?> durationSeconds,
   Value<String?> replacedBy,
   Value<bool> adopted,
+  Value<int?> originalSize,
   Value<int> rowid,
 });
 
@@ -7713,6 +8256,11 @@ class $$DriveFilesTableFilterComposer
     column: $table.adopted,
     builder: (column) => ColumnFilters(column),
   );
+
+  ColumnFilters<int> get originalSize => $composableBuilder(
+    column: $table.originalSize,
+    builder: (column) => ColumnFilters(column),
+  );
 }
 
 class $$DriveFilesTableOrderingComposer
@@ -7823,6 +8371,11 @@ class $$DriveFilesTableOrderingComposer
     column: $table.adopted,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<int> get originalSize => $composableBuilder(
+    column: $table.originalSize,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$DriveFilesTableAnnotationComposer
@@ -7907,6 +8460,11 @@ class $$DriveFilesTableAnnotationComposer
 
   GeneratedColumn<bool> get adopted =>
       $composableBuilder(column: $table.adopted, builder: (column) => column);
+
+  GeneratedColumn<int> get originalSize => $composableBuilder(
+    column: $table.originalSize,
+    builder: (column) => column,
+  );
 }
 
 class $$DriveFilesTableTableManager
@@ -7957,6 +8515,7 @@ class $$DriveFilesTableTableManager
                 Value<int?> durationSeconds = const Value.absent(),
                 Value<String?> replacedBy = const Value.absent(),
                 Value<bool> adopted = const Value.absent(),
+                Value<int?> originalSize = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => DriveFilesCompanion(
                 id: id,
@@ -7979,6 +8538,7 @@ class $$DriveFilesTableTableManager
                 durationSeconds: durationSeconds,
                 replacedBy: replacedBy,
                 adopted: adopted,
+                originalSize: originalSize,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -8003,6 +8563,7 @@ class $$DriveFilesTableTableManager
                 Value<int?> durationSeconds = const Value.absent(),
                 Value<String?> replacedBy = const Value.absent(),
                 Value<bool> adopted = const Value.absent(),
+                Value<int?> originalSize = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => DriveFilesCompanion.insert(
                 id: id,
@@ -8025,6 +8586,7 @@ class $$DriveFilesTableTableManager
                 durationSeconds: durationSeconds,
                 replacedBy: replacedBy,
                 adopted: adopted,
+                originalSize: originalSize,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
@@ -10958,6 +11520,254 @@ typedef $$WatchedFilesTableProcessedTableManager =
       WatchedFileRow,
       PrefetchHooks Function()
     >;
+typedef $$PendingEditsTableCreateCompanionBuilder =
+    PendingEditsCompanion Function({
+      required EditTarget target,
+      required String itemId,
+      required String patch,
+      required DateTime createdAt,
+      required DateTime updatedAt,
+      Value<int> attempts,
+      Value<String?> lastError,
+      Value<int> rowid,
+    });
+typedef $$PendingEditsTableUpdateCompanionBuilder =
+    PendingEditsCompanion Function({
+      Value<EditTarget> target,
+      Value<String> itemId,
+      Value<String> patch,
+      Value<DateTime> createdAt,
+      Value<DateTime> updatedAt,
+      Value<int> attempts,
+      Value<String?> lastError,
+      Value<int> rowid,
+    });
+
+class $$PendingEditsTableFilterComposer
+    extends Composer<_$AppDatabase, $PendingEditsTable> {
+  $$PendingEditsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnWithTypeConverterFilters<EditTarget, EditTarget, String> get target =>
+      $composableBuilder(
+        column: $table.target,
+        builder: (column) => ColumnWithTypeConverterFilters(column),
+      );
+
+  ColumnFilters<String> get itemId => $composableBuilder(
+    column: $table.itemId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get patch => $composableBuilder(
+    column: $table.patch,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get attempts => $composableBuilder(
+    column: $table.attempts,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get lastError => $composableBuilder(
+    column: $table.lastError,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$PendingEditsTableOrderingComposer
+    extends Composer<_$AppDatabase, $PendingEditsTable> {
+  $$PendingEditsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get target => $composableBuilder(
+    column: $table.target,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get itemId => $composableBuilder(
+    column: $table.itemId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get patch => $composableBuilder(
+    column: $table.patch,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get attempts => $composableBuilder(
+    column: $table.attempts,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get lastError => $composableBuilder(
+    column: $table.lastError,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$PendingEditsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $PendingEditsTable> {
+  $$PendingEditsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumnWithTypeConverter<EditTarget, String> get target =>
+      $composableBuilder(column: $table.target, builder: (column) => column);
+
+  GeneratedColumn<String> get itemId =>
+      $composableBuilder(column: $table.itemId, builder: (column) => column);
+
+  GeneratedColumn<String> get patch =>
+      $composableBuilder(column: $table.patch, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+
+  GeneratedColumn<int> get attempts =>
+      $composableBuilder(column: $table.attempts, builder: (column) => column);
+
+  GeneratedColumn<String> get lastError =>
+      $composableBuilder(column: $table.lastError, builder: (column) => column);
+}
+
+class $$PendingEditsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $PendingEditsTable,
+          PendingEditRow,
+          $$PendingEditsTableFilterComposer,
+          $$PendingEditsTableOrderingComposer,
+          $$PendingEditsTableAnnotationComposer,
+          $$PendingEditsTableCreateCompanionBuilder,
+          $$PendingEditsTableUpdateCompanionBuilder,
+          (
+            PendingEditRow,
+            BaseReferences<_$AppDatabase, $PendingEditsTable, PendingEditRow>,
+          ),
+          PendingEditRow,
+          PrefetchHooks Function()
+        > {
+  $$PendingEditsTableTableManager(_$AppDatabase db, $PendingEditsTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$PendingEditsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$PendingEditsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$PendingEditsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<EditTarget> target = const Value.absent(),
+                Value<String> itemId = const Value.absent(),
+                Value<String> patch = const Value.absent(),
+                Value<DateTime> createdAt = const Value.absent(),
+                Value<DateTime> updatedAt = const Value.absent(),
+                Value<int> attempts = const Value.absent(),
+                Value<String?> lastError = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => PendingEditsCompanion(
+                target: target,
+                itemId: itemId,
+                patch: patch,
+                createdAt: createdAt,
+                updatedAt: updatedAt,
+                attempts: attempts,
+                lastError: lastError,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required EditTarget target,
+                required String itemId,
+                required String patch,
+                required DateTime createdAt,
+                required DateTime updatedAt,
+                Value<int> attempts = const Value.absent(),
+                Value<String?> lastError = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => PendingEditsCompanion.insert(
+                target: target,
+                itemId: itemId,
+                patch: patch,
+                createdAt: createdAt,
+                updatedAt: updatedAt,
+                attempts: attempts,
+                lastError: lastError,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable<$PendingEditsTable, PendingEditRow>(table),
+                  BaseReferences<
+                    _$AppDatabase,
+                    $PendingEditsTable,
+                    PendingEditRow
+                  >(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$PendingEditsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $PendingEditsTable,
+      PendingEditRow,
+      $$PendingEditsTableFilterComposer,
+      $$PendingEditsTableOrderingComposer,
+      $$PendingEditsTableAnnotationComposer,
+      $$PendingEditsTableCreateCompanionBuilder,
+      $$PendingEditsTableUpdateCompanionBuilder,
+      (
+        PendingEditRow,
+        BaseReferences<_$AppDatabase, $PendingEditsTable, PendingEditRow>,
+      ),
+      PendingEditRow,
+      PrefetchHooks Function()
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -10990,4 +11800,6 @@ class $AppDatabaseManager {
       $$WatchedFoldersTableTableManager(_db, _db.watchedFolders);
   $$WatchedFilesTableTableManager get watchedFiles =>
       $$WatchedFilesTableTableManager(_db, _db.watchedFiles);
+  $$PendingEditsTableTableManager get pendingEdits =>
+      $$PendingEditsTableTableManager(_db, _db.pendingEdits);
 }

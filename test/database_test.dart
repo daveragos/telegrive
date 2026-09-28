@@ -181,6 +181,71 @@ void main() {
     expect(await ledger(), isEmpty);
   });
 
+  test('waiting changes outlast a rebuilt index and go on sign-out', () async {
+    await db.upsertFilePart(file('a'), part('a', 0, 10));
+    // A file and an album may share an id: the target tells them apart.
+    await db.into(db.pendingEdits).insert(
+      PendingEditsCompanion.insert(
+        target: EditTarget.file,
+        itemId: 'a',
+        patch: '{"n":{"b":"a.bin","w":"Lease.pdf"}}',
+        createdAt: now,
+        updatedAt: now,
+      ),
+    );
+    await db.into(db.pendingEdits).insert(
+      PendingEditsCompanion.insert(
+        target: EditTarget.album,
+        itemId: 'a',
+        patch: '{"n":{"b":"Trip","w":"Lalibela 2026"}}',
+        createdAt: now,
+        updatedAt: now,
+        attempts: const Value(2),
+        lastError: const Value('Telegram took too long to answer.'),
+      ),
+    );
+    Future<List<PendingEditRow>> waiting() => db.select(db.pendingEdits).get();
+
+    final rows = await waiting();
+    expect(
+      rows.map((r) => r.target),
+      unorderedEquals([EditTarget.file, EditTarget.album]),
+    );
+    final rename = rows.singleWhere((r) => r.target == EditTarget.file);
+    expect(rename.attempts, 0);
+    expect(rename.lastError, isNull);
+
+    await db.clearIndex();
+    expect(await waiting(), hasLength(2));
+
+    await db.clearAll();
+    expect(await waiting(), isEmpty);
+  });
+
+  test('a photo with only a small copy in the drive is never safe to free', () async {
+    await db.upsertFilePart(file('p'), part('p', 0, 1));
+    await db.updateFile('p', const DriveFilesCompanion(originalSize: Value(6100000)));
+    await db.into(db.backupAssets).insert(
+      BackupAssetsCompanion.insert(
+        assetId: 'asset-1',
+        state: BackupAssetState.smallCopy,
+        fileId: const Value('p'),
+        updatedAt: now,
+      ),
+    );
+
+    expect((await db.fileById('p'))!.originalSize, 6100000);
+    expect(await db.safelyBackedUp(), isEmpty);
+    expect(await db.localAssetsOf(['p']), isEmpty);
+    expect(await db.watchBackedUpCount().first, 0);
+
+    await db.markAssetBackedUp('asset-1', 'p');
+    await db.updateFile('p', const DriveFilesCompanion(originalSize: Value(null)));
+    expect(await db.safelyBackedUp(), {'asset-1': 100});
+    expect(await db.localAssetsOf(['p']), {'p': ['asset-1']});
+    expect(await db.watchBackedUpCount().first, 1);
+  });
+
   test('a length learned on this phone survives a caption without one', () async {
     await db.upsertFilePart(file('clip'), part('clip', 0, 10));
     await db.updateFile('clip', const DriveFilesCompanion(durationSeconds: Value(84)));
@@ -205,7 +270,7 @@ void main() {
       file('c').copyWith(takenAt: Value(DateTime(2026, 9, 20))),
       part('c', 0, 12),
     );
-    expect(db.schemaVersion, 9);
+    expect(db.schemaVersion, 10);
 
     await db.recordOpen('a');
     expect((await db.watchRecentOpens().first).map((o) => o.$1.id), ['a']);
