@@ -6105,6 +6105,1119 @@ class PlayPositionsCompanion extends UpdateCompanion<PlayPositionRow> {
   }
 }
 
+class $WatchedFoldersTable extends WatchedFolders
+    with TableInfo<$WatchedFoldersTable, WatchedFolderRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $WatchedFoldersTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _treeUriMeta = const VerificationMeta(
+    'treeUri',
+  );
+  @override
+  late final GeneratedColumn<String> treeUri = GeneratedColumn<String>(
+    'tree_uri',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _labelMeta = const VerificationMeta('label');
+  @override
+  late final GeneratedColumn<String> label = GeneratedColumn<String>(
+    'label',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _destinationIdMeta = const VerificationMeta(
+    'destinationId',
+  );
+  @override
+  late final GeneratedColumn<String> destinationId = GeneratedColumn<String>(
+    'destination_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  @override
+  late final GeneratedColumnWithTypeConverter<WatchFilter, String> filter =
+      GeneratedColumn<String>(
+        'filter',
+        aliasedName,
+        false,
+        type: DriftSqlType.string,
+        requiredDuringInsert: true,
+      ).withConverter<WatchFilter>($WatchedFoldersTable.$converterfilter);
+  static const VerificationMeta _subfoldersMeta = const VerificationMeta(
+    'subfolders',
+  );
+  @override
+  late final GeneratedColumn<bool> subfolders = GeneratedColumn<bool>(
+    'subfolders',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("subfolders" IN (0, 1))',
+    ),
+    defaultValue: const Constant(true),
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _checkedAtMeta = const VerificationMeta(
+    'checkedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> checkedAt = GeneratedColumn<DateTime>(
+    'checked_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    treeUri,
+    label,
+    destinationId,
+    filter,
+    subfolders,
+    createdAt,
+    checkedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'watched_folders';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<WatchedFolderRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('tree_uri')) {
+      context.handle(
+        _treeUriMeta,
+        treeUri.isAcceptableOrUnknown(data['tree_uri']!, _treeUriMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_treeUriMeta);
+    }
+    if (data.containsKey('label')) {
+      context.handle(
+        _labelMeta,
+        label.isAcceptableOrUnknown(data['label']!, _labelMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_labelMeta);
+    }
+    if (data.containsKey('destination_id')) {
+      context.handle(
+        _destinationIdMeta,
+        destinationId.isAcceptableOrUnknown(
+          data['destination_id']!,
+          _destinationIdMeta,
+        ),
+      );
+    }
+    if (data.containsKey('subfolders')) {
+      context.handle(
+        _subfoldersMeta,
+        subfolders.isAcceptableOrUnknown(data['subfolders']!, _subfoldersMeta),
+      );
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_createdAtMeta);
+    }
+    if (data.containsKey('checked_at')) {
+      context.handle(
+        _checkedAtMeta,
+        checkedAt.isAcceptableOrUnknown(data['checked_at']!, _checkedAtMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  WatchedFolderRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return WatchedFolderRow(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      treeUri: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}tree_uri'],
+      )!,
+      label: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}label'],
+      )!,
+      destinationId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}destination_id'],
+      ),
+      filter: $WatchedFoldersTable.$converterfilter.fromSql(
+        attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}filter'],
+        )!,
+      ),
+      subfolders: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}subfolders'],
+      )!,
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}created_at'],
+      )!,
+      checkedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}checked_at'],
+      ),
+    );
+  }
+
+  @override
+  $WatchedFoldersTable createAlias(String alias) {
+    return $WatchedFoldersTable(attachedDatabase, alias);
+  }
+
+  static JsonTypeConverter2<WatchFilter, String, String> $converterfilter =
+      const EnumNameConverter<WatchFilter>(WatchFilter.values);
+}
+
+class WatchedFolderRow extends DataClass
+    implements Insertable<WatchedFolderRow> {
+  final String id;
+
+  /// The tree URI Android handed over, with persisted read access, which
+  /// is how the folder is listed again and how the grant is given back.
+  final String treeUri;
+
+  /// The folder's display name, for its row and its default drive folder.
+  final String label;
+
+  /// Drive folder the uploads land in. Null until the first upload creates
+  /// Auto upload › [label], so an empty folder never makes a drive folder.
+  final String? destinationId;
+  final WatchFilter filter;
+  final bool subfolders;
+  final DateTime createdAt;
+
+  /// When the folder was last looked through; null before the first check.
+  final DateTime? checkedAt;
+  const WatchedFolderRow({
+    required this.id,
+    required this.treeUri,
+    required this.label,
+    this.destinationId,
+    required this.filter,
+    required this.subfolders,
+    required this.createdAt,
+    this.checkedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['tree_uri'] = Variable<String>(treeUri);
+    map['label'] = Variable<String>(label);
+    if (!nullToAbsent || destinationId != null) {
+      map['destination_id'] = Variable<String>(destinationId);
+    }
+    {
+      map['filter'] = Variable<String>(
+        $WatchedFoldersTable.$converterfilter.toSql(filter),
+      );
+    }
+    map['subfolders'] = Variable<bool>(subfolders);
+    map['created_at'] = Variable<DateTime>(createdAt);
+    if (!nullToAbsent || checkedAt != null) {
+      map['checked_at'] = Variable<DateTime>(checkedAt);
+    }
+    return map;
+  }
+
+  WatchedFoldersCompanion toCompanion(bool nullToAbsent) {
+    return WatchedFoldersCompanion(
+      id: Value(id),
+      treeUri: Value(treeUri),
+      label: Value(label),
+      destinationId: destinationId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(destinationId),
+      filter: Value(filter),
+      subfolders: Value(subfolders),
+      createdAt: Value(createdAt),
+      checkedAt: checkedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(checkedAt),
+    );
+  }
+
+  factory WatchedFolderRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return WatchedFolderRow(
+      id: serializer.fromJson<String>(json['id']),
+      treeUri: serializer.fromJson<String>(json['treeUri']),
+      label: serializer.fromJson<String>(json['label']),
+      destinationId: serializer.fromJson<String?>(json['destinationId']),
+      filter: $WatchedFoldersTable.$converterfilter.fromJson(
+        serializer.fromJson<String>(json['filter']),
+      ),
+      subfolders: serializer.fromJson<bool>(json['subfolders']),
+      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
+      checkedAt: serializer.fromJson<DateTime?>(json['checkedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'treeUri': serializer.toJson<String>(treeUri),
+      'label': serializer.toJson<String>(label),
+      'destinationId': serializer.toJson<String?>(destinationId),
+      'filter': serializer.toJson<String>(
+        $WatchedFoldersTable.$converterfilter.toJson(filter),
+      ),
+      'subfolders': serializer.toJson<bool>(subfolders),
+      'createdAt': serializer.toJson<DateTime>(createdAt),
+      'checkedAt': serializer.toJson<DateTime?>(checkedAt),
+    };
+  }
+
+  WatchedFolderRow copyWith({
+    String? id,
+    String? treeUri,
+    String? label,
+    Value<String?> destinationId = const Value.absent(),
+    WatchFilter? filter,
+    bool? subfolders,
+    DateTime? createdAt,
+    Value<DateTime?> checkedAt = const Value.absent(),
+  }) => WatchedFolderRow(
+    id: id ?? this.id,
+    treeUri: treeUri ?? this.treeUri,
+    label: label ?? this.label,
+    destinationId: destinationId.present
+        ? destinationId.value
+        : this.destinationId,
+    filter: filter ?? this.filter,
+    subfolders: subfolders ?? this.subfolders,
+    createdAt: createdAt ?? this.createdAt,
+    checkedAt: checkedAt.present ? checkedAt.value : this.checkedAt,
+  );
+  WatchedFolderRow copyWithCompanion(WatchedFoldersCompanion data) {
+    return WatchedFolderRow(
+      id: data.id.present ? data.id.value : this.id,
+      treeUri: data.treeUri.present ? data.treeUri.value : this.treeUri,
+      label: data.label.present ? data.label.value : this.label,
+      destinationId: data.destinationId.present
+          ? data.destinationId.value
+          : this.destinationId,
+      filter: data.filter.present ? data.filter.value : this.filter,
+      subfolders: data.subfolders.present
+          ? data.subfolders.value
+          : this.subfolders,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      checkedAt: data.checkedAt.present ? data.checkedAt.value : this.checkedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('WatchedFolderRow(')
+          ..write('id: $id, ')
+          ..write('treeUri: $treeUri, ')
+          ..write('label: $label, ')
+          ..write('destinationId: $destinationId, ')
+          ..write('filter: $filter, ')
+          ..write('subfolders: $subfolders, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('checkedAt: $checkedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    treeUri,
+    label,
+    destinationId,
+    filter,
+    subfolders,
+    createdAt,
+    checkedAt,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is WatchedFolderRow &&
+          other.id == this.id &&
+          other.treeUri == this.treeUri &&
+          other.label == this.label &&
+          other.destinationId == this.destinationId &&
+          other.filter == this.filter &&
+          other.subfolders == this.subfolders &&
+          other.createdAt == this.createdAt &&
+          other.checkedAt == this.checkedAt);
+}
+
+class WatchedFoldersCompanion extends UpdateCompanion<WatchedFolderRow> {
+  final Value<String> id;
+  final Value<String> treeUri;
+  final Value<String> label;
+  final Value<String?> destinationId;
+  final Value<WatchFilter> filter;
+  final Value<bool> subfolders;
+  final Value<DateTime> createdAt;
+  final Value<DateTime?> checkedAt;
+  final Value<int> rowid;
+  const WatchedFoldersCompanion({
+    this.id = const Value.absent(),
+    this.treeUri = const Value.absent(),
+    this.label = const Value.absent(),
+    this.destinationId = const Value.absent(),
+    this.filter = const Value.absent(),
+    this.subfolders = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.checkedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  WatchedFoldersCompanion.insert({
+    required String id,
+    required String treeUri,
+    required String label,
+    this.destinationId = const Value.absent(),
+    required WatchFilter filter,
+    this.subfolders = const Value.absent(),
+    required DateTime createdAt,
+    this.checkedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : id = Value(id),
+       treeUri = Value(treeUri),
+       label = Value(label),
+       filter = Value(filter),
+       createdAt = Value(createdAt);
+  static Insertable<WatchedFolderRow> custom({
+    Expression<String>? id,
+    Expression<String>? treeUri,
+    Expression<String>? label,
+    Expression<String>? destinationId,
+    Expression<String>? filter,
+    Expression<bool>? subfolders,
+    Expression<DateTime>? createdAt,
+    Expression<DateTime>? checkedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (treeUri != null) 'tree_uri': treeUri,
+      if (label != null) 'label': label,
+      if (destinationId != null) 'destination_id': destinationId,
+      if (filter != null) 'filter': filter,
+      if (subfolders != null) 'subfolders': subfolders,
+      if (createdAt != null) 'created_at': createdAt,
+      if (checkedAt != null) 'checked_at': checkedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  WatchedFoldersCompanion copyWith({
+    Value<String>? id,
+    Value<String>? treeUri,
+    Value<String>? label,
+    Value<String?>? destinationId,
+    Value<WatchFilter>? filter,
+    Value<bool>? subfolders,
+    Value<DateTime>? createdAt,
+    Value<DateTime?>? checkedAt,
+    Value<int>? rowid,
+  }) {
+    return WatchedFoldersCompanion(
+      id: id ?? this.id,
+      treeUri: treeUri ?? this.treeUri,
+      label: label ?? this.label,
+      destinationId: destinationId ?? this.destinationId,
+      filter: filter ?? this.filter,
+      subfolders: subfolders ?? this.subfolders,
+      createdAt: createdAt ?? this.createdAt,
+      checkedAt: checkedAt ?? this.checkedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (treeUri.present) {
+      map['tree_uri'] = Variable<String>(treeUri.value);
+    }
+    if (label.present) {
+      map['label'] = Variable<String>(label.value);
+    }
+    if (destinationId.present) {
+      map['destination_id'] = Variable<String>(destinationId.value);
+    }
+    if (filter.present) {
+      map['filter'] = Variable<String>(
+        $WatchedFoldersTable.$converterfilter.toSql(filter.value),
+      );
+    }
+    if (subfolders.present) {
+      map['subfolders'] = Variable<bool>(subfolders.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<DateTime>(createdAt.value);
+    }
+    if (checkedAt.present) {
+      map['checked_at'] = Variable<DateTime>(checkedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('WatchedFoldersCompanion(')
+          ..write('id: $id, ')
+          ..write('treeUri: $treeUri, ')
+          ..write('label: $label, ')
+          ..write('destinationId: $destinationId, ')
+          ..write('filter: $filter, ')
+          ..write('subfolders: $subfolders, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('checkedAt: $checkedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $WatchedFilesTable extends WatchedFiles
+    with TableInfo<$WatchedFilesTable, WatchedFileRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $WatchedFilesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _ruleIdMeta = const VerificationMeta('ruleId');
+  @override
+  late final GeneratedColumn<String> ruleId = GeneratedColumn<String>(
+    'rule_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _documentIdMeta = const VerificationMeta(
+    'documentId',
+  );
+  @override
+  late final GeneratedColumn<String> documentId = GeneratedColumn<String>(
+    'document_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _sizeMeta = const VerificationMeta('size');
+  @override
+  late final GeneratedColumn<int> size = GeneratedColumn<int>(
+    'size',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _modifiedAtMeta = const VerificationMeta(
+    'modifiedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> modifiedAt = GeneratedColumn<DateTime>(
+    'modified_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  @override
+  late final GeneratedColumnWithTypeConverter<WatchedFileState, String> state =
+      GeneratedColumn<String>(
+        'state',
+        aliasedName,
+        false,
+        type: DriftSqlType.string,
+        requiredDuringInsert: true,
+      ).withConverter<WatchedFileState>($WatchedFilesTable.$converterstate);
+  static const VerificationMeta _fileIdMeta = const VerificationMeta('fileId');
+  @override
+  late final GeneratedColumn<String> fileId = GeneratedColumn<String>(
+    'file_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _transferIdMeta = const VerificationMeta(
+    'transferId',
+  );
+  @override
+  late final GeneratedColumn<String> transferId = GeneratedColumn<String>(
+    'transfer_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _failuresMeta = const VerificationMeta(
+    'failures',
+  );
+  @override
+  late final GeneratedColumn<int> failures = GeneratedColumn<int>(
+    'failures',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> updatedAt = GeneratedColumn<DateTime>(
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    ruleId,
+    documentId,
+    size,
+    modifiedAt,
+    state,
+    fileId,
+    transferId,
+    failures,
+    updatedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'watched_files';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<WatchedFileRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('rule_id')) {
+      context.handle(
+        _ruleIdMeta,
+        ruleId.isAcceptableOrUnknown(data['rule_id']!, _ruleIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_ruleIdMeta);
+    }
+    if (data.containsKey('document_id')) {
+      context.handle(
+        _documentIdMeta,
+        documentId.isAcceptableOrUnknown(data['document_id']!, _documentIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_documentIdMeta);
+    }
+    if (data.containsKey('size')) {
+      context.handle(
+        _sizeMeta,
+        size.isAcceptableOrUnknown(data['size']!, _sizeMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_sizeMeta);
+    }
+    if (data.containsKey('modified_at')) {
+      context.handle(
+        _modifiedAtMeta,
+        modifiedAt.isAcceptableOrUnknown(data['modified_at']!, _modifiedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_modifiedAtMeta);
+    }
+    if (data.containsKey('file_id')) {
+      context.handle(
+        _fileIdMeta,
+        fileId.isAcceptableOrUnknown(data['file_id']!, _fileIdMeta),
+      );
+    }
+    if (data.containsKey('transfer_id')) {
+      context.handle(
+        _transferIdMeta,
+        transferId.isAcceptableOrUnknown(data['transfer_id']!, _transferIdMeta),
+      );
+    }
+    if (data.containsKey('failures')) {
+      context.handle(
+        _failuresMeta,
+        failures.isAcceptableOrUnknown(data['failures']!, _failuresMeta),
+      );
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_updatedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {ruleId, documentId};
+  @override
+  WatchedFileRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return WatchedFileRow(
+      ruleId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}rule_id'],
+      )!,
+      documentId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}document_id'],
+      )!,
+      size: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}size'],
+      )!,
+      modifiedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}modified_at'],
+      )!,
+      state: $WatchedFilesTable.$converterstate.fromSql(
+        attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}state'],
+        )!,
+      ),
+      fileId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}file_id'],
+      ),
+      transferId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}transfer_id'],
+      ),
+      failures: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}failures'],
+      )!,
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}updated_at'],
+      )!,
+    );
+  }
+
+  @override
+  $WatchedFilesTable createAlias(String alias) {
+    return $WatchedFilesTable(attachedDatabase, alias);
+  }
+
+  static JsonTypeConverter2<WatchedFileState, String, String> $converterstate =
+      const EnumNameConverter<WatchedFileState>(WatchedFileState.values);
+}
+
+class WatchedFileRow extends DataClass implements Insertable<WatchedFileRow> {
+  final String ruleId;
+  final String documentId;
+  final int size;
+  final DateTime modifiedAt;
+  final WatchedFileState state;
+
+  /// Drive file holding the document, once uploaded or found already there.
+  final String? fileId;
+
+  /// The queued upload, so a restart can tell a transfer still running from
+  /// one that is gone.
+  final String? transferId;
+  final int failures;
+  final DateTime updatedAt;
+  const WatchedFileRow({
+    required this.ruleId,
+    required this.documentId,
+    required this.size,
+    required this.modifiedAt,
+    required this.state,
+    this.fileId,
+    this.transferId,
+    required this.failures,
+    required this.updatedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['rule_id'] = Variable<String>(ruleId);
+    map['document_id'] = Variable<String>(documentId);
+    map['size'] = Variable<int>(size);
+    map['modified_at'] = Variable<DateTime>(modifiedAt);
+    {
+      map['state'] = Variable<String>(
+        $WatchedFilesTable.$converterstate.toSql(state),
+      );
+    }
+    if (!nullToAbsent || fileId != null) {
+      map['file_id'] = Variable<String>(fileId);
+    }
+    if (!nullToAbsent || transferId != null) {
+      map['transfer_id'] = Variable<String>(transferId);
+    }
+    map['failures'] = Variable<int>(failures);
+    map['updated_at'] = Variable<DateTime>(updatedAt);
+    return map;
+  }
+
+  WatchedFilesCompanion toCompanion(bool nullToAbsent) {
+    return WatchedFilesCompanion(
+      ruleId: Value(ruleId),
+      documentId: Value(documentId),
+      size: Value(size),
+      modifiedAt: Value(modifiedAt),
+      state: Value(state),
+      fileId: fileId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(fileId),
+      transferId: transferId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(transferId),
+      failures: Value(failures),
+      updatedAt: Value(updatedAt),
+    );
+  }
+
+  factory WatchedFileRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return WatchedFileRow(
+      ruleId: serializer.fromJson<String>(json['ruleId']),
+      documentId: serializer.fromJson<String>(json['documentId']),
+      size: serializer.fromJson<int>(json['size']),
+      modifiedAt: serializer.fromJson<DateTime>(json['modifiedAt']),
+      state: $WatchedFilesTable.$converterstate.fromJson(
+        serializer.fromJson<String>(json['state']),
+      ),
+      fileId: serializer.fromJson<String?>(json['fileId']),
+      transferId: serializer.fromJson<String?>(json['transferId']),
+      failures: serializer.fromJson<int>(json['failures']),
+      updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'ruleId': serializer.toJson<String>(ruleId),
+      'documentId': serializer.toJson<String>(documentId),
+      'size': serializer.toJson<int>(size),
+      'modifiedAt': serializer.toJson<DateTime>(modifiedAt),
+      'state': serializer.toJson<String>(
+        $WatchedFilesTable.$converterstate.toJson(state),
+      ),
+      'fileId': serializer.toJson<String?>(fileId),
+      'transferId': serializer.toJson<String?>(transferId),
+      'failures': serializer.toJson<int>(failures),
+      'updatedAt': serializer.toJson<DateTime>(updatedAt),
+    };
+  }
+
+  WatchedFileRow copyWith({
+    String? ruleId,
+    String? documentId,
+    int? size,
+    DateTime? modifiedAt,
+    WatchedFileState? state,
+    Value<String?> fileId = const Value.absent(),
+    Value<String?> transferId = const Value.absent(),
+    int? failures,
+    DateTime? updatedAt,
+  }) => WatchedFileRow(
+    ruleId: ruleId ?? this.ruleId,
+    documentId: documentId ?? this.documentId,
+    size: size ?? this.size,
+    modifiedAt: modifiedAt ?? this.modifiedAt,
+    state: state ?? this.state,
+    fileId: fileId.present ? fileId.value : this.fileId,
+    transferId: transferId.present ? transferId.value : this.transferId,
+    failures: failures ?? this.failures,
+    updatedAt: updatedAt ?? this.updatedAt,
+  );
+  WatchedFileRow copyWithCompanion(WatchedFilesCompanion data) {
+    return WatchedFileRow(
+      ruleId: data.ruleId.present ? data.ruleId.value : this.ruleId,
+      documentId: data.documentId.present
+          ? data.documentId.value
+          : this.documentId,
+      size: data.size.present ? data.size.value : this.size,
+      modifiedAt: data.modifiedAt.present
+          ? data.modifiedAt.value
+          : this.modifiedAt,
+      state: data.state.present ? data.state.value : this.state,
+      fileId: data.fileId.present ? data.fileId.value : this.fileId,
+      transferId: data.transferId.present
+          ? data.transferId.value
+          : this.transferId,
+      failures: data.failures.present ? data.failures.value : this.failures,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('WatchedFileRow(')
+          ..write('ruleId: $ruleId, ')
+          ..write('documentId: $documentId, ')
+          ..write('size: $size, ')
+          ..write('modifiedAt: $modifiedAt, ')
+          ..write('state: $state, ')
+          ..write('fileId: $fileId, ')
+          ..write('transferId: $transferId, ')
+          ..write('failures: $failures, ')
+          ..write('updatedAt: $updatedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    ruleId,
+    documentId,
+    size,
+    modifiedAt,
+    state,
+    fileId,
+    transferId,
+    failures,
+    updatedAt,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is WatchedFileRow &&
+          other.ruleId == this.ruleId &&
+          other.documentId == this.documentId &&
+          other.size == this.size &&
+          other.modifiedAt == this.modifiedAt &&
+          other.state == this.state &&
+          other.fileId == this.fileId &&
+          other.transferId == this.transferId &&
+          other.failures == this.failures &&
+          other.updatedAt == this.updatedAt);
+}
+
+class WatchedFilesCompanion extends UpdateCompanion<WatchedFileRow> {
+  final Value<String> ruleId;
+  final Value<String> documentId;
+  final Value<int> size;
+  final Value<DateTime> modifiedAt;
+  final Value<WatchedFileState> state;
+  final Value<String?> fileId;
+  final Value<String?> transferId;
+  final Value<int> failures;
+  final Value<DateTime> updatedAt;
+  final Value<int> rowid;
+  const WatchedFilesCompanion({
+    this.ruleId = const Value.absent(),
+    this.documentId = const Value.absent(),
+    this.size = const Value.absent(),
+    this.modifiedAt = const Value.absent(),
+    this.state = const Value.absent(),
+    this.fileId = const Value.absent(),
+    this.transferId = const Value.absent(),
+    this.failures = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  WatchedFilesCompanion.insert({
+    required String ruleId,
+    required String documentId,
+    required int size,
+    required DateTime modifiedAt,
+    required WatchedFileState state,
+    this.fileId = const Value.absent(),
+    this.transferId = const Value.absent(),
+    this.failures = const Value.absent(),
+    required DateTime updatedAt,
+    this.rowid = const Value.absent(),
+  }) : ruleId = Value(ruleId),
+       documentId = Value(documentId),
+       size = Value(size),
+       modifiedAt = Value(modifiedAt),
+       state = Value(state),
+       updatedAt = Value(updatedAt);
+  static Insertable<WatchedFileRow> custom({
+    Expression<String>? ruleId,
+    Expression<String>? documentId,
+    Expression<int>? size,
+    Expression<DateTime>? modifiedAt,
+    Expression<String>? state,
+    Expression<String>? fileId,
+    Expression<String>? transferId,
+    Expression<int>? failures,
+    Expression<DateTime>? updatedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (ruleId != null) 'rule_id': ruleId,
+      if (documentId != null) 'document_id': documentId,
+      if (size != null) 'size': size,
+      if (modifiedAt != null) 'modified_at': modifiedAt,
+      if (state != null) 'state': state,
+      if (fileId != null) 'file_id': fileId,
+      if (transferId != null) 'transfer_id': transferId,
+      if (failures != null) 'failures': failures,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  WatchedFilesCompanion copyWith({
+    Value<String>? ruleId,
+    Value<String>? documentId,
+    Value<int>? size,
+    Value<DateTime>? modifiedAt,
+    Value<WatchedFileState>? state,
+    Value<String?>? fileId,
+    Value<String?>? transferId,
+    Value<int>? failures,
+    Value<DateTime>? updatedAt,
+    Value<int>? rowid,
+  }) {
+    return WatchedFilesCompanion(
+      ruleId: ruleId ?? this.ruleId,
+      documentId: documentId ?? this.documentId,
+      size: size ?? this.size,
+      modifiedAt: modifiedAt ?? this.modifiedAt,
+      state: state ?? this.state,
+      fileId: fileId ?? this.fileId,
+      transferId: transferId ?? this.transferId,
+      failures: failures ?? this.failures,
+      updatedAt: updatedAt ?? this.updatedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (ruleId.present) {
+      map['rule_id'] = Variable<String>(ruleId.value);
+    }
+    if (documentId.present) {
+      map['document_id'] = Variable<String>(documentId.value);
+    }
+    if (size.present) {
+      map['size'] = Variable<int>(size.value);
+    }
+    if (modifiedAt.present) {
+      map['modified_at'] = Variable<DateTime>(modifiedAt.value);
+    }
+    if (state.present) {
+      map['state'] = Variable<String>(
+        $WatchedFilesTable.$converterstate.toSql(state.value),
+      );
+    }
+    if (fileId.present) {
+      map['file_id'] = Variable<String>(fileId.value);
+    }
+    if (transferId.present) {
+      map['transfer_id'] = Variable<String>(transferId.value);
+    }
+    if (failures.present) {
+      map['failures'] = Variable<int>(failures.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<DateTime>(updatedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('WatchedFilesCompanion(')
+          ..write('ruleId: $ruleId, ')
+          ..write('documentId: $documentId, ')
+          ..write('size: $size, ')
+          ..write('modifiedAt: $modifiedAt, ')
+          ..write('state: $state, ')
+          ..write('fileId: $fileId, ')
+          ..write('transferId: $transferId, ')
+          ..write('failures: $failures, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
@@ -6120,6 +7233,8 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $FileContentsTable fileContents = $FileContentsTable(this);
   late final $FileOpensTable fileOpens = $FileOpensTable(this);
   late final $PlayPositionsTable playPositions = $PlayPositionsTable(this);
+  late final $WatchedFoldersTable watchedFolders = $WatchedFoldersTable(this);
+  late final $WatchedFilesTable watchedFiles = $WatchedFilesTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -6137,6 +7252,8 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     fileContents,
     fileOpens,
     playPositions,
+    watchedFolders,
+    watchedFiles,
   ];
 }
 
@@ -9272,6 +10389,575 @@ typedef $$PlayPositionsTableProcessedTableManager =
       PlayPositionRow,
       PrefetchHooks Function()
     >;
+typedef $$WatchedFoldersTableCreateCompanionBuilder =
+    WatchedFoldersCompanion Function({
+      required String id,
+      required String treeUri,
+      required String label,
+      Value<String?> destinationId,
+      required WatchFilter filter,
+      Value<bool> subfolders,
+      required DateTime createdAt,
+      Value<DateTime?> checkedAt,
+      Value<int> rowid,
+    });
+typedef $$WatchedFoldersTableUpdateCompanionBuilder =
+    WatchedFoldersCompanion Function({
+      Value<String> id,
+      Value<String> treeUri,
+      Value<String> label,
+      Value<String?> destinationId,
+      Value<WatchFilter> filter,
+      Value<bool> subfolders,
+      Value<DateTime> createdAt,
+      Value<DateTime?> checkedAt,
+      Value<int> rowid,
+    });
+
+class $$WatchedFoldersTableFilterComposer
+    extends Composer<_$AppDatabase, $WatchedFoldersTable> {
+  $$WatchedFoldersTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get treeUri => $composableBuilder(
+    column: $table.treeUri,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get label => $composableBuilder(
+    column: $table.label,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get destinationId => $composableBuilder(
+    column: $table.destinationId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnWithTypeConverterFilters<WatchFilter, WatchFilter, String> get filter =>
+      $composableBuilder(
+        column: $table.filter,
+        builder: (column) => ColumnWithTypeConverterFilters(column),
+      );
+
+  ColumnFilters<bool> get subfolders => $composableBuilder(
+    column: $table.subfolders,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get checkedAt => $composableBuilder(
+    column: $table.checkedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$WatchedFoldersTableOrderingComposer
+    extends Composer<_$AppDatabase, $WatchedFoldersTable> {
+  $$WatchedFoldersTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get treeUri => $composableBuilder(
+    column: $table.treeUri,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get label => $composableBuilder(
+    column: $table.label,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get destinationId => $composableBuilder(
+    column: $table.destinationId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get filter => $composableBuilder(
+    column: $table.filter,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get subfolders => $composableBuilder(
+    column: $table.subfolders,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get checkedAt => $composableBuilder(
+    column: $table.checkedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$WatchedFoldersTableAnnotationComposer
+    extends Composer<_$AppDatabase, $WatchedFoldersTable> {
+  $$WatchedFoldersTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get treeUri =>
+      $composableBuilder(column: $table.treeUri, builder: (column) => column);
+
+  GeneratedColumn<String> get label =>
+      $composableBuilder(column: $table.label, builder: (column) => column);
+
+  GeneratedColumn<String> get destinationId => $composableBuilder(
+    column: $table.destinationId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumnWithTypeConverter<WatchFilter, String> get filter =>
+      $composableBuilder(column: $table.filter, builder: (column) => column);
+
+  GeneratedColumn<bool> get subfolders => $composableBuilder(
+    column: $table.subfolders,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get checkedAt =>
+      $composableBuilder(column: $table.checkedAt, builder: (column) => column);
+}
+
+class $$WatchedFoldersTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $WatchedFoldersTable,
+          WatchedFolderRow,
+          $$WatchedFoldersTableFilterComposer,
+          $$WatchedFoldersTableOrderingComposer,
+          $$WatchedFoldersTableAnnotationComposer,
+          $$WatchedFoldersTableCreateCompanionBuilder,
+          $$WatchedFoldersTableUpdateCompanionBuilder,
+          (
+            WatchedFolderRow,
+            BaseReferences<
+              _$AppDatabase,
+              $WatchedFoldersTable,
+              WatchedFolderRow
+            >,
+          ),
+          WatchedFolderRow,
+          PrefetchHooks Function()
+        > {
+  $$WatchedFoldersTableTableManager(
+    _$AppDatabase db,
+    $WatchedFoldersTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$WatchedFoldersTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$WatchedFoldersTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$WatchedFoldersTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> id = const Value.absent(),
+                Value<String> treeUri = const Value.absent(),
+                Value<String> label = const Value.absent(),
+                Value<String?> destinationId = const Value.absent(),
+                Value<WatchFilter> filter = const Value.absent(),
+                Value<bool> subfolders = const Value.absent(),
+                Value<DateTime> createdAt = const Value.absent(),
+                Value<DateTime?> checkedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => WatchedFoldersCompanion(
+                id: id,
+                treeUri: treeUri,
+                label: label,
+                destinationId: destinationId,
+                filter: filter,
+                subfolders: subfolders,
+                createdAt: createdAt,
+                checkedAt: checkedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String id,
+                required String treeUri,
+                required String label,
+                Value<String?> destinationId = const Value.absent(),
+                required WatchFilter filter,
+                Value<bool> subfolders = const Value.absent(),
+                required DateTime createdAt,
+                Value<DateTime?> checkedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => WatchedFoldersCompanion.insert(
+                id: id,
+                treeUri: treeUri,
+                label: label,
+                destinationId: destinationId,
+                filter: filter,
+                subfolders: subfolders,
+                createdAt: createdAt,
+                checkedAt: checkedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable<$WatchedFoldersTable, WatchedFolderRow>(table),
+                  BaseReferences<
+                    _$AppDatabase,
+                    $WatchedFoldersTable,
+                    WatchedFolderRow
+                  >(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$WatchedFoldersTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $WatchedFoldersTable,
+      WatchedFolderRow,
+      $$WatchedFoldersTableFilterComposer,
+      $$WatchedFoldersTableOrderingComposer,
+      $$WatchedFoldersTableAnnotationComposer,
+      $$WatchedFoldersTableCreateCompanionBuilder,
+      $$WatchedFoldersTableUpdateCompanionBuilder,
+      (
+        WatchedFolderRow,
+        BaseReferences<_$AppDatabase, $WatchedFoldersTable, WatchedFolderRow>,
+      ),
+      WatchedFolderRow,
+      PrefetchHooks Function()
+    >;
+typedef $$WatchedFilesTableCreateCompanionBuilder =
+    WatchedFilesCompanion Function({
+      required String ruleId,
+      required String documentId,
+      required int size,
+      required DateTime modifiedAt,
+      required WatchedFileState state,
+      Value<String?> fileId,
+      Value<String?> transferId,
+      Value<int> failures,
+      required DateTime updatedAt,
+      Value<int> rowid,
+    });
+typedef $$WatchedFilesTableUpdateCompanionBuilder =
+    WatchedFilesCompanion Function({
+      Value<String> ruleId,
+      Value<String> documentId,
+      Value<int> size,
+      Value<DateTime> modifiedAt,
+      Value<WatchedFileState> state,
+      Value<String?> fileId,
+      Value<String?> transferId,
+      Value<int> failures,
+      Value<DateTime> updatedAt,
+      Value<int> rowid,
+    });
+
+class $$WatchedFilesTableFilterComposer
+    extends Composer<_$AppDatabase, $WatchedFilesTable> {
+  $$WatchedFilesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get ruleId => $composableBuilder(
+    column: $table.ruleId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get documentId => $composableBuilder(
+    column: $table.documentId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get size => $composableBuilder(
+    column: $table.size,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get modifiedAt => $composableBuilder(
+    column: $table.modifiedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnWithTypeConverterFilters<WatchedFileState, WatchedFileState, String>
+  get state => $composableBuilder(
+    column: $table.state,
+    builder: (column) => ColumnWithTypeConverterFilters(column),
+  );
+
+  ColumnFilters<String> get fileId => $composableBuilder(
+    column: $table.fileId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get transferId => $composableBuilder(
+    column: $table.transferId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get failures => $composableBuilder(
+    column: $table.failures,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$WatchedFilesTableOrderingComposer
+    extends Composer<_$AppDatabase, $WatchedFilesTable> {
+  $$WatchedFilesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get ruleId => $composableBuilder(
+    column: $table.ruleId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get documentId => $composableBuilder(
+    column: $table.documentId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get size => $composableBuilder(
+    column: $table.size,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get modifiedAt => $composableBuilder(
+    column: $table.modifiedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get state => $composableBuilder(
+    column: $table.state,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get fileId => $composableBuilder(
+    column: $table.fileId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get transferId => $composableBuilder(
+    column: $table.transferId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get failures => $composableBuilder(
+    column: $table.failures,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$WatchedFilesTableAnnotationComposer
+    extends Composer<_$AppDatabase, $WatchedFilesTable> {
+  $$WatchedFilesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get ruleId =>
+      $composableBuilder(column: $table.ruleId, builder: (column) => column);
+
+  GeneratedColumn<String> get documentId => $composableBuilder(
+    column: $table.documentId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get size =>
+      $composableBuilder(column: $table.size, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get modifiedAt => $composableBuilder(
+    column: $table.modifiedAt,
+    builder: (column) => column,
+  );
+
+  GeneratedColumnWithTypeConverter<WatchedFileState, String> get state =>
+      $composableBuilder(column: $table.state, builder: (column) => column);
+
+  GeneratedColumn<String> get fileId =>
+      $composableBuilder(column: $table.fileId, builder: (column) => column);
+
+  GeneratedColumn<String> get transferId => $composableBuilder(
+    column: $table.transferId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get failures =>
+      $composableBuilder(column: $table.failures, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+}
+
+class $$WatchedFilesTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $WatchedFilesTable,
+          WatchedFileRow,
+          $$WatchedFilesTableFilterComposer,
+          $$WatchedFilesTableOrderingComposer,
+          $$WatchedFilesTableAnnotationComposer,
+          $$WatchedFilesTableCreateCompanionBuilder,
+          $$WatchedFilesTableUpdateCompanionBuilder,
+          (
+            WatchedFileRow,
+            BaseReferences<_$AppDatabase, $WatchedFilesTable, WatchedFileRow>,
+          ),
+          WatchedFileRow,
+          PrefetchHooks Function()
+        > {
+  $$WatchedFilesTableTableManager(_$AppDatabase db, $WatchedFilesTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$WatchedFilesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$WatchedFilesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$WatchedFilesTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> ruleId = const Value.absent(),
+                Value<String> documentId = const Value.absent(),
+                Value<int> size = const Value.absent(),
+                Value<DateTime> modifiedAt = const Value.absent(),
+                Value<WatchedFileState> state = const Value.absent(),
+                Value<String?> fileId = const Value.absent(),
+                Value<String?> transferId = const Value.absent(),
+                Value<int> failures = const Value.absent(),
+                Value<DateTime> updatedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => WatchedFilesCompanion(
+                ruleId: ruleId,
+                documentId: documentId,
+                size: size,
+                modifiedAt: modifiedAt,
+                state: state,
+                fileId: fileId,
+                transferId: transferId,
+                failures: failures,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String ruleId,
+                required String documentId,
+                required int size,
+                required DateTime modifiedAt,
+                required WatchedFileState state,
+                Value<String?> fileId = const Value.absent(),
+                Value<String?> transferId = const Value.absent(),
+                Value<int> failures = const Value.absent(),
+                required DateTime updatedAt,
+                Value<int> rowid = const Value.absent(),
+              }) => WatchedFilesCompanion.insert(
+                ruleId: ruleId,
+                documentId: documentId,
+                size: size,
+                modifiedAt: modifiedAt,
+                state: state,
+                fileId: fileId,
+                transferId: transferId,
+                failures: failures,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable<$WatchedFilesTable, WatchedFileRow>(table),
+                  BaseReferences<
+                    _$AppDatabase,
+                    $WatchedFilesTable,
+                    WatchedFileRow
+                  >(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$WatchedFilesTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $WatchedFilesTable,
+      WatchedFileRow,
+      $$WatchedFilesTableFilterComposer,
+      $$WatchedFilesTableOrderingComposer,
+      $$WatchedFilesTableAnnotationComposer,
+      $$WatchedFilesTableCreateCompanionBuilder,
+      $$WatchedFilesTableUpdateCompanionBuilder,
+      (
+        WatchedFileRow,
+        BaseReferences<_$AppDatabase, $WatchedFilesTable, WatchedFileRow>,
+      ),
+      WatchedFileRow,
+      PrefetchHooks Function()
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -9300,4 +10986,8 @@ class $AppDatabaseManager {
       $$FileOpensTableTableManager(_db, _db.fileOpens);
   $$PlayPositionsTableTableManager get playPositions =>
       $$PlayPositionsTableTableManager(_db, _db.playPositions);
+  $$WatchedFoldersTableTableManager get watchedFolders =>
+      $$WatchedFoldersTableTableManager(_db, _db.watchedFolders);
+  $$WatchedFilesTableTableManager get watchedFiles =>
+      $$WatchedFilesTableTableManager(_db, _db.watchedFiles);
 }

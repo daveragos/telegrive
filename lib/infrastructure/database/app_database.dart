@@ -46,15 +46,25 @@ class AlbumSummary {
     FileContents,
     FileOpens,
     PlayPositions,
+    WatchedFolders,
+    WatchedFiles,
   ],
 )
 class AppDatabase extends _$AppDatabase {
+  /// Android's file picker reads this same file from its own process with
+  /// its own copy of SQLite, one short connection per call. A write here
+  /// that meets one of those reads waits it out, up to three seconds,
+  /// rather than fail with "database is locked". The closure captures
+  /// nothing, so drift can hand it to the isolate that opens the file.
   AppDatabase([QueryExecutor? executor])
     : super(
         executor ??
             driftDatabase(
               name: 'telegrive',
-              native: const DriftNativeOptions(databaseDirectory: _directory),
+              native: DriftNativeOptions(
+                databaseDirectory: _directory,
+                setup: (db) => db.execute('PRAGMA busy_timeout = 3000;'),
+              ),
             ),
       );
 
@@ -79,7 +89,7 @@ class AppDatabase extends _$AppDatabase {
   }
 
   @override
-  int get schemaVersion => 8;
+  int get schemaVersion => 9;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -156,6 +166,10 @@ class AppDatabase extends _$AppDatabase {
         await m.addColumn(transfers, transfers.sourceChatId);
         await m.addColumn(transfers, transfers.sourceMessageId);
         await m.addColumn(driveFiles, driveFiles.adopted);
+      }
+      if (from < 9) {
+        await m.createTable(watchedFolders);
+        await m.createTable(watchedFiles);
       }
     },
   );
@@ -779,6 +793,8 @@ class AppDatabase extends _$AppDatabase {
     await delete(fileContents).go();
     await delete(fileOpens).go();
     await delete(playPositions).go();
+    await delete(watchedFiles).go();
+    await delete(watchedFolders).go();
   });
 
   // ---------------------------------------------------------------------------

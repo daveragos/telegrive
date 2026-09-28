@@ -342,3 +342,74 @@ class BackupAssets extends Table {
   @override
   Set<Column> get primaryKey => {assetId};
 }
+
+/// What a watched phone folder sends up: documents and PDFs, audio, or
+/// everything in it. New filters go at the end, since the name is what the
+/// row stores.
+enum WatchFilter { documents, audio, everything }
+
+/// A folder on this phone whose new files upload by themselves, the way
+/// photo backup handles the camera roll. Per phone, like [BackupAssets]:
+/// the read access Android granted belongs to this phone, so the list is
+/// not in the channel and a rebuilt index keeps it.
+@DataClassName('WatchedFolderRow')
+class WatchedFolders extends Table {
+  TextColumn get id => text()();
+
+  /// The tree URI Android handed over, with persisted read access, which
+  /// is how the folder is listed again and how the grant is given back.
+  TextColumn get treeUri => text()();
+
+  /// The folder's display name, for its row and its default drive folder.
+  TextColumn get label => text()();
+
+  /// Drive folder the uploads land in. Null until the first upload creates
+  /// Auto upload › [label], so an empty folder never makes a drive folder.
+  TextColumn get destinationId => text().nullable()();
+  TextColumn get filter => textEnum<WatchFilter>()();
+  BoolColumn get subfolders => boolean().withDefault(const Constant(true))();
+  DateTimeColumn get createdAt => dateTime()();
+
+  /// When the folder was last looked through; null before the first check.
+  DateTimeColumn get checkedAt => dateTime().nullable()();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+/// What a watched folder has settled about a file in it. New states go at
+/// the end, since the name is what the row stores.
+enum WatchedFileState {
+  /// Handed to the transfer queue and not finished yet.
+  pending,
+  done,
+  failed,
+
+  /// Left alone on purpose: already there when the folder was added with
+  /// only new files wanted, or its upload cancelled by the person.
+  skipped,
+}
+
+/// The files a watched folder has dealt with, keyed by the phone's document
+/// id within the rule, so each file goes up exactly once; the ledger that
+/// [BackupAssets] is for photo backup.
+@DataClassName('WatchedFileRow')
+class WatchedFiles extends Table {
+  TextColumn get ruleId => text()();
+  TextColumn get documentId => text()();
+  IntColumn get size => integer()();
+  DateTimeColumn get modifiedAt => dateTime()();
+  TextColumn get state => textEnum<WatchedFileState>()();
+
+  /// Drive file holding the document, once uploaded or found already there.
+  TextColumn get fileId => text().nullable()();
+
+  /// The queued upload, so a restart can tell a transfer still running from
+  /// one that is gone.
+  TextColumn get transferId => text().nullable()();
+  IntColumn get failures => integer().withDefault(const Constant(0))();
+  DateTimeColumn get updatedAt => dateTime()();
+
+  @override
+  Set<Column> get primaryKey => {ruleId, documentId};
+}

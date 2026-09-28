@@ -136,6 +136,51 @@ void main() {
     expect(await positions(), isEmpty);
   });
 
+  test('watched folders outlast a rebuilt index and go on sign-out', () async {
+    await db.into(db.watchedFolders).insert(
+      WatchedFoldersCompanion.insert(
+        id: 'bank',
+        treeUri: 'content://com.android.externalstorage.documents/tree/'
+            'primary%3ADownload%2FBank',
+        label: 'Bank',
+        filter: WatchFilter.documents,
+        createdAt: now,
+      ),
+    );
+    await db.into(db.watchedFiles).insert(
+      WatchedFilesCompanion.insert(
+        ruleId: 'bank',
+        documentId: 'primary:Download/Bank/statement.pdf',
+        size: 3,
+        modifiedAt: now,
+        state: WatchedFileState.done,
+        fileId: const Value('a'),
+        updatedAt: now,
+      ),
+    );
+    Future<List<WatchedFolderRow>> rules() => db.select(db.watchedFolders).get();
+    Future<List<WatchedFileRow>> ledger() => db.select(db.watchedFiles).get();
+
+    final rule = (await rules()).single;
+    expect(rule.filter, WatchFilter.documents);
+    expect(rule.subfolders, isTrue);
+    expect(rule.destinationId, isNull);
+    expect(rule.checkedAt, isNull);
+    final entry = (await ledger()).single;
+    expect(entry.state, WatchedFileState.done);
+    expect(entry.fileId, 'a');
+    expect(entry.transferId, isNull);
+    expect(entry.failures, 0);
+
+    await db.clearIndex();
+    expect(await rules(), hasLength(1));
+    expect(await ledger(), hasLength(1));
+
+    await db.clearAll();
+    expect(await rules(), isEmpty);
+    expect(await ledger(), isEmpty);
+  });
+
   test('a length learned on this phone survives a caption without one', () async {
     await db.upsertFilePart(file('clip'), part('clip', 0, 10));
     await db.updateFile('clip', const DriveFilesCompanion(durationSeconds: Value(84)));
@@ -160,7 +205,7 @@ void main() {
       file('c').copyWith(takenAt: Value(DateTime(2026, 9, 20))),
       part('c', 0, 12),
     );
-    expect(db.schemaVersion, 8);
+    expect(db.schemaVersion, 9);
 
     await db.recordOpen('a');
     expect((await db.watchRecentOpens().first).map((o) => o.$1.id), ['a']);

@@ -63,6 +63,8 @@ void main() {
     expect(folder.starred, isFalse);
     expect(await db.select(db.fileOpens).get(), isEmpty);
     expect(await db.select(db.playPositions).get(), isEmpty);
+    expect(await db.select(db.watchedFolders).get(), isEmpty);
+    expect(await db.select(db.watchedFiles).get(), isEmpty);
   });
 
   // Versions 4 to 6 kept the keys they didn't know in manifest_extra, so a
@@ -230,6 +232,54 @@ void main() {
           .write(const BackupAssetsCompanion(state: Value(BackupAssetState.removed)));
       expect((await db.backupAssetMap())['kept']!.state, BackupAssetState.removed);
       expect(await db.watchBackedUpCount().first, 0);
+    });
+  }
+
+  // Watched folders are new at version 9 and belong to this phone, so no
+  // earlier version has anything to bring across: both tables arrive empty
+  // and take a rule with its ledger, defaults included.
+  for (final from in GeneratedHelper.versions.where((v) => v < latest)) {
+    test('version $from arrives with no watched folders and takes one', () async {
+      final db = AppDatabase(await verifier.startAt(from));
+      addTearDown(db.close);
+      await verifier.migrateAndValidate(db, latest);
+
+      expect(await db.select(db.watchedFolders).get(), isEmpty);
+      expect(await db.select(db.watchedFiles).get(), isEmpty);
+
+      await db.into(db.watchedFolders).insert(
+        WatchedFoldersCompanion.insert(
+          id: 'bank',
+          treeUri: 'content://com.android.externalstorage.documents/tree/'
+              'primary%3ADownload%2FBank',
+          label: 'Bank',
+          filter: WatchFilter.documents,
+          createdAt: DateTime(2026, 9, 28),
+        ),
+      );
+      await db.into(db.watchedFiles).insert(
+        WatchedFilesCompanion.insert(
+          ruleId: 'bank',
+          documentId: 'primary:Download/Bank/statement.pdf',
+          size: 3,
+          modifiedAt: DateTime(2026, 9, 27),
+          state: WatchedFileState.pending,
+          transferId: const Value('t'),
+          updatedAt: DateTime(2026, 9, 28),
+        ),
+      );
+
+      final rule = (await db.select(db.watchedFolders).get()).single;
+      expect(rule.label, 'Bank');
+      expect(rule.filter, WatchFilter.documents);
+      expect(rule.subfolders, isTrue);
+      expect(rule.destinationId, isNull);
+      expect(rule.checkedAt, isNull);
+      final entry = (await db.select(db.watchedFiles).get()).single;
+      expect(entry.state, WatchedFileState.pending);
+      expect(entry.transferId, 't');
+      expect(entry.fileId, isNull);
+      expect(entry.failures, 0);
     });
   }
 }

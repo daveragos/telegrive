@@ -118,7 +118,7 @@ void main() {
     addTearDown(() => dir.delete(recursive: true));
     final file = File('${dir.path}/telegrive.sqlite');
 
-    // Version 1 is today's schema without what versions 2 to 8 added.
+    // Version 1 is today's schema without what versions 2 to 9 added.
     var db = AppDatabase(NativeDatabase(file));
     await db.allTransfers();
     for (final statement in [
@@ -147,6 +147,8 @@ void main() {
       'ALTER TABLE transfers DROP COLUMN source_chat_id',
       'ALTER TABLE transfers DROP COLUMN source_message_id',
       'ALTER TABLE drive_files DROP COLUMN adopted',
+      'DROP TABLE watched_folders',
+      'DROP TABLE watched_files',
       'PRAGMA user_version = 1',
     ]) {
       await db.customStatement(statement);
@@ -182,6 +184,8 @@ void main() {
     expect(await db.watchAlbums().first, isEmpty);
     expect(await db.select(db.fileOpens).get(), isEmpty);
     expect(await db.select(db.playPositions).get(), isEmpty);
+    expect(await db.select(db.watchedFolders).get(), isEmpty);
+    expect(await db.select(db.watchedFiles).get(), isEmpty);
 
     await db.saveTransfer(
       TransferRow(
