@@ -41,7 +41,8 @@ class MainActivity : FlutterFragmentActivity() {
 
     /**
      * What other apps shared in (cache copies, gallery originals, or files
-     * with no room to copy) until Dart takes them.
+     * with no room to copy), and captures that came back with no Dart call
+     * waiting, until Dart takes them.
      */
     private val pendingShares = mutableListOf<Map<String, Any>>()
     private var shareChannel: MethodChannel? = null
@@ -53,13 +54,33 @@ class MainActivity : FlutterFragmentActivity() {
     /** Follows the default network while Dart listens on telegrive/network. */
     private var networkWatcher: NetworkWatcher? = null
 
+    /**
+     * The scanner, the camera and the folder picker come back as activity
+     * results, and Android only registers for those before the activity is
+     * started. Both channels are created at the top of onCreate, ahead of
+     * super.onCreate: a recreated activity re-attaches its Flutter fragment
+     * in there, which runs configureFlutterEngine, and that attaches them.
+     * They are created in the same order every time, because a result that
+     * outlives the process finds its launcher by that order.
+     */
+    private lateinit var capture: CaptureChannel
+    private lateinit var folders: FoldersChannel
+
     override fun onCreate(savedInstanceState: Bundle?) {
+        capture = CaptureChannel(this, io, main) { addShared(listOf(it)) }
+        folders = FoldersChannel(this, io, main)
         super.onCreate(savedInstanceState)
+        capture.restoreState(savedInstanceState)
         // A recreated activity has already handled its intent.
         if (savedInstanceState == null) {
             receiveShare(intent)
             receiveLink(intent)
         }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        capture.saveState(outState)
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -89,6 +110,8 @@ class MainActivity : FlutterFragmentActivity() {
                 }
             }
         }
+        capture.attach(messenger)
+        folders.attach(messenger)
         MethodChannel(messenger, "telegrive/security").setMethodCallHandler { call, result ->
             when (call.method) {
                 "setPrivateRecents" -> {
@@ -390,9 +413,18 @@ class MainActivity : FlutterFragmentActivity() {
             } else {
                 listOfNotNull(saveNote(text!!, intent.getStringExtra(Intent.EXTRA_SUBJECT)))
             }
-            synchronized(pendingShares) { pendingShares.addAll(copied) }
-            main.post { shareChannel?.invokeMethod("sharedAvailable", null) }
+            addShared(copied)
         }
+    }
+
+    /**
+     * Queues files for Dart to take and says so: what other apps shared in,
+     * and a capture whose Dart call died with its engine, which then arrives
+     * through the same Save to Telegrive sheet.
+     */
+    private fun addShared(items: List<Map<String, Any>>) {
+        synchronized(pendingShares) { pendingShares.addAll(items) }
+        main.post { shareChannel?.invokeMethod("sharedAvailable", null) }
     }
 
     /** Keeps a tapped proxy link for Dart, which asks before connecting through it. */
