@@ -847,6 +847,21 @@ class $DriveFilesTable extends DriveFiles
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _adoptedMeta = const VerificationMeta(
+    'adopted',
+  );
+  @override
+  late final GeneratedColumn<bool> adopted = GeneratedColumn<bool>(
+    'adopted',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("adopted" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -868,6 +883,7 @@ class $DriveFilesTable extends DriveFiles
     manifestExtra,
     durationSeconds,
     replacedBy,
+    adopted,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -1013,6 +1029,12 @@ class $DriveFilesTable extends DriveFiles
         replacedBy.isAcceptableOrUnknown(data['replaced_by']!, _replacedByMeta),
       );
     }
+    if (data.containsKey('adopted')) {
+      context.handle(
+        _adoptedMeta,
+        adopted.isAcceptableOrUnknown(data['adopted']!, _adoptedMeta),
+      );
+    }
     return context;
   }
 
@@ -1100,6 +1122,10 @@ class $DriveFilesTable extends DriveFiles
         DriftSqlType.string,
         data['${effectivePrefix}replaced_by'],
       ),
+      adopted: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}adopted'],
+      )!,
     );
   }
 
@@ -1151,6 +1177,10 @@ class FileRow extends DataClass implements Insertable<FileRow> {
   /// Id of the file that took this one's place when Replace moved it to the
   /// trash. Only meaningful while [trashedAt] is set.
   final String? replacedBy;
+
+  /// Came into the channel without a manifest (forwarded, or sent from
+  /// another Telegram app); lives at the root until filed.
+  final bool adopted;
   const FileRow({
     required this.id,
     this.folderId,
@@ -1171,6 +1201,7 @@ class FileRow extends DataClass implements Insertable<FileRow> {
     this.manifestExtra,
     this.durationSeconds,
     this.replacedBy,
+    required this.adopted,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -1214,6 +1245,7 @@ class FileRow extends DataClass implements Insertable<FileRow> {
     if (!nullToAbsent || replacedBy != null) {
       map['replaced_by'] = Variable<String>(replacedBy);
     }
+    map['adopted'] = Variable<bool>(adopted);
     return map;
   }
 
@@ -1254,6 +1286,7 @@ class FileRow extends DataClass implements Insertable<FileRow> {
       replacedBy: replacedBy == null && nullToAbsent
           ? const Value.absent()
           : Value(replacedBy),
+      adopted: Value(adopted),
     );
   }
 
@@ -1284,6 +1317,7 @@ class FileRow extends DataClass implements Insertable<FileRow> {
       manifestExtra: serializer.fromJson<String?>(json['manifestExtra']),
       durationSeconds: serializer.fromJson<int?>(json['durationSeconds']),
       replacedBy: serializer.fromJson<String?>(json['replacedBy']),
+      adopted: serializer.fromJson<bool>(json['adopted']),
     );
   }
   @override
@@ -1311,6 +1345,7 @@ class FileRow extends DataClass implements Insertable<FileRow> {
       'manifestExtra': serializer.toJson<String?>(manifestExtra),
       'durationSeconds': serializer.toJson<int?>(durationSeconds),
       'replacedBy': serializer.toJson<String?>(replacedBy),
+      'adopted': serializer.toJson<bool>(adopted),
     };
   }
 
@@ -1334,6 +1369,7 @@ class FileRow extends DataClass implements Insertable<FileRow> {
     Value<String?> manifestExtra = const Value.absent(),
     Value<int?> durationSeconds = const Value.absent(),
     Value<String?> replacedBy = const Value.absent(),
+    bool? adopted,
   }) => FileRow(
     id: id ?? this.id,
     folderId: folderId.present ? folderId.value : this.folderId,
@@ -1362,6 +1398,7 @@ class FileRow extends DataClass implements Insertable<FileRow> {
         ? durationSeconds.value
         : this.durationSeconds,
     replacedBy: replacedBy.present ? replacedBy.value : this.replacedBy,
+    adopted: adopted ?? this.adopted,
   );
   FileRow copyWithCompanion(DriveFilesCompanion data) {
     return FileRow(
@@ -1398,6 +1435,7 @@ class FileRow extends DataClass implements Insertable<FileRow> {
       replacedBy: data.replacedBy.present
           ? data.replacedBy.value
           : this.replacedBy,
+      adopted: data.adopted.present ? data.adopted.value : this.adopted,
     );
   }
 
@@ -1422,7 +1460,8 @@ class FileRow extends DataClass implements Insertable<FileRow> {
           ..write('hidden: $hidden, ')
           ..write('manifestExtra: $manifestExtra, ')
           ..write('durationSeconds: $durationSeconds, ')
-          ..write('replacedBy: $replacedBy')
+          ..write('replacedBy: $replacedBy, ')
+          ..write('adopted: $adopted')
           ..write(')'))
         .toString();
   }
@@ -1448,6 +1487,7 @@ class FileRow extends DataClass implements Insertable<FileRow> {
     manifestExtra,
     durationSeconds,
     replacedBy,
+    adopted,
   );
   @override
   bool operator ==(Object other) =>
@@ -1471,7 +1511,8 @@ class FileRow extends DataClass implements Insertable<FileRow> {
           other.hidden == this.hidden &&
           other.manifestExtra == this.manifestExtra &&
           other.durationSeconds == this.durationSeconds &&
-          other.replacedBy == this.replacedBy);
+          other.replacedBy == this.replacedBy &&
+          other.adopted == this.adopted);
 }
 
 class DriveFilesCompanion extends UpdateCompanion<FileRow> {
@@ -1494,6 +1535,7 @@ class DriveFilesCompanion extends UpdateCompanion<FileRow> {
   final Value<String?> manifestExtra;
   final Value<int?> durationSeconds;
   final Value<String?> replacedBy;
+  final Value<bool> adopted;
   final Value<int> rowid;
   const DriveFilesCompanion({
     this.id = const Value.absent(),
@@ -1515,6 +1557,7 @@ class DriveFilesCompanion extends UpdateCompanion<FileRow> {
     this.manifestExtra = const Value.absent(),
     this.durationSeconds = const Value.absent(),
     this.replacedBy = const Value.absent(),
+    this.adopted = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   DriveFilesCompanion.insert({
@@ -1537,6 +1580,7 @@ class DriveFilesCompanion extends UpdateCompanion<FileRow> {
     this.manifestExtra = const Value.absent(),
     this.durationSeconds = const Value.absent(),
     this.replacedBy = const Value.absent(),
+    this.adopted = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        name = Value(name),
@@ -1565,6 +1609,7 @@ class DriveFilesCompanion extends UpdateCompanion<FileRow> {
     Expression<String>? manifestExtra,
     Expression<int>? durationSeconds,
     Expression<String>? replacedBy,
+    Expression<bool>? adopted,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -1587,6 +1632,7 @@ class DriveFilesCompanion extends UpdateCompanion<FileRow> {
       if (manifestExtra != null) 'manifest_extra': manifestExtra,
       if (durationSeconds != null) 'duration_seconds': durationSeconds,
       if (replacedBy != null) 'replaced_by': replacedBy,
+      if (adopted != null) 'adopted': adopted,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -1611,6 +1657,7 @@ class DriveFilesCompanion extends UpdateCompanion<FileRow> {
     Value<String?>? manifestExtra,
     Value<int?>? durationSeconds,
     Value<String?>? replacedBy,
+    Value<bool>? adopted,
     Value<int>? rowid,
   }) {
     return DriveFilesCompanion(
@@ -1633,6 +1680,7 @@ class DriveFilesCompanion extends UpdateCompanion<FileRow> {
       manifestExtra: manifestExtra ?? this.manifestExtra,
       durationSeconds: durationSeconds ?? this.durationSeconds,
       replacedBy: replacedBy ?? this.replacedBy,
+      adopted: adopted ?? this.adopted,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -1699,6 +1747,9 @@ class DriveFilesCompanion extends UpdateCompanion<FileRow> {
     if (replacedBy.present) {
       map['replaced_by'] = Variable<String>(replacedBy.value);
     }
+    if (adopted.present) {
+      map['adopted'] = Variable<bool>(adopted.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -1727,6 +1778,7 @@ class DriveFilesCompanion extends UpdateCompanion<FileRow> {
           ..write('manifestExtra: $manifestExtra, ')
           ..write('durationSeconds: $durationSeconds, ')
           ..write('replacedBy: $replacedBy, ')
+          ..write('adopted: $adopted, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -2387,6 +2439,28 @@ class $TransfersTable extends Transfers
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _sourceChatIdMeta = const VerificationMeta(
+    'sourceChatId',
+  );
+  @override
+  late final GeneratedColumn<int> sourceChatId = GeneratedColumn<int>(
+    'source_chat_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _sourceMessageIdMeta = const VerificationMeta(
+    'sourceMessageId',
+  );
+  @override
+  late final GeneratedColumn<int> sourceMessageId = GeneratedColumn<int>(
+    'source_message_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -2415,6 +2489,8 @@ class $TransfersTable extends Transfers
     wifiOnly,
     durationSeconds,
     replacesFileId,
+    sourceChatId,
+    sourceMessageId,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -2581,6 +2657,24 @@ class $TransfersTable extends Transfers
         ),
       );
     }
+    if (data.containsKey('source_chat_id')) {
+      context.handle(
+        _sourceChatIdMeta,
+        sourceChatId.isAcceptableOrUnknown(
+          data['source_chat_id']!,
+          _sourceChatIdMeta,
+        ),
+      );
+    }
+    if (data.containsKey('source_message_id')) {
+      context.handle(
+        _sourceMessageIdMeta,
+        sourceMessageId.isAcceptableOrUnknown(
+          data['source_message_id']!,
+          _sourceMessageIdMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -2702,6 +2796,14 @@ class $TransfersTable extends Transfers
         DriftSqlType.string,
         data['${effectivePrefix}replaces_file_id'],
       ),
+      sourceChatId: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}source_chat_id'],
+      ),
+      sourceMessageId: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}source_message_id'],
+      ),
     );
   }
 
@@ -2754,7 +2856,9 @@ class TransferRow extends DataClass implements Insertable<TransferRow> {
   /// Camera-roll asset a backup upload came from.
   final String? assetId;
 
-  /// Capture time carried into the manifest (backup uploads).
+  /// Capture time carried into the manifest (backup uploads). For a copy
+  /// from a chat, the original message's date, which becomes the manifest's
+  /// created date and, for photos and videos, its capture time.
   final DateTime? takenAt;
 
   /// Small JPEG sent as the document's thumbnail, so videos get previews.
@@ -2778,6 +2882,13 @@ class TransferRow extends DataClass implements Insertable<TransferRow> {
   /// Drive file this upload replaces: once it lands, that one goes to the
   /// trash pointing back at the new one.
   final String? replacesFileId;
+
+  /// Chat holding the message a copy from a chat is made from.
+  final int? sourceChatId;
+
+  /// That message's id in [sourceChatId], so the copy can be made again, or
+  /// found half-done, after a restart.
+  final int? sourceMessageId;
   const TransferRow({
     required this.id,
     required this.kind,
@@ -2805,6 +2916,8 @@ class TransferRow extends DataClass implements Insertable<TransferRow> {
     required this.wifiOnly,
     this.durationSeconds,
     this.replacesFileId,
+    this.sourceChatId,
+    this.sourceMessageId,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -2873,6 +2986,12 @@ class TransferRow extends DataClass implements Insertable<TransferRow> {
     if (!nullToAbsent || replacesFileId != null) {
       map['replaces_file_id'] = Variable<String>(replacesFileId);
     }
+    if (!nullToAbsent || sourceChatId != null) {
+      map['source_chat_id'] = Variable<int>(sourceChatId);
+    }
+    if (!nullToAbsent || sourceMessageId != null) {
+      map['source_message_id'] = Variable<int>(sourceMessageId);
+    }
     return map;
   }
 
@@ -2928,6 +3047,12 @@ class TransferRow extends DataClass implements Insertable<TransferRow> {
       replacesFileId: replacesFileId == null && nullToAbsent
           ? const Value.absent()
           : Value(replacesFileId),
+      sourceChatId: sourceChatId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(sourceChatId),
+      sourceMessageId: sourceMessageId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(sourceMessageId),
     );
   }
 
@@ -2971,6 +3096,8 @@ class TransferRow extends DataClass implements Insertable<TransferRow> {
       wifiOnly: serializer.fromJson<bool>(json['wifiOnly']),
       durationSeconds: serializer.fromJson<int?>(json['durationSeconds']),
       replacesFileId: serializer.fromJson<String?>(json['replacesFileId']),
+      sourceChatId: serializer.fromJson<int?>(json['sourceChatId']),
+      sourceMessageId: serializer.fromJson<int?>(json['sourceMessageId']),
     );
   }
   @override
@@ -3011,6 +3138,8 @@ class TransferRow extends DataClass implements Insertable<TransferRow> {
       'wifiOnly': serializer.toJson<bool>(wifiOnly),
       'durationSeconds': serializer.toJson<int?>(durationSeconds),
       'replacesFileId': serializer.toJson<String?>(replacesFileId),
+      'sourceChatId': serializer.toJson<int?>(sourceChatId),
+      'sourceMessageId': serializer.toJson<int?>(sourceMessageId),
     };
   }
 
@@ -3041,6 +3170,8 @@ class TransferRow extends DataClass implements Insertable<TransferRow> {
     bool? wifiOnly,
     Value<int?> durationSeconds = const Value.absent(),
     Value<String?> replacesFileId = const Value.absent(),
+    Value<int?> sourceChatId = const Value.absent(),
+    Value<int?> sourceMessageId = const Value.absent(),
   }) => TransferRow(
     id: id ?? this.id,
     kind: kind ?? this.kind,
@@ -3074,6 +3205,10 @@ class TransferRow extends DataClass implements Insertable<TransferRow> {
     replacesFileId: replacesFileId.present
         ? replacesFileId.value
         : this.replacesFileId,
+    sourceChatId: sourceChatId.present ? sourceChatId.value : this.sourceChatId,
+    sourceMessageId: sourceMessageId.present
+        ? sourceMessageId.value
+        : this.sourceMessageId,
   );
   TransferRow copyWithCompanion(TransfersCompanion data) {
     return TransferRow(
@@ -3123,6 +3258,12 @@ class TransferRow extends DataClass implements Insertable<TransferRow> {
       replacesFileId: data.replacesFileId.present
           ? data.replacesFileId.value
           : this.replacesFileId,
+      sourceChatId: data.sourceChatId.present
+          ? data.sourceChatId.value
+          : this.sourceChatId,
+      sourceMessageId: data.sourceMessageId.present
+          ? data.sourceMessageId.value
+          : this.sourceMessageId,
     );
   }
 
@@ -3154,7 +3295,9 @@ class TransferRow extends DataClass implements Insertable<TransferRow> {
           ..write('saveFolder: $saveFolder, ')
           ..write('wifiOnly: $wifiOnly, ')
           ..write('durationSeconds: $durationSeconds, ')
-          ..write('replacesFileId: $replacesFileId')
+          ..write('replacesFileId: $replacesFileId, ')
+          ..write('sourceChatId: $sourceChatId, ')
+          ..write('sourceMessageId: $sourceMessageId')
           ..write(')'))
         .toString();
   }
@@ -3187,6 +3330,8 @@ class TransferRow extends DataClass implements Insertable<TransferRow> {
     wifiOnly,
     durationSeconds,
     replacesFileId,
+    sourceChatId,
+    sourceMessageId,
   ]);
   @override
   bool operator ==(Object other) =>
@@ -3217,7 +3362,9 @@ class TransferRow extends DataClass implements Insertable<TransferRow> {
           other.saveFolder == this.saveFolder &&
           other.wifiOnly == this.wifiOnly &&
           other.durationSeconds == this.durationSeconds &&
-          other.replacesFileId == this.replacesFileId);
+          other.replacesFileId == this.replacesFileId &&
+          other.sourceChatId == this.sourceChatId &&
+          other.sourceMessageId == this.sourceMessageId);
 }
 
 class TransfersCompanion extends UpdateCompanion<TransferRow> {
@@ -3247,6 +3394,8 @@ class TransfersCompanion extends UpdateCompanion<TransferRow> {
   final Value<bool> wifiOnly;
   final Value<int?> durationSeconds;
   final Value<String?> replacesFileId;
+  final Value<int?> sourceChatId;
+  final Value<int?> sourceMessageId;
   final Value<int> rowid;
   const TransfersCompanion({
     this.id = const Value.absent(),
@@ -3275,6 +3424,8 @@ class TransfersCompanion extends UpdateCompanion<TransferRow> {
     this.wifiOnly = const Value.absent(),
     this.durationSeconds = const Value.absent(),
     this.replacesFileId = const Value.absent(),
+    this.sourceChatId = const Value.absent(),
+    this.sourceMessageId = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   TransfersCompanion.insert({
@@ -3304,6 +3455,8 @@ class TransfersCompanion extends UpdateCompanion<TransferRow> {
     this.wifiOnly = const Value.absent(),
     this.durationSeconds = const Value.absent(),
     this.replacesFileId = const Value.absent(),
+    this.sourceChatId = const Value.absent(),
+    this.sourceMessageId = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        kind = Value(kind),
@@ -3340,6 +3493,8 @@ class TransfersCompanion extends UpdateCompanion<TransferRow> {
     Expression<bool>? wifiOnly,
     Expression<int>? durationSeconds,
     Expression<String>? replacesFileId,
+    Expression<int>? sourceChatId,
+    Expression<int>? sourceMessageId,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -3369,6 +3524,8 @@ class TransfersCompanion extends UpdateCompanion<TransferRow> {
       if (wifiOnly != null) 'wifi_only': wifiOnly,
       if (durationSeconds != null) 'duration_seconds': durationSeconds,
       if (replacesFileId != null) 'replaces_file_id': replacesFileId,
+      if (sourceChatId != null) 'source_chat_id': sourceChatId,
+      if (sourceMessageId != null) 'source_message_id': sourceMessageId,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -3400,6 +3557,8 @@ class TransfersCompanion extends UpdateCompanion<TransferRow> {
     Value<bool>? wifiOnly,
     Value<int?>? durationSeconds,
     Value<String?>? replacesFileId,
+    Value<int?>? sourceChatId,
+    Value<int?>? sourceMessageId,
     Value<int>? rowid,
   }) {
     return TransfersCompanion(
@@ -3429,6 +3588,8 @@ class TransfersCompanion extends UpdateCompanion<TransferRow> {
       wifiOnly: wifiOnly ?? this.wifiOnly,
       durationSeconds: durationSeconds ?? this.durationSeconds,
       replacesFileId: replacesFileId ?? this.replacesFileId,
+      sourceChatId: sourceChatId ?? this.sourceChatId,
+      sourceMessageId: sourceMessageId ?? this.sourceMessageId,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -3522,6 +3683,12 @@ class TransfersCompanion extends UpdateCompanion<TransferRow> {
     if (replacesFileId.present) {
       map['replaces_file_id'] = Variable<String>(replacesFileId.value);
     }
+    if (sourceChatId.present) {
+      map['source_chat_id'] = Variable<int>(sourceChatId.value);
+    }
+    if (sourceMessageId.present) {
+      map['source_message_id'] = Variable<int>(sourceMessageId.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -3557,6 +3724,8 @@ class TransfersCompanion extends UpdateCompanion<TransferRow> {
           ..write('wifiOnly: $wifiOnly, ')
           ..write('durationSeconds: $durationSeconds, ')
           ..write('replacesFileId: $replacesFileId, ')
+          ..write('sourceChatId: $sourceChatId, ')
+          ..write('sourceMessageId: $sourceMessageId, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -6291,6 +6460,7 @@ typedef $$DriveFilesTableCreateCompanionBuilder = DriveFilesCompanion Function({
   Value<String?> manifestExtra,
   Value<int?> durationSeconds,
   Value<String?> replacedBy,
+  Value<bool> adopted,
   Value<int> rowid,
 });
 typedef $$DriveFilesTableUpdateCompanionBuilder = DriveFilesCompanion Function({
@@ -6313,6 +6483,7 @@ typedef $$DriveFilesTableUpdateCompanionBuilder = DriveFilesCompanion Function({
   Value<String?> manifestExtra,
   Value<int?> durationSeconds,
   Value<String?> replacedBy,
+  Value<bool> adopted,
   Value<int> rowid,
 });
 
@@ -6420,6 +6591,11 @@ class $$DriveFilesTableFilterComposer
     column: $table.replacedBy,
     builder: (column) => ColumnFilters(column),
   );
+
+  ColumnFilters<bool> get adopted => $composableBuilder(
+    column: $table.adopted,
+    builder: (column) => ColumnFilters(column),
+  );
 }
 
 class $$DriveFilesTableOrderingComposer
@@ -6525,6 +6701,11 @@ class $$DriveFilesTableOrderingComposer
     column: $table.replacedBy,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<bool> get adopted => $composableBuilder(
+    column: $table.adopted,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$DriveFilesTableAnnotationComposer
@@ -6606,6 +6787,9 @@ class $$DriveFilesTableAnnotationComposer
     column: $table.replacedBy,
     builder: (column) => column,
   );
+
+  GeneratedColumn<bool> get adopted =>
+      $composableBuilder(column: $table.adopted, builder: (column) => column);
 }
 
 class $$DriveFilesTableTableManager
@@ -6655,6 +6839,7 @@ class $$DriveFilesTableTableManager
                 Value<String?> manifestExtra = const Value.absent(),
                 Value<int?> durationSeconds = const Value.absent(),
                 Value<String?> replacedBy = const Value.absent(),
+                Value<bool> adopted = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => DriveFilesCompanion(
                 id: id,
@@ -6676,6 +6861,7 @@ class $$DriveFilesTableTableManager
                 manifestExtra: manifestExtra,
                 durationSeconds: durationSeconds,
                 replacedBy: replacedBy,
+                adopted: adopted,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -6699,6 +6885,7 @@ class $$DriveFilesTableTableManager
                 Value<String?> manifestExtra = const Value.absent(),
                 Value<int?> durationSeconds = const Value.absent(),
                 Value<String?> replacedBy = const Value.absent(),
+                Value<bool> adopted = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => DriveFilesCompanion.insert(
                 id: id,
@@ -6720,6 +6907,7 @@ class $$DriveFilesTableTableManager
                 manifestExtra: manifestExtra,
                 durationSeconds: durationSeconds,
                 replacedBy: replacedBy,
+                adopted: adopted,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
@@ -6981,6 +7169,8 @@ typedef $$TransfersTableCreateCompanionBuilder = TransfersCompanion Function({
   Value<bool> wifiOnly,
   Value<int?> durationSeconds,
   Value<String?> replacesFileId,
+  Value<int?> sourceChatId,
+  Value<int?> sourceMessageId,
   Value<int> rowid,
 });
 typedef $$TransfersTableUpdateCompanionBuilder = TransfersCompanion Function({
@@ -7010,6 +7200,8 @@ typedef $$TransfersTableUpdateCompanionBuilder = TransfersCompanion Function({
   Value<bool> wifiOnly,
   Value<int?> durationSeconds,
   Value<String?> replacesFileId,
+  Value<int?> sourceChatId,
+  Value<int?> sourceMessageId,
   Value<int> rowid,
 });
 
@@ -7155,6 +7347,16 @@ class $$TransfersTableFilterComposer
     column: $table.replacesFileId,
     builder: (column) => ColumnFilters(column),
   );
+
+  ColumnFilters<int> get sourceChatId => $composableBuilder(
+    column: $table.sourceChatId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get sourceMessageId => $composableBuilder(
+    column: $table.sourceMessageId,
+    builder: (column) => ColumnFilters(column),
+  );
 }
 
 class $$TransfersTableOrderingComposer
@@ -7295,6 +7497,16 @@ class $$TransfersTableOrderingComposer
     column: $table.replacesFileId,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<int> get sourceChatId => $composableBuilder(
+    column: $table.sourceChatId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get sourceMessageId => $composableBuilder(
+    column: $table.sourceMessageId,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$TransfersTableAnnotationComposer
@@ -7403,6 +7615,16 @@ class $$TransfersTableAnnotationComposer
     column: $table.replacesFileId,
     builder: (column) => column,
   );
+
+  GeneratedColumn<int> get sourceChatId => $composableBuilder(
+    column: $table.sourceChatId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get sourceMessageId => $composableBuilder(
+    column: $table.sourceMessageId,
+    builder: (column) => column,
+  );
 }
 
 class $$TransfersTableTableManager
@@ -7462,6 +7684,8 @@ class $$TransfersTableTableManager
                 Value<bool> wifiOnly = const Value.absent(),
                 Value<int?> durationSeconds = const Value.absent(),
                 Value<String?> replacesFileId = const Value.absent(),
+                Value<int?> sourceChatId = const Value.absent(),
+                Value<int?> sourceMessageId = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => TransfersCompanion(
                 id: id,
@@ -7490,6 +7714,8 @@ class $$TransfersTableTableManager
                 wifiOnly: wifiOnly,
                 durationSeconds: durationSeconds,
                 replacesFileId: replacesFileId,
+                sourceChatId: sourceChatId,
+                sourceMessageId: sourceMessageId,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -7520,6 +7746,8 @@ class $$TransfersTableTableManager
                 Value<bool> wifiOnly = const Value.absent(),
                 Value<int?> durationSeconds = const Value.absent(),
                 Value<String?> replacesFileId = const Value.absent(),
+                Value<int?> sourceChatId = const Value.absent(),
+                Value<int?> sourceMessageId = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => TransfersCompanion.insert(
                 id: id,
@@ -7548,6 +7776,8 @@ class $$TransfersTableTableManager
                 wifiOnly: wifiOnly,
                 durationSeconds: durationSeconds,
                 replacesFileId: replacesFileId,
+                sourceChatId: sourceChatId,
+                sourceMessageId: sourceMessageId,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0

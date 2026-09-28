@@ -57,6 +57,7 @@ void main() {
     expect(file.manifestExtra, isNull);
     expect(file.durationSeconds, isNull);
     expect(file.replacedBy, isNull);
+    expect(file.adopted, isFalse);
     final folder = (await db.folderById('docs'))!;
     expect(folder.manifestExtra, isNull);
     expect(folder.starred, isFalse);
@@ -131,20 +132,51 @@ void main() {
 
       final row = (await db.allTransfers()).single;
       expect(row.status, TransferStatus.queued);
+      expect(row.origin, TransferOrigin.manual);
       expect(row.wifiOnly, isFalse);
       expect(row.durationSeconds, isNull);
       expect(row.replacesFileId, isNull);
+      expect(row.sourceChatId, isNull);
+      expect(row.sourceMessageId, isNull);
       await db.saveTransfer(
         row.copyWith(
+          origin: TransferOrigin.fromChat,
           wifiOnly: true,
           durationSeconds: const Value(84),
           replacesFileId: const Value('old'),
+          sourceChatId: const Value(777000),
+          sourceMessageId: const Value(42),
         ),
       );
       final saved = (await db.allTransfers()).single;
+      expect(saved.origin, TransferOrigin.fromChat);
       expect(saved.wifiOnly, isTrue);
       expect(saved.durationSeconds, 84);
       expect(saved.replacesFileId, 'old');
+      expect(saved.sourceChatId, 777000);
+      expect(saved.sourceMessageId, 42);
+    });
+  }
+
+  // Nothing before version 8 knew which files came in without a manifest,
+  // so every row arrives unadopted; the next full read sets the flag.
+  for (final from in GeneratedHelper.versions.where((v) => v < latest)) {
+    test('a file indexed at version $from is not adopted until a read says so',
+        () async {
+      final schema = await verifier.schemaAt(from);
+      schema.rawDatabase.execute(
+        'INSERT INTO drive_files (id, name, mime_type, kind, size, created_at, '
+        'modified_at, part_count, parts_present) '
+        "VALUES ('fwd', 'photo_2231.jpg', 'image/jpeg', 'image', 3, 0, 0, 1, 1)",
+      );
+
+      final db = AppDatabase(schema.newConnection());
+      addTearDown(db.close);
+      await verifier.migrateAndValidate(db, latest);
+
+      expect((await db.fileById('fwd'))!.adopted, isFalse);
+      await db.updateFile('fwd', const DriveFilesCompanion(adopted: Value(true)));
+      expect((await db.fileById('fwd'))!.adopted, isTrue);
     });
   }
 
@@ -180,6 +212,24 @@ void main() {
       final stuck = (await db.backupAssetMap())['stuck']!;
       expect(stuck.state, BackupAssetState.skipped);
       expect(stuck.reason, 'Telegram took too long to answer.');
+
+      await (db.update(db.backupAssets)
+            ..where((a) => a.assetId.equals('kept')))
+          .write(
+            const BackupAssetsCompanion(
+              state: Value(BackupAssetState.missing),
+              fileId: Value(null),
+            ),
+          );
+      final kept = (await db.backupAssetMap())['kept']!;
+      expect(kept.state, BackupAssetState.missing);
+      expect(kept.fileId, isNull);
+
+      await (db.update(db.backupAssets)
+            ..where((a) => a.state.equalsValue(BackupAssetState.missing)))
+          .write(const BackupAssetsCompanion(state: Value(BackupAssetState.removed)));
+      expect((await db.backupAssetMap())['kept']!.state, BackupAssetState.removed);
+      expect(await db.watchBackedUpCount().first, 0);
     });
   }
 }

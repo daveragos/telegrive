@@ -118,7 +118,7 @@ void main() {
     addTearDown(() => dir.delete(recursive: true));
     final file = File('${dir.path}/telegrive.sqlite');
 
-    // Version 1 is today's schema without what versions 2 to 7 added.
+    // Version 1 is today's schema without what versions 2 to 8 added.
     var db = AppDatabase(NativeDatabase(file));
     await db.allTransfers();
     for (final statement in [
@@ -144,6 +144,9 @@ void main() {
       'ALTER TABLE drive_files DROP COLUMN replaced_by',
       'ALTER TABLE transfers DROP COLUMN replaces_file_id',
       'DROP TABLE play_positions',
+      'ALTER TABLE transfers DROP COLUMN source_chat_id',
+      'ALTER TABLE transfers DROP COLUMN source_message_id',
+      'ALTER TABLE drive_files DROP COLUMN adopted',
       'PRAGMA user_version = 1',
     ]) {
       await db.customStatement(statement);
@@ -179,6 +182,44 @@ void main() {
     expect(await db.watchAlbums().first, isEmpty);
     expect(await db.select(db.fileOpens).get(), isEmpty);
     expect(await db.select(db.playPositions).get(), isEmpty);
+
+    await db.saveTransfer(
+      TransferRow(
+        id: 'c',
+        kind: TransferKind.upload,
+        status: TransferStatus.queued,
+        name: 'Contract.pdf',
+        mimeType: 'application/pdf',
+        fileId: 'g',
+        ownsSource: false,
+        wifiOnly: false,
+        totalBytes: 1,
+        doneBytes: 0,
+        partCount: 1,
+        completedParts: 0,
+        createdAt: DateTime(2026, 9, 26),
+        origin: TransferOrigin.fromChat,
+        sourceChatId: 777000,
+        sourceMessageId: 42,
+      ),
+    );
+    final copy = (await db.allTransfers()).firstWhere((r) => r.id == 'c');
+    expect(copy.origin, TransferOrigin.fromChat);
+    expect(copy.sourceChatId, 777000);
+    expect(copy.sourceMessageId, 42);
+
+    await db.into(db.driveFiles).insert(
+      DriveFilesCompanion.insert(
+        id: 'g',
+        name: 'Contract.pdf',
+        mimeType: 'application/pdf',
+        kind: FileKind.document,
+        size: 1,
+        createdAt: DateTime(2026, 9, 26),
+        modifiedAt: DateTime(2026, 9, 26),
+      ),
+    );
+    expect((await db.fileById('g'))!.adopted, isFalse);
   });
 
   group('DeviceStorage names', () {

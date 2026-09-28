@@ -79,7 +79,7 @@ class AppDatabase extends _$AppDatabase {
   }
 
   @override
-  int get schemaVersion => 7;
+  int get schemaVersion => 8;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -151,6 +151,11 @@ class AppDatabase extends _$AppDatabase {
           "WHERE json_type(manifest_extra, '\$.du') IS NOT NULL "
           "OR json_type(manifest_extra, '\$.rb') IS NOT NULL",
         );
+      }
+      if (from < 8) {
+        await m.addColumn(transfers, transfers.sourceChatId);
+        await m.addColumn(transfers, transfers.sourceMessageId);
+        await m.addColumn(driveFiles, driveFiles.adopted);
       }
     },
   );

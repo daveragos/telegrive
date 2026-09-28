@@ -79,6 +79,10 @@ class DriveFiles extends Table {
   /// trash. Only meaningful while [trashedAt] is set.
   TextColumn get replacedBy => text().nullable()();
 
+  /// Came into the channel without a manifest (forwarded, or sent from
+  /// another Telegram app); lives at the root until filed.
+  BoolColumn get adopted => boolean().withDefault(const Constant(false))();
+
   @override
   Set<Column> get primaryKey => {id};
 }
@@ -191,9 +195,19 @@ class FileParts extends Table {
 enum TransferKind { upload, download }
 
 /// Who asked for a transfer: the person, photo backup working through the
-/// camera roll, or a download to this phone (often the whole drive, on a new
-/// one). Backup and save transfers are shown as a group each, not one by one.
-enum TransferOrigin { manual, backup, save }
+/// camera roll, a download to this phone (often the whole drive, on a new
+/// one), or a copy of a message in another chat. Backup, save and copy
+/// transfers are shown as a group each, not one by one. New origins go at
+/// the end, since the name is what the row stores.
+enum TransferOrigin {
+  manual,
+  backup,
+  save,
+
+  /// A copy of a message in another chat, made by Telegram: nothing is
+  /// downloaded or uploaded.
+  fromChat,
+}
 
 /// Where a saved download ends up: a folder the phone's file manager shows,
 /// the photo gallery, or the app's own offline store.
@@ -253,7 +267,9 @@ class Transfers extends Table {
   /// Camera-roll asset a backup upload came from.
   TextColumn get assetId => text().nullable()();
 
-  /// Capture time carried into the manifest (backup uploads).
+  /// Capture time carried into the manifest (backup uploads). For a copy
+  /// from a chat, the original message's date, which becomes the manifest's
+  /// created date and, for photos and videos, its capture time.
   DateTimeColumn get takenAt => dateTime().nullable()();
 
   /// Small JPEG sent as the document's thumbnail, so videos get previews.
@@ -278,11 +294,34 @@ class Transfers extends Table {
   /// trash pointing back at the new one.
   TextColumn get replacesFileId => text().nullable()();
 
+  /// Chat holding the message a copy from a chat is made from.
+  IntColumn get sourceChatId => integer().nullable()();
+
+  /// That message's id in [sourceChatId], so the copy can be made again, or
+  /// found half-done, after a restart.
+  IntColumn get sourceMessageId => integer().nullable()();
+
   @override
   Set<Column> get primaryKey => {id};
 }
 
-enum BackupAssetState { done, failed, skipped }
+/// What photo backup has settled about a camera-roll asset. New states go
+/// at the end, since the name is what the row stores.
+enum BackupAssetState {
+  done,
+  failed,
+
+  /// Set aside by the person after failing, until they bring it back.
+  skipped,
+
+  /// Backed up once, but its file is no longer in the drive; waits for the
+  /// person to say whether it goes up again.
+  missing,
+
+  /// Deleted for good in Telegrive on this phone, or left out on purpose,
+  /// so it is never offered back.
+  removed,
+}
 
 /// Camera-roll assets photo backup has dealt with, keyed by the device's
 /// media id, so each photo goes up exactly once.
