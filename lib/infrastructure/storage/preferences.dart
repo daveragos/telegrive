@@ -207,6 +207,15 @@ class Preferences {
   bool get deletePhoneCopyToo => _prefs.getBool('delete_phone_copy_too') ?? false;
   Future<void> setDeletePhoneCopyToo(bool on) =>
       _prefs.setBool('delete_phone_copy_too', on);
+
+  /// The drive folders this phone last uploaded into, most recent first,
+  /// with '' for the root. Folder ids belong to one drive, so the list goes
+  /// when the drive leaves the phone.
+  List<String> get recentDestinations =>
+      _prefs.getStringList('recent_destinations') ?? const [];
+  Future<void> setRecentDestinations(List<String> ids) =>
+      _prefs.setStringList('recent_destinations', ids);
+  Future<void> clearRecentDestinations() => _prefs.remove('recent_destinations');
 }
 
 /// Preference keys the background worker reads without the rest of the app.

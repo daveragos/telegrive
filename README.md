@@ -120,6 +120,10 @@ phone number.
   the order they were taken. The chats you sent to last come first in the
   list.
 - **Share to Telegrive** from any app on Android, into the folder you pick.
+  Recent folders show up in the share sheet, so a tap sends a file
+  straight there, with Undo. The Save to Telegrive sheet starts on the
+  last folder you used and offers the others. While app lock is on, the
+  share sheet shows no folder names.
 - **Scan or snap into a folder.** New › Scan a document straightens and
   crops paper pages into a PDF on the phone; Take a photo puts the picture
   straight into the folder you are in, not your gallery. You name it once

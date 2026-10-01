@@ -15,10 +15,12 @@ class FolderChoice {
   final String name;
 }
 
-/// A browsable folder chooser, opened in [startIn].
+/// A browsable folder chooser, opened in [startIn]. Its button reads
+/// [actionLabel] followed by the folder on screen.
 Future<FolderChoice?> showFolderPicker(
   BuildContext context, {
   required String title,
+  String actionLabel = 'Move to',
   Set<String> excluded = const {},
   String? startIn,
 }) {
@@ -29,15 +31,26 @@ Future<FolderChoice?> showFolderPicker(
     useRootNavigator: true,
     builder: (_) => FractionallySizedBox(
       heightFactor: 0.85,
-      child: _FolderPicker(title: title, excluded: excluded, startIn: startIn),
+      child: _FolderPicker(
+        title: title,
+        actionLabel: actionLabel,
+        excluded: excluded,
+        startIn: startIn,
+      ),
     ),
   );
 }
 
 class _FolderPicker extends ConsumerStatefulWidget {
-  const _FolderPicker({required this.title, required this.excluded, this.startIn});
+  const _FolderPicker({
+    required this.title,
+    required this.actionLabel,
+    required this.excluded,
+    this.startIn,
+  });
 
   final String title;
+  final String actionLabel;
   final Set<String> excluded;
   final String? startIn;
 
@@ -133,7 +146,7 @@ class _FolderPickerState extends ConsumerState<_FolderPicker> {
                 onPressed: () =>
                     Navigator.of(context).pop(FolderChoice(_current, currentName)),
                 icon: const Icon(Icons.drive_file_move_rounded),
-                label: Text('Move to $currentName'),
+                label: Text('${widget.actionLabel} $currentName'),
               ),
             ),
           ),

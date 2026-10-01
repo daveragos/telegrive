@@ -14,6 +14,7 @@ class SharedFile {
     required this.name,
     required this.size,
     this.owned = true,
+    this.folderId,
   });
 
   factory SharedFile.fromMap(Map<Object?, Object?> map) => SharedFile(
@@ -21,6 +22,7 @@ class SharedFile {
     name: map['name']! as String,
     size: (map['size']! as num).toInt(),
     owned: map['owned'] as bool? ?? true,
+    folderId: map['folderId'] as String?,
   );
 
   /// The files in what the activity hands over that can be uploaded. One
@@ -37,6 +39,10 @@ class SharedFile {
   /// Whether [path] is Telegrive's own copy, which goes once it is uploaded
   /// or the share is cancelled. An original from the gallery never does.
   final bool owned;
+
+  /// The drive folder whose target in Android's share sheet it was shared
+  /// to, or null when it came through the plain Telegrive target.
+  final String? folderId;
 }
 
 /// "Share to Telegrive" from any app (Android). The activity copies what

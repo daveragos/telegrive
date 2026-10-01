@@ -15,6 +15,7 @@ import '../features/drive/data/telegram_wait.dart';
 import '../features/files/data/bulk_edits.dart';
 import '../features/offline/data/offline_sync.dart';
 import '../features/search/data/content_indexer.dart';
+import '../features/share/data/recent_destinations.dart';
 import '../features/share/data/share_intake.dart';
 import '../features/share/presentation/share_sheet.dart';
 import '../features/transfers/data/transfer_queue.dart';
@@ -97,6 +98,10 @@ class _AppShellState extends ConsumerState<AppShell> {
     // documents for search, while the drive is open.
     ref.watch(offlineSyncProvider);
     ref.watch(contentIndexerProvider);
+    // Keeps the recent folders, and their targets in the system share
+    // sheet, following the drive while it is open, without rebuilding the
+    // shell when they change.
+    ref.listen(recentDestinationsProvider, (_, _) {});
     // Files shared in from another app, whether it was open or not.
     ref.listen<List<SharedFile>>(shareIntakeProvider, (previous, next) {
       if (next.isNotEmpty && (previous == null || previous.isEmpty)) {

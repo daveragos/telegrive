@@ -14,6 +14,8 @@ import 'package:telegrive/core/files/file_kind.dart';
 import 'package:telegrive/features/capture/data/device_capture.dart';
 import 'package:telegrive/features/drive/data/drive_repository.dart';
 import 'package:telegrive/features/files/presentation/file_actions.dart';
+import 'package:telegrive/features/files/presentation/folder_picker.dart';
+import 'package:telegrive/features/share/data/recent_destinations.dart';
 import 'package:telegrive/features/transfers/data/transfer_queue.dart';
 import 'package:telegrive/infrastructure/database/app_database.dart';
 
@@ -57,6 +59,17 @@ class _Queue extends TransferQueue {
   Future<TransferRow> whenFinished(String id) => finished.future;
 }
 
+/// Keeps the folders uploads went into, and nothing else.
+class _Recent extends RecentDestinations {
+  final noted = <String?>[];
+
+  @override
+  List<FolderChoice> build() => const [];
+
+  @override
+  Future<void> note(String? folderId) async => noted.add(folderId);
+}
+
 /// The row of an upload of [name] into [folderId], as [status] says.
 TransferRow _uploadRow(
   String name,
@@ -84,11 +97,13 @@ void main() {
   late Directory root;
   late AppDatabase db;
   late _Queue queue;
+  late _Recent recent;
 
   setUp(() {
     root = Directory.systemTemp.createTempSync('capture_test');
     db = AppDatabase(NativeDatabase.memory());
     queue = _Queue();
+    recent = _Recent();
   });
 
   tearDown(() async {
@@ -186,6 +201,7 @@ void main() {
           deviceCaptureProvider.overrideWithValue(capture),
           captureSupportProvider.overrideWithValue(AsyncData(support)),
           transferQueueProvider.overrideWith(() => queue),
+          recentDestinationsProvider.overrideWith(() => recent),
         ],
         child: MaterialApp.router(
           theme: AppTheme.light(),
@@ -232,6 +248,8 @@ void main() {
       expect(request.takenAt, isNull);
       expect(folderId, 'receipts');
       expect(find.text('View'), findsOneWidget);
+      // The share sheet starts on Receipts next time.
+      expect(recent.noted, ['receipts']);
     },
   );
 
@@ -401,6 +419,7 @@ void main() {
 
     expect(scan.parent.existsSync(), isFalse);
     expect(queue.uploads, isEmpty);
+    expect(recent.noted, isEmpty);
   });
 
   testWidgets('a scanner that can\'t start offers a photo instead', (

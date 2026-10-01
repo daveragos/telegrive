@@ -69,6 +69,21 @@ void main() {
     expect(files[1].size, 900);
   });
 
+  test('a file shared to a folder\'s own target carries the folder', () {
+    final [plain, toFolder] = SharedFile.listFrom([
+      {'path': '/cache/shared/1/receipt.png', 'name': 'receipt.png', 'size': 12},
+      {
+        'path': '/cache/shared/2/receipt.png',
+        'name': 'receipt.png',
+        'size': 12,
+        'folderId': 'receipts',
+      },
+    ]);
+
+    expect(plain.folderId, isNull);
+    expect(toFolder.folderId, 'receipts');
+  });
+
   test('discarding a share deletes its copies and never an original', () async {
     final root = Directory.systemTemp.createTempSync('share_intake_test');
     addTearDown(() => root.deleteSync(recursive: true));
@@ -194,5 +209,8 @@ void main() {
     expect(rows['clip.mp4']!.ownsSource, isFalse);
     expect(rows['clip.mp4']!.sourcePath, original.path);
     expect(original.existsSync(), isTrue);
+    // The root, which the sheet starts on with nothing used yet, is where
+    // the next share starts too.
+    expect(shared.getStringList('recent_destinations'), ['']);
   });
 }

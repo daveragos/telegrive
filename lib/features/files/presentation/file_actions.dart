@@ -29,6 +29,7 @@ import '../../capture/data/device_capture.dart';
 import '../../offline/data/offline_sync.dart';
 import '../../send/data/send_bundle.dart';
 import '../../send/data/telegram_chats.dart';
+import '../../share/data/recent_destinations.dart';
 import '../../send/presentation/chat_picker.dart';
 import '../../drive/data/channel_messenger.dart';
 import '../../drive/data/drive_repository.dart';
@@ -471,9 +472,11 @@ abstract final class FileActions {
               TransferPolicy.wifiOnlyFor(sizes[index] ?? 0, bigWaitForWifi: bigWait),
         ),
     ];
+    final recent = ref.read(recentDestinationsProvider.notifier);
     await ref
         .read(transferQueueProvider.notifier)
         .enqueueUploads(requests, folderId: folderId);
+    unawaited(recent.note(folderId));
     if (!context.mounted) return;
     // Transfers goes over the screen that started the upload, so back
     // returns there; View can also be tapped after that screen is gone.
@@ -519,6 +522,7 @@ abstract final class FileActions {
     // Read up front: the scanner or the camera is in front for a while.
     final queue = ref.read(transferQueueProvider.notifier);
     final repository = ref.read(driveRepositoryProvider);
+    final recent = ref.read(recentDestinationsProvider.notifier);
     final container = ProviderScope.containerOf(context, listen: false);
     final canPhoto = ref.read(captureSupportProvider).value?.photo ?? false;
     final scan = kind == CaptureKind.scan;
@@ -566,30 +570,13 @@ abstract final class FileActions {
 
     final extension = p.extension(shot.name);
     final typed = extension.isEmpty ? chosen : withExtension(chosen, extension.substring(1));
-    // Uploads still on their way into the folder count too, so a second
-    // scan made before the first is in the drive gets its own name.
-    final taken = {
-      for (final file in (await repository.watchFolder(folderId).first).files)
-        file.name.toLowerCase(),
-      for (final item in container.read(transferQueueProvider).items)
-        if (item.kind == TransferKind.upload &&
-            item.status.isPending &&
-            item.row.folderId == folderId)
-          item.name.toLowerCase(),
-    };
-    final name = repository.freeName(typed, taken);
-    var path = shot.path;
-    if (name != shot.name) {
-      // Telegram names the document after the file it is sent from, so the
-      // file takes the name the drive will show. Should Android refuse it,
-      // the upload goes ahead from the file as it is.
-      final renamed = p.join(p.dirname(shot.path), DeviceStorage.safeName(name));
-      try {
-        path = (await File(shot.path).rename(renamed)).path;
-      } on FileSystemException catch (e) {
-        debugPrint('[Capture] Could not rename the capture: $e');
-      }
-    }
+    final [name] = await namesKeepingBoth(
+      repository,
+      container.read(transferQueueProvider),
+      [typed],
+      folderId: folderId,
+    );
+    final path = name == shot.name ? shot.path : await renamedOnDisk(shot.path, name);
     final ids = await queue.enqueueUploads(
       [
         UploadRequest(
@@ -602,6 +589,7 @@ abstract final class FileActions {
       ],
       folderId: folderId,
     );
+    unawaited(recent.note(folderId));
     // Once the upload is through the queue is done with the file, so the
     // capture's own folder goes with it; a failed or cancelled one keeps
     // its file for Retry.
@@ -633,6 +621,96 @@ abstract final class FileActions {
     try {
       await File(shot.path).parent.delete(recursive: true);
     } catch (_) {}
+  }
+
+  /// [names], for uploads into [folderId] that keep both files on a clash:
+  /// a name the folder already has gets a number, and so does one an
+  /// upload in [transfers] is still taking there or an earlier one of
+  /// [names] took, so uploads made close together get names of their own.
+  static Future<List<String>> namesKeepingBoth(
+    DriveRepository repository,
+    TransfersState transfers,
+    List<String> names, {
+    String? folderId,
+  }) async {
+    final taken = {
+      for (final file in (await repository.watchFolder(folderId).first).files)
+        file.name.toLowerCase(),
+      for (final item in transfers.items)
+        if (item.kind == TransferKind.upload &&
+            item.status.isPending &&
+            item.row.folderId == folderId)
+          item.name.toLowerCase(),
+    };
+    final free = <String>[];
+    for (final name in names) {
+      final named = repository.freeName(name, taken);
+      taken.add(named.toLowerCase());
+      free.add(named);
+    }
+    return free;
+  }
+
+  /// Gives the file at [path] the name [name] on disk, and returns where it
+  /// is now. Telegram names a document after the file it is sent from, so
+  /// a file the app owns takes the name the drive will show before it goes
+  /// up. Should Android refuse, the upload goes ahead from the file as it
+  /// is.
+  static Future<String> renamedOnDisk(String path, String name) async {
+    try {
+      final renamed = p.join(p.dirname(path), DeviceStorage.safeName(name));
+      return (await File(path).rename(renamed)).path;
+    } on FileSystemException catch (e) {
+      debugPrint('[Upload] Could not rename $path: $e');
+      return path;
+    }
+  }
+
+  /// Takes back the uploads [transferIds], from the Undo on the sentence
+  /// that started them. One still on its way is cancelled and leaves the
+  /// list, along with the copy the app made of its file; one that already
+  /// arrived goes to Trash. Says which it was, or why the Undo failed.
+  static Future<void> undoUploads(
+    BuildContext context,
+    WidgetRef ref,
+    List<String> transferIds,
+  ) async {
+    final container = ProviderScope.containerOf(context, listen: false);
+    final queue = ref.read(transferQueueProvider.notifier);
+    final repository = ref.read(driveRepositoryProvider);
+    final lasting = _lasting(context);
+    var arrived = 0;
+    final undone = await _guard(lasting, () async {
+      final landed = <DriveFile>[];
+      for (final id in transferIds) {
+        // Read as it is now: an upload can arrive while the rest are undone.
+        final row = container.read(transferQueueProvider).byId(id)?.row;
+        if (row == null) continue;
+        if (row.status == TransferStatus.completed) {
+          final file = await repository.fileById(row.fileId);
+          if (file != null) landed.add(file);
+          await queue.remove(id);
+          continue;
+        }
+        await queue.remove(id);
+        // Nothing will retry it now, so the app's copy has no more use.
+        final source = row.sourcePath;
+        if (row.ownsSource && source != null) {
+          try {
+            await File(source).delete();
+          } on FileSystemException catch (_) {}
+        }
+      }
+      if (landed.isNotEmpty) await repository.trash(files: landed);
+      arrived = landed.length;
+    }, failurePrefix: _undoFailed);
+    if (!undone || !lasting.mounted) return;
+    showSnack(
+      lasting,
+      arrived == 0
+          ? 'Cancelled the upload'
+          : 'Cancelled. What had already arrived is in Trash.',
+    );
   }
 
   /// The sheet behind the "+" button. It says which folder things land in,
@@ -781,14 +859,21 @@ abstract final class FileActions {
     );
     if (name == null || name == folder.name || !context.mounted) return;
     final repository = ref.read(driveRepositoryProvider);
+    // Recent folders carry their names into the system share sheet, so the
+    // names there follow straight away rather than after the next sync.
+    final recent = ref.read(recentDestinationsProvider.notifier);
     await _guard(
       context,
-      () => repository.renameFolder(folder, name),
+      () async {
+        await repository.renameFolder(folder, name);
+        unawaited(recent.refresh());
+      },
       success: 'Renamed to "$name"',
       undo: () async {
         for (final current in await _currentFolders(repository, [folder])) {
           await repository.renameFolder(current, folder.name);
         }
+        unawaited(recent.refresh());
       },
     );
   }
@@ -957,6 +1042,11 @@ abstract final class FileActions {
       },
     );
     final complete = outcome?.complete ?? false;
+    // A trashed folder leaves the system share sheet's targets now, rather
+    // than after the next sync.
+    if (folders.isNotEmpty && outcome != null) {
+      unawaited(container.read(recentDestinationsProvider.notifier).refresh());
+    }
     // Only a trash that went through takes the phone's copies with it; a
     // failed or stopped one says so and leaves the phone alone.
     if (alsoPhone && complete) {
@@ -1350,7 +1440,7 @@ abstract final class FileActions {
     final folderId = file.folderId;
     final folder = folderId == null
         ? null
-        : await ref.read(driveRepositoryProvider).shownFolderById(folderId);
+        : await ref.read(driveRepositoryProvider).shownFolder(folderId);
     if (!context.mounted) return;
     final highlight = Uri.encodeQueryComponent(file.id);
     context.go(

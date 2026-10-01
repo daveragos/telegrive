@@ -57,7 +57,7 @@ class _Repository extends DriveRepository {
   }
 
   @override
-  Future<DriveFolder?> shownFolderById(String id) async =>
+  Future<DriveFolder?> shownFolder(String id) async =>
       trashed.contains(id) ? null : folders.where((f) => f.id == id).firstOrNull;
 }
 
@@ -318,10 +318,10 @@ void main() {
     await add('Inside old', parentId: 'Old');
 
     final repository = container.read(driveRepositoryProvider);
-    expect((await repository.shownFolderById('Work'))?.name, 'Work');
-    expect(await repository.shownFolderById('Old'), isNull);
-    expect(await repository.shownFolderById('Inside old'), isNull);
-    expect(await repository.shownFolderById('missing'), isNull);
+    expect((await repository.shownFolder('Work'))?.name, 'Work');
+    expect(await repository.shownFolder('Old'), isNull);
+    expect(await repository.shownFolder('Inside old'), isNull);
+    expect(await repository.shownFolder('missing'), isNull);
   });
 }
 

@@ -40,6 +40,14 @@ import java.util.concurrent.Executors
 // A FragmentActivity, which local_auth needs for the biometric prompt.
 class MainActivity : FlutterFragmentActivity() {
     private val io = Executors.newFixedThreadPool(2)
+
+    /**
+     * Publishes the share targets and reports their use one call at a
+     * time, in the order Dart sends them, so the last list sent, such as
+     * the empty one on sign-out or with app lock on, is the one the share
+     * sheet keeps.
+     */
+    private val shortcuts = Executors.newSingleThreadExecutor()
     private val main = Handler(Looper.getMainLooper())
     private var pendingWriteAccess: MethodChannel.Result? = null
 
@@ -141,6 +149,29 @@ class MainActivity : FlutterFragmentActivity() {
                     "takeShared" -> result.success(
                         synchronized(pendingShares) { pendingShares.toList().also { pendingShares.clear() } },
                     )
+                    "setTargets" -> {
+                        @Suppress("UNCHECKED_CAST")
+                        val targets = (call.arguments as? List<Map<String, String>>).orEmpty()
+                        shortcuts.execute {
+                            try {
+                                ShareTargets.publish(this@MainActivity, targets)
+                                main.post { result.success(null) }
+                            } catch (e: Exception) {
+                                main.post { result.error("targets_failed", e.message, null) }
+                            }
+                        }
+                    }
+                    "reportTarget" -> {
+                        val id = call.argument<String>("id")
+                        shortcuts.execute {
+                            try {
+                                if (id != null) ShareTargets.reportUsed(this@MainActivity, id)
+                                main.post { result.success(null) }
+                            } catch (e: Exception) {
+                                main.post { result.error("report_failed", e.message, null) }
+                            }
+                        }
+                    }
                     else -> result.notImplemented()
                 }
             }
@@ -262,6 +293,7 @@ class MainActivity : FlutterFragmentActivity() {
     override fun onDestroy() {
         stopWatchingNetwork()
         io.shutdown()
+        shortcuts.shutdown()
         super.onDestroy()
     }
 
@@ -439,7 +471,9 @@ class MainActivity : FlutterFragmentActivity() {
     /**
      * Takes what another app shared, for the upload queue to send once the
      * person picks a folder: a gallery file from where it is, anything else
-     * as a copy in the cache. Plain text becomes a note.
+     * as a copy in the cache. Plain text becomes a note. A share sent to one
+     * of the drive's folders in the share sheet carries that folder's id,
+     * so it can go straight there.
      */
     private fun receiveShare(intent: Intent?) {
         if (intent == null) return
@@ -450,13 +484,14 @@ class MainActivity : FlutterFragmentActivity() {
         }
         val text = intent.getStringExtra(Intent.EXTRA_TEXT)
         if (uris.isEmpty() && text.isNullOrBlank()) return
+        val folderId = ShareTargets.folderOf(intent)
         io.execute {
             val copied = if (uris.isNotEmpty()) {
                 uris.mapNotNull { copyShared(it) }
             } else {
                 listOfNotNull(saveNote(text!!, intent.getStringExtra(Intent.EXTRA_SUBJECT)))
             }
-            addShared(copied)
+            addShared(if (folderId == null) copied else copied.map { it + ("folderId" to folderId) })
         }
     }
 

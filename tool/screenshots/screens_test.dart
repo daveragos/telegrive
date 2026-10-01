@@ -44,11 +44,14 @@ import 'package:telegrive/features/files/data/bulk_edits.dart';
 import 'package:telegrive/features/files/presentation/file_list_screen.dart';
 import 'package:telegrive/features/files/presentation/file_location.dart';
 import 'package:telegrive/features/files/presentation/files_screen.dart';
+import 'package:telegrive/features/files/presentation/folder_picker.dart';
 import 'package:telegrive/features/home/presentation/home_screen.dart';
 import 'package:telegrive/features/import/data/chat_media.dart';
 import 'package:telegrive/features/import/presentation/import_screen.dart';
 import 'package:telegrive/features/settings/data/settings_providers.dart';
 import 'package:telegrive/features/settings/presentation/settings_screen.dart';
+import 'package:telegrive/features/share/data/recent_destinations.dart';
+import 'package:telegrive/features/share/data/share_intake.dart';
 import 'package:telegrive/features/transfers/data/transfer_queue.dart';
 import 'package:telegrive/features/transfers/domain/transfer_wait.dart';
 import 'package:telegrive/features/transfers/presentation/mobile_data_prompt.dart';
@@ -143,6 +146,25 @@ class _Bulk extends BulkEdits {
 
   @override
   BulkEdit? build() => _edit;
+}
+
+/// Files another app just shared in, waiting for the sheet.
+class _Intake extends ShareIntake {
+  @override
+  List<SharedFile> build() => const [
+    SharedFile(path: '/cache/shared/1/Receipt.png', name: 'Receipt.png', size: 2 * _mb + 310000),
+    SharedFile(path: '/cache/shared/2/Lunch receipt.pdf', name: 'Lunch receipt.pdf', size: 184000),
+  ];
+}
+
+/// The folders uploads went into lately, Receipts last.
+class _Recent extends RecentDestinations {
+  @override
+  List<FolderChoice> build() => const [
+    FolderChoice('receipts', 'Receipts'),
+    FolderChoice('invoices', 'Invoices'),
+    FolderChoice(null, 'Files'),
+  ];
 }
 
 class _Wait extends TelegramWait {
@@ -1356,6 +1378,19 @@ void main() {
     ]);
     await pumpApp(tester, location: '/transfers');
     await snap(tester, 'transfers_copying');
+  });
+
+  testWidgets('share sheet', (tester) async {
+    await prepareData(tester);
+    await pumpApp(
+      tester,
+      location: '/home',
+      overrides: [
+        shareIntakeProvider.overrideWith(_Intake.new),
+        recentDestinationsProvider.overrideWith(_Recent.new),
+      ],
+    );
+    await snap(tester, 'share_sheet');
   });
 
   testWidgets('a phone that can\'t scan or take a photo gets neither row', (tester) async {

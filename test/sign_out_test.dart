@@ -72,6 +72,7 @@ void main() {
       'photos_hidden_folders': ['Screenshots'],
       'delete_phone_copy_too': true,
       'recent_send_chats': ['42', '7'],
+      'recent_destinations': ['docs', ''],
     });
     final shared = await SharedPreferences.getInstance();
     final db = AppDatabase(NativeDatabase.memory());
@@ -162,6 +163,10 @@ void main() {
 
     // The chats this account sent files to aren't offered to the next one.
     expect(prefs.recentSendChats, isEmpty);
+    // The folders this drive's uploads went into are its own, and the next
+    // account starts with none.
+    expect(prefs.recentDestinations, isEmpty);
+    expect(shared.containsKey('recent_destinations'), isFalse);
 
     // Nothing that was waiting to be deleted goes after signing out, from
     // Telegram or from the phone; it is all still in the channel.

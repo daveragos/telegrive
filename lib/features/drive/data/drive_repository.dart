@@ -296,8 +296,10 @@ class DriveRepository {
     return row == null ? null : DriveFolder.fromRow(row);
   }
 
-  /// The folder [id] if Files lists it: still there and not in the trash.
-  Future<DriveFolder?> shownFolderById(String id) async {
+  /// The folder [id] while the drive shows it: null once it is gone, or in
+  /// the trash or inside a folder that is, so nothing is put where only
+  /// Trash would show it.
+  Future<DriveFolder?> shownFolder(String id) async {
     final row = await _db.folderById(id);
     return row == null || row.hidden ? null : DriveFolder.fromRow(row);
   }

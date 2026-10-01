@@ -8,6 +8,7 @@ import '../../../infrastructure/telegram/telegram_client.dart';
 import '../../../infrastructure/telegram/telegram_exception.dart';
 import '../../drive/data/drive_session.dart';
 import '../../photos/data/photos_visibility.dart';
+import '../../share/data/recent_destinations.dart';
 import '../../transfers/data/transfer_queue.dart';
 import '../../trash/data/pending_deletes.dart';
 
@@ -111,8 +112,10 @@ class AuthController extends Notifier<AuthUiState> {
   /// keeps out) and the drive channel remembered per account stay. The 'Also
   /// delete from this phone' answer and Photos' Show for kept-out folders
   /// don't: whoever signs in next starts with both off. The chats files were
-  /// last sent to go too, since they belong to the account that sent them.
-  /// Anything new that the phone keeps per drive, whether a table, a
+  /// last sent to go too, since they belong to the account that sent them,
+  /// and so do the recent upload folders, and with them their targets in the
+  /// system share sheet, so no folder name of this drive is left in other
+  /// apps. Anything new that the phone keeps per drive, whether a table, a
   /// preference or a file, adds its cleanup here.
   Future<void> wipeDeviceState() async {
     ref.read(pendingDeletesProvider.notifier).discardAll();
@@ -124,6 +127,7 @@ class AuthController extends Notifier<AuthUiState> {
     await prefs.setDeletePhoneCopyToo(false);
     await prefs.forgetRecentSendChats();
     ref.invalidate(revealHiddenProvider);
+    await ref.read(recentDestinationsProvider.notifier).clear();
     await ref.read(appDatabaseProvider).clearAll();
     await _deleteOfflineCopies();
     state = const AuthUiState();
