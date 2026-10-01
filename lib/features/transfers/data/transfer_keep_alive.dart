@@ -9,6 +9,7 @@ import '../../../core/format/formatters.dart';
 import '../../../infrastructure/database/app_database.dart'
     show TransferKind, TransferOrigin;
 import '../../backup/data/backup_controller.dart';
+import '../domain/transfer_wait.dart';
 import 'transfer_queue.dart';
 
 /// Keeps transfers alive when Telegrive leaves the screen (Android).
@@ -18,6 +19,11 @@ import 'transfer_queue.dart';
 /// A foreground service — the ongoing "Uploading 3 files · 42%" notification
 /// — is Android's way of saying so. It starts with the first active transfer
 /// and stops when the queue drains.
+///
+/// When the last transfer in flight steps back to wait for Wi-Fi, the
+/// service stays for a while longer. Android won't let an app in the
+/// background start it again, and Wi-Fi is often back in minutes, after a
+/// walk to the car, say, so the waiting rows can start the moment it is.
 class TransferKeepAlive {
   /// The route the transfer notification launches the app with. It rides on
   /// the notification's launch intent as Android's initial route; the app
@@ -27,6 +33,9 @@ class TransferKeepAlive {
   static const int _serviceId = 4107;
   static const Duration _updateEvery = Duration(milliseconds: 1500);
 
+  /// How long the service stays for transfers waiting for Wi-Fi.
+  static const Duration _lingerForWifi = Duration(minutes: 10);
+
   bool _running = false;
   bool _starting = false;
   bool _askedPermission = false;
@@ -34,6 +43,19 @@ class TransferKeepAlive {
   (TransfersState, BackupState)? _pending;
   (TransfersState, BackupState)? _latest;
   Timer? _stopTimer;
+
+  /// Brings the notification up to date once [_updateEvery] is over, when
+  /// the last change came too soon after the one before to show at once.
+  Timer? _refreshTimer;
+
+  /// When the last transfer in flight stepped back to wait for Wi-Fi, while
+  /// the service was running; null when that isn't the case.
+  DateTime? _heldSince;
+  Timer? _lingerTimer;
+
+  /// The transfers in flight at the last update, to tell one that steps
+  /// back to wait for Wi-Fi from one that was waiting already.
+  Set<String> _inFlight = {};
 
   static void _init() {
     FlutterForegroundTask.init(
@@ -55,11 +77,40 @@ class TransferKeepAlive {
     );
   }
 
-  /// Anything worth keeping the process alive for: a transfer, or a photo
+  /// Anything worth keeping the process alive for: a transfer, a photo
   /// backup pass (which has short gaps between photos that must not bounce
-  /// the service off and on).
-  static bool _isActive(TransfersState state, BackupState backup) =>
-      state.activeCount > 0 || _backingUp(state, backup);
+  /// the service off and on), or transfers that only just began to wait for
+  /// Wi-Fi.
+  bool _isActive(TransfersState state, BackupState backup) =>
+      state.activeCount > 0 || _backingUp(state, backup) || _lingering;
+
+  bool get _lingering {
+    final since = _heldSince;
+    return since != null && DateTime.now().difference(since) < _lingerForWifi;
+  }
+
+  /// Notes when the last transfer in flight has stepped back to wait for
+  /// Wi-Fi, and looks again once the linger is over, since nothing else
+  /// may change by then. Rows that were waiting already, from before the
+  /// app opened, say, keep nothing alive when something else finishes.
+  void _noteHeld(TransfersState state) {
+    final active = state.active;
+    final steppedBack = state.waitingForWifi.any((t) => _inFlight.contains(t.id));
+    _inFlight = {for (final t in active) t.id};
+    final held = active.isEmpty && state.waitingForWifi.isNotEmpty;
+    if (!held) {
+      _heldSince = null;
+      _lingerTimer?.cancel();
+      _lingerTimer = null;
+    } else if (_running && _heldSince == null && steppedBack) {
+      _heldSince = DateTime.now();
+      _lingerTimer = Timer(_lingerForWifi, () {
+        _lingerTimer = null;
+        final latest = _latest;
+        if (latest != null) unawaited(update(latest.$1, latest.$2));
+      });
+    }
+  }
 
   /// A backup pass that is moving. One whose upload Telegram has put on a
   /// long wait sits out that wait without the service, and so without a
@@ -70,6 +121,7 @@ class TransferKeepAlive {
 
   Future<void> update(TransfersState state, BackupState backup) async {
     _latest = (state, backup);
+    _noteHeld(state);
     if (!_isActive(state, backup)) {
       _pending = null;
       if (_running) {
@@ -93,7 +145,17 @@ class TransferKeepAlive {
       return;
     }
     final now = DateTime.now();
-    if (now.difference(_lastUpdate) < _updateEvery) return;
+    final since = now.difference(_lastUpdate);
+    if (since < _updateEvery) {
+      _refreshTimer ??= Timer(_updateEvery - since, () {
+        _refreshTimer = null;
+        final latest = _latest;
+        if (latest != null) unawaited(update(latest.$1, latest.$2));
+      });
+      return;
+    }
+    _refreshTimer?.cancel();
+    _refreshTimer = null;
     _lastUpdate = now;
     final (title, text) = _describe(state, backup);
     await FlutterForegroundTask.updateService(
@@ -138,6 +200,8 @@ class TransferKeepAlive {
 
   Future<void> _stop() async {
     _running = false;
+    _refreshTimer?.cancel();
+    _refreshTimer = null;
     try {
       await FlutterForegroundTask.stopService();
     } catch (e) {
@@ -146,7 +210,21 @@ class TransferKeepAlive {
   }
 
   static (String, String) _describe(TransfersState state, BackupState backup) {
-    final active = state.active
+    final inFlight = state.active;
+    final percent = '${(state.activeProgress * 100).round()}%';
+    if (inFlight.isNotEmpty && inFlight.every((t) => t.wait is WaitingForNetwork)) {
+      return ('Waiting for network', 'Carries on when you\'re back online · $percent');
+    }
+    if (inFlight.isEmpty && state.waitingForWifi.isNotEmpty) {
+      final waiting = state.waitingForWifi.length;
+      return (
+        'Waiting for Wi-Fi',
+        waiting == 1
+            ? '1 transfer starts on its own on Wi-Fi'
+            : '${Formatters.count(waiting, 'transfer')} start on their own on Wi-Fi',
+      );
+    }
+    final active = inFlight
         .where((t) => t.origin != TransferOrigin.backup)
         .toList();
     final uploads = active.where((t) => t.kind == TransferKind.upload).length;
@@ -164,7 +242,7 @@ class TransferKeepAlive {
       if (backingUp && backup.total > 0)
         '${Formatters.count(backup.remaining, 'item')} left'
       else
-        '${(state.activeProgress * 100).round()}%',
+        percent,
       if (speed > 0) Formatters.speed(speed),
     ].join(' · ');
     return (title, text);

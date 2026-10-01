@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 
-import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -11,6 +10,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:photo_manager/photo_manager.dart';
 
 import '../../../infrastructure/database/app_database.dart';
+import '../../../infrastructure/network/network_status.dart';
 import '../../../infrastructure/storage/preferences.dart';
 import '../../../infrastructure/telegram/telegram_exception.dart';
 import '../../drive/data/drive_repository.dart';
@@ -30,7 +30,8 @@ enum BackupPhase {
   /// On, waiting for the drive to open (right after launch).
   waitingForDrive,
 
-  /// On, but only allowed over Wi-Fi and there is none.
+  /// On, but only allowed over Wi-Fi and the phone is on mobile data. A
+  /// phone's hotspot counts as mobile data.
   waitingForWifi,
 
   /// Looking through the photo library.
@@ -157,7 +158,6 @@ class BackupController extends Notifier<BackupState> {
   bool _rerun = false;
   bool _stopRequested = false;
   Timer? _debounce;
-  StreamSubscription<List<ConnectivityResult>>? _connectivity;
   final Map<String, Future<String>> _folderIds = {};
   final Set<String> _activeAssets = {};
 
@@ -190,8 +190,15 @@ class BackupController extends Notifier<BackupState> {
       }
     });
 
-    _connectivity = Connectivity().onConnectivityChanged.listen((_) {
-      if (state.phase == BackupPhase.waitingForWifi) schedule(immediate: true);
+    ref.listen<NetworkState>(networkStatusProvider, (_, next) {
+      if (state.phase == BackupPhase.waitingForWifi && next.online && !next.metered) {
+        schedule(immediate: true);
+      } else if (state.isWorking && !_networkAllowed()) {
+        // Uploads under way step back in the queue on their own; the pass
+        // stops starting new ones and says why.
+        _stopRequested = true;
+        state = state.copyWith(phase: BackupPhase.waitingForWifi, clearCurrent: true);
+      }
     });
     BackupWorker.onNewMediaInApp = () => schedule();
     if (enabled) {
@@ -202,7 +209,6 @@ class BackupController extends Notifier<BackupState> {
 
     ref.onDispose(() {
       _debounce?.cancel();
-      _connectivity?.cancel();
       _unwatchLibrary();
       BackupWorker.onNewMediaInApp = null;
     });
@@ -266,6 +272,16 @@ class BackupController extends Notifier<BackupState> {
 
   Future<void> setWifiOnly(bool value) async {
     await _prefs.setBackupWifiOnly(value);
+    // Uploads already waiting for Wi-Fi go now, rather than hold up the
+    // pass that is waiting for them.
+    if (!value) {
+      final waiting = ref
+          .read(transferQueueProvider)
+          .items
+          .where((t) => t.origin == TransferOrigin.backup && t.row.wifiOnly)
+          .map((t) => t.id);
+      await _queue.useMobileData(waiting.toList());
+    }
     _restart();
   }
 
@@ -388,7 +404,7 @@ class BackupController extends Notifier<BackupState> {
       state = state.copyWith(phase: BackupPhase.needsPermission);
       return;
     }
-    if (!await _networkAllowed()) {
+    if (!_networkAllowed()) {
       state = state.copyWith(phase: BackupPhase.waitingForWifi);
       return;
     }
@@ -409,6 +425,12 @@ class BackupController extends Notifier<BackupState> {
     }
     final assets = await _scan();
     final known = await _db.backupAssetMap();
+    // The phone can move onto mobile data while the library is read. The
+    // pass then waits for Wi-Fi, and Wi-Fi coming back starts the next one.
+    if (!_networkAllowed()) {
+      state = state.copyWith(phase: BackupPhase.waitingForWifi, clearCurrent: true);
+      return;
+    }
 
     var done = 0;
     var failed = 0;
@@ -440,7 +462,7 @@ class BackupController extends Notifier<BackupState> {
 
     Future<void> worker() async {
       while (!_stopRequested && _prefs.backupEnabled) {
-        if (!await _networkAllowed()) {
+        if (!_networkAllowed()) {
           state = state.copyWith(phase: BackupPhase.waitingForWifi, clearCurrent: true);
           _stopRequested = true;
           return;
@@ -519,6 +541,8 @@ class BackupController extends Notifier<BackupState> {
           assetId: asset.id,
           takenAt: asset.createDateTime,
           thumbnailPath: thumbnail,
+          // An upload under way when a hotspot takes over steps back too.
+          wifiOnly: _prefs.backupWifiOnly,
         ),
       ], folderId: folderId);
       if (ids.isEmpty) return await _fail(asset, record);
@@ -635,12 +659,10 @@ class BackupController extends Notifier<BackupState> {
     }
   }
 
-  Future<bool> _networkAllowed() async {
-    if (!_prefs.backupWifiOnly) return true;
-    final results = await Connectivity().checkConnectivity();
-    return results.contains(ConnectivityResult.wifi) ||
-        results.contains(ConnectivityResult.ethernet);
-  }
+  /// Mobile data is allowed, or the phone isn't on it. A phone's hotspot
+  /// counts as mobile data, since Android reports it as metered.
+  bool _networkAllowed() =>
+      !_prefs.backupWifiOnly || !ref.read(networkStatusProvider).metered;
 
   // ---------------------------------------------------------------------------
   // Watching the library while the app is alive

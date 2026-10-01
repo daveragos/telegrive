@@ -97,7 +97,9 @@ class BackupScreen extends ConsumerWidget {
               children: [
                 SwitchListTile(
                   title: const Text('Use mobile data'),
-                  subtitle: const Text('Off: backup waits for Wi-Fi'),
+                  subtitle: const Text(
+                    'Off: backup waits for Wi-Fi. A phone\'s hotspot counts as mobile data.',
+                  ),
                   value: !prefs.backupWifiOnly,
                   onChanged: (value) async {
                     await controller.setWifiOnly(!value);

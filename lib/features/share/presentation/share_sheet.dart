@@ -8,8 +8,12 @@ import '../../../core/format/formatters.dart';
 import '../../../core/widgets/common.dart';
 import '../../../core/widgets/file_visuals.dart';
 import '../../../app/theme/file_style.dart';
+import '../../../infrastructure/network/network_status.dart';
+import '../../../infrastructure/storage/preferences.dart';
 import '../../files/presentation/folder_picker.dart';
+import '../../transfers/data/transfer_policy.dart';
 import '../../transfers/data/transfer_queue.dart';
+import '../../transfers/presentation/mobile_data_prompt.dart';
 import '../data/share_intake.dart';
 
 /// Asks where files shared from another app should go, then uploads them.
@@ -38,11 +42,37 @@ class _ShareSheet extends ConsumerStatefulWidget {
 class _ShareSheetState extends ConsumerState<_ShareSheet> {
   FolderChoice _folder = const FolderChoice(null, 'My Drive');
 
+  /// Something big on mobile data asks first whether to wait for Wi-Fi;
+  /// dismissing that question leaves the sheet as it was.
   Future<void> _upload() async {
     final files = widget.files;
+    final bytes = files.fold<int>(0, (sum, f) => sum + f.size);
+    final what = files.length == 1
+        ? files.single.name
+        : Formatters.count(files.length, 'file');
+    DataChoice? choice;
+    if (TransferPolicy.shouldAsk(network: ref.read(networkStatusProvider), bytes: bytes)) {
+      choice = await askAboutMobileData(
+        context,
+        bytes: bytes,
+        doing: 'Uploading $what',
+        files: files.length,
+        nowLabel: 'Upload now',
+      );
+      if (choice == null || !mounted) return;
+    }
+    final bigWait = ref.read(preferencesProvider).bigTransfersWifiOnly;
     await ref.read(transferQueueProvider.notifier).enqueueUploads([
       for (final file in files)
-        UploadRequest(name: file.name, path: file.path, size: file.size, ownsSource: file.owned),
+        UploadRequest(
+          name: file.name,
+          path: file.path,
+          size: file.size,
+          ownsSource: file.owned,
+          wifiOnly:
+              wifiOnlyFrom(choice) ??
+              TransferPolicy.wifiOnlyFor(file.size, bigWaitForWifi: bigWait),
+        ),
     ], folderId: _folder.folderId);
     await ref.read(shareIntakeProvider.notifier).clear();
     if (!mounted) return;
@@ -50,9 +80,7 @@ class _ShareSheetState extends ConsumerState<_ShareSheet> {
     final router = GoRouter.of(context);
     showSnack(
       context,
-      files.length == 1
-          ? 'Uploading ${files.single.name}'
-          : 'Uploading ${Formatters.count(files.length, 'file')}',
+      choice == DataChoice.later ? 'Waiting for Wi-Fi to upload $what' : 'Uploading $what',
       actionLabel: 'View',
       onAction: () => router.push('/transfers'),
     );

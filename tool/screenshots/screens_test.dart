@@ -5,6 +5,7 @@
 //
 // Images land in tool/screenshots/out/.
 
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
@@ -43,8 +44,10 @@ import 'package:telegrive/features/settings/data/settings_providers.dart';
 import 'package:telegrive/features/settings/presentation/settings_screen.dart';
 import 'package:telegrive/features/transfers/data/transfer_queue.dart';
 import 'package:telegrive/features/transfers/domain/transfer_wait.dart';
+import 'package:telegrive/features/transfers/presentation/mobile_data_prompt.dart';
 import 'package:telegrive/features/transfers/presentation/transfers_screen.dart';
 import 'package:telegrive/infrastructure/database/app_database.dart';
+import 'package:telegrive/infrastructure/network/network_status.dart';
 import 'package:telegrive/infrastructure/storage/device_storage.dart';
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
@@ -71,6 +74,15 @@ class _Session extends DriveSessionNotifier {
 class _Sync extends DriveSync {
   @override
   SyncState build() => SyncState(lastSynced: DateTime.now());
+}
+
+class _Network extends NetworkStatus {
+  _Network(this._state);
+
+  final NetworkState _state;
+
+  @override
+  NetworkState build() => _state;
 }
 
 class _Backup extends BackupController {
@@ -246,6 +258,7 @@ TransferRow _transfer(
   int parts = 1,
   int completedParts = 0,
   String? error,
+  bool wifiOnly = false,
 }) => TransferRow(
   id: name,
   kind: kind,
@@ -254,7 +267,7 @@ TransferRow _transfer(
   mimeType: mimeTypeFor(name),
   fileId: name,
   ownsSource: false,
-  wifiOnly: false,
+  wifiOnly: wifiOnly,
   origin: TransferOrigin.manual,
   totalBytes: total,
   doneBytes: done,
@@ -427,6 +440,7 @@ void main() {
     BackupState backup = const BackupState(phase: BackupPhase.off),
     BulkEdit? bulk,
     DateTime? telegramWait,
+    NetworkState network = NetworkState.unknown,
     List<Override> overrides = const [],
   }) async {
     debugDisableShadows = false;
@@ -532,6 +546,7 @@ void main() {
           backupControllerProvider.overrideWith(() => _Backup(backup)),
           bulkEditsProvider.overrideWith(() => _Bulk(bulk)),
           telegramWaitProvider.overrideWith(() => _Wait(telegramWait)),
+          networkStatusProvider.overrideWith(() => _Network(network)),
           mediaTimelineProvider.overrideWith((ref) => Stream.value(photos)),
           trashProvider.overrideWith(
             (ref) => Stream.value(
@@ -685,6 +700,33 @@ void main() {
     await snap(tester, 'home_stopped');
   });
 
+  testWidgets('home waiting for wifi', (tester) async {
+    await prepareData(tester);
+    transfers = TransfersState([
+      for (final (name, total, done) in [
+        ('Lecture 1.mp4', (1.2 * _gb).round(), 0),
+        ('Lecture 2.mp4', (1.2 * _gb).round(), 300 * _mb),
+        ('Course notes.pdf', 60 * _mb, 0),
+      ])
+        TransferItem(
+          _transfer(name, TransferKind.download, TransferStatus.queued, total, done, wifiOnly: true),
+          wait: const WaitingForWifi(),
+        ),
+    ]);
+    await pumpApp(
+      tester,
+      location: '/home',
+      network: const NetworkState(online: true, metered: true),
+      backup: BackupState(
+        phase: BackupPhase.upToDate,
+        total: 4847,
+        done: 4847,
+        lastCompleted: DateTime.now().subtract(const Duration(minutes: 3)),
+      ),
+    );
+    await snap(tester, 'home_waiting_for_wifi');
+  });
+
   testWidgets('search', (tester) async {
     await prepareData(tester);
     await pumpApp(tester, location: '/home');
@@ -721,6 +763,20 @@ void main() {
       telegramWait: DateTime.now().add(const Duration(minutes: 3, seconds: 41)),
     );
     await snap(tester, 'bulk_waiting');
+  });
+
+  testWidgets('waiting for network', (tester) async {
+    await prepareData(tester);
+    transfers = TransfersState([
+      for (final item in transfers.items.take(2))
+        TransferItem(item.row, wait: const WaitingForNetwork()),
+    ]);
+    await pumpApp(
+      tester,
+      location: '/files',
+      network: const NetworkState(online: false, metered: false),
+    );
+    await snap(tester, 'files_waiting_for_network');
   });
 
   testWidgets('files grid', (tester) async {
@@ -764,18 +820,70 @@ void main() {
     await snap(tester, 'save_sheet');
   });
 
+  testWidgets('save sheet on mobile data', (tester) async {
+    await prepareData(tester);
+    await pumpApp(
+      tester,
+      location: '/files',
+      network: const NetworkState(online: true, metered: true),
+    );
+    await tester.longPress(find.text('Project backup.zip'));
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.tap(find.text('Simien trek.png'));
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.tap(find.byTooltip('Download to this phone'));
+    for (var i = 0; i < 6; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    await snap(tester, 'save_sheet_mobile_data');
+  });
+
+  testWidgets('mobile data dialog', (tester) async {
+    await prepareData(tester);
+    await pumpApp(
+      tester,
+      location: '/files',
+      network: const NetworkState(online: true, metered: true),
+    );
+    unawaited(
+      askAboutMobileData(
+        tester.element(find.byType(Scaffold).first),
+        bytes: (1.4 * _gb).round(),
+        doing: 'Uploading 3 files',
+        files: 3,
+        nowLabel: 'Upload now',
+      ),
+    );
+    for (var i = 0; i < 6; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    await snap(tester, 'mobile_data_dialog');
+  });
+
   testWidgets('transfers saving', (tester) async {
     await prepareData(tester);
-    TransferItem save(String name, TransferStatus status, int total, int done) =>
-        TransferItem(
-          _transfer(name, TransferKind.download, status, total, done).copyWith(
-            origin: TransferOrigin.save,
-            saveTo: const Value(SaveTarget.files),
-          ),
-          bytesPerSecond: status == TransferStatus.running ? 4.1 * _mb : 0,
-        );
+    TransferItem save(
+      String name,
+      TransferStatus status,
+      int total,
+      int done, {
+      bool waitsForWifi = false,
+    }) => TransferItem(
+      _transfer(name, TransferKind.download, status, total, done, wifiOnly: waitsForWifi).copyWith(
+        origin: TransferOrigin.save,
+        saveTo: const Value(SaveTarget.files),
+      ),
+      bytesPerSecond: status == TransferStatus.running ? 4.1 * _mb : 0,
+      wait: waitsForWifi ? const WaitingForWifi() : null,
+    );
     transfers = TransfersState([
-      save('Wedding highlights 4K.mp4', TransferStatus.running, (5.6 * _gb).round(), (1.2 * _gb).round()),
+      save(
+        'Wedding highlights 4K.mp4',
+        TransferStatus.queued,
+        (5.6 * _gb).round(),
+        (1.2 * _gb).round(),
+        waitsForWifi: true,
+      ),
       save('Project backup.zip', TransferStatus.running, 780 * _mb, 300 * _mb),
       for (var i = 0; i < 40; i++)
         save('IMG_$i.jpg', TransferStatus.queued, 4 * _mb, 0),
@@ -879,6 +987,43 @@ void main() {
 
   testWidgets('transfers', (tester) async {
     await prepareData(tester);
+    transfers = TransfersState([
+      ...transfers.items,
+      TransferItem(
+        _transfer(
+          'Lecture 1.mp4',
+          TransferKind.download,
+          TransferStatus.queued,
+          (1.2 * _gb).round(),
+          0,
+          wifiOnly: true,
+        ),
+        wait: const WaitingForWifi(),
+      ),
+      TransferItem(
+        _transfer(
+          'Lecture 2.mp4',
+          TransferKind.download,
+          TransferStatus.queued,
+          (1.2 * _gb).round(),
+          300 * _mb,
+          parts: 3,
+          completedParts: 1,
+          wifiOnly: true,
+        ),
+        wait: const WaitingForWifi(),
+      ),
+      TransferItem(
+        _transfer(
+          'Field recording.wav',
+          TransferKind.upload,
+          TransferStatus.queued,
+          640 * _mb,
+          210 * _mb,
+        ),
+        wait: const WaitingForNetwork(),
+      ),
+    ]);
     await pumpApp(tester, location: '/transfers');
     await snap(tester, 'transfers');
   });
@@ -887,6 +1032,16 @@ void main() {
     await prepareData(tester);
     await pumpApp(tester, location: '/settings');
     await snap(tester, 'settings');
+  });
+
+  testWidgets('settings mobile data', (tester) async {
+    await prepareData(tester);
+    await pumpApp(tester, location: '/settings');
+    await tester.drag(find.byType(ListView).first, const Offset(0, -760));
+    for (var i = 0; i < 4; i++) {
+      await tester.pump(const Duration(milliseconds: 200));
+    }
+    await snap(tester, 'settings_mobile_data');
   });
 
   const uploading = BackupState(

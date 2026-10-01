@@ -9,16 +9,22 @@ import '../../drive/data/drive_repository.dart';
 import '../../drive/data/drive_session.dart';
 import '../../drive/data/drive_sync.dart';
 import '../../drive/domain/drive_models.dart';
+import '../../transfers/data/transfer_policy.dart';
 import '../../transfers/data/transfer_queue.dart';
 
-/// Files and folders this phone keeps available offline: pinned items
-/// are copied into the app's own store,
-/// open without a connection, and survive clearing downloaded copies. New
-/// files in a pinned folder follow on their own; files that leave the drive
-/// (or the pin) lose their copy.
+/// Files and folders this phone keeps available offline: pinned items are
+/// copied into the app's own store, open without a connection, and survive
+/// clearing downloaded copies. New files in a pinned folder follow on their
+/// own, the big ones over Wi-Fi only; files that leave the drive (or the
+/// pin) lose their copy.
 class OfflineSync extends Notifier<void> {
   Timer? _debounce;
   StreamSubscription<String>? _ingested;
+
+  /// The pin, unpin or reconcile under way. Each starts after the one
+  /// before, so a reconcile that reads a new pin never runs ahead of the
+  /// pin's own and queues its copies under another rule.
+  Future<void> _turn = Future.value();
 
   AppDatabase get _db => ref.read(appDatabaseProvider);
   DriveRepository get _repository => ref.read(driveRepositoryProvider);
@@ -39,15 +45,19 @@ class OfflineSync extends Notifier<void> {
     });
   }
 
-  Future<void> pin({DriveFile? file, DriveFolder? folder}) async {
-    await _db.pinOffline(file?.id ?? folder!.id, isFolder: folder != null);
-    await reconcile();
-  }
+  /// Keeps [file] or [folder] on this phone. [wifiOnly] is what the person
+  /// chose for its copies when asked about mobile data. When nobody asked,
+  /// and for every other pin, copies come the way later ones do.
+  Future<void> pin({DriveFile? file, DriveFolder? folder, bool? wifiOnly}) => _inTurn(() async {
+    final id = file?.id ?? folder!.id;
+    await _db.pinOffline(id, isFolder: folder != null);
+    await _reconcile(pinned: id, wifiOnly: wifiOnly);
+  });
 
-  Future<void> unpin({DriveFile? file, DriveFolder? folder}) async {
+  Future<void> unpin({DriveFile? file, DriveFolder? folder}) => _inTurn(() async {
     await _db.unpinOffline(file?.id ?? folder!.id);
-    await reconcile();
-  }
+    await _reconcile();
+  });
 
   /// Drops every pin and every copy.
   Future<void> removeAll() async {
@@ -62,7 +72,19 @@ class OfflineSync extends Notifier<void> {
   }
 
   /// Brings the copies in line with the pins.
-  Future<void> reconcile() async {
+  Future<void> reconcile() => _inTurn(_reconcile);
+
+  Future<void> _inTurn(Future<void> Function() work) {
+    final next = _turn.then((_) => work());
+    _turn = next.then((_) {}, onError: (Object _) {});
+    return next;
+  }
+
+  /// Copies to make wait for Wi-Fi from [TransferPolicy.followUpOnDataBelow]
+  /// up, so a big file landing in a pinned folder never spends mobile data
+  /// unasked. Those of the pin [pinned] follow [wifiOnly] instead, when the
+  /// person chose it.
+  Future<void> _reconcile({String? pinned, bool? wifiOnly}) async {
     try {
       final pins = await _db.offlinePinList();
       final pinnedFiles = await _db.shownFiles(
@@ -84,6 +106,17 @@ class OfflineSync extends Notifier<void> {
               folders: pinnedFolders,
             );
       final wantedIds = {for (final item in wanted) item.file.id};
+      final chosen = wifiOnly == null
+          ? const <String>{}
+          : {
+              for (final item in await _repository.collectForSaving(
+                files: [
+                  for (final row in pinnedFiles) if (row.id == pinned) DriveFile.fromRow(row),
+                ],
+                folders: [for (final folder in pinnedFolders) if (folder.id == pinned) folder],
+              ))
+                item.file.id,
+            };
 
       final have = <String>{};
       for (final copy in await _db.offlineCopyList()) {
@@ -105,7 +138,13 @@ class OfflineSync extends Notifier<void> {
       final missing = [
         for (final item in wanted)
           if (!have.contains(item.file.id) && !failed.contains(item.file.id))
-            SaveRequest(item.file, target: SaveTarget.offline),
+            SaveRequest(
+              item.file,
+              target: SaveTarget.offline,
+              wifiOnly: chosen.contains(item.file.id)
+                  ? wifiOnly!
+                  : item.file.size >= TransferPolicy.followUpOnDataBelow,
+            ),
       ];
       if (missing.isNotEmpty) {
         await ref.read(transferQueueProvider.notifier).enqueueSaves(missing);

@@ -22,6 +22,10 @@ enum HealthAction {
   retryFailed,
   retryTransfers,
   resumeTransfers,
+
+  /// Lets transfers waiting for Wi-Fi go over mobile data; [useData] is the
+  /// backup setting.
+  useDataForTransfers,
 }
 
 /// Where tapping a line goes: a screen, or another try at syncing.
@@ -31,8 +35,9 @@ enum HealthTarget { backup, transfers, refresh }
 /// top line, so the two rows say different things and their buttons never
 /// do the same job. Transfers in progress are the exception: saying some
 /// are moving doesn't say that others failed. Lines about Telegram itself,
-/// not reaching it or it asking for a pause, are [sync].
-enum HealthTopic { backup, transfers, sync }
+/// not reaching it or it asking for a pause, are [sync]; lines about the
+/// phone's own connection, none at all or only mobile data, are [network].
+enum HealthTopic { backup, transfers, sync, network }
 
 /// One line of Home's Activity group, worked out from state alone so the
 /// wording and its priority can be tested without a widget.
@@ -44,6 +49,7 @@ class DriveHealth {
     required this.text,
     this.detail,
     this.progress,
+    this.waiting = false,
     this.action = HealthAction.none,
     required this.target,
     required this.topic,
@@ -56,6 +62,9 @@ class DriveHealth {
 
   /// 0..1 for a bar, negative for an indeterminate one, null for none.
   final double? progress;
+
+  /// The bar stands for work that waits rather than moves, so it is grey.
+  final bool waiting;
   final HealthAction action;
   final HealthTarget target;
   final HealthTopic topic;
@@ -77,7 +86,13 @@ class DriveHealth {
 /// Telegram asking for a long pause ranks below a backup that is stopped,
 /// can't see the photos or waits for Wi-Fi, since each of those has a
 /// button that unblocks it, and above work in progress, which the pause is
-/// holding up.
+/// holding up. The phone having no network at all ranks the same way and
+/// above that pause, since nothing can move until it is back.
+///
+/// Transfers waiting for Wi-Fi take the line only when nothing else is
+/// going on: no pause from Telegram, nothing moving, and backup neither
+/// stopped nor kept from the photos. Otherwise they keep the second row,
+/// with their Use data.
 DriveHealth describeDriveHealth({
   required BackupState backup,
   required SyncState sync,
@@ -102,6 +117,9 @@ DriveHealth describeDriveHealth({
     BackupPhase.stopped || BackupPhase.needsPermission || BackupPhase.waitingForWifi => true,
     _ => false,
   };
+  if (!backupBlocked && _allWaitForNetwork(transfers.activeAt(at))) {
+    return _waitingForNetwork(active, backup);
+  }
   if (waits.isNotEmpty && !backupBlocked) {
     final resumesAt = waits.reduce((a, b) => a.isBefore(b) ? a : b);
     return DriveHealth(
@@ -139,6 +157,7 @@ DriveHealth describeDriveHealth({
     );
   }
   if (active.isNotEmpty) {
+    if (_allWaitForNetwork(active)) return _waitingForNetwork(active, backup);
     final progress = _progress(active);
     return DriveHealth(
       icon: Icons.swap_vert_rounded,
@@ -152,6 +171,8 @@ DriveHealth describeDriveHealth({
   }
   if (backup.phase == BackupPhase.stopped) return _stopped(backup);
   if (backup.phase == BackupPhase.needsPermission) return _needsPermission;
+  final heldForWifi = transfersWaitingForWifi(transfers);
+  if (heldForWifi.isNotEmpty) return _transfersWaitingForWifi(heldForWifi);
   if (backup.phase == BackupPhase.waitingForWifi) return _waitingForWifi(backup);
   if (backup.enabled && backup.failed > 0) return _failedItems(backup);
   if (backup.phase == BackupPhase.waitingForDrive) {
@@ -202,6 +223,7 @@ DriveHealth? secondaryHealth(
 }) {
   final at = now ?? DateTime.now();
   final failedTransfers = transfers.failedCount;
+  final heldForWifi = transfersWaitingForWifi(transfers);
   final paused = transfers.items
       .where((t) => t.status == TransferStatus.paused && t.origin != TransferOrigin.backup)
       .length;
@@ -211,6 +233,7 @@ DriveHealth? secondaryHealth(
     if (backup.phase == BackupPhase.waitingForWifi) _waitingForWifi(backup),
     if (backup.enabled && backup.failed > 0) _failedItems(backup),
     if (failedTransfers > 0) _failedTransfers(transfers),
+    if (heldForWifi.isNotEmpty) _transfersWaitingForWifi(heldForWifi),
     if (paused > 0 && _manualActive(transfers, at).isEmpty)
       DriveHealth(
         icon: Icons.pause_circle_outline_rounded,
@@ -312,6 +335,50 @@ const _off = DriveHealth(
   target: HealthTarget.backup,
   topic: HealthTopic.backup,
 );
+
+/// The phone has no network: everything in flight sits still until it is
+/// back, and TDLib then carries on by itself. Backup says so in its own
+/// words when it is the only thing moving.
+DriveHealth _waitingForNetwork(List<TransferItem> manual, BackupState backup) {
+  final progress = manual.isEmpty ? backup.progress : _progress(manual);
+  return DriveHealth(
+    icon: Icons.cloud_off_rounded,
+    tone: HealthTone.neutral,
+    text: 'Waiting for network',
+    detail: manual.isEmpty
+        ? 'Backup carries on when you\'re back online.'
+        : 'Carries on when you\'re back online · ${(progress * 100).round()}%',
+    progress: progress,
+    waiting: true,
+    target: manual.isEmpty ? HealthTarget.backup : HealthTarget.transfers,
+    topic: HealthTopic.network,
+  );
+}
+
+/// There is something in [items], and all of it waits for the network.
+bool _allWaitForNetwork(List<TransferItem> items) =>
+    items.isNotEmpty && items.every((t) => t.wait is WaitingForNetwork);
+
+/// Uploads and downloads someone started that wait for Wi-Fi. Backup
+/// uploads waiting for it are told by backup's own line.
+List<TransferItem> transfersWaitingForWifi(TransfersState transfers) =>
+    transfers.waitingForWifi.where((t) => t.origin != TransferOrigin.backup).toList();
+
+DriveHealth _transfersWaitingForWifi(List<TransferItem> held) {
+  final bytes = held.fold<int>(0, (sum, t) => sum + t.row.totalBytes - t.row.doneBytes);
+  return DriveHealth(
+    icon: Icons.wifi_off_rounded,
+    tone: HealthTone.neutral,
+    text: 'Waiting for Wi-Fi · ${Formatters.count(held.length, 'transfer')}',
+    // A non-breaking hyphen, so a wrapped line never ends in 'Wi-'.
+    detail:
+        '${Formatters.bytes(bytes)}. '
+        '${held.length == 1 ? 'It starts on its own' : 'They start on their own'} on Wi\u2011Fi.',
+    action: HealthAction.useDataForTransfers,
+    target: HealthTarget.transfers,
+    topic: HealthTopic.network,
+  );
+}
 
 /// Uploads and downloads someone started by hand that are in flight at
 /// [at]; backup has its own line.

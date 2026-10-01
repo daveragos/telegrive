@@ -70,7 +70,18 @@ phone number.
   retry. A failed transfer says why in one sentence, and Home and Transfers
   retry it in place. On Android a foreground service keeps uploads going in
   the background, and interrupted split uploads resume at the last finished
-  part.
+  part. When the connection drops, uploads and downloads say "Waiting for
+  network" and carry on by themselves once it is back, and a request that
+  times out is tried again, up to three times in a row, before anything is
+  called failed.
+- **Careful with mobile data.** Starting 50 MB or more on mobile data asks
+  first: "Later, on Wi-Fi" holds the uploads or downloads and starts them
+  on their own on Wi-Fi, and Use mobile data on Transfers, or Use data on
+  Home, lets them go at any time. Transfers of 200 MB or more started on
+  Wi-Fi wait if the phone moves to mobile data (a setting, on by default),
+  and they resume from what they already have. A phone's hotspot counts as
+  mobile data, for transfers, photo backup and reading documents for
+  search.
 - **Patient with Telegram.** When Telegram asks for a pause, transfers count
   down and carry on by themselves; when it asks an upload, the other
   uploads hold off too, a split one before its next part, rather than send
@@ -92,7 +103,8 @@ phone number.
   drive's folders under Download › Telegrive; photos and videos can go back
   into the gallery.
 - **Available offline.** Keep files or folders on the phone to open without
-  a connection; new files in a kept folder follow on their own.
+  a connection; new files in a kept folder follow on their own, those of
+  20 MB or more over Wi-Fi only.
 - **App lock** with the phone's fingerprint, face or screen lock.
 - **Private by default.** API credentials and the local-database key live in
   the platform keystore. TDLib's cache is encrypted from the first launch.
@@ -241,5 +253,8 @@ two commands are at the top of that test.
 - When Telegram asks for a pause longer than five minutes, Telegrive lets the
   phone sleep rather than keep it awake, so a transfer may wait until you next
   open the app.
+- Transfers that step back to wait for Wi-Fi keep Telegrive running in the
+  background for ten minutes. If Wi-Fi takes longer, they start when it
+  returns while the app is still running, or the next time you open it.
 
 Telegrive is an independent project, not affiliated with Telegram.

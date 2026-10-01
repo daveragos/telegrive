@@ -41,3 +41,11 @@ Duration? telegramWaitOf(Object error) => switch (error) {
     Duration(seconds: retryAfterSeconds ?? 30),
   _ => null,
 };
+
+/// Whether [error] is the connection letting a transfer down for a moment:
+/// a request that timed out or a socket that closed. Such a transfer is
+/// tried again by itself before it is called failed.
+bool isTransientTransferError(Object error) => switch (error) {
+  TelegramException(code: 408) || TimeoutException() || SocketException() => true,
+  _ => false,
+};

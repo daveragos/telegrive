@@ -45,6 +45,7 @@ class SettingsScreen extends ConsumerWidget {
     final offline = ref.watch(offlineUsageProvider);
     final indexer = ref.watch(contentIndexerProvider);
     final indexed = ref.watch(indexedCountProvider).value ?? 0;
+    final prefs = ref.watch(preferencesProvider);
 
     Text trailingValue(String value) => Text(
       value,
@@ -267,6 +268,24 @@ class SettingsScreen extends ConsumerWidget {
                     ),
                   ),
                 ),
+            ],
+          ),
+          const SectionHeader('Mobile data'),
+          ListGroup(
+            children: [
+              SwitchListTile(
+                title: const Text('Big transfers wait for Wi-Fi'),
+                // A non-breaking hyphen, so a wrapped line never ends in 'Wi-'.
+                subtitle: const Text(
+                  'Uploads and downloads of 200 MB or more pause on mobile data and '
+                  'carry on over Wi\u2011Fi. A phone\'s hotspot counts as mobile data.',
+                ),
+                value: prefs.bigTransfersWifiOnly,
+                onChanged: (on) async {
+                  await prefs.setBigTransfersWifiOnly(on);
+                  ref.invalidate(preferencesProvider);
+                },
+              ),
             ],
           ),
           const SectionHeader('This phone'),

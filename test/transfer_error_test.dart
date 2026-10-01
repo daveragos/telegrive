@@ -107,4 +107,22 @@ void main() {
       expect(telegramWaitOf(const DriveException('Stopped.')), isNull);
     });
   });
+
+  group('isTransientTransferError', () {
+    test('a timeout or a closed socket is tried again', () {
+      expect(isTransientTransferError(const TelegramException(408, 'Request timeout')), isTrue);
+      expect(isTransientTransferError(TimeoutException('slow')), isTrue);
+      expect(isTransientTransferError(const SocketException('Connection reset')), isTrue);
+    });
+
+    test('anything else fails as it is', () {
+      expect(isTransientTransferError(const TelegramException(400, 'FILE_REFERENCE_EXPIRED')), isFalse);
+      expect(isTransientTransferError(const TelegramException(429, 'Too Many Requests')), isFalse);
+      expect(isTransientTransferError(const DriveException('Paused.')), isFalse);
+      expect(
+        isTransientTransferError(const FileSystemException('x', 'p', OSError('No space', 28))),
+        isFalse,
+      );
+    });
+  });
 }

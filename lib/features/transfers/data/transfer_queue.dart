@@ -42,6 +42,7 @@ class UploadRequest {
     this.assetId,
     this.takenAt,
     this.thumbnailPath,
+    this.wifiOnly = false,
   }) : assert(path != null || openRead != null);
 
   final String name;
@@ -57,12 +58,21 @@ class UploadRequest {
 
   /// Temporary JPEG to attach as the document thumbnail; deleted after.
   final String? thumbnailPath;
+
+  /// Waits for an unmetered network, and steps back to wait again if the
+  /// phone moves onto mobile data while it runs.
+  final bool wifiOnly;
 }
 
 /// A drive file to download and keep on this phone.
 @immutable
 class SaveRequest {
-  const SaveRequest(this.file, {required this.target, this.folders = const []});
+  const SaveRequest(
+    this.file, {
+    required this.target,
+    this.folders = const [],
+    this.wifiOnly = false,
+  });
 
   final DriveFile file;
   final SaveTarget target;
@@ -70,6 +80,9 @@ class SaveRequest {
   /// Folders under the save location, so the drive's layout carries over.
   /// For the gallery, the phone folder the photo was backed up from.
   final List<String> folders;
+
+  /// Waits for an unmetered network, as [UploadRequest.wifiOnly] does.
+  final bool wifiOnly;
 }
 
 /// A transfer as the UI sees it: the persisted row plus live speed.
@@ -88,7 +101,8 @@ class TransferItem {
   /// Being copied into staging before the upload proper starts.
   final bool preparing;
 
-  /// What a queued transfer is waiting for before it starts again by itself.
+  /// What the transfer is waiting for before it carries on by itself: a
+  /// queued one before it starts, a running one for the network to return.
   final TransferWait? wait;
 
   String get id => row.id;
@@ -146,6 +160,10 @@ class TransfersState {
   /// [held] as it stands at [now].
   List<TransferItem> heldAt(DateTime now) =>
       items.where((t) => t.heldAt(now)).toList();
+
+  /// Queued until the phone is on Wi-Fi again.
+  List<TransferItem> get waitingForWifi =>
+      items.where((t) => t.status == TransferStatus.queued && t.wait is WaitingForWifi).toList();
 
   /// Downloads to this phone, which the UI also shows as one group.
   List<TransferItem> get saves =>
@@ -210,6 +228,12 @@ class _Tracked {
 /// upload, every other upload waits with it, a split one under way before
 /// its next part. Whether a queued transfer may start is one question,
 /// [TransferPolicy.mayRun], so every reason to wait is checked in one place.
+///
+/// A dropped connection never interrupts a transfer: TDLib picks it up again
+/// by itself, and the row only says it is waiting for the network. A request
+/// that times out on the way is tried again a few times before the row is
+/// called failed. A row marked Wi-Fi only doesn't start on mobile data, and
+/// steps back into the queue when the phone moves onto it mid-way.
 class TransferQueue extends Notifier<TransfersState> {
   static const int _maxUploads = 2;
   static const int _maxDownloads = 3;
@@ -219,9 +243,14 @@ class TransferQueue extends Notifier<TransfersState> {
   static const int _maxSaves = 2;
   static const Duration _emitInterval = Duration(milliseconds: 300);
 
-  /// How long one second of a Telegram flood wait lasts; tests shorten it.
+  /// How long one second of waiting lasts, for Telegram's pauses and for
+  /// retries after a dropped connection; tests shorten it.
   @visibleForTesting
   static Duration waitUnit = const Duration(seconds: 1);
+
+  /// Seconds before each try again after the connection let a transfer
+  /// down; once they are used up with no part landing, the transfer fails.
+  static const List<int> _retryAfter = [5, 20, 60];
 
   final Map<String, TransferRow> _rows = {};
   final Map<String, double> _speeds = {};
@@ -231,6 +260,18 @@ class TransferQueue extends Notifier<TransfersState> {
 
   /// Running transfers asked to pause; they stop at the next chance.
   final Set<String> _pausing = {};
+
+  /// Running Wi-Fi-only transfers stopping because the phone moved onto
+  /// mobile data. They go back in the queue rather than to paused.
+  final Set<String> _holding = {};
+
+  /// How many times each transfer has been tried again after the
+  /// connection let it down since its last part landed.
+  final Map<String, int> _attempts = {};
+
+  /// Queued to try again after the connection let them down. They wait
+  /// while Telegram has no network, then start when their time is up.
+  final Set<String> _retrying = {};
   final Map<int, _Tracked> _tracked = {};
   final Map<String, int> _pendingMessages = {};
   final Map<String, int> _activeDownloads = {};
@@ -239,7 +280,8 @@ class TransferQueue extends Notifier<TransfersState> {
   final Map<String, Completer<TransferRow>> _finished = {};
   final Set<String> _preparing = {};
 
-  /// Queued downloads Telegram asked to wait, and when they may start again.
+  /// When queued transfers may start again: downloads Telegram asked to
+  /// wait, and transfers to try again after a dropped connection.
   final Map<String, DateTime> _notBefore = {};
 
   /// When uploads may start again, or send their next part, after Telegram
@@ -252,8 +294,13 @@ class TransferQueue extends Notifier<TransfersState> {
   /// The phone's connection as last reported, for rows that wait for Wi-Fi.
   NetworkState _network = NetworkState.unknown;
 
+  /// TDLib is waiting for a network: running transfers say so, and retries
+  /// hold off until it has one.
+  bool _offline = false;
+
   StreamSubscription<td.File>? _fileSubscription;
   StreamSubscription<String>? _ingestSubscription;
+  StreamSubscription<td.ConnectionState>? _connectionSubscription;
   Timer? _emitTimer;
 
   /// Fires when the next of [_notBefore] or [_uploadsNotBefore] comes due.
@@ -269,11 +316,9 @@ class TransferQueue extends Notifier<TransfersState> {
   TransfersState build() {
     _fileSubscription = _client.fileUpdates.listen(_onFileUpdate);
     _ingestSubscription = _repository.ingestedFileIds.listen(_onIngested);
-    ref.listen<NetworkState>(networkStatusProvider, (_, next) {
-      _network = next;
-      // Back on Wi-Fi, rows that waited for it may start.
-      _pump();
-    }, fireImmediately: true);
+    _connectionSubscription = _client.connectionStates.listen(_onConnection);
+    _network = ref.read(networkStatusProvider);
+    ref.listen<NetworkState>(networkStatusProvider, (_, next) => _onNetwork(next));
     ref.listen<DriveSession?>(driveSessionProvider, (previous, next) {
       if (next == null) {
         _reset();
@@ -285,6 +330,7 @@ class TransferQueue extends Notifier<TransfersState> {
     ref.onDispose(() {
       _fileSubscription?.cancel();
       _ingestSubscription?.cancel();
+      _connectionSubscription?.cancel();
       _emitTimer?.cancel();
       _wakeTimer?.cancel();
     });
@@ -331,7 +377,7 @@ class TransferQueue extends Notifier<TransfersState> {
         folderId: folderId,
         sourcePath: sourcePath,
         ownsSource: ownsSource,
-        wifiOnly: false,
+        wifiOnly: request.wifiOnly,
         totalBytes: size,
         doneBytes: 0,
         partCount: 1,
@@ -383,6 +429,8 @@ class TransferQueue extends Notifier<TransfersState> {
       fileId: file.id,
       folderId: file.folderId,
       ownsSource: false,
+      // Someone is waiting to see it, so opening a file never waits for
+      // Wi-Fi.
       wifiOnly: false,
       origin: TransferOrigin.manual,
       totalBytes: file.size,
@@ -420,7 +468,7 @@ class TransferQueue extends Notifier<TransfersState> {
           fileId: file.id,
           folderId: file.folderId,
           ownsSource: false,
-          wifiOnly: false,
+          wifiOnly: request.wifiOnly,
           origin: TransferOrigin.save,
           totalBytes: file.size,
           doneBytes: 0,
@@ -501,6 +549,8 @@ class TransferQueue extends Notifier<TransfersState> {
     if (row == null || !row.status.isPending) return;
     _cancelled.add(id);
     _pausing.remove(id);
+    _holding.remove(id);
+    _retrying.remove(id);
     _notBefore.remove(id);
     await _interrupt(row);
     // Parts already delivered are useless without the rest.
@@ -532,8 +582,10 @@ class TransferQueue extends Notifier<TransfersState> {
     // Copying a picked file into staging can't stop halfway safely.
     if (row == null || !row.status.isActive || _preparing.contains(id)) return;
     if (!_running.contains(id)) {
-      // A paused transfer waits for Resume, not for Telegram's clock.
+      // A paused transfer waits for Resume, not for Telegram's clock or
+      // another try.
       _notBefore.remove(id);
+      _retrying.remove(id);
       await _save(row.copyWith(status: TransferStatus.paused));
       _emit();
       return;
@@ -569,6 +621,55 @@ class TransferQueue extends Notifier<TransfersState> {
     }
     _emit();
     _pump();
+  }
+
+  /// Lets [ids] run on mobile data: they stop waiting for Wi-Fi and start
+  /// now, or as soon as there is a free slot.
+  Future<void> useMobileData(Iterable<String> ids) async {
+    for (final id in ids) {
+      final row = _rows[id];
+      if (row == null || !row.wifiOnly) continue;
+      await _save(row.copyWith(wifiOnly: false));
+    }
+    _emit();
+    _pump();
+  }
+
+  /// Rows that wait for Wi-Fi step back into the queue when the phone moves
+  /// onto mobile data, and start again once it is on Wi-Fi.
+  void _onNetwork(NetworkState next) {
+    _network = next;
+    _holdForWifi();
+    _emit();
+    _pump();
+  }
+
+  /// Stops every running Wi-Fi-only row while the phone is on mobile data,
+  /// the way [pause] does, except that each goes back in the queue to wait
+  /// for Wi-Fi rather than for Resume; see [_start]. Losing the network
+  /// altogether stops nothing: no data is spent while there is none.
+  void _holdForWifi() {
+    if (!_network.metered) return;
+    final running = _rows.values.where(
+      (r) => r.wifiOnly && _running.contains(r.id) && !_holding.contains(r.id),
+    );
+    for (final row in running.toList()) {
+      _holding.add(row.id);
+      unawaited(_interrupt(row));
+    }
+  }
+
+  /// Running transfers say they wait while TDLib has no network, and
+  /// retries held for one may go as soon as it has one again, even while
+  /// it is still connecting.
+  void _onConnection(td.ConnectionState connection) {
+    final offline = connection is td.ConnectionStateWaitingForNetwork;
+    final back = _offline && !offline;
+    if (offline != _offline) {
+      _offline = offline;
+      _emit();
+    }
+    if (back || connection is td.ConnectionStateReady) _pump();
   }
 
   /// Stops whatever TDLib is doing for [row]: abandons the message being
@@ -615,6 +716,8 @@ class TransferQueue extends Notifier<TransfersState> {
   Future<void> _requeue(TransferRow row) async {
     _cancelled.remove(row.id);
     _notBefore.remove(row.id);
+    _attempts.remove(row.id);
+    _retrying.remove(row.id);
     await _save(
       row.copyWith(
         status: TransferStatus.queued,
@@ -666,6 +769,7 @@ class TransferQueue extends Notifier<TransfersState> {
                 now: now,
                 network: _network,
                 notBefore: _notBeforeOf(r),
+                waitsForNetwork: _offline && _retrying.contains(r.id),
               ),
         )
         .toList()
@@ -700,6 +804,7 @@ class TransferQueue extends Notifier<TransfersState> {
     _running.add(row.id);
     _cancelled.remove(row.id);
     _notBefore.remove(row.id);
+    _retrying.remove(row.id);
     unawaited(() async {
       try {
         final running = row.copyWith(status: TransferStatus.running);
@@ -708,11 +813,21 @@ class TransferQueue extends Notifier<TransfersState> {
         await work(running);
       } catch (e, stack) {
         final wait = telegramWaitOf(e);
+        final attempt = _attempts[row.id] ?? 0;
         if (_pausing.contains(row.id)) {
           await _save((_rows[row.id] ?? row).copyWith(status: TransferStatus.paused));
           _emit();
+        } else if (_holding.contains(row.id)) {
+          // On mobile data now: back in the queue with the parts and bytes
+          // it has, until Wi-Fi.
+          await _save((_rows[row.id] ?? row).copyWith(status: TransferStatus.queued));
+          _emit();
         } else if (wait != null && !_cancelled.contains(row.id)) {
           await _waitOut(row, wait, e);
+        } else if (isTransientTransferError(e) &&
+            attempt < _retryAfter.length &&
+            !_cancelled.contains(row.id)) {
+          await _retryLater(row, e, attempt);
         } else if (!_cancelled.contains(row.id)) {
           debugPrint('[Transfers] ${row.name} failed: $e\n$stack');
           final current = _rows[row.id] ?? row;
@@ -727,6 +842,7 @@ class TransferQueue extends Notifier<TransfersState> {
       } finally {
         _running.remove(row.id);
         _pausing.remove(row.id);
+        _holding.remove(row.id);
         _pendingMessages.remove(row.id);
         _activeDownloads.remove(row.id);
         _tracked.removeWhere((_, t) => t.transferId == row.id);
@@ -760,9 +876,60 @@ class TransferQueue extends Notifier<TransfersState> {
     _emit();
   }
 
-  /// When [row] may start, if Telegram asked it, or every upload, to wait.
-  DateTime? _notBeforeOf(TransferRow row) =>
-      row.kind == TransferKind.upload ? _uploadsNotBefore : _notBefore[row.id];
+  /// The connection let [row] down for a moment: a request timed out, or a
+  /// socket closed. The transfer goes back in the queue with the parts and
+  /// bytes it has, and tries again after a wait that grows with each try,
+  /// and not before Telegram has a network again.
+  Future<void> _retryLater(TransferRow row, Object error, int attempt) async {
+    final chatId = ref.read(driveSessionProvider)?.chatId;
+    if (error is SendFailed && chatId != null) {
+      await _quietly(() => _messenger.deleteMessages(chatId, [error.failedMessageId]));
+    }
+    if (_cancelled.contains(row.id)) return;
+    debugPrint('[Transfers] ${row.name} will be tried again: $error');
+    _attempts[row.id] = attempt + 1;
+    _retrying.add(row.id);
+    _notBefore[row.id] = DateTime.now().add(waitUnit * _retryAfter[attempt]);
+    await _save((_rows[row.id] ?? row).copyWith(status: TransferStatus.queued));
+    _scheduleWake();
+    _emit();
+  }
+
+  /// When [row] may start: after its own next try is due, and for an upload
+  /// not before every upload may go again.
+  DateTime? _notBeforeOf(TransferRow row) {
+    final own = _notBefore[row.id];
+    final uploads = row.kind == TransferKind.upload ? _uploadsNotBefore : null;
+    if (own == null || uploads == null) return own ?? uploads;
+    return own.isAfter(uploads) ? own : uploads;
+  }
+
+  /// What [row] is waiting for at [now], if anything. Telegram's pause comes
+  /// first, since nothing starts before it is over. Wi-Fi comes next: it can
+  /// take hours, so a row waiting for it is held even when it is also due
+  /// another try, and Use mobile data can let it go. A row being tried again
+  /// says it waits for the network only while TDLib has none or its wait
+  /// before the next try is running; after that it only waits for a free
+  /// slot.
+  TransferWait? _waitOf(TransferRow row, DateTime now) {
+    switch (row.status) {
+      case TransferStatus.queued:
+        final retrying = _retrying.contains(row.id);
+        final telegram = row.kind == TransferKind.upload
+            ? _uploadsNotBefore
+            : (retrying ? null : _notBefore[row.id]);
+        if (telegram != null && telegram.isAfter(now)) return WaitingForTelegram(telegram);
+        if (TransferPolicy.waitsForWifi(row, _network)) return const WaitingForWifi();
+        if (retrying && (_offline || (_notBefore[row.id]?.isAfter(now) ?? false))) {
+          return const WaitingForNetwork();
+        }
+        return null;
+      case TransferStatus.running:
+        return _offline ? const WaitingForNetwork() : null;
+      default:
+        return null;
+    }
+  }
 
   /// Sets one timer for the next transfer whose wait is over.
   void _scheduleWake() {
@@ -868,8 +1035,9 @@ class TransferQueue extends Notifier<TransfersState> {
             onPending: (pending) {
               _pendingMessages[row.id] = pending.id;
               _trackMessage(pending, row.id, base);
-              // Paused in the moment the send was starting.
-              if (_pausing.contains(row.id)) unawaited(_interrupt(row));
+              // Paused, or held for Wi-Fi, in the moment the send was
+              // starting.
+              if (_stopping(row.id)) unawaited(_interrupt(row));
             },
           );
         } finally {
@@ -895,6 +1063,8 @@ class TransferQueue extends Notifier<TransfersState> {
         doneBytes: math.min(row.totalBytes, partEnd),
       );
       await _save(row);
+      // A part that lands is progress, so the tries start counting afresh.
+      _attempts.remove(row.id);
     }
 
     if (_cancelled.contains(row.id)) return;
@@ -906,11 +1076,13 @@ class TransferQueue extends Notifier<TransfersState> {
     if (partCount > 1) await _deleteQuietly(await _partsDir(row.id));
   }
 
-  /// Copies a picked content URI into staging, where TDLib can read it.
-  /// Ends the work for [id] if it was asked to pause.
+  /// Ends the work for [id] if it was asked to pause, or to step back and
+  /// wait for Wi-Fi.
   void _stopIfPausing(String id) {
-    if (_pausing.contains(id)) throw const DriveException('Paused.');
+    if (_stopping(id)) throw const DriveException('Paused.');
   }
+
+  bool _stopping(String id) => _pausing.contains(id) || _holding.contains(id);
 
   /// Ends an upload's run before it sends another part while Telegram has
   /// every upload waiting: the part would go up in full only to be turned
@@ -923,6 +1095,7 @@ class TransferQueue extends Notifier<TransfersState> {
     throw TelegramException(429, 'Too Many Requests: retry after $seconds');
   }
 
+  /// Copies a picked content URI into staging, where TDLib can read it.
   Future<TransferRow> _stage(
     TransferRow row,
     File target,
@@ -1054,6 +1227,7 @@ class TransferQueue extends Notifier<TransfersState> {
             doneBytes: base,
           ),
         );
+        _attempts.remove(initial.id);
         await _quietly(
           () => _client.send<td.Ok>(td.DeleteFile(fileId: part.tdFileId)),
         );
@@ -1140,6 +1314,8 @@ class TransferQueue extends Notifier<TransfersState> {
     _tracked[tdFile.id] = _Tracked(row.id, base, upload: false);
     _activeDownloads[row.id] = tdFile.id;
     try {
+      // Paused, or held for Wi-Fi, while the file was being looked up.
+      _stopIfPausing(row.id);
       // Synchronous mode answers only once the file is complete (or the
       // download was cancelled), which is exactly what this needs.
       final done = await _client.send<td.File>(
@@ -1254,6 +1430,9 @@ class TransferQueue extends Notifier<TransfersState> {
       }).firstOrNull;
       if (resumable != null &&
           resumable.sendingState is td.MessageSendingStatePending) {
+        // Known before the run takes the send up, so a hold for Wi-Fi in
+        // the meantime still stops TDLib sending it.
+        _pendingMessages[row.id] = resumable.id;
         _start(row, (running) => _upload(running, resume: resumable));
       } else if (row.origin == TransferOrigin.backup) {
         // Photo backup re-queues these itself on its next pass.
@@ -1263,6 +1442,9 @@ class TransferQueue extends Notifier<TransfersState> {
         await _save(row.copyWith(status: TransferStatus.queued));
       }
     }
+    // TDLib carries on with a send on its own after a restart, mobile data
+    // or not.
+    _holdForWifi();
     _emit();
     _pump();
   }
@@ -1271,6 +1453,9 @@ class TransferQueue extends Notifier<TransfersState> {
     _loadedFor = null;
     _rows.clear();
     _running.clear();
+    _holding.clear();
+    _attempts.clear();
+    _retrying.clear();
     _notBefore.clear();
     _uploadsNotBefore = null;
     _wakeTimer?.cancel();
@@ -1292,6 +1477,8 @@ class TransferQueue extends Notifier<TransfersState> {
 
   Future<void> _finish(TransferRow row, {Object? error}) async {
     _notBefore.remove(row.id);
+    _attempts.remove(row.id);
+    _retrying.remove(row.id);
     final finished = row.copyWith(finishedAt: Value(DateTime.now()));
     final keptOffline =
         row.saveTo == SaveTarget.offline && row.status == TransferStatus.completed;
@@ -1355,13 +1542,7 @@ class TransferQueue extends Notifier<TransfersState> {
             r,
             bytesPerSecond: _speeds[r.id] ?? 0,
             preparing: _preparing.contains(r.id),
-            // Only a queued transfer waits on the clock; paused and
-            // finished ones don't start by themselves.
-            wait: switch (_notBeforeOf(r)) {
-              final until? when r.status == TransferStatus.queued && until.isAfter(now) =>
-                WaitingForTelegram(until),
-              _ => null,
-            },
+            wait: _waitOf(r, now),
           ),
         )
         .toList()

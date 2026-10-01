@@ -8,12 +8,14 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:handy_tdlib/api.dart' as td;
 import 'package:path/path.dart' as p;
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:telegrive/app/theme/app_theme.dart';
 import 'package:telegrive/features/drive/data/drive_session.dart';
 import 'package:telegrive/features/share/data/share_intake.dart';
 import 'package:telegrive/features/share/presentation/share_sheet.dart';
 import 'package:telegrive/features/transfers/data/transfer_queue.dart';
 import 'package:telegrive/infrastructure/database/app_database.dart';
+import 'package:telegrive/infrastructure/storage/preferences.dart';
 import 'package:telegrive/infrastructure/telegram/telegram_client.dart';
 
 import 'support/fake_telegram.dart';
@@ -118,6 +120,9 @@ void main() {
       () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(pathProvider, null),
     );
 
+    // ignore: invalid_use_of_visible_for_testing_member
+    SharedPreferences.setMockInitialValues({});
+    final shared = await SharedPreferences.getInstance();
     final db = AppDatabase(NativeDatabase.memory());
     addTearDown(db.close);
     final router = GoRouter(
@@ -139,6 +144,7 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          sharedPreferencesProvider.overrideWithValue(shared),
           appDatabaseProvider.overrideWithValue(db),
           telegramClientProvider.overrideWithValue(_Telegram()),
           driveSessionProvider.overrideWith(TestSession.new),

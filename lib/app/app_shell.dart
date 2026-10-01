@@ -228,7 +228,9 @@ class _AppShellState extends ConsumerState<AppShell> {
 
 /// "Uploading 2 files · 41% · 8.3 MB/s" above the bar, opening Transfers.
 /// When everything in it is sitting out a short Telegram wait, the line
-/// counts down to the next try instead, with the bar gone grey.
+/// counts down to the next try instead, with the bar gone grey; when it all
+/// waits for the network, the line says so, grey too. Transfers waiting for
+/// Wi-Fi aren't in flight, so they aren't counted here.
 class _TransferStrip extends ConsumerWidget {
   const _TransferStrip();
 
@@ -257,6 +259,8 @@ class _TransferStrip extends ConsumerWidget {
     final resumesAt = waits.isEmpty || waits.length < active.length
         ? null
         : waits.reduce((a, b) => a.isBefore(b) ? a : b);
+    final offline = active.isNotEmpty && active.every((t) => t.wait is WaitingForNetwork);
+    final percent = '${(progress * 100).round()}%';
 
     Widget line(String detail, {required bool waiting}) => StatusLine(
       icon: uploads > 0 ? Icons.arrow_upward_rounded : Icons.arrow_downward_rounded,
@@ -272,12 +276,18 @@ class _TransferStrip extends ConsumerWidget {
       color: colors.surface,
       child: DecoratedBox(
         decoration: BoxDecoration(border: Border(top: BorderSide(color: colors.line))),
-        child: resumesAt == null
+        child: offline
+            ? StatusLine(
+                icon: Icons.cloud_off_rounded,
+                text: 'Waiting for network',
+                detail: '$title · $percent',
+                progress: progress,
+                progressColor: colors.text3,
+                onTap: () => context.push('/transfers'),
+              )
+            : resumesAt == null
             ? line(
-                [
-                  '${(progress * 100).round()}%',
-                  if (speed > 0) Formatters.speed(speed),
-                ].join(' · '),
+                [percent, if (speed > 0) Formatters.speed(speed)].join(' · '),
                 waiting: false,
               )
             : Countdown(

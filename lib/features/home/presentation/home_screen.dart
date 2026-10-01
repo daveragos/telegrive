@@ -249,6 +249,7 @@ class _Activity extends ConsumerWidget {
       text: health.text,
       detail: health.detail,
       progress: health.progress,
+      progressColor: health.waiting ? colors.text3 : null,
       trailing: switch (health.action) {
         HealthAction.turnOn => TextButton(
           onPressed: () => enableBackup(context, ref),
@@ -281,6 +282,12 @@ class _Activity extends ConsumerWidget {
         HealthAction.resumeTransfers => TextButton(
           onPressed: () => queue.resumeAll((r) => r.origin != TransferOrigin.backup),
           child: const Text('Resume'),
+        ),
+        HealthAction.useDataForTransfers => TextButton(
+          onPressed: () => queue.useMobileData(
+            transfersWaitingForWifi(ref.read(transferQueueProvider)).map((t) => t.id),
+          ),
+          child: const Text('Use data'),
         ),
         HealthAction.none => null,
       },

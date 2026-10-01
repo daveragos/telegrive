@@ -17,6 +17,7 @@ import '../../../core/widgets/common.dart';
 import '../../../core/widgets/file_visuals.dart';
 import '../../../infrastructure/database/app_database.dart'
     show SaveTarget, TransferKind, appDatabaseProvider;
+import '../../../infrastructure/network/network_status.dart';
 import '../../../infrastructure/storage/device_storage.dart';
 import '../../../infrastructure/storage/preferences.dart';
 import '../../../infrastructure/telegram/telegram_exception.dart';
@@ -29,9 +30,11 @@ import '../../drive/data/channel_messenger.dart';
 import '../../drive/data/drive_repository.dart';
 import '../../drive/data/drive_session.dart';
 import '../../drive/domain/drive_models.dart';
+import '../../transfers/data/transfer_policy.dart';
 import '../../transfers/data/transfer_queue.dart';
 import '../../transfers/domain/transfer_error.dart';
 import '../../transfers/domain/transfer_wait.dart';
+import '../../transfers/presentation/mobile_data_prompt.dart';
 import '../../trash/data/pending_deletes.dart';
 import '../data/bulk_edits.dart';
 import 'folder_picker.dart';
@@ -141,7 +144,9 @@ abstract final class FileActions {
   /// [everything], the whole drive) to this phone, in the drive's folders.
   /// Photos and videos can go to the gallery instead; [preferGallery] is
   /// where that choice starts, by default on when everything is media.
-  /// Returns whether anything was queued.
+  /// Something big on mobile data can wait for Wi-Fi instead, and big files
+  /// started on Wi-Fi wait if the phone moves onto mobile data, as the
+  /// setting says. Returns whether anything was queued.
   static Future<bool> saveToDevice(
     BuildContext context,
     WidgetRef ref, {
@@ -163,7 +168,7 @@ abstract final class FileActions {
       return false;
     }
 
-    final gallery = await showModalBottomSheet<bool>(
+    final choice = await showModalBottomSheet<_SaveChoice>(
       context: context,
       useRootNavigator: true,
       isScrollControlled: true,
@@ -171,11 +176,12 @@ abstract final class FileActions {
         items: items,
         freeBytes: free,
         preferGallery: preferGallery ?? items.every((i) => fitsGallery(i.file)),
+        network: ref.read(networkStatusProvider),
       ),
     );
-    if (gallery == null || !context.mounted) return false;
+    if (choice == null || !context.mounted) return false;
 
-    final useGallery = gallery && items.any((i) => fitsGallery(i.file));
+    final useGallery = choice.gallery && items.any((i) => fitsGallery(i.file));
     if (!await storage.ensureAccess(gallery: useGallery)) {
       if (context.mounted) {
         showSnack(
@@ -188,6 +194,9 @@ abstract final class FileActions {
       return false;
     }
 
+    final bigWait = ref.read(preferencesProvider).bigTransfersWifiOnly;
+    bool wifiOnly(DriveFile file) =>
+        choice.wifiOnly ?? TransferPolicy.wifiOnlyFor(file.size, bigWaitForWifi: bigWait);
     final requests = [
       for (final item in items)
         if (useGallery && fitsGallery(item.file))
@@ -195,9 +204,15 @@ abstract final class FileActions {
             item.file,
             target: SaveTarget.gallery,
             folders: [?_backupAlbum(item.path)],
+            wifiOnly: wifiOnly(item.file),
           )
         else
-          SaveRequest(item.file, target: SaveTarget.files, folders: item.folders),
+          SaveRequest(
+            item.file,
+            target: SaveTarget.files,
+            folders: item.folders,
+            wifiOnly: wifiOnly(item.file),
+          ),
     ];
     final queued = await ref
         .read(transferQueueProvider.notifier)
@@ -209,6 +224,8 @@ abstract final class FileActions {
       context,
       queued == 0
           ? 'Already downloading to this phone'
+          : choice.wifiOnly == true
+          ? 'Waiting for Wi-Fi to download ${Formatters.count(queued, 'file')}'
           : 'Downloading ${Formatters.count(queued, 'file')} to this phone',
       actionLabel: 'View',
       onAction: () => router.push('/transfers'),
@@ -229,24 +246,57 @@ abstract final class FileActions {
   // ---------------------------------------------------------------------------
 
   /// Keeps [file] or [folder] (with everything in it, now and later) on
-  /// this phone for use without a connection, or stops keeping it.
+  /// this phone for use without a connection, or stops keeping it. On
+  /// mobile data, something big asks first whether to wait for Wi-Fi.
   static Future<bool> setOffline(
     BuildContext context,
     WidgetRef ref, {
     DriveFile? file,
     DriveFolder? folder,
     required bool keep,
-  }) {
+  }) async {
     final offline = ref.read(offlineSyncProvider.notifier);
     final name = file?.name ?? folder!.name;
+    if (!keep) {
+      return _guard(
+        context,
+        () => offline.unpin(file: file, folder: folder),
+        success: '"$name" is no longer kept offline',
+      );
+    }
+    bool? wifiOnly;
+    final network = ref.read(networkStatusProvider);
+    if (network.metered) {
+      var items = const <SaveItem>[];
+      final counted = await _guard(context, () async {
+        items = await ref
+            .read(driveRepositoryProvider)
+            .collectForSaving(files: [?file], folders: [?folder]);
+      });
+      if (!counted || !context.mounted) return false;
+      final bytes = items.fold<int>(0, (sum, i) => sum + i.file.size);
+      if (TransferPolicy.shouldAsk(network: network, bytes: bytes)) {
+        final choice = await askAboutMobileData(
+          context,
+          bytes: bytes,
+          doing: 'Keeping "$name" offline',
+          files: items.length,
+          nowLabel: 'Keep offline now',
+        );
+        if (choice == null || !context.mounted) return false;
+        wifiOnly = wifiOnlyFrom(choice);
+      } else {
+        // Too small to ask about, so it comes now, as anything this size
+        // does on mobile data.
+        wifiOnly = false;
+      }
+    }
     return _guard(
       context,
-      () => keep
-          ? offline.pin(file: file, folder: folder)
-          : offline.unpin(file: file, folder: folder),
-      success: keep
-          ? '"$name" will be available offline'
-          : '"$name" is no longer kept offline',
+      () => offline.pin(file: file, folder: folder, wifiOnly: wifiOnly),
+      success: wifiOnly == true
+          ? 'Waiting for Wi-Fi to keep "$name" offline'
+          : '"$name" will be available offline',
     );
   }
 
@@ -309,14 +359,49 @@ abstract final class FileActions {
     if (picked.isEmpty) return;
 
     final temp = (await getTemporaryDirectory()).path;
+    bool owned(PlatformFile file) => file.path?.startsWith(temp) ?? false;
+    final sizes = [for (final file in picked) file.lengthSync()];
+    // A size the picker couldn't read counts as nothing, as the queue
+    // counts it until the file is staged.
+    final bytes = sizes.fold<int>(0, (sum, size) => sum + (size ?? 0));
+    final what = picked.length == 1
+        ? picked.single.name
+        : Formatters.count(picked.length, 'file');
+
+    DataChoice? choice;
+    if (TransferPolicy.shouldAsk(network: ref.read(networkStatusProvider), bytes: bytes)) {
+      if (context.mounted) {
+        choice = await askAboutMobileData(
+          context,
+          bytes: bytes,
+          doing: 'Uploading $what',
+          files: picked.length,
+          nowLabel: 'Upload now',
+        );
+      }
+      if (choice == null) {
+        // Called off: the copies the picker made go too.
+        for (final file in picked.where(owned)) {
+          try {
+            await File(file.path!).delete();
+          } catch (_) {}
+        }
+        return;
+      }
+    }
+
+    final bigWait = ref.read(preferencesProvider).bigTransfersWifiOnly;
     final requests = [
-      for (final file in picked)
+      for (final (index, file) in picked.indexed)
         UploadRequest(
           name: file.name,
           path: file.path,
-          size: file.lengthSync(),
+          size: sizes[index],
           openRead: file.path == null ? file.readAsByteStream : null,
-          ownsSource: file.path?.startsWith(temp) ?? false,
+          ownsSource: owned(file),
+          wifiOnly:
+              wifiOnlyFrom(choice) ??
+              TransferPolicy.wifiOnlyFor(sizes[index] ?? 0, bigWaitForWifi: bigWait),
         ),
     ];
     await ref
@@ -328,9 +413,7 @@ abstract final class FileActions {
     final router = GoRouter.of(context);
     showSnack(
       context,
-      requests.length == 1
-          ? 'Uploading ${requests.first.name}'
-          : 'Uploading ${requests.length} files',
+      choice == DataChoice.later ? 'Waiting for Wi-Fi to upload $what' : 'Uploading $what',
       actionLabel: 'View',
       onAction: () => router.push('/transfers'),
     );
@@ -1206,8 +1289,10 @@ class _DownloadDialogState extends ConsumerState<_DownloadDialog> {
     final progress = item?.progress ?? 0;
     final waitingUntil = switch (item?.wait) {
       WaitingForTelegram(:final until) => until,
-      null => null,
+      _ => null,
     };
+    final offline = item?.wait is WaitingForNetwork;
+    final waiting = waitingUntil != null || offline;
     final detailStyle = theme.textTheme.bodySmall?.copyWith(fontFeatures: tabularFigures);
 
     return AlertDialog(
@@ -1237,9 +1322,9 @@ class _DownloadDialogState extends ConsumerState<_DownloadDialog> {
           ClipRRect(
             borderRadius: BorderRadius.circular(2),
             child: LinearProgressIndicator(
-              value: waitingUntil != null || progress > 0 ? progress : null,
+              value: waiting || progress > 0 ? progress : null,
               minHeight: 4,
-              color: waitingUntil == null ? null : context.colors.text3,
+              color: waiting ? context.colors.text3 : null,
             ),
           ),
           const SizedBox(height: Space.s),
@@ -1255,8 +1340,11 @@ class _DownloadDialogState extends ConsumerState<_DownloadDialog> {
             Text(
               item == null
                   ? 'Starting'
-                  : '${Formatters.bytes(item.row.doneBytes)} of ${Formatters.bytes(item.row.totalBytes)}'
-                        '${item.bytesPerSecond > 0 ? ' · ${Formatters.speed(item.bytesPerSecond)}' : ''}',
+                  : [
+                      if (offline) 'Waiting for network',
+                      '${Formatters.bytes(item.row.doneBytes)} of ${Formatters.bytes(item.row.totalBytes)}',
+                      if (!offline && item.bytesPerSecond > 0) Formatters.speed(item.bytesPerSecond),
+                    ].join(' · '),
               style: detailStyle,
             ),
         ],
@@ -1283,18 +1371,26 @@ class _DownloadDialogState extends ConsumerState<_DownloadDialog> {
   }
 }
 
+/// What the Download sheet settled: whether photos and videos go to the
+/// gallery, and whether the downloads wait for Wi-Fi. That is null when the
+/// sheet didn't ask, so the size rule decides.
+typedef _SaveChoice = ({bool gallery, bool? wifiOnly});
+
 /// What a download to this phone will do, and where things will land,
-/// before it starts. Pops with whether photos and videos go to the gallery.
+/// before it starts. On mobile data, something big says how much data it
+/// uses and offers to wait for Wi-Fi. Pops with a [_SaveChoice].
 class _SaveSheet extends StatefulWidget {
   const _SaveSheet({
     required this.items,
     required this.freeBytes,
     required this.preferGallery,
+    required this.network,
   });
 
   final List<SaveItem> items;
   final int? freeBytes;
   final bool preferGallery;
+  final NetworkState network;
 
   @override
   State<_SaveSheet> createState() => _SaveSheetState();
@@ -1314,8 +1410,11 @@ class _SaveSheetState extends State<_SaveSheet> {
     // Android holds a second copy of the file being saved for a moment.
     final needed = bytes + (Platform.isAndroid ? largest : 0);
     final tooBig = free != null && needed > free;
+    final onData = TransferPolicy.shouldAsk(network: widget.network, bytes: bytes);
     final single = items.length == 1;
     final library = Platform.isIOS ? 'photo library' : 'gallery';
+    void choose({bool? wifiOnly}) =>
+        Navigator.pop<_SaveChoice>(context, (gallery: _gallery, wifiOnly: wifiOnly));
 
     final String where;
     if (_gallery && media == items.length) {
@@ -1379,20 +1478,36 @@ class _SaveSheetState extends State<_SaveSheet> {
                   fontFeatures: tabularFigures,
                 ),
               ),
+            if (onData)
+              Padding(
+                padding: const EdgeInsets.only(top: Space.xs),
+                child: Text(
+                  'You\'re on mobile data. This uses ${Formatters.bytes(bytes)} of it.',
+                  style: context.text.bodySmall?.copyWith(
+                    color: colors.text2,
+                    fontFeatures: tabularFigures,
+                  ),
+                ),
+              ),
             const SizedBox(height: Space.xl),
             Row(
               children: [
                 Expanded(
-                  child: OutlinedButton(
-                    onPressed: () => Navigator.pop(context),
-                    child: const Text('Cancel'),
-                  ),
+                  child: onData
+                      ? OutlinedButton(
+                          onPressed: tooBig ? null : () => choose(wifiOnly: true),
+                          child: const Text('Later, on Wi-Fi'),
+                        )
+                      : OutlinedButton(
+                          onPressed: () => Navigator.pop(context),
+                          child: const Text('Cancel'),
+                        ),
                 ),
                 const SizedBox(width: Space.m),
                 Expanded(
                   child: FilledButton(
-                    onPressed: tooBig ? null : () => Navigator.pop(context, _gallery),
-                    child: const Text('Download'),
+                    onPressed: tooBig ? null : () => choose(wifiOnly: onData ? false : null),
+                    child: Text(onData ? 'Download now' : 'Download'),
                   ),
                 ),
               ],

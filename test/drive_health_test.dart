@@ -51,6 +51,33 @@ TransferItem _held(String name, {TransferOrigin origin = TransferOrigin.manual})
   wait: WaitingForTelegram(_now.add(const Duration(minutes: 40))),
 );
 
+/// A transfer running while the phone has no network.
+TransferItem _offline(
+  String name, {
+  TransferOrigin origin = TransferOrigin.manual,
+  int total = 100,
+  int done = 0,
+}) => _transfer(
+  name,
+  TransferStatus.running,
+  origin: origin,
+  total: total,
+  done: done,
+  wait: const WaitingForNetwork(),
+);
+
+/// A transfer queued until the phone is on Wi-Fi.
+TransferItem _onWifi(String name, {TransferOrigin origin = TransferOrigin.manual, int total = 100}) =>
+    _transfer(
+      name,
+      TransferStatus.queued,
+      origin: origin,
+      total: total,
+      wait: const WaitingForWifi(),
+    );
+
+const _gb = 1 << 30;
+
 DriveHealth _top({
   BackupState backup = _upToDate,
   SyncState? sync,
@@ -352,6 +379,107 @@ void main() {
       expect(_top(sync: const SyncState()).text, 'Backed up and in sync');
     });
 
+    test('without a network, transfers say they wait, with a grey bar', () {
+      final health = _top(
+        backup: _off,
+        transfers: TransfersState([
+          _offline('a.zip', total: 100, done: 50),
+          _offline('b.zip', total: 100, done: 30),
+        ]),
+      );
+      expect(health.text, 'Waiting for network');
+      expect(health.detail, 'Carries on when you\'re back online · 40%');
+      expect(health.icon, Icons.cloud_off_rounded);
+      expect(health.tone, HealthTone.neutral);
+      expect(health.progress, closeTo(0.4, 1e-9));
+      expect(health.waiting, isTrue);
+      expect(health.target, HealthTarget.transfers);
+    });
+
+    test('one transfer still moving keeps the line in progress', () {
+      final health = _top(
+        backup: _off,
+        transfers: TransfersState([
+          _offline('a.zip'),
+          _transfer('b.zip', TransferStatus.running),
+        ]),
+      );
+      expect(health.text, '2 transfers in progress');
+      expect(health.waiting, isFalse);
+    });
+
+    test('without a network beats backing up and a Telegram wait', () {
+      final health = _top(
+        backup: const BackupState(phase: BackupPhase.uploading, total: 20, done: 5),
+        transfers: TransfersState([
+          _offline('IMG_1.jpg', origin: TransferOrigin.backup),
+          _held('a.zip'),
+        ]),
+      );
+      expect(health.text, 'Waiting for network');
+      // Backup is all that moves, so it says so in backup's words.
+      expect(health.detail, 'Backup carries on when you\'re back online.');
+      expect(health.progress, closeTo(0.25, 1e-9));
+      expect(health.target, HealthTarget.backup);
+    });
+
+    test('transfers without a network say so over a stopped backup, which keeps its row', () {
+      final health = _top(
+        backup: const BackupState(phase: BackupPhase.stopped),
+        transfers: TransfersState([_offline('a.zip')]),
+      );
+      expect(health.text, 'Waiting for network');
+      expect(
+        secondaryHealth(
+          health,
+          backup: const BackupState(phase: BackupPhase.stopped),
+          transfers: TransfersState([_offline('a.zip')]),
+          now: _now,
+        )?.text,
+        'Backup stopped',
+      );
+    });
+
+    test('transfers waiting for Wi-Fi say so when nothing moves, and offer data', () {
+      final health = _top(
+        backup: _off,
+        transfers: TransfersState([
+          _onWifi('a.zip', total: _gb),
+          _onWifi('b.zip', total: _gb),
+        ]),
+      );
+      expect(health.text, 'Waiting for Wi-Fi · 2 transfers');
+      expect(health.detail, '2.0 GB. They start on their own on Wi\u2011Fi.');
+      expect(health.icon, Icons.wifi_off_rounded);
+      expect(health.tone, HealthTone.neutral);
+      expect(health.action, HealthAction.useDataForTransfers);
+      expect(health.target, HealthTarget.transfers);
+
+      expect(
+        _top(backup: _off, transfers: TransfersState([_onWifi('a.zip', total: _gb)])).detail,
+        '1.0 GB. It starts on its own on Wi\u2011Fi.',
+      );
+    });
+
+    test('transfers waiting for Wi-Fi never read as all good', () {
+      expect(
+        _top(transfers: TransfersState([_onWifi('a.zip')])).text,
+        'Waiting for Wi-Fi · 1 transfer',
+      );
+    });
+
+    test('backup uploads waiting for Wi-Fi are left to backup\'s own line', () {
+      final transfers = TransfersState([_onWifi('IMG_1.jpg', origin: TransferOrigin.backup)]);
+      const backup = BackupState(phase: BackupPhase.waitingForWifi, total: 300, done: 88);
+      final health = _top(backup: backup, transfers: transfers);
+      expect(health.text, 'Waiting for Wi-Fi · 212 items left');
+      expect(health.action, HealthAction.useData);
+      expect(
+        secondaryHealth(health, backup: backup, transfers: transfers, now: _now),
+        isNull,
+      );
+    });
+
     test('backup waiting for the drive says it is starting', () {
       final health = _top(backup: const BackupState(phase: BackupPhase.waitingForDrive));
       expect(health.text, 'Backup is starting');
@@ -460,6 +588,9 @@ void main() {
         busy,
         TransfersState([_transfer('a.zip', TransferStatus.failed), ...paused.items]),
         TransfersState([_held('w.zip'), ...busy.items, ...paused.items]),
+        TransfersState([_onWifi('h.zip'), ...busy.items]),
+        TransfersState([_onWifi('h.zip'), _offline('o.zip'), ...paused.items]),
+        TransfersState([_offline('o.zip'), _transfer('f.zip', TransferStatus.failed)]),
       ];
       final syncs = [_synced, const SyncState(error: 'No connection'), const SyncState(running: true)];
       for (final backup in states) {
@@ -480,6 +611,38 @@ void main() {
           }
         }
       }
+    });
+
+    test('transfers waiting for Wi-Fi sit under work in progress', () {
+      final mixed = TransfersState([
+        _transfer('a.zip', TransferStatus.running),
+        _onWifi('b.zip', total: _gb),
+      ]);
+      expect(_top(backup: _off, transfers: mixed).text, '1 transfer in progress');
+      final row = second(_off, mixed);
+      expect(row?.text, 'Waiting for Wi-Fi · 1 transfer');
+      expect(row?.action, HealthAction.useDataForTransfers);
+
+      const uploading = BackupState(phase: BackupPhase.uploading, total: 10, done: 2);
+      final waiting = TransfersState([_onWifi('b.zip')]);
+      expect(_top(backup: uploading, transfers: waiting).text, 'Backing up · 8 left');
+      expect(second(uploading, waiting)?.action, HealthAction.useDataForTransfers);
+    });
+
+    test('failed transfers keep their row under transfers waiting for Wi-Fi', () {
+      final mixed = TransfersState([
+        _onWifi('a.zip'),
+        _transfer('b.zip', TransferStatus.failed),
+      ]);
+      expect(_top(transfers: mixed).text, 'Waiting for Wi-Fi · 1 transfer');
+      expect(second(_upToDate, mixed)?.action, HealthAction.retryTransfers);
+    });
+
+    test('backup waiting for Wi-Fi and transfers waiting for it each keep their button', () {
+      const backup = BackupState(phase: BackupPhase.waitingForWifi, total: 300, done: 88);
+      final transfers = TransfersState([_onWifi('a.zip')]);
+      expect(_top(backup: backup, transfers: transfers).action, HealthAction.useDataForTransfers);
+      expect(second(backup, transfers)?.action, HealthAction.useData);
     });
 
     test('paused transfers wait while others are running', () {

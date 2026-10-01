@@ -22,3 +22,23 @@ final class WaitingForTelegram extends TransferWait {
   @override
   bool holdsAt(DateTime now) => until.difference(now) > const Duration(minutes: 5);
 }
+
+/// Telegram can't be reached because the phone has no connection. A running
+/// transfer stays running, since TDLib carries on with it by itself once the
+/// network is back, and one being retried after the connection dropped
+/// waits for it. Either way it is still in flight.
+final class WaitingForNetwork extends TransferWait {
+  const WaitingForNetwork();
+
+  @override
+  bool holdsAt(DateTime now) => false;
+}
+
+/// The transfer waits for an unmetered network and does not start on mobile
+/// data. It can wait for hours, so it never counts as in flight.
+final class WaitingForWifi extends TransferWait {
+  const WaitingForWifi();
+
+  @override
+  bool holdsAt(DateTime now) => true;
+}

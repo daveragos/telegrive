@@ -25,17 +25,29 @@ abstract final class TransferPolicy {
   static bool wifiOnlyFor(int bytes, {required bool bigWaitForWifi}) =>
       bigWaitForWifi && bytes >= bigFrom;
 
-  /// Whether a queued [row] may start at [now]. It may not while Telegram's
-  /// pause lasts ([notBefore]), while the row waits for Wi-Fi and [network]
-  /// is metered, or while the phone lacks the room it needs ([hasRoom]).
+  /// Whether [row] has to wait for Wi-Fi on [network]: it is marked Wi-Fi
+  /// only, and the phone is on mobile data or on nothing at all. Without a
+  /// network it doesn't start either, since the next one may well be mobile
+  /// data and TDLib would be sending on it before the phone said so.
+  static bool waitsForWifi(TransferRow row, NetworkState network) =>
+      row.wifiOnly && (network.metered || !network.online);
+
+  /// Whether a queued [row] may start at [now]. It may not before its next
+  /// try is due ([notBefore]: Telegram's pause, or a retry after a dropped
+  /// connection), while it is being retried and Telegram still waits for a
+  /// network ([waitsForNetwork]), while it waits for Wi-Fi on [network] (see
+  /// [waitsForWifi]), or while the phone lacks the room it needs
+  /// ([hasRoom]).
   static bool mayRun(
     TransferRow row, {
     required DateTime now,
     required NetworkState network,
     DateTime? notBefore,
+    bool waitsForNetwork = false,
     bool hasRoom = true,
   }) =>
       !(notBefore?.isAfter(now) ?? false) &&
-      !(row.wifiOnly && network.metered) &&
+      !waitsForNetwork &&
+      !waitsForWifi(row, network) &&
       hasRoom;
 }

@@ -114,6 +114,24 @@ void main() {
       expect(TransferPolicy.mayRun(_row(), now: _now, network: _mobile), isTrue);
     });
 
+    test('nor without a network, since the next one may be mobile data', () {
+      const offline = NetworkState(online: false, metered: false);
+      expect(TransferPolicy.mayRun(_row(wifiOnly: true), now: _now, network: offline), isFalse);
+      expect(TransferPolicy.waitsForWifi(_row(wifiOnly: true), offline), isTrue);
+      expect(TransferPolicy.mayRun(_row(), now: _now, network: offline), isTrue);
+    });
+
+    test('a try again after a dropped connection waits for the network', () {
+      expect(
+        TransferPolicy.mayRun(_row(), now: _now, network: _wifi, waitsForNetwork: true),
+        isFalse,
+      );
+      expect(
+        TransferPolicy.mayRun(_row(), now: _now, network: _wifi, waitsForNetwork: false),
+        isTrue,
+      );
+    });
+
     test('before the phone has said, the network counts as unmetered', () {
       expect(
         TransferPolicy.mayRun(_row(wifiOnly: true), now: _now, network: NetworkState.unknown),

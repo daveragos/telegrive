@@ -26,11 +26,20 @@ class TransfersScreen extends ConsumerWidget {
     final active = state.pending
         .where((t) => t.origin == TransferOrigin.manual)
         .toList();
-    final anyRunning = active.any((t) => t.status.isActive);
-    final anyPaused = active.any((t) => t.status == TransferStatus.paused);
+    // Those waiting for Wi-Fi get a group of their own, with the one button
+    // that lets them go now.
+    final waitingForWifi = active.where((t) => t.wait is WaitingForWifi).toList();
+    final inProgress = active.where((t) => t.wait is! WaitingForWifi).toList();
+    final waitingBytes = waitingForWifi.fold<int>(
+      0,
+      (sum, t) => sum + t.row.totalBytes - t.row.doneBytes,
+    );
+    final anyRunning = inProgress.any((t) => t.status.isActive);
+    final anyPaused = inProgress.any((t) => t.status == TransferStatus.paused);
     final saves = state.saves;
     final queue = ref.read(transferQueueProvider.notifier);
-    bool manual(TransferRow r) => r.origin == TransferOrigin.manual;
+    final inProgressIds = {for (final t in inProgress) t.id};
+    bool listed(TransferRow r) => inProgressIds.contains(r.id);
     final finished = state.finished
         .where(
           (t) => !(t.origin == TransferOrigin.save && t.status == TransferStatus.completed),
@@ -67,19 +76,47 @@ class TransfersScreen extends ConsumerWidget {
                   const SectionHeader('Download to this phone'),
                   ListGroup(children: [_SaveGroup(saves: saves)]),
                 ],
-                if (active.isNotEmpty) ...[
+                // Comes and goes as the phone moves between Wi-Fi and mobile
+                // data, so it eases in and out rather than jump.
+                AnimatedSize(
+                  duration: const Duration(milliseconds: 200),
+                  curve: Curves.easeOut,
+                  child: waitingForWifi.isEmpty
+                      ? const SizedBox(width: double.infinity)
+                      : Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            SectionHeader(
+                              'Waiting for Wi-Fi · '
+                              '${Formatters.count(waitingForWifi.length, 'file')} · '
+                              '${Formatters.bytes(waitingBytes)}',
+                              trailing: TextButton(
+                                onPressed: () =>
+                                    queue.useMobileData(waitingForWifi.map((t) => t.id)),
+                                child: const Text('Use mobile data'),
+                              ),
+                            ),
+                            ListGroup(
+                              children: [
+                                for (final item in waitingForWifi) _ActiveRow(item: item),
+                              ],
+                            ),
+                          ],
+                        ),
+                ),
+                if (inProgress.isNotEmpty) ...[
                   SectionHeader(
-                    'In progress · ${active.length}',
-                    trailing: active.length < 2
+                    'In progress · ${inProgress.length}',
+                    trailing: inProgress.length < 2
                         ? null
                         : TextButton(
                             onPressed: anyRunning
-                                ? () => queue.pauseAll(manual)
-                                : () => queue.resumeAll(manual),
+                                ? () => queue.pauseAll(listed)
+                                : () => queue.resumeAll(listed),
                             child: Text(anyRunning || !anyPaused ? 'Pause all' : 'Resume all'),
                           ),
                   ),
-                  ListGroup(children: [for (final item in active) _ActiveRow(item: item)]),
+                  ListGroup(children: [for (final item in inProgress) _ActiveRow(item: item)]),
                 ],
                 if (finished.isNotEmpty) ...[
                   SectionHeader(
@@ -103,8 +140,8 @@ class TransfersScreen extends ConsumerWidget {
   }
 }
 
-/// Every download to this phone as one line: how far along, or where it
-/// all went once done.
+/// Every download to this phone as one line: how far along, what it waits
+/// for, or where it all went once done.
 class _SaveGroup extends ConsumerWidget {
   const _SaveGroup({required this.saves});
 
@@ -115,6 +152,8 @@ class _SaveGroup extends ConsumerWidget {
     final colors = context.colors;
     final queue = ref.read(transferQueueProvider.notifier);
     final running = saves.where((t) => t.status.isActive).toList();
+    final held = running.where((t) => t.wait is WaitingForWifi).toList();
+    final moving = running.length > held.length;
     final paused = saves.where((t) => t.status == TransferStatus.paused).toList();
     final saved = saves.where((t) => t.status == TransferStatus.completed).toList();
     final total = saves.where((t) => t.status != TransferStatus.cancelled).length;
@@ -141,7 +180,28 @@ class _SaveGroup extends ConsumerWidget {
       child: const Text('Stop'),
     );
 
-    if (running.isEmpty && paused.isNotEmpty) {
+    if (!moving && held.isNotEmpty) {
+      return StatusLine(
+        icon: Icons.wifi_off_rounded,
+        color: colors.text2,
+        text:
+            'Waiting for Wi-Fi · ${Formatters.number(saved.length)} of '
+            '${Formatters.count(total, 'file')} saved',
+        detail: 'They carry on over Wi-Fi.',
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextButton(
+              onPressed: () => queue.useMobileData(held.map((t) => t.id)),
+              child: const Text('Use data'),
+            ),
+            stop,
+          ],
+        ),
+      );
+    }
+
+    if (!moving && paused.isNotEmpty) {
       return StatusLine(
         icon: Icons.pause_circle_outline_rounded,
         color: colors.text2,
@@ -157,7 +217,7 @@ class _SaveGroup extends ConsumerWidget {
       );
     }
 
-    if (running.isEmpty) {
+    if (!moving) {
       return StatusLine(
         icon: Icons.download_done_rounded,
         color: colors.success,
@@ -170,6 +230,9 @@ class _SaveGroup extends ConsumerWidget {
     var done = 0;
     var speed = 0.0;
     for (final item in [...running, ...paused, ...saved]) {
+      // Saves held for Wi-Fi move nothing now, so they count neither in
+      // what is left nor in when it ends; the line says how many wait.
+      if (item.wait is WaitingForWifi) continue;
       bytes += item.row.totalBytes;
       done += item.status == TransferStatus.completed ? item.row.totalBytes : item.row.doneBytes;
       speed += item.bytesPerSecond;
@@ -179,13 +242,17 @@ class _SaveGroup extends ConsumerWidget {
       icon: Icons.download_rounded,
       color: colors.accent,
       text: '${Formatters.number(saved.length)} of ${Formatters.count(total, 'file')} saved',
-      detail: speed < 1
-          ? '${Formatters.bytes(left)} left'
-          : [
-              Formatters.bytes(left),
-              Formatters.speed(speed),
-              Formatters.eta(Duration(seconds: (left / speed).ceil())),
-            ].join(' · '),
+      detail: [
+        if (speed < 1)
+          '${Formatters.bytes(left)} left'
+        else ...[
+          Formatters.bytes(left),
+          Formatters.speed(speed),
+          Formatters.eta(Duration(seconds: (left / speed).ceil())),
+        ],
+        if (held.isNotEmpty)
+          '${Formatters.number(held.length)} ${held.length == 1 ? 'waits' : 'wait'} for Wi-Fi',
+      ].join(' · '),
       progress: bytes == 0 ? 0 : done / bytes,
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
@@ -211,7 +278,7 @@ class _ActiveRow extends ConsumerWidget {
     final paused = item.status == TransferStatus.paused;
     final waitingUntil = switch (item.wait) {
       WaitingForTelegram(:final until) => until,
-      null => null,
+      _ => null,
     };
     final queue = ref.read(transferQueueProvider.notifier);
     final eta = item.eta;
@@ -221,20 +288,25 @@ class _ActiveRow extends ConsumerWidget {
         : null;
 
     final detailStyle = context.text.bodySmall?.copyWith(fontFeatures: tabularFigures);
+    final soFar = '${Formatters.bytes(item.row.doneBytes)} of ${Formatters.bytes(item.row.totalBytes)}';
+    final started = item.row.doneBytes > 0 || item.row.completedParts > 0;
     final String detail;
     if (item.preparing) {
       detail = 'Preparing the file';
     } else if (paused) {
-      detail = [
-        'Paused',
-        '${Formatters.bytes(item.row.doneBytes)} of ${Formatters.bytes(item.row.totalBytes)}',
-        ?parts,
-      ].join(' · ');
+      detail = ['Paused', soFar, ?parts].join(' · ');
+    } else if (item.wait is WaitingForWifi) {
+      detail = started
+          ? ['Waiting for Wi-Fi', soFar, ?parts].join(' · ')
+          : 'Waiting for Wi-Fi · ${Formatters.bytes(item.row.totalBytes)}';
+    } else if (item.wait is WaitingForNetwork) {
+      // No speed or time left: nothing is moving until the network is back.
+      detail = ['Waiting for network', soFar, ?parts].join(' · ');
     } else if (queued) {
       detail = 'Waiting · ${Formatters.bytes(item.row.totalBytes)}';
     } else {
       detail = [
-        '${Formatters.bytes(item.row.doneBytes)} of ${Formatters.bytes(item.row.totalBytes)}',
+        soFar,
         if (item.bytesPerSecond > 0) Formatters.speed(item.bytesPerSecond),
         ?(eta == null ? null : Formatters.eta(eta)),
         ?parts,
@@ -294,7 +366,8 @@ class _ActiveRow extends ConsumerWidget {
                     builder: (context, value, _) => LinearProgressIndicator(
                       value: item.preparing ? null : value,
                       minHeight: 4,
-                      color: paused || waitingUntil != null ? colors.text3 : null,
+                      // Grey while it waits rather than moves.
+                      color: paused || item.wait != null ? colors.text3 : null,
                     ),
                   ),
                 ),

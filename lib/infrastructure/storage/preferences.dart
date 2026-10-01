@@ -109,6 +109,13 @@ class Preferences {
         if (key.startsWith(prefix)) ?int.tryParse(key.substring(prefix.length)),
   };
 
+  /// Transfers of 200 MB or more that start without anyone being asked wait
+  /// for Wi-Fi, so moving onto mobile data mid-way doesn't spend the plan.
+  /// On until switched off.
+  bool get bigTransfersWifiOnly => _prefs.getBool('big_transfers_wifi_only') ?? true;
+  Future<void> setBigTransfersWifiOnly(bool on) =>
+      _prefs.setBool('big_transfers_wifi_only', on);
+
   bool get hasSeenWelcome => _prefs.getBool('seen_welcome') ?? false;
   Future<void> setSeenWelcome() => _prefs.setBool('seen_welcome', true);
 

@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:handy_tdlib/api.dart' as td;
@@ -10,6 +9,7 @@ import 'package:pdfrx/pdfrx.dart';
 
 import '../../../core/files/file_kind.dart' show Preview;
 import '../../../infrastructure/database/app_database.dart';
+import '../../../infrastructure/network/network_status.dart';
 import '../../../infrastructure/storage/preferences.dart';
 import '../../../infrastructure/telegram/telegram_client.dart';
 import '../../drive/data/drive_repository.dart';
@@ -39,8 +39,8 @@ class IndexerState {
 /// what they say, not only by their names.
 ///
 /// It happens on this phone, a file at a time while the app is open;
-/// nothing is sent anywhere. Documents not on the phone yet are fetched on
-/// Wi-Fi only.
+/// nothing is sent anywhere. Documents not on the phone yet are fetched only
+/// on an unmetered network, so never over mobile data or a phone's hotspot.
 class ContentIndexer extends Notifier<IndexerState> {
   /// 2: documents only; version 1 also read photos.
   static const int version = 2;
@@ -52,7 +52,8 @@ class ContentIndexer extends Notifier<IndexerState> {
   Timer? _start;
   bool _stop = false;
 
-  /// Whether this pass may fetch documents it doesn't have.
+  /// Whether this pass may fetch documents it doesn't have: online, and not
+  /// on mobile data.
   bool _onWifi = false;
 
   AppDatabase get _db => ref.read(appDatabaseProvider);
@@ -102,7 +103,8 @@ class ContentIndexer extends Notifier<IndexerState> {
             DriveFile.fromRow(row),
       ]..sort((a, b) => b.momentAt.compareTo(a.momentAt));
 
-      _onWifi = await _wifi();
+      final network = ref.read(networkStatusProvider);
+      _onWifi = network.online && !network.metered;
       for (final (index, file) in todo.indexed) {
         if (_stop) break;
         state = state.copyWith(left: todo.length - index);
@@ -187,12 +189,6 @@ class ContentIndexer extends Notifier<IndexerState> {
       (all, chunk) => all..addAll(chunk),
     );
     return utf8.decode(bytes, allowMalformed: true);
-  }
-
-  static Future<bool> _wifi() async {
-    final network = await Connectivity().checkConnectivity();
-    return network.contains(ConnectivityResult.wifi) ||
-        network.contains(ConnectivityResult.ethernet);
   }
 
   static String _clean(String text) {
