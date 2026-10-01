@@ -1,5 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../features/transfers/data/transfer_keep_alive.dart';
+
 /// Something the app was opened to do: back up the new photos, from the
 /// backup notification, or show the transfers, from the transfer
 /// notification. The shell carries it out once the drive is open, so a
@@ -8,15 +10,13 @@ enum LaunchAction {
   backup,
   transfers;
 
-  /// The route the transfer notification launches the app with. Android
-  /// hands it over as the initial route; the router does not start there
-  /// (it would be the only screen, and back would close the app) but maps
-  /// it to [transfers].
-  static const String transfersRoute = '/transfers';
-
-  /// The action a launch route stands for, or null for a plain launch.
+  /// The action a launch route stands for, or null for a plain launch. The
+  /// transfer notification launches the app with its own route, which
+  /// Android hands over as the initial route; the router does not start
+  /// there (it would be the only screen, and back would close the app) but
+  /// the route becomes [transfers].
   static LaunchAction? fromRoute(String route) =>
-      route == transfersRoute ? transfers : null;
+      route == TransferKeepAlive.notificationRoute ? transfers : null;
 }
 
 class PendingLaunchAction extends Notifier<LaunchAction?> {

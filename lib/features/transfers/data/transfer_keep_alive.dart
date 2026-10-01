@@ -5,7 +5,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../app/launch_action.dart';
 import '../../../core/format/formatters.dart';
 import '../../../infrastructure/database/app_database.dart'
     show TransferKind, TransferOrigin;
@@ -20,6 +19,11 @@ import 'transfer_queue.dart';
 /// — is Android's way of saying so. It starts with the first active transfer
 /// and stops when the queue drains.
 class TransferKeepAlive {
+  /// The route the transfer notification launches the app with. It rides on
+  /// the notification's launch intent as Android's initial route; the app
+  /// reads it as a LaunchAction and opens Transfers over Home.
+  static const String notificationRoute = '/transfers';
+
   static const int _serviceId = 4107;
   static const Duration _updateEvery = Duration(milliseconds: 1500);
 
@@ -117,9 +121,7 @@ class TransferKeepAlive {
         serviceTypes: const [ForegroundServiceTypes.dataSync],
         notificationTitle: title,
         notificationText: text,
-        // Rides on the notification's launch intent; the app reads it as
-        // a LaunchAction and opens Transfers over Home.
-        notificationInitialRoute: LaunchAction.transfersRoute,
+        notificationInitialRoute: notificationRoute,
         callback: transferServiceEntryPoint,
       );
       _running = result is ServiceRequestSuccess;
@@ -188,7 +190,7 @@ class _IdleTaskHandler extends TaskHandler {
 
   @override
   void onNotificationPressed() =>
-      FlutterForegroundTask.launchApp(LaunchAction.transfersRoute);
+      FlutterForegroundTask.launchApp(TransferKeepAlive.notificationRoute);
 }
 
 /// Watched from the app root; does nothing off Android.

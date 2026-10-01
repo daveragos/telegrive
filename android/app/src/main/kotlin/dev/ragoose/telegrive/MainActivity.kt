@@ -3,6 +3,7 @@ package dev.ragoose.telegrive
 import android.Manifest
 import android.app.ActivityManager
 import android.content.ContentValues
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.MediaMetadataRetriever
@@ -22,6 +23,9 @@ import android.provider.DocumentsContract
 import android.provider.MediaStore
 import android.provider.OpenableColumns
 import android.provider.Settings
+import androidx.fragment.app.Fragment
+import androidx.fragment.app.FragmentManager
+import io.flutter.embedding.android.FlutterFragment
 import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
@@ -66,13 +70,26 @@ class MainActivity : FlutterFragmentActivity() {
     private lateinit var capture: CaptureChannel
     private lateinit var folders: FoldersChannel
 
+    /**
+     * Whether this activity is the first one its intent starts, so the
+     * intent's route, share or link is acted on. Android hands a task's first
+     * intent back, extras and all, when Recents restarts a closed app
+     * (flagged as launched from history) and when it recreates an activity
+     * whose process it killed (with saved state); the intent has been acted
+     * on by then, and acting again would open Transfers or take the same
+     * share in once more.
+     */
+    private var firstStart = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         capture = CaptureChannel(this, io, main) { addShared(listOf(it)) }
         folders = FoldersChannel(this, io, main)
+        firstStart = savedInstanceState == null &&
+            (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) == 0
+        if (savedInstanceState != null) forgetRestoredRoute()
         super.onCreate(savedInstanceState)
         capture.restoreState(savedInstanceState)
-        // A recreated activity has already handled its intent.
-        if (savedInstanceState == null) {
+        if (firstStart) {
             receiveShare(intent)
             receiveLink(intent)
         }
@@ -87,6 +104,32 @@ class MainActivity : FlutterFragmentActivity() {
         super.onNewIntent(intent)
         receiveShare(intent)
         receiveLink(intent)
+    }
+
+    /**
+     * The route the launch intent asks for, as the transfer notification's
+     * does, or null for the default. Only a [firstStart] has one, so an app
+     * reopened from Recents opens the way a plain launch does.
+     */
+    override fun getInitialRoute(): String? = if (firstStart) super.getInitialRoute() else null
+
+    /**
+     * A recreated activity gets its FlutterFragment back from saved state
+     * holding the route it was first created with (the fragment's
+     * ARG_INITIAL_ROUTE), and the fragment starts its engine from that when
+     * it attaches, inside super.onCreate, without asking [getInitialRoute].
+     * The route is dropped just before the fragment attaches, so an app that
+     * Android killed and brought back opens the way a plain launch does.
+     */
+    private fun forgetRestoredRoute() {
+        supportFragmentManager.registerFragmentLifecycleCallbacks(
+            object : FragmentManager.FragmentLifecycleCallbacks() {
+                override fun onFragmentPreAttached(fm: FragmentManager, f: Fragment, context: Context) {
+                    if (f is FlutterFragment) f.arguments?.remove("initial_route")
+                }
+            },
+            false,
+        )
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
