@@ -29,7 +29,7 @@ enum HealthAction {
 }
 
 /// Where tapping a line goes: a screen, or another try at syncing.
-enum HealthTarget { backup, transfers, refresh }
+enum HealthTarget { backup, notBackedUp, transfers, refresh }
 
 /// What a line is about. The second row keeps to a different topic from the
 /// top line, so the two rows say different things and their buttons never
@@ -303,9 +303,9 @@ DriveHealth _failedItems(BackupState backup) => DriveHealth(
   icon: Icons.error_outline_rounded,
   tone: HealthTone.bad,
   text: '${Formatters.count(backup.failed, 'item')} didn\'t back up',
-  detail: 'Skipped after three tries.',
+  detail: 'See which ones and why.',
   action: HealthAction.retryFailed,
-  target: HealthTarget.backup,
+  target: HealthTarget.notBackedUp,
   topic: HealthTopic.backup,
 );
 

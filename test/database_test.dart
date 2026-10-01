@@ -399,6 +399,60 @@ void main() {
 
     await db.clearBackupFailures();
     expect((await db.backupAssetMap()).keys, ['asset-1']);
+
+    // Photos out of tries are listed with the reason, and can be skipped.
+    await db.markAssetFailed('asset-2', 3, reason: 'Telegram took too long to answer.');
+    await db.markAssetFailed('asset-3', 2, reason: 'Couldn\'t start the upload.');
+    await db.markAssetFailed('asset-4', 4);
+
+    final failed = await db.watchFailedAssets(minFailures: 3).first;
+    expect(failed.map((r) => r.assetId), unorderedEquals(['asset-2', 'asset-4']));
+    expect(
+      failed.singleWhere((r) => r.assetId == 'asset-2').reason,
+      'Telegram took too long to answer.',
+    );
+
+    expect(await db.markAssetSkipped('asset-2'), 1);
+    expect(await db.markAssetSkipped('asset-2'), 0);
+    expect(await db.markAssetSkipped('asset-1'), 0);
+    expect((await db.watchFailedAssets(minFailures: 3).first).map((r) => r.assetId), [
+      'asset-4',
+    ]);
+    expect(await db.watchSkippedAssetIds().first, ['asset-2']);
+    final skipped = (await db.backupAssetOf('asset-2'))!;
+    expect(skipped.state, BackupAssetState.skipped);
+    expect(skipped.failures, 3);
+    expect(skipped.reason, 'Telegram took too long to answer.');
+    expect(await db.backupAssetOf('asset-9'), isNull);
+
+    // Undo puts a skipped photo back among the failed ones, once, and
+    // leaves any other record alone.
+    expect(await db.unmarkAssetSkipped('asset-2'), 1);
+    expect(await db.unmarkAssetSkipped('asset-2'), 0);
+    expect(await db.unmarkAssetSkipped('asset-1'), 0);
+    final back = (await db.backupAssetOf('asset-2'))!;
+    expect(
+      (back.state, back.failures, back.reason),
+      (BackupAssetState.failed, 3, 'Telegram took too long to answer.'),
+    );
+    expect((await db.backupAssetOf('asset-1'))?.state, BackupAssetState.done);
+    expect(await db.markAssetSkipped('asset-2'), 1);
+
+    // Retrying one forgets that photo's failures and no other row.
+    expect(await db.clearBackupFailure('asset-4'), 1);
+    expect(await db.clearBackupFailure('asset-4'), 0);
+    expect(await db.clearBackupFailure('asset-1'), 0);
+    expect(
+      (await db.backupAssetMap()).keys,
+      unorderedEquals(['asset-1', 'asset-2', 'asset-3']),
+    );
+
+    await db.clearSkipped();
+    expect(await db.watchSkippedAssetIds().first, isEmpty);
+    expect((await db.backupAssetMap()).keys, unorderedEquals(['asset-1', 'asset-3']));
+    expect(await db.watchBackedUpCount().first, 1);
+    expect(await db.watchLocalAssets().first, {'p': 'asset-1'});
+    expect(await db.safelyBackedUp(), {'asset-1': 4242});
   });
 
   test('the phone copy of a backed-up file is found by file id', () async {

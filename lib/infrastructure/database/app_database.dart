@@ -854,20 +854,94 @@ class AppDatabase extends _$AppDatabase {
     ]);
   });
 
-  Future<void> markAssetFailed(String assetId, int failures) =>
+  /// Records a failed attempt, with [reason] as the sentence the Not backed
+  /// up screen shows for it.
+  Future<void> markAssetFailed(String assetId, int failures, {String? reason}) =>
       into(backupAssets).insertOnConflictUpdate(
         BackupAssetsCompanion.insert(
           assetId: assetId,
           state: BackupAssetState.failed,
           failures: Value(failures),
           updatedAt: DateTime.now(),
+          reason: Value(reason),
         ),
       );
+
+  /// What backup knows of one photo, or null when it was never tried.
+  Future<BackupAssetRow?> backupAssetOf(String assetId) =>
+      (select(backupAssets)..where((a) => a.assetId.equals(assetId))).getSingleOrNull();
+
+  /// Sets a failed photo aside until the person brings it back; it keeps
+  /// its failures and reason meanwhile. Returns 0 when the photo wasn't
+  /// failed, so a second tap changes nothing.
+  Future<int> markAssetSkipped(String assetId) =>
+      (update(backupAssets)..where(
+            (a) =>
+                a.assetId.equals(assetId) &
+                a.state.equalsValue(BackupAssetState.failed),
+          ))
+          .write(
+            BackupAssetsCompanion(
+              state: const Value(BackupAssetState.skipped),
+              updatedAt: Value(DateTime.now()),
+            ),
+          );
+
+  /// Puts a photo set aside back among the failed ones, with the failures
+  /// and reason it kept. Returns 0 when it isn't set aside any more, so a
+  /// late Undo leaves a photo that has moved on as it is.
+  Future<int> unmarkAssetSkipped(String assetId) =>
+      (update(backupAssets)..where(
+            (a) =>
+                a.assetId.equals(assetId) &
+                a.state.equalsValue(BackupAssetState.skipped),
+          ))
+          .write(
+            BackupAssetsCompanion(
+              state: const Value(BackupAssetState.failed),
+              updatedAt: Value(DateTime.now()),
+            ),
+          );
+
+  /// Forgets one photo's failures, so the next pass tries it afresh.
+  /// Returns 0 when there was nothing to forget.
+  Future<int> clearBackupFailure(String assetId) =>
+      (delete(backupAssets)..where(
+            (a) =>
+                a.assetId.equals(assetId) &
+                a.state.equalsValue(BackupAssetState.failed),
+          ))
+          .go();
 
   Future<void> clearBackupFailures() =>
       (delete(backupAssets)
             ..where((a) => a.state.equalsValue(BackupAssetState.failed)))
           .go();
+
+  /// Brings every skipped photo back into backup.
+  Future<void> clearSkipped() =>
+      (delete(backupAssets)
+            ..where((a) => a.state.equalsValue(BackupAssetState.skipped)))
+          .go();
+
+  /// Photos that failed at least [minFailures] times, most recent first.
+  Stream<List<BackupAssetRow>> watchFailedAssets({required int minFailures}) =>
+      (select(backupAssets)
+            ..where(
+              (a) =>
+                  a.state.equalsValue(BackupAssetState.failed) &
+                  a.failures.isBiggerOrEqualValue(minFailures),
+            )
+            ..orderBy([(a) => OrderingTerm.desc(a.updatedAt)]))
+          .watch();
+
+  /// Media ids of the photos set aside, live.
+  Stream<List<String>> watchSkippedAssetIds() =>
+      (selectOnly(backupAssets)
+            ..addColumns([backupAssets.assetId])
+            ..where(backupAssets.state.equalsValue(BackupAssetState.skipped)))
+          .map((r) => r.read(backupAssets.assetId)!)
+          .watch();
 
   // ---------------------------------------------------------------------------
   // Transfers

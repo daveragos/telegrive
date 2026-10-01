@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../app/theme/tokens.dart';
+import '../../../core/format/formatters.dart';
 import '../../../core/widgets/common.dart';
 import '../../backup/data/backup_controller.dart';
 import '../../backup/presentation/backup_card.dart';
@@ -129,6 +130,7 @@ class _PhotosScreenState extends ConsumerState<PhotosScreen> {
                         child: const BackupStatusLine(),
                       ),
                     ),
+                    const SliverToBoxAdapter(child: _StuckRow()),
                     const SliverToBoxAdapter(child: _KeptOutRow()),
                   ],
                   empty: keptOut.count > 0
@@ -146,6 +148,54 @@ class _PhotosScreenState extends ConsumerState<PhotosScreen> {
                           compact: true,
                         ),
                 ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Points to Not backed up while something is stuck: photos out of tries,
+/// or photos waiting while backup isn't moving. While backup is moving, the
+/// status line above already counts what is left, so the row names only
+/// the failures.
+class _StuckRow extends ConsumerWidget {
+  const _StuckRow();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colors = context.colors;
+    final backup = ref.watch(backupControllerProvider);
+    final waiting = backup.remaining > 0 && !backup.isWorking;
+    if (backup.failed == 0 && !waiting) return const SizedBox.shrink();
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        border: Border(bottom: BorderSide(color: colors.line)),
+      ),
+      child: InkWell(
+        onTap: () => context.push('/backup/not-backed-up'),
+        child: SizedBox(
+          height: 40,
+          child: Padding(
+            padding: const EdgeInsets.only(left: Space.gutter, right: Space.m),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    [
+                      if (waiting) '${Formatters.number(backup.remaining)} waiting',
+                      if (backup.failed > 0)
+                        '${Formatters.number(backup.failed)} didn\'t back up',
+                    ].join(' · '),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: context.text.bodySmall?.copyWith(fontFeatures: tabularFigures),
+                  ),
+                ),
+                Icon(Icons.chevron_right_rounded, color: colors.text3),
+              ],
+            ),
+          ),
         ),
       ),
     );

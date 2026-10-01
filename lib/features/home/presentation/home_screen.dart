@@ -293,6 +293,7 @@ class _Activity extends ConsumerWidget {
       },
       onTap: switch (health.target) {
         HealthTarget.backup => () => context.push('/backup'),
+        HealthTarget.notBackedUp => () => context.push('/backup/not-backed-up'),
         HealthTarget.transfers => () => context.push('/transfers'),
         HealthTarget.refresh => () => ref.read(driveSyncProvider.notifier).refresh(),
       },

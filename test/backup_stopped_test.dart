@@ -107,7 +107,7 @@ void main() {
 
     await controller.run();
     expect(state().phase, BackupPhase.stopped);
-    expect(state().error, 'Telegram took too long to answer.');
+    expect(state().error, 'Lost the connection to Telegram. Retry when you\'re back online.');
 
     await controller.run();
     expect(state().phase, BackupPhase.upToDate);

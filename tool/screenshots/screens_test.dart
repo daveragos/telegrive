@@ -21,7 +21,9 @@ import 'package:telegrive/app/theme/app_theme.dart';
 import 'package:telegrive/features/auth/presentation/phone_screen.dart';
 import 'package:telegrive/features/auth/presentation/welcome_screen.dart';
 import 'package:telegrive/features/backup/data/backup_controller.dart';
+import 'package:telegrive/features/backup/data/local_media.dart';
 import 'package:telegrive/features/backup/presentation/backup_screen.dart';
+import 'package:telegrive/features/backup/presentation/not_backed_up_screen.dart';
 import 'package:telegrive/features/photos/data/photos_visibility.dart';
 import 'package:telegrive/features/photos/presentation/photos_screen.dart';
 import 'package:telegrive/features/search/presentation/search_screen.dart';
@@ -498,7 +500,16 @@ void main() {
             ),
           ],
         ),
-        GoRoute(path: '/backup', builder: (_, _) => const BackupScreen()),
+        GoRoute(
+          path: '/backup',
+          builder: (_, _) => const BackupScreen(),
+          routes: [
+            GoRoute(
+              path: 'not-backed-up',
+              builder: (_, _) => const NotBackedUpScreen(),
+            ),
+          ],
+        ),
         GoRoute(path: '/search', builder: (_, _) => const SearchScreen()),
         GoRoute(path: '/trash', builder: (_, _) => const TrashScreen()),
         GoRoute(path: '/albums', builder: (_, _) => const AlbumsScreen()),
@@ -1095,6 +1106,97 @@ void main() {
       ],
     );
     await snap(tester, 'photos_kept_out');
+  });
+
+  testWidgets('not backed up', (tester) async {
+    await prepareData(tester);
+    final scenes = await tester.runAsync(
+      () => Future.wait([
+        _scene(const Color(0xFF7FB2E5), const Color(0xFF5E8C4A), 160),
+        _scene(const Color(0xFFF2B880), const Color(0xFF8C5A3C), 160),
+        _scene(const Color(0xFF9AA7C7), const Color(0xFF3F5A6B), 160),
+      ]),
+    );
+    final waiting = [
+      for (var i = 0; i < 6; i++)
+        PendingAsset(
+          assetId: 'waiting-$i',
+          takenAt: DateTime.now().subtract(Duration(hours: 5 + i * 26)),
+          folder: i == 3 ? 'Screenshots' : 'Camera',
+        ),
+    ];
+    // The first failed photo has gone from the phone, so it has no picture
+    // or name; the rest are still there.
+    final names = {
+      'failed-2': 'VID_20260918_074410.mp4',
+      'waiting-0': 'IMG_20260925_181204.jpg',
+      'waiting-1': 'IMG_20260924_123517.jpg',
+      'waiting-2': 'IMG_20260923_094058.jpg',
+      'waiting-3': 'Screenshot_20260922_210731.png',
+      'waiting-4': 'IMG_20260921_170322.jpg',
+      'waiting-5': 'IMG_20260920_081945.jpg',
+    };
+    await pumpApp(
+      tester,
+      location: '/backup/not-backed-up',
+      backup: BackupState(
+        phase: BackupPhase.waitingForWifi,
+        total: 4847,
+        done: 4533,
+        failed: 2,
+        waiting: waiting,
+      ),
+      overrides: [
+        failedBackupAssetsProvider.overrideWith(
+          (ref) => Stream.value([
+            BackupAssetRow(
+              assetId: 'failed-1',
+              state: BackupAssetState.failed,
+              failures: 3,
+              updatedAt: DateTime.now(),
+              reason: 'The original file is no longer available.',
+            ),
+            BackupAssetRow(
+              assetId: 'failed-2',
+              state: BackupAssetState.failed,
+              failures: 3,
+              updatedAt: DateTime.now(),
+              reason: 'Telegram took too long to answer.',
+            ),
+          ]),
+        ),
+        skippedBackupCountProvider.overrideWith((ref) => Stream.value(1)),
+        assetThumbnailProvider('failed-1').overrideWith((ref) async => null),
+        assetTitleProvider('failed-1').overrideWith((ref) async => null),
+        for (final (index, MapEntry(key: id, value: name)) in names.entries.indexed) ...[
+          assetThumbnailProvider(id).overrideWith((ref) async => scenes![index % 3]),
+          assetTitleProvider(id).overrideWith((ref) async => name),
+        ],
+      ],
+    );
+    await tester.runAsync(() async {
+      final context = tester.element(find.byType(Scaffold).first);
+      for (final scene in scenes!) {
+        await precacheImage(MemoryImage(scene), context);
+      }
+    });
+    await tester.pump(const Duration(milliseconds: 400));
+    await snap(tester, 'not_backed_up');
+  });
+
+  testWidgets('photos waiting', (tester) async {
+    await prepareData(tester);
+    await pumpApp(
+      tester,
+      location: '/photos',
+      backup: const BackupState(
+        phase: BackupPhase.waitingForWifi,
+        total: 4847,
+        done: 4533,
+        failed: 2,
+      ),
+    );
+    await snap(tester, 'photos_waiting');
   });
 
   testWidgets('transfers with backup', (tester) async {

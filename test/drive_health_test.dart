@@ -176,9 +176,10 @@ void main() {
         transfers: TransfersState([_transfer('a.zip', TransferStatus.failed)]),
       );
       expect(health.text, '3 items didn\'t back up');
-      expect(health.detail, 'Skipped after three tries.');
+      expect(health.detail, 'See which ones and why.');
       expect(health.tone, HealthTone.bad);
       expect(health.action, HealthAction.retryFailed);
+      expect(health.target, HealthTarget.notBackedUp);
     });
 
     test('failed transfers never take the main line', () {

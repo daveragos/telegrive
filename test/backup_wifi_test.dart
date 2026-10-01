@@ -86,6 +86,17 @@ TransferItem _upload(String id, {required TransferOrigin origin, required bool w
       ),
     );
 
+/// A photo in the phone's Camera folder.
+Map<String, Object> _photo(String id) => {
+  'id': id,
+  'type': 1,
+  'width': 4000,
+  'height': 3000,
+  'createDt': DateTime(2026, 9, 25).millisecondsSinceEpoch ~/ 1000,
+  'relativePath': 'DCIM/Camera/',
+  'title': 'IMG_$id.jpg',
+};
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -95,10 +106,14 @@ void main() {
   /// Runs while the library is being read.
   void Function()? onScan;
 
+  /// The phone's photos, none until a test adds some.
+  late List<Map<String, Object>> library;
+
   setUp(() {
     libraryCalls = [];
     onScan = null;
-    // Photo access granted, and nothing in the library.
+    library = [];
+    // Photo access granted, and the photos in [library].
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
       photos,
       (call) async {
@@ -106,7 +121,14 @@ void main() {
         if (call.method == 'getAssetPathList') onScan?.call();
         return switch (call.method) {
           'getPermissionState' => PermissionState.authorized.index,
-          'getAssetPathList' => {'data': <Object>[]},
+          'getAssetPathList' => {
+            'data': [
+              if (library.isNotEmpty)
+                {'id': 'all', 'name': 'Recent', 'isAll': true, 'assetCount': library.length},
+            ],
+          },
+          'getAssetCountFromPath' => library.length,
+          'getAssetListRange' => {'data': library},
           _ => null,
         };
       },
@@ -149,22 +171,26 @@ void main() {
     return container;
   }
 
-  test('on a hotspot, Wi-Fi-only backup waits for Wi-Fi and reads nothing', () async {
+  test('on a hotspot, Wi-Fi-only backup counts the library and waits for Wi-Fi', () async {
+    library = [_photo('p1')];
     final container = await open(network: _hotspot, wifiOnly: true);
-    final controller = container.read(backupControllerProvider.notifier);
 
-    await controller.run();
+    await container.read(backupControllerProvider.notifier).run();
 
-    expect(container.read(backupControllerProvider).phase, BackupPhase.waitingForWifi);
-    expect(libraryCalls, isNot(contains('getAssetPathList')));
-
-    (container.read(networkStatusProvider.notifier) as _Network).set(_wifi);
-    await controller.run();
-    expect(container.read(backupControllerProvider).phase, BackupPhase.upToDate);
     expect(libraryCalls, contains('getAssetPathList'));
+    expect(container.read(backupControllerProvider).phase, BackupPhase.waitingForWifi);
+  });
+
+  test('on a hotspot with nothing new, Wi-Fi-only backup is up to date', () async {
+    final container = await open(network: _hotspot, wifiOnly: true);
+
+    await container.read(backupControllerProvider.notifier).run();
+
+    expect(container.read(backupControllerProvider).phase, BackupPhase.upToDate);
   });
 
   test('moving onto mobile data while the library is read waits for Wi-Fi', () async {
+    library = [_photo('p1')];
     final container = await open(network: _wifi, wifiOnly: true);
     final controller = container.read(backupControllerProvider.notifier) as _Backup;
     final network = container.read(networkStatusProvider.notifier) as _Network;

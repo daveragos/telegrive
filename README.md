@@ -20,16 +20,16 @@ phone number.
   Telegrive creates (or finds again) on your account.
 - **Any size.** Telegram caps a message at 2000 MiB (4000 MiB with Premium).
   Bigger files are split into 512 MiB parts and joined back on download.
-- **Photo backup.** Turn it on once and the whole camera
-  roll goes up in full quality — then every new photo and video follows on
-  its own. Choose device folders, videos on or off, Wi-Fi only or mobile
-  data. A Photos tab shows your photos and videos as a timeline grouped by
-  month, with a swipeable full-screen viewer. Screenshots and chat folders
-  back up too, but the timeline leaves them out until you tap Show.
-  Long-press and drag to select a run of photos, pinch to change the grid,
-  and keep albums (a photo can be in several without being copied), plus
-  Favorites and Videos. Home opens with one line that says whether
-  everything is backed up and in sync, and when that was last checked.
+- **Photo backup.** Turn it on once and the whole camera roll goes up in
+  full quality — then every new photo and video follows on its own. Choose
+  device folders, videos on or off, Wi-Fi only or mobile data. A Photos tab
+  shows your photos and videos as a timeline grouped by month, with a
+  swipeable full-screen viewer. Screenshots and chat folders back up too,
+  but the timeline leaves them out until you tap Show. Long-press and drag
+  to select a run of photos, pinch to change the grid, and keep albums (a
+  photo can be in several without being copied), plus Favorites and Videos.
+  Home opens with one line that says whether everything is backed up and in
+  sync, and when that was last checked.
 - **Free up space.** Delete the phone's copies of photos and videos that are
   safely backed up; they stay in the drive.
 - **Real folders.** Create, rename, move and delete folders; breadcrumbs;
@@ -153,6 +153,12 @@ phone number.
 - **Exactly once.** Each photo's device id is remembered, and anything
   already in the drive with the same name and size (after a reinstall, or
   from an old phone) is recognised and skipped.
+- **Nothing silently skipped.** A photo that fails is tried again a few
+  seconds later. After three tries it is listed under Backup › Not backed
+  up with the reason, and can be retried or skipped one by one. The same
+  screen lists the newest photos still waiting, with Back up now to send
+  one ahead of the rest. Photos points to it while something is stuck,
+  and Home's line about what didn't back up opens it.
 - **Keeps going.** A pass runs when the drive opens, when the app comes back
   to the foreground, and whenever the photo library changes while the app is
   alive; a foreground service keeps it running in the background.

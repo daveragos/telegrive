@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:photo_manager/photo_manager.dart';
 
 import '../../../app/theme/tokens.dart';
@@ -58,20 +59,25 @@ class BackupScreen extends ConsumerWidget {
                 ),
               ),
             ),
-          if (backup.failed > 0) ...[
+          if (backup.failed > 0 || (backup.remaining > 0 && !backup.isWorking)) ...[
             const SizedBox(height: Space.s),
             ListGroup(
               children: [
-                StatusLine(
-                  icon: Icons.error_outline_rounded,
-                  color: colors.danger,
-                  text: '${Formatters.count(backup.failed, 'item')} didn\'t back up',
-                  detail: 'Skipped after three tries.',
-                  trailing: TextButton(
-                    onPressed: controller.retryFailed,
-                    child: const Text('Retry'),
+                if (backup.failed > 0)
+                  StatusLine(
+                    icon: Icons.error_outline_rounded,
+                    color: colors.danger,
+                    text: '${Formatters.count(backup.failed, 'item')} didn\'t back up',
+                    detail: 'See which ones and why.',
+                    onTap: () => context.push('/backup/not-backed-up'),
+                  )
+                else
+                  StatusLine(
+                    icon: Icons.schedule_rounded,
+                    text: '${Formatters.count(backup.remaining, 'item')} waiting',
+                    detail: 'See what\'s left.',
+                    onTap: () => context.push('/backup/not-backed-up'),
                   ),
-                ),
               ],
             ),
           ],
