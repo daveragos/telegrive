@@ -120,6 +120,11 @@ phone number.
   the order they were taken. The chats you sent to last come first in the
   list.
 - **Share to Telegrive** from any app on Android, into the folder you pick.
+- **Scan or snap into a folder.** New › Scan a document straightens and
+  crops paper pages into a PDF on the phone; Take a photo puts the picture
+  straight into the folder you are in, not your gallery. You name it once
+  and it uploads there; a name the folder already has gets a number, so
+  both files are kept. Scanning needs Google Play services.
 - **Download to this phone.** Files, folders or the whole drive, in the
   drive's folders under Download › Telegrive; photos and videos can go back
   into the gallery.

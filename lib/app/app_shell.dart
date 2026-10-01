@@ -10,6 +10,7 @@ import '../core/format/formatters.dart';
 import '../core/widgets/common.dart';
 import '../features/backup/data/backup_controller.dart';
 import '../features/backup/presentation/backup_prompt.dart';
+import '../features/capture/data/device_capture.dart';
 import '../features/drive/data/telegram_wait.dart';
 import '../features/files/data/bulk_edits.dart';
 import '../features/offline/data/offline_sync.dart';
@@ -54,6 +55,9 @@ class _AppShellState extends ConsumerState<AppShell> {
   @override
   void initState() {
     super.initState();
+    // Asked now, so the New sheet has its answer before the first tap and
+    // never grows while it is open.
+    ref.read(captureSupportProvider);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final pending = ref.read(pendingLaunchActionProvider);

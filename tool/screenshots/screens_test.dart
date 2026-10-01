@@ -25,6 +25,7 @@ import 'package:telegrive/features/backup/data/backup_controller.dart';
 import 'package:telegrive/features/backup/data/local_media.dart';
 import 'package:telegrive/features/backup/presentation/backup_screen.dart';
 import 'package:telegrive/features/backup/presentation/not_backed_up_screen.dart';
+import 'package:telegrive/features/capture/data/device_capture.dart';
 import 'package:telegrive/features/photos/data/photos_visibility.dart';
 import 'package:telegrive/features/photos/presentation/photos_screen.dart';
 import 'package:telegrive/features/search/presentation/search_screen.dart';
@@ -519,6 +520,7 @@ void main() {
     BulkEdit? bulk,
     DateTime? telegramWait,
     NetworkState network = NetworkState.unknown,
+    CaptureSupport captureSupport = const CaptureSupport(scan: true, photo: true),
     List<Override> overrides = const [],
     Future<void> Function(AppDatabase db)? seed,
   }) async {
@@ -656,6 +658,7 @@ void main() {
           bulkEditsProvider.overrideWith(() => _Bulk(bulk)),
           telegramWaitProvider.overrideWith(() => _Wait(telegramWait)),
           networkStatusProvider.overrideWith(() => _Network(network)),
+          captureSupportProvider.overrideWith((ref) async => captureSupport),
           mediaTimelineProvider.overrideWith((ref) => Stream.value(photos)),
           trashProvider.overrideWith(
             (ref) => Stream.value(
@@ -1353,6 +1356,45 @@ void main() {
     ]);
     await pumpApp(tester, location: '/transfers');
     await snap(tester, 'transfers_copying');
+  });
+
+  testWidgets('a phone that can\'t scan or take a photo gets neither row', (tester) async {
+    await prepareData(tester);
+    await pumpApp(tester, location: '/files', captureSupport: CaptureSupport.none);
+    await tester.tap(find.text('New'));
+    for (var i = 0; i < 6; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    expect(find.text('Add to Files'), findsOneWidget);
+    expect(find.text('Upload files'), findsOneWidget);
+    expect(find.text('Scan a document'), findsNothing);
+    expect(find.text('Take a photo'), findsNothing);
+    // Put back and closed here, as snap does, for the framework's
+    // end-of-test checks and the database's timers.
+    debugDisableShadows = true;
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(seconds: 1));
+  });
+
+  testWidgets('every row of the create sheet fits a 360 by 800 phone', (tester) async {
+    await prepareData(tester);
+    await pumpApp(tester, location: '/files');
+    // 360 x 800 dp, with a status bar and a gesture bar of 24 dp each.
+    const ratio = 2.625;
+    tester.view.physicalSize = const Size(360 * ratio, 800 * ratio);
+    tester.view.padding = const FakeViewPadding(top: 24 * ratio, bottom: 24 * ratio);
+    tester.view.viewPadding = const FakeViewPadding(top: 24 * ratio, bottom: 24 * ratio);
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.tap(find.text('New'));
+    for (var i = 0; i < 6; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    expect(tester.takeException(), isNull);
+    expect(find.text('Scan a document').hitTestable(), findsOneWidget);
+    expect(find.text('New folder').hitTestable(), findsOneWidget);
+    debugDisableShadows = true;
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(seconds: 1));
   });
 
   testWidgets('transfers', (tester) async {

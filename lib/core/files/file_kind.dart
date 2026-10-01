@@ -95,6 +95,12 @@ String? lookupMime(String fileName) {
 String mimeTypeFor(String fileName) =>
     lookupMime(fileName) ?? 'application/octet-stream';
 
+/// [name] ending in `.extension`, which is given without its dot: as it
+/// is when it already does, in any case, and with it added otherwise. A
+/// name typed over a whole file name keeps the type the file really has.
+String withExtension(String name, String extension) =>
+    name.toLowerCase().endsWith('.${extension.toLowerCase()}') ? name : '$name.$extension';
+
 /// How the app shows a file itself, without handing it to another app.
 enum Preview {
   /// The photo viewer.

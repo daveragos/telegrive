@@ -330,23 +330,33 @@ ScaffoldFeatureController<SnackBar, SnackBarClosedReason>? showUndoSnack(
   onVisible: onVisible,
 );
 
-/// Asks for a single line of text (folder name, rename).
+/// Asks for a single line of text (folder name, rename). Pops null when
+/// [cancelLabel] is tapped. When it isn't [dismissible], only its two
+/// buttons close it: a tap outside and Back do nothing, for a dialog whose
+/// cancel throws away something that can't be made again.
 Future<String?> showTextInputDialog(
   BuildContext context, {
   required String title,
   String initialValue = '',
   String hint = '',
   String confirmLabel = 'Save',
+  String cancelLabel = 'Cancel',
   bool selectStem = false,
+  bool dismissible = true,
 }) {
   return showDialog<String>(
     context: context,
-    builder: (context) => _TextInputDialog(
-      title: title,
-      initialValue: initialValue,
-      hint: hint,
-      confirmLabel: confirmLabel,
-      selectStem: selectStem,
+    barrierDismissible: dismissible,
+    builder: (context) => PopScope(
+      canPop: dismissible,
+      child: _TextInputDialog(
+        title: title,
+        initialValue: initialValue,
+        hint: hint,
+        confirmLabel: confirmLabel,
+        cancelLabel: cancelLabel,
+        selectStem: selectStem,
+      ),
     ),
   );
 }
@@ -357,6 +367,7 @@ class _TextInputDialog extends StatefulWidget {
     required this.initialValue,
     required this.hint,
     required this.confirmLabel,
+    required this.cancelLabel,
     required this.selectStem,
   });
 
@@ -364,6 +375,7 @@ class _TextInputDialog extends StatefulWidget {
   final String initialValue;
   final String hint;
   final String confirmLabel;
+  final String cancelLabel;
   final bool selectStem;
 
   @override
@@ -378,7 +390,7 @@ class _TextInputDialogState extends State<_TextInputDialog> {
     super.initState();
     _controller = TextEditingController(text: widget.initialValue);
     // Renaming "report.pdf" selects "report", so typing replaces the name
-    // and keeps the extension, the way desktop file managers do it.
+    // and keeps the extension.
     final dot = widget.initialValue.lastIndexOf('.');
     _controller.selection = TextSelection(
       baseOffset: 0,
@@ -412,7 +424,7 @@ class _TextInputDialogState extends State<_TextInputDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
+          child: Text(widget.cancelLabel),
         ),
         ValueListenableBuilder(
           valueListenable: _controller,

@@ -3,9 +3,11 @@ import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:open_filex/open_filex.dart';
+import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -16,13 +18,14 @@ import '../../../core/format/formatters.dart';
 import '../../../core/widgets/common.dart';
 import '../../../core/widgets/file_visuals.dart';
 import '../../../infrastructure/database/app_database.dart'
-    show SaveTarget, TransferKind, appDatabaseProvider;
+    show SaveTarget, TransferKind, TransferStatus, appDatabaseProvider;
 import '../../../infrastructure/network/network_status.dart';
 import '../../../infrastructure/storage/device_storage.dart';
 import '../../../infrastructure/storage/preferences.dart';
 import '../../../infrastructure/telegram/telegram_exception.dart';
 import '../../backup/data/backup_controller.dart';
 import '../../backup/data/free_up_space.dart';
+import '../../capture/data/device_capture.dart';
 import '../../offline/data/offline_sync.dart';
 import '../../send/data/send_bundle.dart';
 import '../../send/data/telegram_chats.dart';
@@ -501,7 +504,139 @@ abstract final class FileActions {
     );
   }
 
-  /// The sheet behind the "+" button.
+  /// Scans a document or takes a photo, as [kind] says, and uploads it
+  /// into [folderId] under the name the person gives it. Backing out of
+  /// the scanner or the camera ends it without a word. The name dialog
+  /// closes only through its buttons, so a long scan is never lost to a
+  /// stray tap, and Discard deletes the capture. A name the folder already
+  /// has gets a number, so both files are kept.
+  static Future<void> capture(
+    BuildContext context,
+    WidgetRef ref,
+    CaptureKind kind, {
+    String? folderId,
+  }) async {
+    // Read up front: the scanner or the camera is in front for a while.
+    final queue = ref.read(transferQueueProvider.notifier);
+    final repository = ref.read(driveRepositoryProvider);
+    final container = ProviderScope.containerOf(context, listen: false);
+    final canPhoto = ref.read(captureSupportProvider).value?.photo ?? false;
+    final scan = kind == CaptureKind.scan;
+    final CapturedFile? shot;
+    try {
+      shot = await ref.read(deviceCaptureProvider).capture(kind);
+    } on PlatformException {
+      if (!context.mounted) return;
+      if (scan && canPhoto) {
+        showSnack(
+          context,
+          'This phone can\'t scan documents right now.',
+          actionLabel: 'Take a photo',
+          onAction: () {
+            if (context.mounted) capture(context, ref, CaptureKind.photo, folderId: folderId);
+          },
+        );
+      } else if (scan) {
+        showSnack(context, 'This phone can\'t scan documents right now.');
+      } else {
+        showSnack(context, 'Couldn\'t open the camera.');
+      }
+      return;
+    }
+    if (shot == null) return;
+    if (!context.mounted) {
+      await _discardCapture(shot);
+      return;
+    }
+
+    final chosen = await showTextInputDialog(
+      context,
+      title: scan ? 'Name this scan' : 'Name this photo',
+      initialValue: shot.name,
+      selectStem: true,
+      confirmLabel: 'Upload',
+      cancelLabel: 'Discard',
+      dismissible: false,
+    );
+    if (chosen == null) {
+      await _discardCapture(shot);
+      if (context.mounted) showSnack(context, scan ? 'Scan discarded' : 'Photo discarded');
+      return;
+    }
+
+    final extension = p.extension(shot.name);
+    final typed = extension.isEmpty ? chosen : withExtension(chosen, extension.substring(1));
+    // Uploads still on their way into the folder count too, so a second
+    // scan made before the first is in the drive gets its own name.
+    final taken = {
+      for (final file in (await repository.watchFolder(folderId).first).files)
+        file.name.toLowerCase(),
+      for (final item in container.read(transferQueueProvider).items)
+        if (item.kind == TransferKind.upload &&
+            item.status.isPending &&
+            item.row.folderId == folderId)
+          item.name.toLowerCase(),
+    };
+    final name = repository.freeName(typed, taken);
+    var path = shot.path;
+    if (name != shot.name) {
+      // Telegram names the document after the file it is sent from, so the
+      // file takes the name the drive will show. Should Android refuse it,
+      // the upload goes ahead from the file as it is.
+      final renamed = p.join(p.dirname(shot.path), DeviceStorage.safeName(name));
+      try {
+        path = (await File(shot.path).rename(renamed)).path;
+      } on FileSystemException catch (e) {
+        debugPrint('[Capture] Could not rename the capture: $e');
+      }
+    }
+    final ids = await queue.enqueueUploads(
+      [
+        UploadRequest(
+          name: name,
+          path: path,
+          size: shot.size,
+          ownsSource: true,
+          takenAt: shot.takenAt,
+        ),
+      ],
+      folderId: folderId,
+    );
+    // Once the upload is through the queue is done with the file, so the
+    // capture's own folder goes with it; a failed or cancelled one keeps
+    // its file for Retry.
+    if (ids.isNotEmpty) {
+      final folder = File(path).parent;
+      unawaited(
+        queue.whenFinished(ids.single).then((row) async {
+          if (row.status != TransferStatus.completed) return;
+          try {
+            await folder.delete(recursive: true);
+          } on FileSystemException catch (_) {}
+        }),
+      );
+    }
+
+    final where = await repository.pathTo(folderId);
+    if (!context.mounted) return;
+    final router = GoRouter.of(context);
+    showSnack(
+      context,
+      'Uploading $name to ${where.isEmpty ? 'Files' : where.last.name}',
+      actionLabel: 'View',
+      onAction: () => router.push('/transfers'),
+    );
+  }
+
+  /// Deletes [shot] and the folder it came in, which holds nothing else.
+  static Future<void> _discardCapture(CapturedFile shot) async {
+    try {
+      await File(shot.path).parent.delete(recursive: true);
+    } catch (_) {}
+  }
+
+  /// The sheet behind the "+" button. It says which folder things land in,
+  /// and offers a scan or a photo only on a phone that can make one.
   static Future<void> showCreateSheet(
     BuildContext context,
     WidgetRef ref, {
@@ -510,51 +645,96 @@ abstract final class FileActions {
     return showModalBottomSheet<void>(
       context: context,
       useRootNavigator: true,
-      builder: (sheetContext) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.only(bottom: Space.s),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _CreateOption(
-                icon: Icons.upload_file_outlined,
-                label: 'Upload files',
-                detail: 'Anything on this phone, any size',
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  upload(context, ref, folderId: folderId);
-                },
-              ),
-              _CreateOption(
-                icon: Icons.photo_library_outlined,
-                label: 'Upload photos and videos',
-                detail: 'Originals, uncompressed',
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  upload(context, ref, folderId: folderId, mediaOnly: true);
-                },
-              ),
-              _CreateOption(
-                icon: Icons.create_new_folder_outlined,
-                label: 'New folder',
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  createFolder(context, ref, parentId: folderId);
-                },
-              ),
-              _CreateOption(
-                icon: Icons.telegram,
-                label: 'Save from a Telegram chat',
-                detail: 'Copies files already in Telegram, with no upload',
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  saveFromChat(context, ref, folderId: folderId);
-                },
-              ),
-            ],
+      // The sheet takes the height of its rows, and scrolls them on a
+      // screen too short for all of them.
+      isScrollControlled: true,
+      builder: (sheetContext) {
+        // The actions run on the screen that opened the sheet, which
+        // outlives it.
+        void run(Future<void> Function() action) {
+          Navigator.pop(sheetContext);
+          action();
+        }
+
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.only(bottom: Space.s),
+            child: Consumer(
+              builder: (_, sheetRef, _) {
+                final support =
+                    sheetRef.watch(captureSupportProvider).value ?? CaptureSupport.none;
+                final folder =
+                    sheetRef.watch(breadcrumbsProvider(folderId)).value?.lastOrNull?.name;
+                return SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(
+                          Space.gutter,
+                          Space.xs,
+                          Space.gutter,
+                          Space.s,
+                        ),
+                        child: Text(
+                          'Add to ${folder ?? 'Files'}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: sheetContext.text.titleSmall,
+                        ),
+                      ),
+                      _CreateOption(
+                        icon: Icons.upload_file_outlined,
+                        label: 'Upload files',
+                        detail: 'Anything on this phone, any size',
+                        onTap: () => run(() => upload(context, ref, folderId: folderId)),
+                      ),
+                      _CreateOption(
+                        icon: Icons.photo_library_outlined,
+                        label: 'Upload photos and videos',
+                        detail: 'Originals, uncompressed',
+                        onTap: () => run(
+                          () => upload(context, ref, folderId: folderId, mediaOnly: true),
+                        ),
+                      ),
+                      if (support.scan)
+                        _CreateOption(
+                          icon: Icons.document_scanner_outlined,
+                          label: 'Scan a document',
+                          detail: 'Straightened and cropped into a PDF',
+                          onTap: () => run(
+                            () => capture(context, ref, CaptureKind.scan, folderId: folderId),
+                          ),
+                        ),
+                      if (support.photo)
+                        _CreateOption(
+                          icon: Icons.photo_camera_outlined,
+                          label: 'Take a photo',
+                          detail: 'Goes straight here, not to your gallery',
+                          onTap: () => run(
+                            () => capture(context, ref, CaptureKind.photo, folderId: folderId),
+                          ),
+                        ),
+                      _CreateOption(
+                        icon: Icons.create_new_folder_outlined,
+                        label: 'New folder',
+                        onTap: () => run(() => createFolder(context, ref, parentId: folderId)),
+                      ),
+                      _CreateOption(
+                        icon: Icons.telegram,
+                        label: 'Save from a Telegram chat',
+                        detail: 'Copies files already in Telegram, with no upload',
+                        onTap: () => run(() => saveFromChat(context, ref, folderId: folderId)),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 

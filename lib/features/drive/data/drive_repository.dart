@@ -9,6 +9,7 @@ import 'package:uuid/uuid.dart';
 import '../../../core/async/combine.dart';
 import '../../../core/files/file_kind.dart';
 import '../../../infrastructure/database/app_database.dart';
+import '../../../infrastructure/storage/device_storage.dart';
 import '../../../infrastructure/telegram/telegram_client.dart';
 import '../../../infrastructure/telegram/telegram_exception.dart';
 import '../domain/drive_models.dart';
@@ -459,6 +460,17 @@ class DriveRepository {
   // ---------------------------------------------------------------------------
   // Files
   // ---------------------------------------------------------------------------
+
+  /// [name] when no name in [takenLower], which holds lower-cased names,
+  /// matches it regardless of case; otherwise the first of `name (2)`,
+  /// `name (3)` and so on that is free.
+  String freeName(String name, Set<String> takenLower) {
+    if (!takenLower.contains(name.toLowerCase())) return name;
+    for (var n = 2; ; n++) {
+      final candidate = DeviceStorage.numbered(name, n);
+      if (!takenLower.contains(candidate.toLowerCase())) return candidate;
+    }
+  }
 
   Future<void> renameFile(DriveFile file, String name) async {
     final clean = name.trim();

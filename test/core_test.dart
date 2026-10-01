@@ -58,6 +58,21 @@ void main() {
     });
   });
 
+  group('withExtension', () {
+    test('puts back an extension that was typed away', () {
+      expect(withExtension('Receipt', 'pdf'), 'Receipt.pdf');
+    });
+
+    test('leaves a name that already ends in it, in any case', () {
+      expect(withExtension('Receipt.PDF', 'pdf'), 'Receipt.PDF');
+      expect(withExtension('Photo.jpg', 'JPG'), 'Photo.jpg');
+    });
+
+    test('adds it after a different one', () {
+      expect(withExtension('a.b', 'jpg'), 'a.b.jpg');
+    });
+  });
+
   group('Formatters', () {
     test('bytes', () {
       expect(Formatters.bytes(0), '0 B');
