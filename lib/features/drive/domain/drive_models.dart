@@ -302,8 +302,7 @@ class DriveAlbum {
   int get hashCode => Object.hash(id, name, count, coverFileId);
 }
 
-/// Photos backed up more than once, as a reinstall with a half-read index
-/// used to do, and what to do about it.
+/// Photos that are in the drive more than once, and what to do about it.
 @immutable
 class DuplicateBackups {
   const DuplicateBackups({
