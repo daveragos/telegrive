@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../app/theme/tokens.dart';
 import '../../../core/files/file_kind.dart';
@@ -65,6 +66,13 @@ class _FileListScreenState extends ConsumerState<FileListScreen> {
       appBar: AppBar(
         title: Text(title),
         actions: [
+          IconButton(
+            onPressed: () => context.push(
+              widget.mode == FileListMode.kind ? '/search?kind=${kind!.name}' : '/search',
+            ),
+            icon: const Icon(Icons.search_rounded),
+            tooltip: 'Search',
+          ),
           IconButton(
             onPressed: () =>
                 ref.read(browsePreferencesProvider.notifier).toggleViewMode(),

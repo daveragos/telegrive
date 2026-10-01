@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:telegrive/core/files/file_kind.dart';
 import 'package:telegrive/core/format/formatters.dart';
 import 'package:telegrive/features/drive/domain/drive_models.dart';
+import 'package:telegrive/features/files/presentation/file_location.dart';
 import 'package:telegrive/infrastructure/telegram/telegram_exception.dart';
 
 void main() {
@@ -209,6 +210,34 @@ void main() {
         const TelegramException(420, 'FLOOD_WAIT_7200').friendlyMessage,
         'Too many attempts. Try again in 2 hours.',
       );
+    });
+  });
+
+  group('locationOf', () {
+    DriveFolder folder(String id, String? parentId) => DriveFolder(
+      id: id,
+      parentId: parentId,
+      name: id,
+      createdAt: DateTime(2026),
+      modifiedAt: DateTime(2026),
+    );
+    final byId = {
+      for (final f in [folder('Work', null), folder('Invoices', 'Work')]) f.id: f,
+    };
+
+    test('names the folders from the top down', () {
+      expect(locationOf(byId, 'Invoices'), 'Work › Invoices');
+      expect(locationOf(byId, 'Invoices', fromRoot: true), 'Files › Work › Invoices');
+    });
+
+    test('a file at the root, or in a folder that is gone, is in Files', () {
+      expect(locationOf(byId, null), 'Files');
+      expect(locationOf(byId, 'missing'), 'Files');
+    });
+
+    test('a loop in the folder tree still ends', () {
+      final loop = {'a': folder('a', 'b'), 'b': folder('b', 'a')};
+      expect(locationOf(loop, 'a'), 'b › a');
     });
   });
 }

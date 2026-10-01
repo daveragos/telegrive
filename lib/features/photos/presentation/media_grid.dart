@@ -80,6 +80,7 @@ class MediaGrid extends ConsumerStatefulWidget {
     this.onRefresh,
     this.empty,
     this.alwaysSelecting = false,
+    this.selectable = true,
   });
 
   /// Newest first; months are taken from [DriveFile.momentAt].
@@ -96,6 +97,10 @@ class MediaGrid extends ConsumerStatefulWidget {
 
   /// Taps select rather than open, as when picking photos to add.
   final bool alwaysSelecting;
+
+  /// Whether a long-press starts selecting. Off where the screen has no
+  /// bar to act on a selection, as in Search.
+  final bool selectable;
 
   @override
   ConsumerState<MediaGrid> createState() => _MediaGridState();
@@ -159,6 +164,7 @@ class _MediaGridState extends ConsumerState<MediaGrid> {
   }
 
   void _dragStart(LongPressStartDetails details) {
+    if (!widget.selectable) return;
     final index = _indexAt(details.globalPosition);
     if (index == null) return;
     HapticFeedback.selectionClick();

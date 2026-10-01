@@ -98,11 +98,14 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/search',
         parentNavigatorKey: _rootKey,
-        builder: (_, state) => SearchScreen(
-          initialKind: FileKind.values
-              .where((k) => k.name == state.uri.queryParameters['kind'])
-              .firstOrNull,
-        ),
+        builder: (_, state) {
+          final kind = state.uri.queryParameters['kind'];
+          return SearchScreen(
+            initialKind: FileKind.values.where((k) => k.name == kind).firstOrNull,
+            media: kind == 'media',
+            initialFolderId: state.uri.queryParameters['folder'],
+          );
+        },
       ),
       GoRoute(
         path: '/transfers',

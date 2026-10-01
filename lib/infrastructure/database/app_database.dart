@@ -353,46 +353,83 @@ class AppDatabase extends _$AppDatabase {
             ..orderBy([(f) => OrderingTerm.desc(f.createdAt)]))
           .watch();
 
+  /// The most files one search returns.
+  static const searchLimit = 500;
+
   /// Files named like [query], or whose recognised content mentions it,
-  /// plus — with [range] — everything taken or added within it.
+  /// that were taken or added within [range], are one of [kinds] and sit in
+  /// one of [folderIds]; each left out matches everything. [literal] is the
+  /// text as typed: a file whose name holds all of it matches too, so
+  /// "report 2024" still finds "report 2024.pdf" uploaded in another year
+  /// after "2024" was read as a date.
+  ///
+  /// Newest change first, or newest moment first with [range] or
+  /// [byMoment], so a cut-off list keeps the files a timeline shows first.
   Stream<List<FileRow>> watchSearch(
     String query, {
-    FileKind? kind,
+    Set<FileKind>? kinds,
     (DateTime, DateTime)? range,
+    Iterable<String>? folderIds,
+    String? literal,
+    bool byMoment = false,
   }) {
-    final pattern = '%${query.toLowerCase().replaceAll('%', r'\%').replaceAll('_', r'\_')}%';
+    final words = query.trim();
+    final typed = literal?.trim() ?? '';
     final when = coalesce([driveFiles.takenAt, driveFiles.createdAt]);
-    final inContent = selectOnly(fileContents)
-      ..addColumns([fileContents.fileId])
-      ..where(fileContents.content.like(pattern, escapeChar: r'\'));
     return (select(driveFiles)
           ..where((f) {
-            var match =
-                f.name.like(pattern, escapeChar: r'\') | f.id.isInQuery(inContent);
-            if (range != null) {
-              match = match | when.isBetweenValues(range.$1, range.$2);
+            var condition = _shown(f);
+            if (words.isNotEmpty) {
+              // The indexer stores content in lower case.
+              final inContent = selectOnly(fileContents)
+                ..addColumns([fileContents.fileId])
+                ..where(
+                  fileContents.content.like(_like(words.toLowerCase()), escapeChar: r'\'),
+                );
+              condition &=
+                  f.name.like(_like(words), escapeChar: r'\') | f.id.isInQuery(inContent);
             }
-            var condition = _shown(f) & match;
-            if (kind != null) condition = condition & f.kind.equalsValue(kind);
+            if (range != null) {
+              condition &= when.isBetweenValues(range.$1, range.$2);
+            }
+            if (typed.isNotEmpty && typed.toLowerCase() != words.toLowerCase()) {
+              condition |= _shown(f) & f.name.like(_like(typed), escapeChar: r'\');
+            }
+            if (kinds != null) {
+              condition &= f.kind.isIn([for (final kind in kinds) kind.name]);
+            }
+            if (folderIds != null) condition &= f.folderId.isIn(folderIds);
             return condition;
           })
           ..orderBy([
-            (f) => range != null
+            (f) => range != null || byMoment
                 ? OrderingTerm(expression: when, mode: OrderingMode.desc)
                 : OrderingTerm.desc(f.modifiedAt),
           ])
-          ..limit(500))
+          ..limit(searchLimit))
         .watch();
   }
 
-  Stream<List<FolderRow>> watchFolderSearch(String query) {
-    final pattern = '%${query.replaceAll('%', r'\%').replaceAll('_', r'\_')}%';
+  /// Folders named like [query], only those among [within] when given.
+  Stream<List<FolderRow>> watchFolderSearch(String query, {Iterable<String>? within}) {
+    final pattern = _like(query);
     return (select(folders)
-          ..where((f) => f.hidden.equals(false) & f.name.like(pattern, escapeChar: r'\'))
+          ..where((f) {
+            var condition =
+                f.hidden.equals(false) & f.name.like(pattern, escapeChar: r'\');
+            if (within != null) condition &= f.id.isIn(within);
+            return condition;
+          })
           ..orderBy([(f) => OrderingTerm.asc(f.name)])
           ..limit(50))
         .watch();
   }
+
+  /// A LIKE pattern for text containing [text], with its own `%`, `_` and
+  /// `\` taken literally. LIKE ignores case only for plain Latin letters,
+  /// so [text] keeps its own.
+  static String _like(String text) =>
+      '%${text.replaceAll(r'\', r'\\').replaceAll('%', r'\%').replaceAll('_', r'\_')}%';
 
   Stream<List<KindTotal>> watchTotals() {
     return customSelect(
@@ -428,6 +465,21 @@ class AppDatabase extends _$AppDatabase {
 
   /// Every folder, trashed ones too; the table is small enough to read whole.
   Stream<List<FolderRow>> watchAllFolders() => select(folders).watch();
+
+  /// [rootId] and every folder below it that isn't in the trash. UNION
+  /// rather than UNION ALL, so a folder tree that loops ends anyway.
+  Future<Set<String>> descendantFolderIds(String rootId) async {
+    final rows = await customSelect(
+      'WITH RECURSIVE tree(id) AS ('
+      'SELECT ?1 '
+      'UNION SELECT f.id FROM folders f JOIN tree t ON f.parent_id = t.id '
+      'WHERE f.hidden = 0) '
+      'SELECT id FROM tree',
+      variables: [Variable.withString(rootId)],
+      readsFrom: {folders},
+    ).get();
+    return {for (final row in rows) row.read<String>('id')};
+  }
 
   Future<List<PartRow>> partsOf(String fileId) =>
       (select(fileParts)

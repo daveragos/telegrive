@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../app/theme/tokens.dart';
 import '../../../core/async/combine.dart';
 import '../../../core/files/file_kind.dart';
 import '../../../core/format/date_query.dart';
@@ -12,32 +13,72 @@ import '../../../core/widgets/common.dart';
 import '../../drive/data/drive_repository.dart';
 import '../../drive/domain/drive_models.dart';
 import '../../files/presentation/file_actions.dart';
+import '../../files/presentation/file_location.dart';
 import '../../files/presentation/file_tiles.dart';
+import '../../photos/presentation/media_grid.dart';
 
-typedef _SearchKey = ({String query, FileKind? kind, DateRange? range});
+/// [rest] is what is left of the query once a date is taken off it, and
+/// [literal] the query as typed.
+typedef _SearchKey = ({
+  String rest,
+  String literal,
+  FileKind? kind,
+  bool media,
+  DateRange? range,
+  String? folderId,
+});
 
 final _searchResultsProvider = StreamProvider.autoDispose
-    .family<(List<DriveFolder>, List<DriveFile>), _SearchKey>((ref, key) {
+    .family<(List<DriveFolder>, List<DriveFile>), _SearchKey>((ref, key) async* {
       final repository = ref.watch(driveRepositoryProvider);
+      // The folders under the scope are read once per query, so a folder
+      // moved in while the results show joins them at the next keystroke.
+      final scope = key.folderId;
+      final ids = scope == null ? null : await repository.descendantFolderIds(scope);
       final range = key.range;
+      final kinds = key.kind != null
+          ? {key.kind!}
+          : key.media
+          ? {FileKind.image, FileKind.video}
+          : null;
       final files = repository.watchSearch(
-        key.query,
-        kind: key.kind,
+        key.rest,
+        kinds: kinds,
         range: range == null
             ? null
             : (range.start, range.end.subtract(const Duration(milliseconds: 1))),
+        folderIds: ids,
+        literal: key.literal,
+        // The grid groups by month, newest moment first.
+        byMoment: key.media,
       );
-      final folders = key.kind == null
-          ? repository.watchFolderSearch(key.query)
+      // Folders have no date, so a query that is only a date matches their
+      // names as typed. The scope's own folder isn't one of its results.
+      final folderQuery = key.rest.isNotEmpty ? key.rest : key.literal.trim();
+      final folders = folderQuery.isNotEmpty && key.kind == null && !key.media
+          ? repository.watchFolderSearch(folderQuery, within: ids?.difference({scope}))
           : Stream.value(const <DriveFolder>[]);
-      return combineLatest2(folders, files, (a, b) => (a, b));
+      yield* combineLatest2(folders, files, (a, b) => (a, b));
     });
 
 class SearchScreen extends ConsumerStatefulWidget {
-  const SearchScreen({super.key, this.initialKind});
+  const SearchScreen({
+    super.key,
+    this.initialKind,
+    this.media = false,
+    this.initialFolderId,
+  });
 
-  /// Kind filter to start with, as when searching from the Photos tab.
+  /// Kind filter to start with, as when searching from a category list.
   final FileKind? initialKind;
+
+  /// Photos and videos only, shown as the photo grid, as when searching
+  /// from Photos.
+  final bool media;
+
+  /// The folder a search from inside it starts limited to, with everything
+  /// below it.
+  final String? initialFolderId;
 
   @override
   ConsumerState<SearchScreen> createState() => _SearchScreenState();
@@ -45,14 +86,17 @@ class SearchScreen extends ConsumerStatefulWidget {
 
 class _SearchScreenState extends ConsumerState<SearchScreen> {
   final _controller = TextEditingController();
+  final _selection = MediaSelection();
   Timer? _debounce;
   String _query = '';
   late FileKind? _kind = widget.initialKind;
+  late bool _scoped = widget.initialFolderId != null;
 
   @override
   void dispose() {
     _debounce?.cancel();
     _controller.dispose();
+    _selection.dispose();
     super.dispose();
   }
 
@@ -67,11 +111,49 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
-    final active = _query.isNotEmpty || _kind != null;
-    final range = DateQuery.parse(_query);
+    final folderId = widget.initialFolderId;
+    // Gone when the folder was deleted elsewhere; the search is then
+    // unscoped.
+    final scopeFolder = folderId == null
+        ? null
+        : ref.watch(folderInfoProvider(folderId)).value;
+    final scope = _scoped ? scopeFolder : null;
+    final split = DateQuery.split(_query);
+    final range = split.range;
+    final active = split.rest.isNotEmpty || range != null || _kind != null;
     final results = active
-        ? ref.watch(_searchResultsProvider((query: _query, kind: _kind, range: range)))
+        ? ref.watch(
+            _searchResultsProvider((
+              rest: split.rest,
+              literal: _query,
+              kind: _kind,
+              media: widget.media,
+              range: range,
+              folderId: scope?.id,
+            )),
+          )
         : null;
+    // Null until the folders are read; rows then go without a place rather
+    // than all reading 'Files'.
+    final byId = widget.media ? null : ref.watch(folderIndexProvider).value;
+
+    final chips = [
+      if (scopeFolder != null)
+        FilterChip(
+          avatar: const Icon(Icons.folder_outlined, size: 16),
+          label: Text('In ${scopeFolder.name}'),
+          selected: _scoped,
+          showCheckmark: false,
+          onSelected: (selected) => setState(() => _scoped = selected),
+        ),
+      for (final kind in widget.media ? const [FileKind.image, FileKind.video] : FileKind.values)
+        FilterChip(
+          label: Text(kind.label),
+          selected: _kind == kind,
+          showCheckmark: false,
+          onSelected: (selected) => setState(() => _kind = selected ? kind : null),
+        ),
+    ];
 
     return Scaffold(
       appBar: AppBar(
@@ -85,7 +167,11 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
           textAlignVertical: TextAlignVertical.center,
           onChanged: _onChanged,
           decoration: InputDecoration(
-            hintText: 'Search files and folders',
+            hintText: scope != null
+                ? 'Search in ${scope.name}'
+                : widget.media
+                ? 'Search photos and videos'
+                : 'Search files and folders',
             filled: false,
             border: InputBorder.none,
             enabledBorder: InputBorder.none,
@@ -111,34 +197,36 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         children: [
           SizedBox(
             height: 52,
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              children: [
-                for (final kind in FileKind.values)
-                  Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: FilterChip(
-                      label: Text(kind.label),
-                      selected: _kind == kind,
-                      showCheckmark: false,
-                      onSelected: (selected) =>
-                          setState(() => _kind = selected ? kind : null),
-                    ),
-                  ),
-              ],
+            // The strip fades out at its right edge, so a chip cut off
+            // there reads as more to scroll to; the trailing space lets the
+            // last one clear the fade.
+            child: ShaderMask(
+              blendMode: BlendMode.dstIn,
+              shaderCallback: (bounds) => LinearGradient(
+                colors: const [Colors.black, Colors.black, Colors.transparent],
+                stops: [0, (1 - Space.xxl / bounds.width).clamp(0, 1), 1],
+              ).createShader(bounds),
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.fromLTRB(Space.l, Space.s, Space.xxl, Space.s),
+                itemCount: chips.length,
+                separatorBuilder: (_, _) => const SizedBox(width: Space.s),
+                itemBuilder: (_, index) => chips[index],
+              ),
             ),
           ),
           if (range != null)
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+              padding: const EdgeInsets.fromLTRB(Space.gutter, 0, Space.gutter, Space.s),
               child: Row(
                 children: [
-                  Icon(Icons.event_outlined, size: 18, color: theme.colorScheme.onSurfaceVariant),
-                  const SizedBox(width: 8),
+                  Icon(Icons.event_outlined, size: 18, color: scheme.onSurfaceVariant),
+                  const SizedBox(width: Space.s),
                   Expanded(
                     child: Text(
-                      'Including everything from ${range.label}',
+                      split.rest.isEmpty
+                          ? 'Everything from ${range.label}'
+                          : '"${split.rest}" from ${range.label}',
                       style: theme.textTheme.bodySmall,
                     ),
                   ),
@@ -147,11 +235,16 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             ),
           Expanded(
             child: results == null
-                ? const EmptyState(
-                    title: 'Search your drive',
-                    message:
-                        'Type part of a name, words in a PDF, or a date like '
-                        '"march 2024". Or pick a kind above.',
+                ? EmptyState(
+                    title: scope != null
+                        ? 'Search in ${scope.name}'
+                        : widget.media
+                        ? 'Search your photos and videos'
+                        : 'Search your drive',
+                    message: widget.media
+                        ? 'Type part of a name, or a date like "march 2024".'
+                        : 'Type part of a name, words in a PDF, or a date like '
+                              '"march 2024". Or pick a kind above.',
                     compact: true,
                   )
                 : AsyncView(
@@ -167,8 +260,27 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                           compact: true,
                         );
                       }
+                      // A list as long as the limit was cut off.
+                      final count = files.length >= DriveRepository.searchLimit
+                          ? 'first ${DriveRepository.searchLimit}'
+                          : '${files.length}';
+                      if (widget.media) {
+                        return MediaGrid(
+                          files: files,
+                          selection: _selection,
+                          selectable: false,
+                          onOpen: (file) => context.push('/viewer/${file.id}'),
+                          header: [
+                            SliverToBoxAdapter(
+                              child: SectionHeader(
+                                '${_kind?.label ?? 'Photos and videos'} · $count',
+                              ),
+                            ),
+                          ],
+                        );
+                      }
                       return ListView(
-                        padding: const EdgeInsets.only(bottom: 24),
+                        padding: const EdgeInsets.only(bottom: Space.xxl),
                         children: [
                           if (folders.isNotEmpty) ...[
                             const SectionHeader('Folders'),
@@ -181,19 +293,22 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                               ),
                           ],
                           if (files.isNotEmpty) ...[
-                            SectionHeader(
-                              files.length >= 300
-                                  ? 'Files · first 300'
-                                  : 'Files · ${files.length}',
-                            ),
+                            SectionHeader('Files · $count'),
                             for (final file in files)
                               FileListTile(
                                 file: file,
                                 onTap: () => FileActions.open(context, ref, file),
                                 onMore: () =>
                                     FileActions.showFileSheet(context, ref, file),
-                                subtitle:
-                                    '${Formatters.bytes(file.size)} · ${Formatters.date(file.modifiedAt)}',
+                                subtitle: [
+                                  Formatters.bytes(file.size),
+                                  Formatters.date(file.modifiedAt),
+                                  // Inside the scoped folder itself the
+                                  // place goes without saying.
+                                  if (byId != null &&
+                                      (scope == null || file.folderId != scope.id))
+                                    locationOf(byId, file.folderId),
+                                ].join(' · '),
                               ),
                           ],
                         ],

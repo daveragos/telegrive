@@ -61,8 +61,8 @@ class _PhotosScreenState extends ConsumerState<PhotosScreen> {
                   title: Text('Photos', style: context.text.headlineSmall),
                   actions: [
                     IconButton(
-                      onPressed: () => context.push('/search?kind=image'),
-                      tooltip: 'Search photos',
+                      onPressed: () => context.push('/search?kind=media'),
+                      tooltip: 'Search photos and videos',
                       icon: const Icon(Icons.search_rounded),
                     ),
                     IconButton(

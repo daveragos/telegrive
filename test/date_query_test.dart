@@ -48,4 +48,54 @@ void main() {
       expect(parse(q), isNull, reason: q);
     }
   });
+
+  group('split', () {
+    ({DateRange? range, String rest}) split(String q) => DateQuery.split(q, now: now);
+
+    void expectSplit(String query, String rest, DateTime start, DateTime end, [String? label]) {
+      final result = split(query);
+      expect(result.rest, rest, reason: query);
+      expect(result.range, isNotNull, reason: query);
+      expect(result.range!.start, start, reason: query);
+      expect(result.range!.end, end, reason: query);
+      if (label != null) expect(result.range!.label, label, reason: query);
+    }
+
+    test('a date at the end leaves the words before it', () {
+      expectSplit('invoice march 2024', 'invoice', DateTime(2024, 3), DateTime(2024, 4), 'March 2024');
+      expectSplit('screenshot last year', 'screenshot', DateTime(2025), DateTime(2026), 'Last year');
+      expectSplit('tax 2023', 'tax', DateTime(2023), DateTime(2024), '2023');
+    });
+
+    test('a date at the start leaves the words after it', () {
+      expectSplit('2024-03 receipts', 'receipts', DateTime(2024, 3), DateTime(2024, 4), 'March 2024');
+      expectSplit('march 5 receipts', 'receipts', DateTime(2026, 3, 5), DateTime(2026, 3, 6), 'March 5, 2026');
+    });
+
+    test('a query that is only a date leaves no words', () {
+      expectSplit('5 march', '', DateTime(2026, 3, 5), DateTime(2026, 3, 6));
+    });
+
+    test('a lone month or a small number stays a word', () {
+      for (final q in ['report may', 'invoice 5']) {
+        expect(split(q).range, isNull, reason: q);
+        expect(split(q).rest, q, reason: q);
+      }
+    });
+
+    test('the words keep the case they were typed in', () {
+      expectSplit('Invoice MARCH 2024', 'Invoice', DateTime(2024, 3), DateTime(2024, 4), 'March 2024');
+      expect(split('Über Report').rest, 'Über Report');
+    });
+
+    test('the words keep the commas they were typed with', () {
+      expect(split('total 1,250'), (range: null, rest: 'total 1,250'));
+      expectSplit('Smith, John march 2024', 'Smith, John', DateTime(2024, 3), DateTime(2024, 4), 'March 2024');
+      expectSplit('march 2024, Smith, John', 'Smith, John', DateTime(2024, 3), DateTime(2024, 4), 'March 2024');
+    });
+
+    test('an empty query is neither', () {
+      expect(split(''), (range: null, rest: ''));
+    });
+  });
 }

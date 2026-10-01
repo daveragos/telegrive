@@ -35,16 +35,69 @@ abstract final class DateQuery {
     'october': 10, 'nov': 11, 'november': 11, 'dec': 12, 'december': 12,
   };
 
-  static final _space = RegExp(r'[\s,]+');
+  static final _word = RegExp(r'[^\s,]+');
   static final _ordinal = RegExp(r'^(\d{1,2})(?:st|nd|rd|th)?$');
   static final _year = RegExp(r'^(19|20)\d{2}$');
   static final _iso = RegExp(r'^(\d{4})-(\d{1,2})(?:-(\d{1,2}))?$');
   static final _slashed = RegExp(r'^(\d{1,2})[/.](\d{1,2})[/.](\d{4})$');
 
+  static const _relative = {
+    'today', 'yesterday', 'this week', 'last week', 'this month', 'last month',
+    'this year', 'last year',
+  };
+
+  static List<String> _words(String query) => [
+    for (final match in _word.allMatches(query)) match[0]!.toLowerCase(),
+  ];
+
+  /// Splits [query] into the date at its start or end and the words left
+  /// over, so "invoice march 2024" looks for "invoice" within March 2024.
+  /// A query that is only a date leaves no words. A date in the middle of
+  /// the words isn't looked for.
+  ///
+  /// Only a date that can't be part of a name is taken off a longer query:
+  /// one with a year, a written-out date, a relative phrase like "last
+  /// week", or a month and a day. A lone month or a small number stays one
+  /// of the words, so "report may" and "invoice 5" are searched as typed.
+  ///
+  /// The words left over are cut out of [query] as typed, keeping its case,
+  /// spaces and commas, so "total 1,250" finds a receipt that says so. Names
+  /// are matched against them as they are, and the database ignores case
+  /// only for plain Latin letters.
+  static ({DateRange? range, String rest}) split(String query, {DateTime? now}) {
+    final tokens = _word.allMatches(query).toList();
+    final words = [for (final token in tokens) token[0]!.toLowerCase()];
+    if (words.isEmpty) return (range: null, rest: '');
+    if (parse(words.join(' '), now: now) case final range?) {
+      return (range: range, rest: '');
+    }
+    for (var n = 3; n >= 1; n--) {
+      if (n >= words.length) continue;
+      final tail = words.sublist(words.length - n);
+      if (_peel(tail, now) case final range?) {
+        final last = tokens[tokens.length - n - 1];
+        return (range: range, rest: query.substring(tokens.first.start, last.end));
+      }
+      final head = words.sublist(0, n);
+      if (_peel(head, now) case final range?) {
+        return (range: range, rest: query.substring(tokens[n].start, tokens.last.end));
+      }
+    }
+    return (range: null, rest: query.trim());
+  }
+
+  static DateRange? _peel(List<String> words, DateTime? now) =>
+      _unambiguous(words) ? parse(words.join(' '), now: now) : null;
+
+  static bool _unambiguous(List<String> words) =>
+      words.any((w) => _year.hasMatch(w) || _iso.hasMatch(w) || _slashed.hasMatch(w)) ||
+      _relative.contains(words.join(' ')) ||
+      (words.any(_months.containsKey) && words.any(_ordinal.hasMatch));
+
   /// The range [query] names, or null if it isn't a date.
   static DateRange? parse(String query, {DateTime? now}) {
     final today = _day(now ?? DateTime.now());
-    final words = query.trim().toLowerCase().split(_space).where((w) => w.isNotEmpty).toList();
+    final words = _words(query);
     if (words.isEmpty) return null;
     final text = words.join(' ');
 

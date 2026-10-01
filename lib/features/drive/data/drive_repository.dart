@@ -160,15 +160,42 @@ class DriveRepository {
   Stream<List<DriveFile>> watchKind(FileKind kind) =>
       _db.watchKind(kind).map(_files);
 
+  /// The most files one search returns; a list this long was cut off.
+  static const int searchLimit = AppDatabase.searchLimit;
+
   Stream<List<DriveFile>> watchSearch(
     String query, {
-    FileKind? kind,
+    Set<FileKind>? kinds,
     (DateTime, DateTime)? range,
-  }) => _db.watchSearch(query, kind: kind, range: range).map(_files);
+    Iterable<String>? folderIds,
+    String? literal,
+    bool byMoment = false,
+  }) => _db
+      .watchSearch(
+        query,
+        kinds: kinds,
+        range: range,
+        folderIds: folderIds,
+        literal: literal,
+        byMoment: byMoment,
+      )
+      .map(_files);
 
-  Stream<List<DriveFolder>> watchFolderSearch(String query) => _db
-      .watchFolderSearch(query)
+  Stream<List<DriveFolder>> watchFolderSearch(
+    String query, {
+    Iterable<String>? within,
+  }) => _db
+      .watchFolderSearch(query, within: within)
       .map((rows) => rows.map(DriveFolder.fromRow).toList());
+
+  /// Every folder, trashed ones too.
+  Stream<List<DriveFolder>> watchAllFolders() => _db.watchAllFolders().map(
+    (rows) => rows.map(DriveFolder.fromRow).toList(),
+  );
+
+  /// [rootId] and every folder below it that isn't in the trash.
+  Future<Set<String>> descendantFolderIds(String rootId) =>
+      _db.descendantFolderIds(rootId);
 
   Stream<StorageSummary> watchSummary() =>
       _db.watchTotals().map((totals) => StorageSummary(totals: totals));

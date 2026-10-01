@@ -6,6 +6,7 @@
 // Images land in tool/screenshots/out/.
 
 import 'dart:async';
+import 'dart:convert' show base64Encode;
 import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
@@ -444,6 +445,7 @@ void main() {
     DateTime? telegramWait,
     NetworkState network = NetworkState.unknown,
     List<Override> overrides = const [],
+    Future<void> Function(AppDatabase db)? seed,
   }) async {
     debugDisableShadows = false;
     tester.view.physicalSize = const Size(1080, 2340);
@@ -462,6 +464,7 @@ void main() {
     for (var i = 1; i <= 3; i++) {
       await db.markAssetBackedUp('asset-$i', photos[i].id);
     }
+    await seed?.call(db);
 
     final summary = StorageSummary(
       totals: [
@@ -510,7 +513,13 @@ void main() {
             ),
           ],
         ),
-        GoRoute(path: '/search', builder: (_, _) => const SearchScreen()),
+        GoRoute(
+          path: '/search',
+          builder: (_, state) => SearchScreen(
+            media: state.uri.queryParameters['kind'] == 'media',
+            initialFolderId: state.uri.queryParameters['folder'],
+          ),
+        ),
         GoRoute(path: '/trash', builder: (_, _) => const TrashScreen()),
         GoRoute(path: '/albums', builder: (_, _) => const AlbumsScreen()),
         GoRoute(path: '/transfers', builder: (_, _) => const TransfersScreen()),
@@ -553,6 +562,7 @@ void main() {
             (ref) =>
                 Stream.value(FolderContents(folders: folders, files: files)),
           ),
+          folderInfoProvider('Work').overrideWith((ref) => Stream.value(folders[2])),
           cacheSizeProvider.overrideWith((ref) async => 734 * _mb),
           backupControllerProvider.overrideWith(() => _Backup(backup)),
           bulkEditsProvider.overrideWith(() => _Bulk(bulk)),
@@ -737,15 +747,116 @@ void main() {
     );
     await snap(tester, 'home_waiting_for_wifi');
   });
+  /// What Search reads straight from the index: two invoices filed under
+  /// Work, and a photo and a video from the same trek.
+  Future<void> seedSearch(AppDatabase db) async {
+    var message = 1;
+    Future<void> addFolder(String name, {String? parentId}) => db.upsertFolder(
+      FoldersCompanion.insert(
+        id: name,
+        parentId: Value(parentId),
+        name: name,
+        messageId: message++,
+        createdAt: DateTime(2024),
+        modifiedAt: DateTime(2024),
+      ),
+    );
+    Future<void> addFile(DriveFile file) => db.upsertFilePart(
+      DriveFilesCompanion.insert(
+        id: file.id,
+        folderId: Value(file.folderId),
+        name: file.name,
+        mimeType: file.mimeType,
+        kind: file.kind,
+        size: file.size,
+        createdAt: file.createdAt,
+        modifiedAt: file.modifiedAt,
+        minithumbnail: Value(
+          file.minithumbnail == null ? null : base64Encode(file.minithumbnail!),
+        ),
+        thumbnailFileId: Value(file.thumbnailFileId),
+        takenAt: Value(file.takenAt),
+        durationSeconds: Value(file.durationSeconds),
+      ),
+      FilePartsCompanion.insert(
+        fileId: file.id,
+        partIndex: 0,
+        messageId: message,
+        tdFileId: message++,
+        size: file.size,
+      ),
+    );
+    DriveFile invoice(String name, String folderId, int size, DateTime at) => DriveFile(
+      id: name,
+      folderId: folderId,
+      name: name,
+      mimeType: mimeTypeFor(name),
+      kind: FileKind.document,
+      size: size,
+      createdAt: at,
+      modifiedAt: at,
+      partCount: 1,
+      starred: false,
+    );
+    final trekked = DateTime.now().subtract(const Duration(days: 300));
+
+    await addFolder('Work');
+    await addFolder('Invoices', parentId: 'Work');
+    await addFile(invoice('Invoice March.pdf', 'Invoices', 1200000, DateTime(2024, 3, 14, 10)));
+    await addFile(invoice('Invoice March hotel.pdf', 'Work', 380000, DateTime(2024, 3, 28, 16)));
+    await addFile(files[3]);
+    await addFile(
+      DriveFile(
+        id: 'Simien trek.mp4',
+        folderId: null,
+        name: 'Simien trek.mp4',
+        mimeType: mimeTypeFor('Simien trek.mp4'),
+        kind: FileKind.video,
+        size: 148 * _mb,
+        createdAt: trekked,
+        modifiedAt: trekked,
+        partCount: 1,
+        starred: false,
+        minithumbnail: photos[2].minithumbnail,
+        thumbnailFileId: photos[2].thumbnailFileId,
+        takenAt: trekked,
+        durationSeconds: 94,
+      ),
+    );
+  }
 
   testWidgets('search', (tester) async {
     await prepareData(tester);
-    await pumpApp(tester, location: '/home');
+    await pumpApp(tester, location: '/home', seed: seedSearch);
     await tester.tap(find.text('Search files and folders'));
     for (var i = 0; i < 6; i++) {
       await tester.pump(const Duration(milliseconds: 100));
     }
+    await tester.enterText(find.byType(TextField), 'invoice march 2024');
+    await tester.pump(const Duration(milliseconds: 300));
     await snap(tester, 'search');
+  });
+
+  testWidgets('search media', (tester) async {
+    await prepareData(tester);
+    await pumpApp(tester, location: '/photos', seed: seedSearch);
+    await tester.tap(find.byTooltip('Search photos and videos'));
+    for (var i = 0; i < 6; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    await tester.enterText(find.byType(TextField), 'trek');
+    await tester.pump(const Duration(milliseconds: 300));
+    await snap(tester, 'search_media');
+  });
+
+  testWidgets('search in folder', (tester) async {
+    await prepareData(tester);
+    await pumpApp(tester, location: '/files');
+    GoRouter.of(tester.element(find.byType(FilesScreen))).push('/search?folder=Work');
+    for (var i = 0; i < 6; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    await snap(tester, 'search_in_folder');
   });
 
   testWidgets('recent', (tester) async {

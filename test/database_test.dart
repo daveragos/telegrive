@@ -646,9 +646,150 @@ void main() {
 
     expect((await db.watchSearch('birr').first).map((f) => f.id), ['receipt']);
     final march = (DateTime(2024, 3), DateTime(2024, 4));
-    expect((await db.watchSearch('march', range: march).first).map((f) => f.id), ['receipt']);
+    expect((await db.watchSearch('', range: march).first).map((f) => f.id), ['receipt']);
+    // Words and a date both have to hold.
+    expect((await db.watchSearch('receipt', range: march).first).map((f) => f.id), ['receipt']);
+    expect(await db.watchSearch('other', range: march).first, isEmpty);
     expect(await db.indexedFileIds(1), {'receipt'});
     expect(await db.indexedFileIds(2), isEmpty);
+  });
+
+  test('content is searched with the commas typed', () async {
+    await db.upsertFilePart(file('receipt'), part('receipt', 0, 10));
+    await db.saveContent('receipt', 'total 1,250 birr', 1);
+
+    expect((await db.watchSearch('1,250').first).map((f) => f.id), ['receipt']);
+  });
+
+  test('a date alone leaves out files only their content would match', () async {
+    await db.upsertFilePart(
+      file('receipt').copyWith(takenAt: Value(DateTime(2024, 3, 5))),
+      part('receipt', 0, 10),
+    );
+    await db.upsertFilePart(file('notes'), part('notes', 0, 11));
+    await db.saveContent('notes', 'minutes from march 2024', 1);
+
+    final march = (DateTime(2024, 3), DateTime(2024, 4));
+    expect((await db.watchSearch('', range: march).first).map((f) => f.id), ['receipt']);
+  });
+
+  test('search within a folder and everything below it', () async {
+    await db.upsertFolder(folder('docs', 1));
+    await db.upsertFolder(folder('inner', 2, parentId: 'docs'));
+    await db.upsertFolder(folder('sibling', 3));
+    await db.upsertFilePart(file('a', folderId: 'docs'), part('a', 0, 10));
+    await db.upsertFilePart(file('b', folderId: 'inner'), part('b', 0, 11));
+    await db.upsertFilePart(file('c', folderId: 'sibling'), part('c', 0, 12));
+    await db.upsertFilePart(file('d'), part('d', 0, 13));
+
+    final subtree = await db.descendantFolderIds('docs');
+    expect(subtree, {'docs', 'inner'});
+    expect(
+      (await db.watchSearch('', folderIds: subtree).first).map((f) => f.id),
+      unorderedEquals(['a', 'b']),
+    );
+    expect(
+      (await db.watchSearch('bin', folderIds: subtree).first).map((f) => f.id),
+      unorderedEquals(['a', 'b']),
+    );
+    expect(
+      (await db.watchFolderSearch('', within: subtree).first).map((f) => f.id),
+      unorderedEquals(['docs', 'inner']),
+    );
+    expect(await db.descendantFolderIds('sibling'), {'sibling'});
+  });
+
+  test('the folders below one leave out the trash and survive a loop', () async {
+    await db.upsertFolder(folder('docs', 1));
+    await db.upsertFolder(folder('inner', 2, parentId: 'docs'));
+    await db.upsertFolder(
+      folder('old', 3, parentId: 'docs').copyWith(trashedAt: Value(now)),
+    );
+    await db.upsertFolder(folder('under-old', 4, parentId: 'old'));
+    expect(await db.descendantFolderIds('docs'), {'docs', 'inner'});
+
+    await db.upsertFolder(folder('loop-a', 5, parentId: 'loop-b'));
+    await db.upsertFolder(folder('loop-b', 6, parentId: 'loop-a'));
+    expect(await db.descendantFolderIds('loop-a'), {'loop-a', 'loop-b'});
+  });
+
+  test('search keeps to the kinds asked for', () async {
+    await db.upsertFilePart(
+      file('photo').copyWith(kind: const Value(FileKind.image)),
+      part('photo', 0, 10),
+    );
+    await db.upsertFilePart(
+      file('clip').copyWith(kind: const Value(FileKind.video)),
+      part('clip', 0, 11),
+    );
+    await db.upsertFilePart(file('notes'), part('notes', 0, 12));
+
+    expect(
+      (await db.watchSearch('', kinds: {FileKind.image, FileKind.video}).first)
+          .map((f) => f.id),
+      unorderedEquals(['photo', 'clip']),
+    );
+    expect(
+      (await db.watchSearch('', kinds: {FileKind.video}).first).map((f) => f.id),
+      ['clip'],
+    );
+  });
+
+  test('a name holding the whole query matches when part of it was a date', () async {
+    await db.upsertFilePart(
+      file('report').copyWith(name: const Value('report 2024.pdf')),
+      part('report', 0, 10),
+    );
+
+    final year2024 = (DateTime(2024), DateTime(2025));
+    expect(await db.watchSearch('report', range: year2024).first, isEmpty);
+    expect(
+      (await db.watchSearch('report', range: year2024, literal: 'report 2024').first)
+          .map((f) => f.id),
+      ['report'],
+    );
+  });
+
+  test('names match in the case they were typed, content in any', () async {
+    await db.upsertFolder(folder('Über', 1));
+    await db.upsertFolder(folder('Работа', 2));
+    await db.upsertFilePart(
+      file('notes').copyWith(name: const Value('Ärzte.pdf')),
+      part('notes', 0, 10),
+    );
+    await db.upsertFilePart(file('letter'), part('letter', 0, 11));
+    await db.saveContent('letter', 'grüße aus über', 1);
+
+    expect((await db.watchFolderSearch('Über').first).map((f) => f.id), ['Über']);
+    expect((await db.watchFolderSearch('Работа').first).map((f) => f.id), ['Работа']);
+    expect((await db.watchSearch('Ärzte').first).map((f) => f.id), ['notes']);
+    // The indexer stores content in lower case.
+    expect((await db.watchSearch('Über').first).map((f) => f.id), ['letter']);
+  });
+
+  test('a search by moment puts the newest capture first', () async {
+    await db.upsertFilePart(
+      file('old').copyWith(
+        kind: const Value(FileKind.image),
+        takenAt: Value(DateTime(2020)),
+        modifiedAt: Value(DateTime(2026, 9, 30)),
+      ),
+      part('old', 0, 10),
+    );
+    await db.upsertFilePart(
+      file('new').copyWith(
+        kind: const Value(FileKind.image),
+        takenAt: Value(DateTime(2026, 9)),
+        modifiedAt: Value(DateTime(2026, 9, 1)),
+      ),
+      part('new', 0, 11),
+    );
+
+    expect((await db.watchSearch('').first).map((f) => f.id), ['old', 'new']);
+    expect(
+      (await db.watchSearch('', byMoment: true).first).map((f) => f.id),
+      ['new', 'old'],
+    );
   });
 
   test('offline pins and copies', () async {

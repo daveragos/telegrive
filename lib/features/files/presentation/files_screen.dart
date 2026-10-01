@@ -76,7 +76,11 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
                 ),
                 actions: [
                   IconButton(
-                    onPressed: () => context.push('/search'),
+                    onPressed: () => context.push(
+                      widget.folderId == null
+                          ? '/search'
+                          : '/search?folder=${Uri.encodeQueryComponent(widget.folderId!)}',
+                    ),
                     icon: const Icon(Icons.search_rounded),
                     tooltip: 'Search',
                   ),

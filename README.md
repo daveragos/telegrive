@@ -94,8 +94,13 @@ phone number.
   file's parts. PDFs and text files open in the app. Everything else opens
   in the right app on your phone.
 - **Search inside documents.** The words in PDFs and text files are read on
-  the phone, so search finds documents by what they say. Dates work too:
-  "march 2024", "last week".
+  the phone, so search finds documents by what they say. Words and a date
+  narrow each other: "invoice march 2024" finds the invoices from that
+  month, and "last week" alone finds everything from then. A search from
+  inside a folder starts limited to it and the folders below it; a search
+  from Photos finds photos and videos and shows them as the grid. Each
+  file in the results list says which folder it is in, and Starred,
+  Recent and each category have a search button too.
 - **Send in Telegram.** Send any file to a chat straight from the drive,
   with no re-upload.
 - **Share to Telegrive** from any app on Android, into the folder you pick.
