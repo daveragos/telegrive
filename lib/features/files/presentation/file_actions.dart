@@ -377,6 +377,30 @@ abstract final class FileActions {
     return sent;
   }
 
+  /// Has the person pick a Telegram chat, then opens its files to save
+  /// into the drive, into [folderId] unless they pick another folder. With
+  /// [photos], it opens on the chat's photos and videos, which go into a
+  /// folder named after the chat inside 'From Telegram'.
+  static Future<void> saveFromChat(
+    BuildContext context,
+    WidgetRef ref, {
+    String? folderId,
+    bool photos = false,
+  }) async {
+    final chat = await showImportChatPicker(context);
+    if (chat == null || !context.mounted) return;
+    await context.push(
+      Uri(
+        path: '/import/${chat.id}',
+        queryParameters: {
+          'title': chat.title,
+          'folder': ?folderId,
+          if (photos) 'photos': '1',
+        },
+      ).toString(),
+    );
+  }
+
   // ---------------------------------------------------------------------------
   // Uploading & creating
   // ---------------------------------------------------------------------------
@@ -516,6 +540,15 @@ abstract final class FileActions {
                 onTap: () {
                   Navigator.pop(sheetContext);
                   createFolder(context, ref, parentId: folderId);
+                },
+              ),
+              _CreateOption(
+                icon: Icons.telegram,
+                label: 'Save from a Telegram chat',
+                detail: 'Copies files already in Telegram, with no upload',
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  saveFromChat(context, ref, folderId: folderId);
                 },
               ),
             ],

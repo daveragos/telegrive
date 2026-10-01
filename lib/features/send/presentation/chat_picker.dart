@@ -41,18 +41,40 @@ Future<ChatPick?> showChatPicker(
   );
 }
 
+/// Picks the one chat to save files from: Saved Messages first, then every
+/// chat but secret ones, channels the person only reads included. A chat
+/// that protects its content is shown but can't be picked. Pops with the
+/// chat, or null.
+Future<TelegramChat?> showImportChatPicker(BuildContext context) {
+  return showModalBottomSheet<TelegramChat>(
+    context: context,
+    useRootNavigator: true,
+    isScrollControlled: true,
+    builder: (context) => const _ChatPicker(
+      title: 'Save from which chat?',
+      withMessage: false,
+      single: true,
+    ),
+  );
+}
+
 class _ChatPicker extends ConsumerStatefulWidget {
   const _ChatPicker({
     required this.title,
     this.note,
     this.messageInitial,
     required this.withMessage,
+    this.single = false,
   });
 
   final String title;
   final String? note;
   final String? messageInitial;
   final bool withMessage;
+
+  /// One chat to save from: a tap on a row picks it, with no button, and
+  /// the list is of the chats files can be saved from.
+  final bool single;
 
   @override
   ConsumerState<_ChatPicker> createState() => _ChatPickerState();
@@ -75,9 +97,10 @@ class _ChatPickerState extends ConsumerState<_ChatPicker> {
 
   @override
   Widget build(BuildContext context) {
+    final single = widget.single;
     final chats = _query.isEmpty
-        ? ref.watch(recentChatsProvider)
-        : ref.watch(chatSearchProvider(_query));
+        ? ref.watch(single ? importChatsProvider : recentChatsProvider)
+        : ref.watch(chatSearchProvider((query: _query, forImport: single)));
 
     return DraggableScrollableSheet(
       expand: false,
@@ -130,6 +153,7 @@ class _ChatPickerState extends ConsumerState<_ChatPicker> {
                         itemCount: chats.length,
                         itemBuilder: (context, i) {
                           final chat = chats[i];
+                          if (single) return _SourceRow(chat: chat);
                           final picked = _picked.containsKey(chat.id);
                           return ListTile(
                             leading: ChatAvatar(chat: chat),
@@ -146,7 +170,7 @@ class _ChatPickerState extends ConsumerState<_ChatPicker> {
                       ),
               ),
             ),
-            if (widget.withMessage)
+            if (widget.withMessage && !single)
               Padding(
                 padding: const EdgeInsets.fromLTRB(Space.gutter, Space.s, Space.gutter, 0),
                 child: TextField(
@@ -156,26 +180,50 @@ class _ChatPickerState extends ConsumerState<_ChatPicker> {
                   decoration: const InputDecoration(hintText: 'Add a message'),
                 ),
               ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(Space.gutter, Space.s, Space.gutter, Space.l),
-              child: SizedBox(
-                width: double.infinity,
-                child: FilledButton(
-                  onPressed: _picked.isEmpty
-                      ? null
-                      : () => Navigator.pop<ChatPick>(context, (
-                          chats: _picked.values.toList(),
-                          message: widget.withMessage ? _message.text.trim() : '',
-                        )),
-                  child: Text(
-                    _picked.length <= 1 ? 'Send' : 'Send to ${_picked.length} chats',
+            if (!single)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(Space.gutter, Space.s, Space.gutter, Space.l),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: FilledButton(
+                    onPressed: _picked.isEmpty
+                        ? null
+                        : () => Navigator.pop<ChatPick>(context, (
+                            chats: _picked.values.toList(),
+                            message: widget.withMessage ? _message.text.trim() : '',
+                          )),
+                    child: Text(
+                      _picked.length <= 1 ? 'Send' : 'Send to ${_picked.length} chats',
+                    ),
                   ),
                 ),
               ),
-            ),
           ],
         ),
       ),
+    );
+  }
+}
+
+/// A chat to save from, which a tap picks. One that protects its content
+/// is shown greyed out, and says why it can't be picked.
+class _SourceRow extends StatelessWidget {
+  const _SourceRow({required this.chat});
+
+  final TelegramChat chat;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      leading: ChatAvatar(chat: chat),
+      title: Text(
+        chat.title,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: chat.canSave ? null : TextStyle(color: context.colors.text3),
+      ),
+      subtitle: chat.canSave ? null : const Text('Saving is turned off in this chat'),
+      onTap: chat.canSave ? () => Navigator.pop<TelegramChat>(context, chat) : null,
     );
   }
 }

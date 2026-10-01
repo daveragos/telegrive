@@ -44,6 +44,8 @@ import 'package:telegrive/features/files/presentation/file_list_screen.dart';
 import 'package:telegrive/features/files/presentation/file_location.dart';
 import 'package:telegrive/features/files/presentation/files_screen.dart';
 import 'package:telegrive/features/home/presentation/home_screen.dart';
+import 'package:telegrive/features/import/data/chat_media.dart';
+import 'package:telegrive/features/import/presentation/import_screen.dart';
 import 'package:telegrive/features/settings/data/settings_providers.dart';
 import 'package:telegrive/features/settings/presentation/settings_screen.dart';
 import 'package:telegrive/features/transfers/data/transfer_queue.dart';
@@ -118,6 +120,19 @@ class _Queue extends TransferQueue {
 
   @override
   TransfersState build() => _state;
+}
+
+/// A chat's files as if every page were read, for [ImportFilter.media] or
+/// the other kinds.
+class _ChatMedia extends ChatMedia {
+  _ChatMedia(super.source, {required this.documents, required this.photos});
+
+  final ChatMediaState documents;
+  final ChatMediaState photos;
+
+  @override
+  Future<ChatMediaState> build() async =>
+      source.filter == ImportFilter.media ? photos : documents;
 }
 
 class _Bulk extends BulkEdits {
@@ -290,6 +305,8 @@ void main() {
   late List<DriveFolder> folders;
   late List<(DriveFile, DateTime)> opens;
   late TransfersState transfers;
+  late ChatMediaState chatDocuments;
+  late ChatMediaState chatPhotos;
 
   setUpAll(() async {
     await _loadFonts();
@@ -335,6 +352,63 @@ void main() {
             folderId: i % 3 == 2 ? 'scr' : null,
           ),
       ];
+      ChatItem chatItem(DriveFile file, int messageId) => ChatItem(
+        messageId: messageId,
+        preview: file,
+        size: file.size,
+        date: file.momentAt,
+      );
+      chatPhotos = ChatMediaState(
+        items: [
+          for (var i = 0; i < 30; i++)
+            chatItem(
+              _file(
+                'Family photo $i.jpg',
+                (2.1 * _mb).round() + i * 40000,
+                0,
+                thumb: thumbs[(i * 3) % thumbs.length],
+                takenDaysAgo: 34 + i * 3,
+              ),
+              900 - i,
+            ),
+        ],
+        totalCount: 30,
+      );
+      chatDocuments = ChatMediaState(
+        items: [
+          for (final (index, (name, size, daysAgo)) in [
+            ('Lease 2023.pdf', (2.4 * _mb).round(), 3),
+            ('Residence permit.pdf', 860000, 11),
+            ('Wedding photos.zip', 10 * _mb, 25),
+            ('Payslip August.pdf', 310000, 33),
+            ('Thesis draft v3.docx', 6 * _mb, 61),
+            ('Flight tickets.pdf', 420000, 97),
+            ('Insurance policy.pdf', (1.2 * _mb).round(), 140),
+            ('Budget 2025.xlsx', 96000, 220),
+            ('Car registration.pdf', 540000, 300),
+            ('Recipes.pdf', (3.8 * _mb).round(), 410),
+            ('CV 2023.pdf', 180000, 520),
+            ('Diploma scan.pdf', (4.6 * _mb).round(), 900),
+          ].indexed)
+            chatItem(
+              DriveFile(
+                id: ChatItem.previewId(800 - index),
+                folderId: null,
+                name: name,
+                mimeType: mimeTypeFor(name),
+                kind: FileKind.detect(fileName: name, mimeType: mimeTypeFor(name)),
+                size: size,
+                createdAt: DateTime.now().subtract(Duration(days: daysAgo)),
+                modifiedAt: DateTime.now().subtract(Duration(days: daysAgo)),
+                partCount: 1,
+                starred: false,
+              ),
+              800 - index,
+            ),
+        ],
+        totalCount: 50,
+        hiddenSaved: 38,
+      );
       files = [
         _file(
           'Lalibela sunrise.jpg',
@@ -531,6 +605,14 @@ void main() {
         GoRoute(path: '/transfers', builder: (_, _) => const TransfersScreen()),
         GoRoute(path: '/settings', builder: (_, _) => const SettingsScreen()),
         GoRoute(path: '/recent', builder: (_, _) => const FileListScreen.recent()),
+        GoRoute(
+          path: '/import/:chatId',
+          builder: (_, state) => ImportScreen(
+            chatId: int.parse(state.pathParameters['chatId']!),
+            title: state.uri.queryParameters['title'] ?? '',
+            photos: state.uri.queryParameters['photos'] == '1',
+          ),
+        ),
       ],
     );
 
@@ -617,6 +699,19 @@ void main() {
               TelegramChat(id: 4, title: 'Abebe Kebede'),
               TelegramChat(id: 5, title: 'Design team', isGroup: true),
             ],
+          ),
+          importChatsProvider.overrideWith(
+            (ref) async => const [
+              TelegramChat(id: 1, title: 'Saved Messages', isSelf: true),
+              TelegramChat(id: 2, title: 'Selam Tesfaye'),
+              TelegramChat(id: 3, title: 'Family', isGroup: true),
+              TelegramChat(id: 6, title: 'Addis photographers', isGroup: true),
+              TelegramChat(id: 7, title: 'Exam answers', isGroup: true, canSave: false),
+              TelegramChat(id: 4, title: 'Abebe Kebede'),
+            ],
+          ),
+          chatMediaProvider.overrideWith2(
+            (source) => _ChatMedia(source, documents: chatDocuments, photos: chatPhotos),
           ),
           for (final entry in _thumbPaths.entries)
             thumbnailPathProvider(entry.key).overrideWith((ref) async => entry.value),
@@ -753,6 +848,7 @@ void main() {
     );
     await snap(tester, 'home_waiting_for_wifi');
   });
+
   /// What Search reads straight from the index: two invoices filed under
   /// Work, and a photo and a video from the same trek.
   Future<void> seedSearch(AppDatabase db) async {
@@ -830,6 +926,15 @@ void main() {
       ),
     );
   }
+
+  testWidgets('home empty', (tester) async {
+    await prepareData(tester);
+    files = [];
+    opens = [];
+    transfers = TransfersState.empty;
+    await pumpApp(tester, location: '/home');
+    await snap(tester, 'home_empty');
+  });
 
   testWidgets('search', (tester) async {
     await prepareData(tester);
@@ -1067,6 +1172,16 @@ void main() {
     await snap(tester, 'albums');
   });
 
+  testWidgets('photos menu', (tester) async {
+    await prepareData(tester);
+    await pumpApp(tester, location: '/photos');
+    await tester.tap(find.byTooltip('More'));
+    for (var i = 0; i < 4; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    await snap(tester, 'photos_menu');
+  });
+
   testWidgets('photos selection', (tester) async {
     await prepareData(tester);
     await pumpApp(tester, location: '/photos');
@@ -1179,6 +1294,65 @@ void main() {
       await tester.pump(const Duration(milliseconds: 100));
     }
     await snap(tester, 'create_sheet');
+  });
+
+  testWidgets('import chat picker', (tester) async {
+    await prepareData(tester);
+    await pumpApp(tester, location: '/files');
+    await tester.tap(find.text('New'));
+    for (var i = 0; i < 6; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    await tester.tap(find.text('Save from a Telegram chat'));
+    for (var i = 0; i < 6; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    await snap(tester, 'import_chat_picker');
+  });
+
+  testWidgets('import documents', (tester) async {
+    await prepareData(tester);
+    await pumpApp(tester, location: '/import/1?title=Saved%20Messages');
+    for (final name in ['Lease 2023.pdf', 'Wedding photos.zip', 'Thesis draft v3.docx']) {
+      await tester.tap(find.text(name));
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    await snap(tester, 'import_documents');
+  });
+
+  testWidgets('import photos', (tester) async {
+    await prepareData(tester);
+    await pumpApp(tester, location: '/import/3?title=Family&photos=1');
+    final tiles = find.byType(FileThumbnail);
+    for (final index in [0, 2, 3]) {
+      await tester.tap(tiles.at(index));
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    await snap(tester, 'import_photos');
+  });
+
+  testWidgets('transfers copying', (tester) async {
+    await prepareData(tester);
+    TransferItem copy(int index, TransferStatus status) => TransferItem(
+      _transfer(
+        'Scan $index.pdf',
+        TransferKind.upload,
+        status,
+        2 * _mb,
+        status == TransferStatus.completed ? 2 * _mb : 0,
+      ).copyWith(
+        origin: TransferOrigin.fromChat,
+        sourceChatId: const Value(1),
+        sourceMessageId: Value(500 + index),
+      ),
+    );
+    transfers = TransfersState([
+      for (var i = 0; i < 12; i++) copy(i, TransferStatus.completed),
+      copy(12, TransferStatus.running),
+      for (var i = 13; i < 80; i++) copy(i, TransferStatus.queued),
+    ]);
+    await pumpApp(tester, location: '/transfers');
+    await snap(tester, 'transfers_copying');
   });
 
   testWidgets('transfers', (tester) async {

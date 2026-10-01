@@ -158,12 +158,20 @@ DriveHealth describeDriveHealth({
   }
   if (active.isNotEmpty) {
     if (_allWaitForNetwork(active)) return _waitingForNetwork(active, backup);
-    final progress = _progress(active);
+    // Copies from chats have no bytes to follow, since Telegram makes each
+    // in one request, so on their own they are counted by file.
+    final onlyCopies = active.every((t) => t.origin == TransferOrigin.fromChat);
+    final copied = transfers.copyCount;
+    final progress = onlyCopies
+        ? copied.saved / copied.total
+        : TransfersState.byteProgress(active);
     return DriveHealth(
       icon: Icons.swap_vert_rounded,
       tone: HealthTone.busy,
       text: '${Formatters.count(active.length, 'transfer')} in progress',
-      detail: '${(progress * 100).round()}% done',
+      detail: onlyCopies
+          ? '${Formatters.number(copied.saved)} of ${Formatters.number(copied.total)} saved'
+          : '${(progress * 100).round()}% done',
       progress: progress,
       target: HealthTarget.transfers,
       topic: HealthTopic.transfers,
@@ -340,7 +348,7 @@ const _off = DriveHealth(
 /// back, and TDLib then carries on by itself. Backup says so in its own
 /// words when it is the only thing moving.
 DriveHealth _waitingForNetwork(List<TransferItem> manual, BackupState backup) {
-  final progress = manual.isEmpty ? backup.progress : _progress(manual);
+  final progress = manual.isEmpty ? backup.progress : TransfersState.byteProgress(manual);
   return DriveHealth(
     icon: Icons.cloud_off_rounded,
     tone: HealthTone.neutral,
@@ -384,12 +392,6 @@ DriveHealth _transfersWaitingForWifi(List<TransferItem> held) {
 /// [at]; backup has its own line.
 List<TransferItem> _manualActive(TransfersState transfers, DateTime at) =>
     transfers.activeAt(at).where((t) => t.origin != TransferOrigin.backup).toList();
-
-double _progress(List<TransferItem> items) {
-  final total = items.fold<int>(0, (sum, t) => sum + t.row.totalBytes);
-  final done = items.fold<int>(0, (sum, t) => sum + t.row.doneBytes);
-  return total == 0 ? 0 : done / total;
-}
 
 DateTime? _latest(List<DateTime?> times) {
   DateTime? latest;

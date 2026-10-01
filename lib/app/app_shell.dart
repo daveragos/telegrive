@@ -226,11 +226,13 @@ class _AppShellState extends ConsumerState<AppShell> {
   }
 }
 
-/// "Uploading 2 files · 41% · 8.3 MB/s" above the bar, opening Transfers.
-/// When everything in it is sitting out a short Telegram wait, the line
-/// counts down to the next try instead, with the bar gone grey; when it all
-/// waits for the network, the line says so, grey too. Transfers waiting for
-/// Wi-Fi aren't in flight, so they aren't counted here.
+/// "Uploading 2 files · 41% · 8.3 MB/s" above the bar, opening Transfers,
+/// or "Saving 68 files from Telegram · 12 of 80 saved" while only copies
+/// from chats are being made. When everything in it is sitting out a short
+/// Telegram wait, the line counts down to the next try instead, with the
+/// bar gone grey; when it all waits for the network, the line says so, grey
+/// too. Transfers waiting for Wi-Fi aren't in flight, so they aren't counted
+/// here.
 class _TransferStrip extends ConsumerWidget {
   const _TransferStrip();
 
@@ -241,16 +243,23 @@ class _TransferStrip extends ConsumerWidget {
     final active = state.active
         .where((t) => t.origin != TransferOrigin.backup)
         .toList();
-    final totalBytes = active.fold<int>(0, (sum, t) => sum + t.row.totalBytes);
-    final doneBytes = active.fold<int>(0, (sum, t) => sum + t.row.doneBytes);
-    final progress = totalBytes == 0 ? 0.0 : doneBytes / totalBytes;
-    final uploads = active.where((t) => t.kind == TransferKind.upload).length;
-    final downloads = active.length - uploads;
+    // Copies from chats send nothing from the phone, so they aren't counted
+    // as uploads, and having no bytes to follow, on their own they are
+    // counted by file.
+    final copies = active.where((t) => t.origin == TransferOrigin.fromChat).length;
+    final uploads = active.where((t) => t.kind == TransferKind.upload).length - copies;
+    final downloads = active.length - uploads - copies;
+    final onlyCopies = copies > 0 && copies == active.length;
+    final copied = state.copyCount;
+    final progress = onlyCopies
+        ? copied.saved / copied.total
+        : TransfersState.byteProgress(active);
     final speed = active.fold<double>(0, (sum, t) => sum + t.bytesPerSecond);
 
     final title = [
       if (uploads > 0) 'Uploading ${Formatters.count(uploads, 'file')}',
       if (downloads > 0) 'Downloading ${Formatters.count(downloads, 'file')}',
+      if (copies > 0) 'Saving ${Formatters.count(copies, 'file')} from Telegram',
     ].join(', ');
     final waits = [
       for (final item in active)
@@ -263,7 +272,11 @@ class _TransferStrip extends ConsumerWidget {
     final percent = '${(progress * 100).round()}%';
 
     Widget line(String detail, {required bool waiting}) => StatusLine(
-      icon: uploads > 0 ? Icons.arrow_upward_rounded : Icons.arrow_downward_rounded,
+      icon: uploads > 0
+          ? Icons.arrow_upward_rounded
+          : downloads > 0
+          ? Icons.arrow_downward_rounded
+          : Icons.telegram,
       color: waiting ? null : colors.accent,
       text: title,
       detail: detail,
@@ -287,7 +300,10 @@ class _TransferStrip extends ConsumerWidget {
               )
             : resumesAt == null
             ? line(
-                [percent, if (speed > 0) Formatters.speed(speed)].join(' · '),
+                onlyCopies
+                    ? '${Formatters.number(copied.saved)} of '
+                          '${Formatters.number(copied.total)} saved'
+                    : [percent, if (speed > 0) Formatters.speed(speed)].join(' · '),
                 waiting: false,
               )
             : Countdown(

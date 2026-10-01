@@ -77,10 +77,12 @@ class MediaGrid extends ConsumerStatefulWidget {
     required this.selection,
     required this.onOpen,
     this.header = const [],
+    this.footer = const [],
     this.onRefresh,
     this.empty,
     this.alwaysSelecting = false,
     this.selectable = true,
+    this.onNearEnd,
   });
 
   /// Newest first; months are taken from [DriveFile.momentAt].
@@ -90,6 +92,9 @@ class MediaGrid extends ConsumerStatefulWidget {
 
   /// Slivers above the grid.
   final List<Widget> header;
+
+  /// Slivers below the grid.
+  final List<Widget> footer;
   final Future<void> Function()? onRefresh;
 
   /// Shown instead of the grid when there are no files.
@@ -101,6 +106,10 @@ class MediaGrid extends ConsumerStatefulWidget {
   /// Whether a long-press starts selecting. Off where the screen has no
   /// bar to act on a selection, as in Search.
   final bool selectable;
+
+  /// Called when the grid is scrolled close to its end, or left there by
+  /// a build, so a list read page by page can fetch its next page.
+  final VoidCallback? onNearEnd;
 
   @override
   ConsumerState<MediaGrid> createState() => _MediaGridState();
@@ -125,6 +134,7 @@ class _MediaGridState extends ConsumerState<MediaGrid> {
   void initState() {
     super.initState();
     widget.selection.addListener(_changed);
+    _scroll.addListener(_checkNearEnd);
   }
 
   @override
@@ -145,6 +155,12 @@ class _MediaGridState extends ConsumerState<MediaGrid> {
   }
 
   void _changed() => setState(() {});
+
+  void _checkNearEnd() {
+    final onNearEnd = widget.onNearEnd;
+    if (onNearEnd == null || !mounted || !_scroll.hasClients) return;
+    if (_scroll.position.extentAfter < 800) onNearEnd();
+  }
 
   bool get _selecting => widget.alwaysSelecting || widget.selection.active;
 
@@ -268,6 +284,10 @@ class _MediaGridState extends ConsumerState<MediaGrid> {
   Widget build(BuildContext context) {
     final columns = ref.watch(photoColumnsProvider);
     final slivers = <Widget>[...widget.header];
+    // A page that doesn't fill the screen leaves nothing to scroll.
+    if (widget.onNearEnd != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _checkNearEnd());
+    }
 
     if (widget.files.isEmpty && widget.empty != null) {
       slivers.add(SliverFillRemaining(hasScrollBody: false, child: widget.empty));
@@ -312,7 +332,9 @@ class _MediaGridState extends ConsumerState<MediaGrid> {
         offset += section.files.length;
       }
     }
-    slivers.add(const SliverToBoxAdapter(child: SizedBox(height: Space.x3)));
+    slivers
+      ..addAll(widget.footer)
+      ..add(const SliverToBoxAdapter(child: SizedBox(height: Space.x3)));
 
     Widget scroll = CustomScrollView(
       controller: _scroll,

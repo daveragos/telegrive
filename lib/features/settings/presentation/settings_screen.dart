@@ -457,6 +457,11 @@ class SettingsScreen extends ConsumerWidget {
                   'Forward any file to the channel in Telegram and it appears '
                       'here, without uploading it again.',
                 ),
+                point(
+                  'Saving from chats',
+                  'Files you already have in Telegram are copied into your drive '
+                      'by Telegram itself, so nothing is downloaded or uploaded.',
+                ),
               ],
             ),
           ),

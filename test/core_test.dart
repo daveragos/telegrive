@@ -2,8 +2,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:telegrive/core/files/file_kind.dart';
 import 'package:telegrive/core/format/formatters.dart';
+import 'package:telegrive/features/backup/data/backup_controller.dart';
 import 'package:telegrive/features/drive/domain/drive_models.dart';
 import 'package:telegrive/features/files/presentation/file_location.dart';
+import 'package:telegrive/features/transfers/data/transfer_keep_alive.dart';
+import 'package:telegrive/features/transfers/data/transfer_queue.dart';
+import 'package:telegrive/infrastructure/database/app_database.dart';
 import 'package:telegrive/infrastructure/storage/preferences.dart';
 import 'package:telegrive/infrastructure/telegram/telegram_exception.dart';
 
@@ -240,6 +244,110 @@ void main() {
     test('a loop in the folder tree still ends', () {
       final loop = {'a': folder('a', 'b'), 'b': folder('b', 'a')};
       expect(locationOf(loop, 'a'), 'b › a');
+    });
+  });
+
+  group('Copies from chats', () {
+    TransferItem item(
+      String id,
+      TransferKind kind,
+      TransferOrigin origin,
+      TransferStatus status, {
+      int total = 10,
+      int done = 0,
+    }) => TransferItem(
+      TransferRow(
+        id: id,
+        kind: kind,
+        status: status,
+        name: '$id.pdf',
+        mimeType: 'application/pdf',
+        fileId: id,
+        ownsSource: false,
+        wifiOnly: false,
+        totalBytes: total,
+        doneBytes: done,
+        partCount: 1,
+        completedParts: 0,
+        createdAt: DateTime(2026, 10, 1),
+        origin: origin,
+      ),
+    );
+    TransferItem copy(String id, TransferStatus status) =>
+        item(id, TransferKind.upload, TransferOrigin.fromChat, status);
+
+    final state = TransfersState([
+      item('upload', TransferKind.upload, TransferOrigin.manual, TransferStatus.running),
+      copy('copy 1', TransferStatus.running),
+      copy('copy 2', TransferStatus.queued),
+      copy('copy 3', TransferStatus.completed),
+      item('download', TransferKind.download, TransferOrigin.manual, TransferStatus.running),
+    ]);
+    const idle = BackupState(phase: BackupPhase.off);
+
+    test('are their own group', () {
+      expect(state.copies.map((t) => t.id), ['copy 1', 'copy 2', 'copy 3']);
+    });
+
+    test('are counted by file, leaving out cancelled ones', () {
+      final count = TransfersState([
+        ...state.copies,
+        copy('copy 4', TransferStatus.failed),
+        copy('copy 5', TransferStatus.cancelled),
+      ]).copyCount;
+      expect(count, (saved: 1, total: 4, left: 2));
+    });
+
+    test('the notification counts them apart from uploads', () {
+      final (title, _) = TransferKeepAlive.describe(state, idle);
+      expect(
+        title,
+        'Uploading 1 file · Downloading 1 file · Saving 2 files from Telegram',
+      );
+      final (onlyCopies, _) = TransferKeepAlive.describe(
+        TransfersState(state.copies),
+        idle,
+      );
+      expect(onlyCopies, 'Saving 2 files from Telegram');
+    });
+
+    test('on their own, the notification says how many files are left', () {
+      final (title, text) = TransferKeepAlive.describe(
+        TransfersState([
+          ...state.copies,
+          copy('copy 4', TransferStatus.failed),
+          copy('copy 5', TransferStatus.cancelled),
+        ]),
+        idle,
+      );
+      expect(title, 'Saving 2 files from Telegram');
+      expect(text, '2 files left');
+    });
+
+    test('next to an upload, the notification gives the upload\'s share', () {
+      final (title, text) = TransferKeepAlive.describe(
+        TransfersState([
+          item(
+            'upload',
+            TransferKind.upload,
+            TransferOrigin.manual,
+            TransferStatus.running,
+            total: 10 << 20,
+            done: 5 << 20,
+          ),
+          for (var i = 0; i < 80; i++)
+            item(
+              'copy $i',
+              TransferKind.upload,
+              TransferOrigin.fromChat,
+              TransferStatus.queued,
+              total: 2 << 20,
+            ),
+        ]),
+        idle,
+      );
+      expect(title, 'Uploading 1 file · Saving 80 files from Telegram');
+      expect(text, '50%');
     });
   });
 

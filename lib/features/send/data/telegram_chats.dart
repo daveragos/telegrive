@@ -11,7 +11,7 @@ import '../../drive/data/drive_repository.dart';
 import '../../drive/data/drive_session.dart';
 import 'send_bundle.dart';
 
-/// A chat a file can be sent to.
+/// A chat a file can be sent to, or saved from.
 @immutable
 class TelegramChat {
   const TelegramChat({
@@ -22,6 +22,7 @@ class TelegramChat {
     this.isSelf = false,
     this.isGroup = false,
     this.slowMode = false,
+    this.canSave = true,
   });
 
   final int id;
@@ -40,9 +41,14 @@ class TelegramChat {
   /// A group in slow mode, where members send one message at a time and
   /// can't forward several at once. Its admins aren't held to it.
   final bool slowMode;
+
+  /// Whether files may be copied out of it: false when the chat protects
+  /// its content.
+  final bool canSave;
 }
 
-/// The person's Telegram chats, and sending drive files into them.
+/// The person's Telegram chats: sending drive files into them, and which
+/// of them files can be saved from.
 class TelegramChats {
   TelegramChats(this._ref);
 
@@ -52,8 +58,10 @@ class TelegramChats {
   int? get _driveChatId => _ref.read(driveSessionProvider)?.chatId;
 
   /// Saved Messages first, then the chats this phone last sent files to,
-  /// then the chat list in Telegram's own order.
-  Future<List<TelegramChat>> recent({int limit = 40}) async {
+  /// then the chat list in Telegram's own order. With [forImport], the
+  /// chats files can be saved from, channels the person only reads
+  /// included, in Telegram's order after Saved Messages.
+  Future<List<TelegramChat>> recent({int limit = 40, bool forImport = false}) async {
     final me = await _client.send<td.User>(const td.GetMe());
     final saved = await _client.send<td.Chat>(
       td.CreatePrivateChat(userId: me.id, force: false),
@@ -70,13 +78,13 @@ class TelegramChats {
     );
     final ids = {
       saved.id,
-      ..._ref.read(preferencesProvider).recentSendChats,
+      if (!forImport) ..._ref.read(preferencesProvider).recentSendChats,
       ...list.chatIds,
     };
-    return _resolve(ids.toList(), selfId: saved.id);
+    return _resolve(ids.toList(), selfId: saved.id, forImport: forImport);
   }
 
-  Future<List<TelegramChat>> search(String query) async {
+  Future<List<TelegramChat>> search(String query, {bool forImport = false}) async {
     final local = await _client.send<td.Chats>(td.SearchChats(query: query, limit: 30));
     td.Chats? remote;
     try {
@@ -84,26 +92,35 @@ class TelegramChats {
         td.SearchChatsOnServer(query: query, limit: 30),
       );
     } catch (_) {}
-    return _resolve({...local.chatIds, ...?remote?.chatIds}.toList());
+    return _resolve({...local.chatIds, ...?remote?.chatIds}.toList(), forImport: forImport);
   }
 
-  Future<List<TelegramChat>> _resolve(List<int> ids, {int? selfId}) async {
+  /// The chats behind [ids] that files can go into, or with [forImport],
+  /// come from. Secret chats are never listed, nor the drive itself.
+  Future<List<TelegramChat>> _resolve(
+    List<int> ids, {
+    int? selfId,
+    bool forImport = false,
+  }) async {
     final chats = <TelegramChat>[];
     for (final id in ids) {
       if (id == _driveChatId) continue;
       try {
         final chat = await _client.send<td.Chat>(td.GetChat(chatId: id));
-        // Only chats files can go into: not channels one merely reads, not
-        // secret chats (which can't take forwarded files).
-        final sendable = switch (chat.type) {
+        // Sending needs a chat files can go into: not a channel one merely
+        // reads, not a secret chat (which can't take forwarded files).
+        // Saving reads from any chat but a secret one, whose messages
+        // can't be copied.
+        final listed = switch (chat.type) {
           td.ChatTypePrivate() => true,
+          td.ChatTypeBasicGroup() || td.ChatTypeSupergroup() when forImport => true,
           td.ChatTypeBasicGroup() => chat.permissions.canSendDocuments,
           td.ChatTypeSupergroup(isChannel: false) => chat.permissions.canSendDocuments,
           _ => false,
         };
-        if (!sendable) continue;
+        if (!listed) continue;
         final slowMode = switch (chat.type) {
-          td.ChatTypeSupergroup(:final supergroupId) => _slowFor(
+          td.ChatTypeSupergroup(:final supergroupId) when !forImport => _slowFor(
             await _client.send<td.Supergroup>(
               td.GetSupergroup(supergroupId: supergroupId),
             ),
@@ -119,6 +136,7 @@ class TelegramChats {
             isSelf: chat.id == selfId,
             isGroup: chat.type is! td.ChatTypePrivate,
             slowMode: slowMode,
+            canSave: !chat.hasProtectedContent,
           ),
         );
       } catch (e) {
@@ -223,7 +241,16 @@ final recentChatsProvider = FutureProvider.autoDispose<List<TelegramChat>>(
   (ref) => ref.watch(telegramChatsProvider).recent(),
 );
 
+/// Saved Messages and the chats files can be saved from.
+final importChatsProvider = FutureProvider.autoDispose<List<TelegramChat>>(
+  (ref) => ref.watch(telegramChatsProvider).recent(forImport: true),
+);
+
+/// Chats matching a query, among those files can be sent to or, with
+/// forImport, saved from.
 final chatSearchProvider = FutureProvider.autoDispose
-    .family<List<TelegramChat>, String>(
-      (ref, query) => ref.watch(telegramChatsProvider).search(query),
+    .family<List<TelegramChat>, ({String query, bool forImport})>(
+      (ref, search) => ref
+          .watch(telegramChatsProvider)
+          .search(search.query, forImport: search.forImport),
     );

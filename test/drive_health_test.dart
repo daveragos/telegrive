@@ -124,6 +124,39 @@ void main() {
       expect(health.target, HealthTarget.transfers);
     });
 
+    test('copies from chats on their own are counted by file', () {
+      TransferItem copy(String name, TransferStatus status) =>
+          _transfer(name, status, origin: TransferOrigin.fromChat);
+      final health = _top(
+        transfers: TransfersState([
+          copy('Scan 1.pdf', TransferStatus.completed),
+          copy('Scan 2.pdf', TransferStatus.running),
+          copy('Scan 3.pdf', TransferStatus.queued),
+          copy('Scan 4.pdf', TransferStatus.cancelled),
+        ]),
+      );
+      expect(health.text, '2 transfers in progress');
+      expect(health.detail, '1 of 3 saved');
+      expect(health.progress, closeTo(1 / 3, 1e-9));
+    });
+
+    test('next to an upload, copies leave the share to its bytes', () {
+      final health = _top(
+        transfers: TransfersState([
+          _transfer('a.zip', TransferStatus.running, total: 100, done: 40),
+          _transfer(
+            'Scan 1.pdf',
+            TransferStatus.queued,
+            origin: TransferOrigin.fromChat,
+            total: 1000,
+          ),
+        ]),
+      );
+      expect(health.text, '2 transfers in progress');
+      expect(health.detail, '40% done');
+      expect(health.progress, closeTo(0.4, 1e-9));
+    });
+
     test('backup uploads are not counted as transfers', () {
       final health = _top(
         transfers: TransfersState([

@@ -47,6 +47,14 @@ phone number.
 - **Syncs itself.** New, edited or deleted messages flow in live. Anything you
   **forward into the channel from Telegram** (documents, videos, audio, voice
   messages, photos) shows up in the drive with no re-upload.
+- **Save from any chat.** Pick Saved Messages or any chat, a channel you only
+  read included, choose its documents, photos and videos, or audio, and pick
+  a folder. Telegram copies them into the drive itself, so nothing is
+  downloaded or uploaded, and they keep their original dates. What the
+  drive already has, and what a chat doesn't let you save, is left out of
+  the list. Copies go one at a time in Transfers and carry on after a
+  restart. Photos sent in a chat as photos are Telegram's compressed copies;
+  files sent as documents come across intact.
 - **Rebuildable.** Names, folders, stars, albums and the trash live in each
   message's caption. Reinstall, sign in on another phone, or sign out and
   back in, and the whole drive comes back. Signing out takes the drive off

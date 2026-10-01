@@ -21,8 +21,9 @@ class TransfersScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(transferQueueProvider);
-    // Photo backup and downloads to the phone are summarised in a line each
-    // rather than listed file by file; only their failures are listed.
+    // Photo backup, downloads to the phone and copies from chats are
+    // summarised in a line each rather than listed file by file; only their
+    // failures are listed.
     final active = state.pending
         .where((t) => t.origin == TransferOrigin.manual)
         .toList();
@@ -37,12 +38,15 @@ class TransfersScreen extends ConsumerWidget {
     final anyRunning = inProgress.any((t) => t.status.isActive);
     final anyPaused = inProgress.any((t) => t.status == TransferStatus.paused);
     final saves = state.saves;
+    final copies = state.copies.where((t) => t.status != TransferStatus.cancelled).toList();
     final queue = ref.read(transferQueueProvider.notifier);
     final inProgressIds = {for (final t in inProgress) t.id};
     bool listed(TransferRow r) => inProgressIds.contains(r.id);
     final finished = state.finished
         .where(
-          (t) => !(t.origin == TransferOrigin.save && t.status == TransferStatus.completed),
+          (t) =>
+              !((t.origin == TransferOrigin.save || t.origin == TransferOrigin.fromChat) &&
+                  t.status == TransferStatus.completed),
         )
         .toList();
     final failed = finished.where((t) => t.status == TransferStatus.failed).length;
@@ -60,7 +64,7 @@ class TransfersScreen extends ConsumerWidget {
           const SizedBox(width: Space.s),
         ],
       ),
-      body: active.isEmpty && finished.isEmpty && saves.isEmpty && !backingUp
+      body: active.isEmpty && finished.isEmpty && saves.isEmpty && copies.isEmpty && !backingUp
           ? const EmptyState(
               title: 'Nothing is moving',
               message: 'Uploads and downloads show up here while they run.',
@@ -104,6 +108,10 @@ class TransfersScreen extends ConsumerWidget {
                           ],
                         ),
                 ),
+                if (copies.any((t) => t.status != TransferStatus.failed)) ...[
+                  const SectionHeader('Saving from Telegram'),
+                  ListGroup(children: [_CopyGroup(copies: copies)]),
+                ],
                 if (inProgress.isNotEmpty) ...[
                   SectionHeader(
                     'In progress · ${inProgress.length}',
@@ -261,6 +269,79 @@ class _SaveGroup extends ConsumerWidget {
           stop,
         ],
       ),
+    );
+  }
+}
+
+/// Every copy from a Telegram chat as one line, counted by file: Telegram
+/// makes each in one go, so there are no bytes to follow.
+class _CopyGroup extends ConsumerWidget {
+  const _CopyGroup({required this.copies});
+
+  /// None of them cancelled, and at least one not failed.
+  final List<TransferItem> copies;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colors = context.colors;
+    final queue = ref.read(transferQueueProvider.notifier);
+    final active = copies.where((t) => t.status.isActive).toList();
+    final saved = copies.where((t) => t.status == TransferStatus.completed).length;
+    final total = copies.length;
+
+    if (active.isEmpty) {
+      return StatusLine(
+        icon: Icons.telegram,
+        color: colors.success,
+        text: 'Saved ${Formatters.count(saved, 'file')} from Telegram',
+        detail: 'Copied inside Telegram, so nothing was downloaded.',
+      );
+    }
+
+    // Copies run one at a time, so while Telegram asks for a pause every
+    // one of them waits for it.
+    final waits = [
+      for (final item in active)
+        if (item.wait case WaitingForTelegram(:final until)) until,
+    ];
+    final resumesAt = waits.isEmpty || waits.length < active.length
+        ? null
+        : waits.reduce((a, b) => a.isBefore(b) ? a : b);
+    final stop = TextButton(
+      onPressed: () async {
+        final confirmed = await showConfirmDialog(
+          context,
+          title: 'Stop saving from Telegram?',
+          message: 'Files already saved stay in your drive.',
+          confirmLabel: 'Stop',
+        );
+        if (confirmed) await queue.cancelCopies();
+      },
+      child: const Text('Stop'),
+    );
+    final text = 'Saving from Telegram · ${Formatters.number(saved)} of ${Formatters.number(total)}';
+    final progress = total == 0 ? 0.0 : saved / total;
+
+    if (resumesAt != null) {
+      return Countdown(
+        until: resumesAt,
+        builder: (context, left) => StatusLine(
+          icon: Icons.telegram,
+          text: text,
+          detail: 'Waiting for Telegram · ${Formatters.countdown(left)}',
+          progress: progress,
+          progressColor: colors.text3,
+          trailing: stop,
+        ),
+      );
+    }
+    return StatusLine(
+      icon: Icons.telegram,
+      color: colors.accent,
+      text: text,
+      detail: 'Copied inside Telegram, nothing is downloaded.',
+      progress: progress,
+      trailing: stop,
     );
   }
 }

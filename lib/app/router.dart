@@ -14,6 +14,7 @@ import '../features/backup/presentation/not_backed_up_screen.dart';
 import '../features/files/presentation/file_list_screen.dart';
 import '../features/files/presentation/files_screen.dart';
 import '../features/home/presentation/home_screen.dart';
+import '../features/import/presentation/import_screen.dart';
 import '../features/photos/presentation/albums_screen.dart';
 import '../features/player/presentation/player_screen.dart';
 import '../features/preview/presentation/document_preview_screen.dart';
@@ -153,6 +154,16 @@ final routerProvider = Provider<GoRouter>((ref) {
             ],
           ),
         ],
+      ),
+      GoRoute(
+        path: '/import/:chatId',
+        parentNavigatorKey: _rootKey,
+        builder: (_, state) => ImportScreen(
+          chatId: int.parse(state.pathParameters['chatId']!),
+          title: state.uri.queryParameters['title'] ?? '',
+          folderId: state.uri.queryParameters['folder'],
+          photos: state.uri.queryParameters['photos'] == '1',
+        ),
       ),
       GoRoute(
         path: '/play/:fileId',

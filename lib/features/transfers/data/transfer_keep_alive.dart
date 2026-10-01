@@ -157,7 +157,7 @@ class TransferKeepAlive {
     _refreshTimer?.cancel();
     _refreshTimer = null;
     _lastUpdate = now;
-    final (title, text) = _describe(state, backup);
+    final (title, text) = describe(state, backup);
     await FlutterForegroundTask.updateService(
       notificationTitle: title,
       notificationText: text,
@@ -177,7 +177,7 @@ class TransferKeepAlive {
           await FlutterForegroundTask.requestNotificationPermission();
         }
       }
-      final (title, text) = _describe(state, backup);
+      final (title, text) = describe(state, backup);
       final result = await FlutterForegroundTask.startService(
         serviceId: _serviceId,
         serviceTypes: const [ForegroundServiceTypes.dataSync],
@@ -209,7 +209,11 @@ class TransferKeepAlive {
     }
   }
 
-  static (String, String) _describe(TransfersState state, BackupState backup) {
+  /// The notification's title and text for [state] and [backup]. Copies
+  /// from chats are counted apart from uploads, since nothing goes up, and
+  /// by file rather than by byte, since Telegram makes each in one request.
+  @visibleForTesting
+  static (String, String) describe(TransfersState state, BackupState backup) {
     final inFlight = state.active;
     final percent = '${(state.activeProgress * 100).round()}%';
     if (inFlight.isNotEmpty && inFlight.every((t) => t.wait is WaitingForNetwork)) {
@@ -227,20 +231,24 @@ class TransferKeepAlive {
     final active = inFlight
         .where((t) => t.origin != TransferOrigin.backup)
         .toList();
-    final uploads = active.where((t) => t.kind == TransferKind.upload).length;
-    final downloads = active.length - uploads;
+    final copies = active.where((t) => t.origin == TransferOrigin.fromChat).length;
+    final uploads = active.where((t) => t.kind == TransferKind.upload).length - copies;
+    final downloads = active.length - uploads - copies;
     final speed = state.active.fold<double>(0, (sum, t) => sum + t.bytesPerSecond);
     final backingUp = _backingUp(state, backup);
 
     final parts = [
       if (uploads > 0) 'Uploading ${Formatters.count(uploads, 'file')}',
       if (downloads > 0) 'Downloading ${Formatters.count(downloads, 'file')}',
+      if (copies > 0) 'Saving ${Formatters.count(copies, 'file')} from Telegram',
       if (backingUp) active.isEmpty ? 'Backing up photos' : 'backing up photos',
     ];
     final title = parts.isEmpty ? 'Telegrive' : parts.join(' · ');
     final text = [
       if (backingUp && backup.total > 0)
         '${Formatters.count(backup.remaining, 'item')} left'
+      else if (copies > 0 && copies == active.length)
+        '${Formatters.count(state.copyCount.left, 'file')} left'
       else
         percent,
       if (speed > 0) Formatters.speed(speed),

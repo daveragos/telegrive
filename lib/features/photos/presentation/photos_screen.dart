@@ -15,7 +15,7 @@ import '../data/photos_visibility.dart';
 import 'media_grid.dart';
 import 'media_selection_bar.dart';
 
-enum _PhotosMenu { download, freeUp, duplicates }
+enum _PhotosMenu { fromChat, download, freeUp, duplicates }
 
 /// Every photo and video in the drive as one timeline, newest moment first,
 /// with backup status on top.
@@ -84,6 +84,11 @@ class _PhotosScreenState extends ConsumerState<PhotosScreen> {
                     PopupMenuButton<_PhotosMenu>(
                       tooltip: 'More',
                       onSelected: (choice) => switch (choice) {
+                        _PhotosMenu.fromChat => FileActions.saveFromChat(
+                          context,
+                          ref,
+                          photos: true,
+                        ),
                         _PhotosMenu.download => FileActions.saveToDevice(
                           context,
                           ref,
@@ -94,6 +99,10 @@ class _PhotosScreenState extends ConsumerState<PhotosScreen> {
                         _PhotosMenu.duplicates => removeDuplicateBackups(context, ref),
                       },
                       itemBuilder: (_) => [
+                        const PopupMenuItem(
+                          value: _PhotosMenu.fromChat,
+                          child: Text('Save photos from a Telegram chat'),
+                        ),
                         const PopupMenuItem(
                           value: _PhotosMenu.freeUp,
                           child: Text('Free up space on this phone'),

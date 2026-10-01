@@ -312,9 +312,19 @@ class _NothingYet extends ConsumerWidget {
           'Upload files here, or forward any file to your Telegrive channel '
           'in Telegram and it will show up.',
       compact: true,
-      action: FilledButton(
-        onPressed: () => FileActions.upload(context, ref),
-        child: const Text('Upload files'),
+      action: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          FilledButton(
+            onPressed: () => FileActions.upload(context, ref),
+            child: const Text('Upload files'),
+          ),
+          const SizedBox(height: Space.s),
+          TextButton(
+            onPressed: () => FileActions.saveFromChat(context, ref),
+            child: const Text('Save from a Telegram chat'),
+          ),
+        ],
       ),
     );
   }

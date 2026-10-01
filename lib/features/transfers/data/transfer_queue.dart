@@ -85,6 +85,31 @@ class SaveRequest {
   final bool wifiOnly;
 }
 
+/// A file in a Telegram chat, to be copied into the drive by Telegram
+/// itself, so nothing is downloaded or uploaded.
+@immutable
+class CopyRequest {
+  const CopyRequest({
+    required this.chatId,
+    required this.messageId,
+    required this.name,
+    required this.mimeType,
+    required this.size,
+    required this.date,
+  });
+
+  final int chatId;
+  final int messageId;
+
+  /// What the copy is called in the drive.
+  final String name;
+  final String mimeType;
+  final int size;
+
+  /// When the message was sent, which the copy keeps.
+  final DateTime date;
+}
+
 /// A transfer as the UI sees it: the persisted row plus live speed.
 @immutable
 class TransferItem {
@@ -169,6 +194,26 @@ class TransfersState {
   List<TransferItem> get saves =>
       items.where((t) => t.origin == TransferOrigin.save).toList();
 
+  /// Copies from Telegram chats, which the UI also shows as one group.
+  List<TransferItem> get copies =>
+      items.where((t) => t.origin == TransferOrigin.fromChat).toList();
+
+  /// How many [copies] are made, out of all of them but the cancelled ones,
+  /// and how many are still to be made. Telegram makes each copy in one
+  /// request, so copies are counted by file, never by byte.
+  ({int saved, int total, int left}) get copyCount {
+    var saved = 0;
+    var total = 0;
+    var left = 0;
+    for (final item in copies) {
+      if (item.status == TransferStatus.cancelled) continue;
+      total++;
+      if (item.status == TransferStatus.completed) saved++;
+      if (item.status.isPending) left++;
+    }
+    return (saved: saved, total: total, left: left);
+  }
+
   List<TransferItem> get finished =>
       items.where((t) => t.status.isFinished).toList();
 
@@ -188,10 +233,17 @@ class TransfersState {
       .length;
 
   /// Combined progress of everything in flight, for the global indicator.
-  double get activeProgress {
+  /// It covers bytes, so copies from chats are left out; see [copyCount].
+  double get activeProgress => byteProgress(active);
+
+  /// The share of bytes done across [items], leaving out copies from chats:
+  /// Telegram makes a copy in one request, so it has no bytes to follow,
+  /// and its size would only hold the share down.
+  static double byteProgress(Iterable<TransferItem> items) {
     var total = 0;
     var done = 0;
-    for (final item in active) {
+    for (final item in items) {
+      if (item.origin == TransferOrigin.fromChat) continue;
       total += item.row.totalBytes;
       done += item.row.doneBytes;
     }
@@ -234,9 +286,19 @@ class _Tracked {
 /// that times out on the way is tried again a few times before the row is
 /// called failed. A row marked Wi-Fi only doesn't start on mobile data, and
 /// steps back into the queue when the phone moves onto it mid-way.
+///
+/// Copies from chats are uploads to the queue, waiting with them when
+/// Telegram asks, but Telegram makes them in one request each, with nothing
+/// sent from the phone. They go one at a time, a moment apart, and leave
+/// the upload slots free.
 class TransferQueue extends Notifier<TransfersState> {
   static const int _maxUploads = 2;
   static const int _maxDownloads = 3;
+  static const int _maxCopies = 1;
+
+  /// The pause after each copy, so a long run of them keeps under the rate
+  /// at which Telegram starts asking for waits.
+  static const Duration _copyGap = Duration(milliseconds: 400);
 
   /// Saves to the phone leave a download slot free, so opening a file never
   /// waits behind a whole drive being downloaded.
@@ -492,12 +554,65 @@ class TransferQueue extends Notifier<TransfersState> {
     return rows.length;
   }
 
+  /// Queues copies of [requests] into [folderId], made by Telegram from the
+  /// chats they are in. Files already on their way into the drive are left
+  /// alone. Returns how many were queued.
+  Future<int> enqueueCopies(List<CopyRequest> requests, {String? folderId}) async {
+    final inFlight = {
+      for (final r in _rows.values)
+        if (r.origin == TransferOrigin.fromChat && r.status.isPending)
+          (r.sourceChatId, r.sourceMessageId),
+    };
+    final now = DateTime.now();
+    final rows = <TransferRow>[];
+    for (final (index, request) in requests.indexed) {
+      if (!inFlight.add((request.chatId, request.messageId))) continue;
+      rows.add(
+        TransferRow(
+          id: _repository.newId(),
+          kind: TransferKind.upload,
+          status: TransferStatus.queued,
+          name: request.name,
+          mimeType: request.mimeType.isEmpty ? mimeTypeFor(request.name) : request.mimeType,
+          fileId: _repository.newId(),
+          folderId: folderId,
+          ownsSource: false,
+          wifiOnly: false,
+          origin: TransferOrigin.fromChat,
+          totalBytes: request.size,
+          doneBytes: 0,
+          partCount: 1,
+          completedParts: 0,
+          createdAt: now.add(Duration(microseconds: index)),
+          takenAt: request.date,
+          sourceChatId: request.chatId,
+          sourceMessageId: request.messageId,
+        ),
+      );
+    }
+    for (final row in rows) {
+      _rows[row.id] = row;
+    }
+    await _db.saveTransfers(rows);
+    _emit();
+    _pump();
+    return rows.length;
+  }
+
   /// Stops every save to this phone and drops them from the list. Files
   /// already saved stay where they are.
-  Future<void> cancelSaves() async {
+  Future<void> cancelSaves() => _cancelAll(TransferOrigin.save);
+
+  /// Stops every copy from a chat still to be made and drops them from the
+  /// list. Files already copied stay in the drive.
+  Future<void> cancelCopies() => _cancelAll(TransferOrigin.fromChat);
+
+  /// Stops every pending transfer from [origin] and drops them from the
+  /// list.
+  Future<void> _cancelAll(TransferOrigin origin) async {
     final ids = [
       for (final r in _rows.values)
-        if (r.origin == TransferOrigin.save && r.status.isPending) r.id,
+        if (r.origin == origin && r.status.isPending) r.id,
     ];
     // Waiting ones go first, so nothing new starts while the rest stop.
     final running = ids.where(_running.contains).toList();
@@ -778,14 +893,22 @@ class TransferQueue extends Notifier<TransfersState> {
         return byRank != 0 ? byRank : a.createdAt.compareTo(b.createdAt);
       });
 
-    var uploads = _running.where((id) => _rows[id]?.kind == TransferKind.upload).length;
-    var downloads = _running.length - uploads;
+    var copies = _running
+        .where((id) => _rows[id]?.origin == TransferOrigin.fromChat)
+        .length;
+    var uploads =
+        _running.where((id) => _rows[id]?.kind == TransferKind.upload).length - copies;
+    var downloads = _running.length - uploads - copies;
     var saves = _running
         .where((id) => _rows[id]?.origin == TransferOrigin.save)
         .length;
 
     for (final row in queued) {
-      if (row.kind == TransferKind.upload && uploads < _maxUploads) {
+      if (row.origin == TransferOrigin.fromChat) {
+        if (copies >= _maxCopies) continue;
+        copies++;
+        _start(row, _copy);
+      } else if (row.kind == TransferKind.upload && uploads < _maxUploads) {
         uploads++;
         _start(row, _upload);
       } else if (row.kind == TransferKind.download &&
@@ -1074,6 +1197,63 @@ class TransferQueue extends Notifier<TransfersState> {
       await _deleteQuietly(File(row.thumbnailPath!));
     }
     if (partCount > 1) await _deleteQuietly(await _partsDir(row.id));
+  }
+
+  /// Has Telegram copy [row]'s message into the channel with the drive's
+  /// manifest as its caption, in one request, or waits for the copy TDLib
+  /// is still making when the app last stopped ([resume]). The copy keeps
+  /// the message's date, which a photo or video also keeps as when it was
+  /// taken. A flood wait ends the run like any upload's, to wait in the
+  /// queue.
+  Future<void> _copy(TransferRow row, {td.Message? resume}) async {
+    final session = ref.read(driveSessionProvider);
+    if (session == null) throw const DriveException('Your drive is not open.');
+    // Cancelled as the copy was starting: nothing has been asked of Telegram.
+    if (_cancelled.contains(row.id)) return;
+    try {
+      final td.Message delivered;
+      if (resume != null) {
+        _pendingMessages[row.id] = resume.id;
+        delivered = await _messenger.awaitDelivery(resume.id);
+      } else {
+        final kind = FileKind.detect(fileName: row.name, mimeType: row.mimeType);
+        final manifest = FileManifest(
+          id: row.fileId,
+          name: row.name,
+          folderId: row.folderId,
+          mimeType: row.mimeType,
+          size: row.totalBytes,
+          createdAt: row.takenAt ?? row.createdAt,
+          modifiedAt: DateTime.now(),
+          takenAt: kind == FileKind.image || kind == FileKind.video ? row.takenAt : null,
+        );
+        delivered = await _messenger.sendCopy(
+          session.chatId,
+          fromChatId: row.sourceChatId!,
+          messageId: row.sourceMessageId!,
+          caption: ManifestCodec.encodeFile(manifest),
+          onPending: (pending) {
+            _pendingMessages[row.id] = pending.id;
+            // Paused in the moment the copy was starting.
+            if (_pausing.contains(row.id)) unawaited(_interrupt(row));
+          },
+        );
+      }
+      _pendingMessages.remove(row.id);
+      await _repository.ingest(delivered);
+      // Cancelled as the copy landed: it is whole, so it stays in the drive,
+      // and saving now would bring the row back.
+      if (_cancelled.contains(row.id)) return;
+      await _finish(
+        (_rows[row.id] ?? row).copyWith(
+          status: TransferStatus.completed,
+          doneBytes: row.totalBytes,
+          completedParts: 1,
+        ),
+      );
+    } finally {
+      await Future<void>.delayed(_copyGap);
+    }
   }
 
   /// Ends the work for [id] if it was asked to pause, or to step back and
@@ -1421,10 +1601,18 @@ class TransferQueue extends Notifier<TransfersState> {
         await _finish(row.copyWith(status: TransferStatus.completed));
         continue;
       }
+      final copy = row.origin == TransferOrigin.fromChat;
       final resumable = pending.where((m) {
-        final content = m.content;
-        if (content is! td.MessageDocument) return false;
-        final manifest = ManifestCodec.decodeFile(content.caption.text);
+        // A copy keeps the kind of message it was made from; an upload is
+        // always a document.
+        final caption = copy
+            ? MessageIndexer.describe(m)?.caption
+            : switch (m.content) {
+                td.MessageDocument(:final caption) => caption.text,
+                _ => null,
+              };
+        if (caption == null) return false;
+        final manifest = ManifestCodec.decodeFile(caption);
         return manifest?.id == row.fileId &&
             manifest?.partIndex == row.completedParts;
       }).firstOrNull;
@@ -1433,7 +1621,12 @@ class TransferQueue extends Notifier<TransfersState> {
         // Known before the run takes the send up, so a hold for Wi-Fi in
         // the meantime still stops TDLib sending it.
         _pendingMessages[row.id] = resumable.id;
-        _start(row, (running) => _upload(running, resume: resumable));
+        _start(
+          row,
+          (running) => copy
+              ? _copy(running, resume: resumable)
+              : _upload(running, resume: resumable),
+        );
       } else if (row.origin == TransferOrigin.backup) {
         // Photo backup re-queues these itself on its next pass.
         _rows.remove(row.id);

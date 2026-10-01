@@ -34,24 +34,18 @@ class AlbumEntry extends IndexEntry {
   final AlbumsCompanion album;
 }
 
-/// The media carried by a message, whatever its Telegram type.
-class _Media {
-  const _Media({
-    required this.file,
-    required this.fileName,
-    required this.mimeType,
-    required this.caption,
-    this.minithumbnail,
-    this.thumbnailFileId,
-  });
-
-  final td.File file;
-  final String fileName;
-  final String mimeType;
-  final String caption;
-  final td.Minithumbnail? minithumbnail;
-  final int? thumbnailFileId;
-}
+/// The media carried by a message, whatever its Telegram type: the file,
+/// its name, type and caption, and its previews. [hasOwnName] is false
+/// when the message gave no file name and one was made up from its id.
+typedef MediaInfo = ({
+  td.File file,
+  String fileName,
+  bool hasOwnName,
+  String mimeType,
+  String caption,
+  td.Minithumbnail? minithumbnail,
+  int? thumbnailFileId,
+});
 
 /// Turns channel messages into index rows.
 ///
@@ -102,7 +96,7 @@ abstract final class MessageIndexer {
       );
     }
 
-    final media = _mediaOf(message);
+    final media = describe(message);
     if (media == null) return null;
 
     final manifest =
@@ -153,7 +147,7 @@ abstract final class MessageIndexer {
   }
 
   /// A manifest for a message the app did not write.
-  static FileManifest _adoptedManifest(td.Message message, _Media media) {
+  static FileManifest _adoptedManifest(td.Message message, MediaInfo media) {
     final date = DateTime.fromMillisecondsSinceEpoch(message.date * 1000);
     final edited = message.editDate > 0
         ? DateTime.fromMillisecondsSinceEpoch(message.editDate * 1000)
@@ -174,41 +168,55 @@ abstract final class MessageIndexer {
   static String adoptedId(int messageId) => 'tg$messageId';
 
   /// The downloadable file inside [message], whatever kind of media it is.
-  static td.File? mediaFile(td.Message message) => _mediaOf(message)?.file;
+  static td.File? mediaFile(td.Message message) => describe(message)?.file;
 
-  static _Media? _mediaOf(td.Message message) {
+  /// The media in [message] as the index reads it, or null when it carries
+  /// none the drive keeps. Anything that copies a message into the drive
+  /// names and previews it this way too.
+  static MediaInfo? describe(td.Message message) {
     switch (message.content) {
       case td.MessageDocument(:final document, :final caption):
-        return _Media(
+        return _media(
+          message,
           file: document.document,
-          fileName: _nameOr(document.fileName, message, 'file'),
+          name: document.fileName,
+          fallback: 'file',
           mimeType: document.mimeType,
           caption: caption.text,
           minithumbnail: document.minithumbnail,
           thumbnailFileId: document.thumbnail?.file.id,
         );
       case td.MessageVideo(:final video, :final caption):
-        return _Media(
+        return _media(
+          message,
           file: video.video,
-          fileName: _nameOr(video.fileName, message, 'video', 'mp4'),
+          name: video.fileName,
+          fallback: 'video',
+          extension: 'mp4',
           mimeType: video.mimeType,
           caption: caption.text,
           minithumbnail: video.minithumbnail,
           thumbnailFileId: video.thumbnail?.file.id,
         );
       case td.MessageAudio(:final audio, :final caption):
-        return _Media(
+        return _media(
+          message,
           file: audio.audio,
-          fileName: _nameOr(audio.fileName, message, 'audio', 'mp3'),
+          name: audio.fileName,
+          fallback: 'audio',
+          extension: 'mp3',
           mimeType: audio.mimeType,
           caption: caption.text,
           minithumbnail: audio.albumCoverMinithumbnail,
           thumbnailFileId: audio.albumCoverThumbnail?.file.id,
         );
       case td.MessageAnimation(:final animation, :final caption):
-        return _Media(
+        return _media(
+          message,
           file: animation.animation,
-          fileName: _nameOr(animation.fileName, message, 'animation', 'mp4'),
+          name: animation.fileName,
+          fallback: 'animation',
+          extension: 'mp4',
           mimeType: animation.mimeType,
           caption: caption.text,
           minithumbnail: animation.minithumbnail,
@@ -217,14 +225,12 @@ abstract final class MessageIndexer {
       // A voice message forwarded from a chat. Round video notes stay out:
       // they have no caption, so they could never carry a manifest.
       case td.MessageVoiceNote(:final voiceNote, :final caption):
-        return _Media(
+        return _media(
+          message,
           file: voiceNote.voice,
-          fileName: _nameOr(
-            '',
-            message,
-            'voice',
-            _audioExtension(voiceNote.mimeType),
-          ),
+          name: '',
+          fallback: 'voice',
+          extension: _audioExtension(voiceNote.mimeType),
           mimeType: voiceNote.mimeType.isEmpty
               ? 'audio/ogg'
               : voiceNote.mimeType,
@@ -243,9 +249,12 @@ abstract final class MessageIndexer {
           (s) => math.max(s.width, s.height) >= 480,
           orElse: () => bySize.last,
         );
-        return _Media(
+        return _media(
+          message,
           file: largest.photo,
-          fileName: _nameOr('', message, 'photo', 'jpg'),
+          name: '',
+          fallback: 'photo',
+          extension: 'jpg',
           mimeType: 'image/jpeg',
           caption: caption.text,
           minithumbnail: photo.minithumbnail,
@@ -264,14 +273,30 @@ abstract final class MessageIndexer {
     _ => 'ogg',
   };
 
-  static String _nameOr(
-    String name,
-    td.Message message,
-    String fallback, [
+  /// The media in [message], named [name] when the message gave one and
+  /// otherwise [fallback] with a number taken from the message id and
+  /// [extension].
+  static MediaInfo _media(
+    td.Message message, {
+    required td.File file,
+    required String name,
+    required String fallback,
     String? extension,
-  ]) {
-    if (name.trim().isNotEmpty) return name.trim();
+    required String mimeType,
+    required String caption,
+    td.Minithumbnail? minithumbnail,
+    int? thumbnailFileId,
+  }) {
+    final own = name.trim();
     final suffix = extension == null ? '' : '.$extension';
-    return '${fallback}_${message.id >> 20}$suffix';
+    return (
+      file: file,
+      fileName: own.isNotEmpty ? own : '${fallback}_${message.id >> 20}$suffix',
+      hasOwnName: own.isNotEmpty,
+      mimeType: mimeType,
+      caption: caption,
+      minithumbnail: minithumbnail,
+      thumbnailFileId: thumbnailFileId,
+    );
   }
 }
