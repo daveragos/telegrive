@@ -1122,6 +1122,55 @@ void main() {
     await snap(tester, 'send_sheet');
   });
 
+  testWidgets('send folder sheet', (tester) async {
+    await prepareData(tester);
+    final trip = _folder('Lalibela 2026', 0);
+    folders = [trip, ...folders];
+    await pumpApp(
+      tester,
+      location: '/files',
+      seed: (db) async {
+        await db.upsertFolder(
+          FoldersCompanion.insert(
+            id: trip.id,
+            name: trip.name,
+            messageId: 1,
+            createdAt: trip.createdAt,
+            modifiedAt: trip.modifiedAt,
+          ),
+        );
+        for (var i = 1; i <= 3; i++) {
+          await db.upsertFilePart(
+            DriveFilesCompanion.insert(
+              id: 'lalibela-$i',
+              folderId: Value(trip.id),
+              name: 'IMG_2026010$i.jpg',
+              mimeType: 'image/jpeg',
+              kind: FileKind.image,
+              size: (4.2 * _mb).round(),
+              createdAt: trip.createdAt,
+              modifiedAt: trip.modifiedAt,
+            ),
+            FilePartsCompanion.insert(
+              fileId: 'lalibela-$i',
+              partIndex: 0,
+              messageId: 1 + i,
+              tdFileId: 1 + i,
+              size: (4.2 * _mb).round(),
+            ),
+          );
+        }
+      },
+    );
+    await tester.longPress(find.text('Lalibela 2026'));
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.tap(find.byTooltip('Send in Telegram'));
+    for (var i = 0; i < 6; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    await snap(tester, 'send_folder_sheet');
+  });
+
   testWidgets('create sheet', (tester) async {
     await prepareData(tester);
     await pumpApp(tester, location: '/files');

@@ -110,9 +110,10 @@ class AuthController extends Notifier<AuthUiState> {
   /// App settings (theme, app lock, photo backup choices, the folders Photos
   /// keeps out) and the drive channel remembered per account stay. The 'Also
   /// delete from this phone' answer and Photos' Show for kept-out folders
-  /// don't: whoever signs in next starts with both off. Anything new that
-  /// the phone keeps per drive, whether a table, a preference or a file,
-  /// adds its cleanup here.
+  /// don't: whoever signs in next starts with both off. The chats files were
+  /// last sent to go too, since they belong to the account that sent them.
+  /// Anything new that the phone keeps per drive, whether a table, a
+  /// preference or a file, adds its cleanup here.
   Future<void> wipeDeviceState() async {
     ref.read(pendingDeletesProvider.notifier).discardAll();
     ref.read(driveSessionProvider.notifier).close();
@@ -121,6 +122,7 @@ class AuthController extends Notifier<AuthUiState> {
       await prefs.clearSyncState(chatId);
     }
     await prefs.setDeletePhoneCopyToo(false);
+    await prefs.forgetRecentSendChats();
     ref.invalidate(revealHiddenProvider);
     await ref.read(appDatabaseProvider).clearAll();
     await _deleteOfflineCopies();

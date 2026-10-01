@@ -119,6 +119,25 @@ class Preferences {
   bool get hasSeenWelcome => _prefs.getBool('seen_welcome') ?? false;
   Future<void> setSeenWelcome() => _prefs.setBool('seen_welcome', true);
 
+  /// The chats this phone last sent files to, newest first, which the chat
+  /// picker lists right after Saved Messages. They stay on this phone
+  /// rather than in the channel.
+  List<int> get recentSendChats => [
+    for (final id in _prefs.getStringList(_recentSendChats) ?? const <String>[])
+      ?int.tryParse(id),
+  ];
+
+  /// Puts [chatIds] at the front of [recentSendChats], which keeps five.
+  Future<void> rememberSentTo(Iterable<int> chatIds) => _prefs.setStringList(
+    _recentSendChats,
+    [for (final id in {...chatIds, ...recentSendChats}.take(_recentSendLimit)) '$id'],
+  );
+
+  Future<void> forgetRecentSendChats() => _prefs.remove(_recentSendChats);
+
+  static const String _recentSendChats = 'recent_send_chats';
+  static const int _recentSendLimit = 5;
+
   // ---------------------------------------------------------------------------
   // Photo backup. Keys are shared with the background worker, which reads
   // them from its own isolate — see [BackupPrefKeys].

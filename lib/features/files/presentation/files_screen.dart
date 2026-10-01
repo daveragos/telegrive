@@ -416,12 +416,11 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
           icon: const Icon(Icons.download_rounded),
           tooltip: 'Download to this phone',
         ),
-        if (onlyFiles)
-          IconButton(
-            onPressed: () => then(FileActions.sendToChats(context, ref, files)),
-            icon: const Icon(Icons.send_outlined),
-            tooltip: 'Send in Telegram',
-          ),
+        IconButton(
+          onPressed: () => then(FileActions.sendToChats(context, ref, files, folders: folders)),
+          icon: const Icon(Icons.send_outlined),
+          tooltip: 'Send in Telegram',
+        ),
         IconButton(
           onPressed: () => then(FileActions.move(context, ref, files: files, folders: folders)),
           icon: const Icon(Icons.drive_file_move_outline),

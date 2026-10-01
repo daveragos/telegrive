@@ -105,8 +105,12 @@ phone number.
   from Photos finds photos and videos and shows them as the grid. Each
   file in the results list says which folder it is in, and Starred,
   Recent and each category have a search button too.
-- **Send in Telegram.** Send any file to a chat straight from the drive,
-  with no re-upload.
+- **Send in Telegram.** Send files, a whole folder or an album to any chat
+  straight from the drive, with no re-upload, so it uses almost no data. An
+  optional line goes first, starting as the folder's or album's name; each
+  subfolder arrives under a line naming it, and an album's photos come in
+  the order they were taken. The chats you sent to last come first in the
+  list.
 - **Share to Telegrive** from any app on Android, into the folder you pick.
 - **Download to this phone.** Files, folders or the whole drive, in the
   drive's folders under Download › Telegrive; photos and videos can go back
@@ -265,6 +269,8 @@ two commands are at the top of that test.
 - Split files appear in Telegram as numbered parts (`movie.mkv.001`, …). Only
   Telegrive joins them back.
 - Forwarded files land at the root; move them into folders from the app.
+- A group in slow mode takes one message at a time, so sending there
+  delivers the first file only, and says so.
 - When Telegram asks for a pause longer than five minutes, Telegrive lets the
   phone sleep rather than keep it awake, so a transfer may wait until you next
   open the app.

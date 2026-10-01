@@ -24,6 +24,7 @@ import '../../../infrastructure/telegram/telegram_exception.dart';
 import '../../backup/data/backup_controller.dart';
 import '../../backup/data/free_up_space.dart';
 import '../../offline/data/offline_sync.dart';
+import '../../send/data/send_bundle.dart';
 import '../../send/data/telegram_chats.dart';
 import '../../send/presentation/chat_picker.dart';
 import '../../drive/data/channel_messenger.dart';
@@ -304,37 +305,76 @@ abstract final class FileActions {
   // Sending in Telegram
   // ---------------------------------------------------------------------------
 
-  /// Sends [files] to chats the person picks, straight from the drive, with
-  /// no upload. Returns whether they went.
+  /// Sends [files] and everything inside [folders] to chats the person
+  /// picks, straight from the drive, with no upload. A folder's subfolders
+  /// arrive under header lines naming them. Files go in name order, or with
+  /// [byMoment] in the order they were taken. A single folder, or an album
+  /// named [bundleName], offers its name as the message sent first. Files
+  /// picked one by one join Home's Recent; the contents of a folder or an
+  /// album don't, so one send doesn't push everything else out. Returns
+  /// whether they went.
   static Future<bool> sendToChats(
     BuildContext context,
     WidgetRef ref,
-    List<DriveFile> files,
-  ) async {
-    if (files.isEmpty) return false;
-    final split = files.any((f) => f.isSplit);
-    final chats = await showChatPicker(
-      context,
-      title: files.length == 1
-          ? 'Send "${files.first.name}"'
-          : 'Send ${Formatters.count(files.length, 'file')}',
-      note: split
-          ? 'Files over 2 GB are kept in parts, and arrive as numbered parts.'
-          : null,
-    );
-    if (chats == null || chats.isEmpty || !context.mounted) return false;
+    List<DriveFile> files, {
+    List<DriveFolder> folders = const [],
+    String? bundleName,
+    bool byMoment = false,
+  }) async {
     final repository = ref.read(driveRepositoryProvider);
     final telegram = ref.read(telegramChatsProvider);
-    return _guard(
+    final preferences = ref.read(preferencesProvider);
+    final soleFolder = folders.length == 1 && files.isEmpty;
+    final bundle = folders.isEmpty
+        ? SendBundle.fromFiles(files, byMoment: byMoment)
+        : SendBundle.fromItems(
+            await repository.collectForSaving(files: files, folders: folders),
+            stripTop: soleFolder,
+            byMoment: byMoment,
+          );
+    if (!context.mounted) return false;
+    if (bundle.fileCount == 0) {
+      showSnack(context, 'There are no files in here yet.');
+      return false;
+    }
+
+    final name = bundleName ?? (soleFolder ? folders.single.name : null);
+    final count = Formatters.count(bundle.fileCount, 'file');
+    final size = Formatters.bytes(bundle.bytes);
+    final pick = await showChatPicker(
+      context,
+      title: name != null
+          ? 'Send "$name"'
+          : bundle.fileCount == 1
+          ? 'Send "${bundle.firstFile!.name}"'
+          : 'Send $count',
+      note: [
+        '${bundle.fileCount == 1 ? size : '$count · $size'}. '
+            'Nothing is uploaded again, so this uses almost no data.',
+        if (bundle.anySplit) 'Files over 2 GB are kept in parts, and arrive as numbered parts.',
+      ].join(' '),
+      messageInitial: name,
+    );
+    if (pick == null || pick.chats.isEmpty || !context.mounted) return false;
+
+    final ids = [for (final chat in pick.chats) chat.id];
+    final to = pick.chats.length == 1
+        ? pick.chats.single.title
+        : Formatters.count(pick.chats.length, 'chat');
+    if (bundle.fileCount > 100) showSnack(context, 'Sending $count to $to…');
+    final sent = await _guard(
       context,
       () async {
-        await telegram.send(files, chats.map((c) => c.id).toList());
-        await repository.recordOpens([for (final f in files) f.id]);
+        await telegram.sendBundle(bundle, pick.chats, message: pick.message);
+        await preferences.rememberSentTo(ids);
+        if (bundleName == null) {
+          await repository.recordOpens([for (final f in files) f.id]);
+        }
       },
-      success: chats.length == 1
-          ? 'Sent to ${chats.single.title}'
-          : 'Sent to ${Formatters.count(chats.length, 'chat')}',
+      success: 'Sent $count to $to',
     );
+    if (sent && context.mounted) ref.invalidate(recentChatsProvider);
+    return sent;
   }
 
   // ---------------------------------------------------------------------------
@@ -1002,6 +1042,11 @@ abstract final class FileActions {
                 icon: Icons.download_rounded,
                 label: 'Download to this phone',
                 onTap: () => run(() => saveToDevice(context, ref, folders: [folder])),
+              ),
+              _SheetAction(
+                icon: Icons.send_outlined,
+                label: 'Send in Telegram',
+                onTap: () => run(() => sendToChats(context, ref, const [], folders: [folder])),
               ),
               _OfflineAction(
                 itemId: folder.id,

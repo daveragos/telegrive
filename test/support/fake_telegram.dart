@@ -23,14 +23,15 @@ class TestSession extends DriveSessionNotifier {
 
 /// Telegram for tests: a channel that holds [messages], applies caption and
 /// text edits to them the way Telegram hands the edited message back, copies
-/// them under new ids when asked to, and deletes them. Anything else goes to
-/// [answer], which a test overrides for what it needs (downloads, failures).
+/// them under new ids when asked to, delivers text sent to any chat at once,
+/// and deletes them. Anything else goes to [answer], which a test overrides
+/// for what it needs (downloads, failures).
 class FakeTelegram extends TelegramClient {
   FakeTelegram() : super(SecureStore());
 
   final Map<int, td.Message> messages = {};
 
-  /// Ids the fake gives the copies it makes, counting up from 1000.
+  /// Ids the fake gives the messages it makes, counting up from 1000.
   int nextId = 1000;
 
   /// Answers [function] when a test cares about it; null leaves it to the
@@ -92,6 +93,13 @@ class FakeTelegram extends TelegramClient {
         ),
       ):
         return _copy(messages[messageId]!, chatId, newCaption) as T;
+      case td.SendMessage(:final chatId, inputMessageContent: td.InputMessageText(:final text)):
+        final id = nextId++;
+        return (messages[id] = channelMessage(
+              id,
+              td.MessageText(text: text),
+            ).copyWith(chatId: chatId))
+            as T;
       default:
         throw UnsupportedError('$function');
     }

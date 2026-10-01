@@ -8,6 +8,7 @@ import '../../../core/format/formatters.dart';
 import '../../../core/widgets/common.dart';
 import '../../drive/data/drive_repository.dart';
 import '../../drive/domain/drive_models.dart';
+import '../../files/presentation/file_actions.dart';
 import '../../trash/data/pending_deletes.dart';
 import '../data/photos_visibility.dart';
 import 'album_actions.dart';
@@ -126,7 +127,7 @@ class AlbumScreen extends ConsumerStatefulWidget {
   ConsumerState<AlbumScreen> createState() => _AlbumScreenState();
 }
 
-enum _AlbumMenu { rename, delete }
+enum _AlbumMenu { send, rename, delete }
 
 class _AlbumScreenState extends ConsumerState<AlbumScreen> {
   final _selection = MediaSelection();
@@ -178,6 +179,18 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> {
                         tooltip: 'More',
                         onSelected: (choice) async {
                           switch (choice) {
+                            case _AlbumMenu.send:
+                              if (files == null || files.isEmpty) {
+                                showSnack(context, 'This album is empty.');
+                              } else {
+                                await FileActions.sendToChats(
+                                  context,
+                                  ref,
+                                  files,
+                                  bundleName: album.name,
+                                  byMoment: true,
+                                );
+                              }
                             case _AlbumMenu.rename:
                               await AlbumActions.rename(context, ref, album);
                             case _AlbumMenu.delete:
@@ -188,6 +201,7 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> {
                           }
                         },
                         itemBuilder: (_) => const [
+                          PopupMenuItem(value: _AlbumMenu.send, child: Text('Send album in Telegram')),
                           PopupMenuItem(value: _AlbumMenu.rename, child: Text('Rename album')),
                           PopupMenuItem(value: _AlbumMenu.delete, child: Text('Delete album')),
                         ],

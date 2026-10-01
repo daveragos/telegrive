@@ -71,6 +71,7 @@ void main() {
       'backup_enabled': true,
       'photos_hidden_folders': ['Screenshots'],
       'delete_phone_copy_too': true,
+      'recent_send_chats': ['42', '7'],
     });
     final shared = await SharedPreferences.getInstance();
     final db = AppDatabase(NativeDatabase.memory());
@@ -158,6 +159,9 @@ void main() {
     // does showing the folders Photos keeps out.
     expect(prefs.deletePhoneCopyToo, isFalse);
     expect(container.read(revealHiddenProvider), isFalse);
+
+    // The chats this account sent files to aren't offered to the next one.
+    expect(prefs.recentSendChats, isEmpty);
 
     // Nothing that was waiting to be deleted goes after signing out, from
     // Telegram or from the phone; it is all still in the channel.

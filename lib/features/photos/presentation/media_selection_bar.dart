@@ -39,7 +39,7 @@ PreferredSizeWidget mediaSelectionBar(
         tooltip: 'Add to album',
       ),
       IconButton(
-        onPressed: () => then(FileActions.sendToChats(context, ref, picked)),
+        onPressed: () => then(FileActions.sendToChats(context, ref, picked, byMoment: true)),
         icon: const Icon(Icons.send_outlined),
         tooltip: 'Send in Telegram',
       ),

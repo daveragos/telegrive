@@ -10,25 +10,49 @@ import '../../../core/widgets/common.dart';
 import '../../drive/data/previews.dart';
 import '../data/telegram_chats.dart';
 
-/// Picks one or more Telegram chats. Pops with them, or null.
-Future<List<TelegramChat>?> showChatPicker(
+/// The chats picked, and the message to send before the files; an empty
+/// message means none.
+typedef ChatPick = ({List<TelegramChat> chats, String message});
+
+/// Picks one or more Telegram chats and, [withMessage], a line to send
+/// first, starting as [messageInitial]. Pops with them, or null.
+Future<ChatPick?> showChatPicker(
   BuildContext context, {
   required String title,
   String? note,
+  String? messageInitial,
+  bool withMessage = true,
 }) {
-  return showModalBottomSheet<List<TelegramChat>>(
+  return showModalBottomSheet<ChatPick>(
     context: context,
     useRootNavigator: true,
     isScrollControlled: true,
-    builder: (_) => _ChatPicker(title: title, note: note),
+    // The message field sits at the foot of the sheet, so the sheet rises
+    // above the keyboard.
+    builder: (context) => Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+      child: _ChatPicker(
+        title: title,
+        note: note,
+        messageInitial: messageInitial,
+        withMessage: withMessage,
+      ),
+    ),
   );
 }
 
 class _ChatPicker extends ConsumerStatefulWidget {
-  const _ChatPicker({required this.title, this.note});
+  const _ChatPicker({
+    required this.title,
+    this.note,
+    this.messageInitial,
+    required this.withMessage,
+  });
 
   final String title;
   final String? note;
+  final String? messageInitial;
+  final bool withMessage;
 
   @override
   ConsumerState<_ChatPicker> createState() => _ChatPickerState();
@@ -36,12 +60,16 @@ class _ChatPicker extends ConsumerStatefulWidget {
 
 class _ChatPickerState extends ConsumerState<_ChatPicker> {
   final Map<int, TelegramChat> _picked = {};
+  late final TextEditingController _message = TextEditingController(
+    text: widget.messageInitial,
+  );
   Timer? _debounce;
   String _query = '';
 
   @override
   void dispose() {
     _debounce?.cancel();
+    _message.dispose();
     super.dispose();
   }
 
@@ -71,7 +99,10 @@ class _ChatPickerState extends ConsumerState<_ChatPicker> {
             if (widget.note != null)
               Padding(
                 padding: const EdgeInsets.fromLTRB(Space.gutter, 0, Space.gutter, Space.s),
-                child: Text(widget.note!, style: context.text.bodySmall),
+                child: Text(
+                  widget.note!,
+                  style: context.text.bodySmall?.copyWith(fontFeatures: tabularFigures),
+                ),
               ),
             Padding(
               padding: const EdgeInsets.fromLTRB(Space.gutter, Space.xs, Space.gutter, Space.s),
@@ -115,6 +146,16 @@ class _ChatPickerState extends ConsumerState<_ChatPicker> {
                       ),
               ),
             ),
+            if (widget.withMessage)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(Space.gutter, Space.s, Space.gutter, 0),
+                child: TextField(
+                  controller: _message,
+                  maxLines: 1,
+                  textInputAction: TextInputAction.done,
+                  decoration: const InputDecoration(hintText: 'Add a message'),
+                ),
+              ),
             Padding(
               padding: const EdgeInsets.fromLTRB(Space.gutter, Space.s, Space.gutter, Space.l),
               child: SizedBox(
@@ -122,7 +163,10 @@ class _ChatPickerState extends ConsumerState<_ChatPicker> {
                 child: FilledButton(
                   onPressed: _picked.isEmpty
                       ? null
-                      : () => Navigator.pop(context, _picked.values.toList()),
+                      : () => Navigator.pop<ChatPick>(context, (
+                          chats: _picked.values.toList(),
+                          message: widget.withMessage ? _message.text.trim() : '',
+                        )),
                   child: Text(
                     _picked.length <= 1 ? 'Send' : 'Send to ${_picked.length} chats',
                   ),

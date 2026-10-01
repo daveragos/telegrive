@@ -1,8 +1,10 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:telegrive/core/files/file_kind.dart';
 import 'package:telegrive/core/format/formatters.dart';
 import 'package:telegrive/features/drive/domain/drive_models.dart';
 import 'package:telegrive/features/files/presentation/file_location.dart';
+import 'package:telegrive/infrastructure/storage/preferences.dart';
 import 'package:telegrive/infrastructure/telegram/telegram_exception.dart';
 
 void main() {
@@ -238,6 +240,29 @@ void main() {
     test('a loop in the folder tree still ends', () {
       final loop = {'a': folder('a', 'b'), 'b': folder('b', 'a')};
       expect(locationOf(loop, 'a'), 'b › a');
+    });
+  });
+
+  group('Preferences', () {
+    test('rememberSentTo keeps the newest first, once each, and five at most', () async {
+      // ignore: invalid_use_of_visible_for_testing_member
+      SharedPreferences.setMockInitialValues({
+        'recent_send_chats': ['3', 'not a chat', '2', '1'],
+      });
+      final prefs = Preferences(await SharedPreferences.getInstance());
+      expect(prefs.recentSendChats, [3, 2, 1]);
+
+      await prefs.rememberSentTo([2]);
+      expect(prefs.recentSendChats, [2, 3, 1]);
+
+      await prefs.rememberSentTo([7, 6, 5]);
+      expect(prefs.recentSendChats, [7, 6, 5, 2, 3]);
+
+      await prefs.rememberSentTo([9, 9]);
+      expect(prefs.recentSendChats, [9, 7, 6, 5, 2]);
+
+      await prefs.forgetRecentSendChats();
+      expect(prefs.recentSendChats, isEmpty);
     });
   });
 }

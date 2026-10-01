@@ -181,33 +181,53 @@ class ChannelMessenger {
     }
   }
 
+  static const td.LinkPreviewOptions _noPreview = td.LinkPreviewOptions(
+    isDisabled: true,
+    url: '',
+    forceSmallMedia: false,
+    forceLargeMedia: false,
+    showAboveText: false,
+  );
+
   Future<td.Message> sendText(int chatId, EncodedText text) {
     return _send(
       chatId,
       td.InputMessageText(
         text: formatted(text),
-        linkPreviewOptions: const td.LinkPreviewOptions(
-          isDisabled: true,
-          url: '',
-          forceSmallMedia: false,
-          forceLargeMedia: false,
-          showAboveText: false,
-        ),
+        linkPreviewOptions: _noPreview,
         clearDraft: false,
       ),
     );
   }
 
+  /// Sends [text] as it is to any chat, whose members are notified the way
+  /// they are for any message. It resolves once Telegram has delivered it,
+  /// so a line sent before files always lands above them.
+  Future<td.Message> sendPlainText(int chatId, String text) {
+    return _send(
+      chatId,
+      td.InputMessageText(
+        text: td.FormattedText(text: text, entities: const []),
+        linkPreviewOptions: _noPreview,
+        clearDraft: false,
+      ),
+      options: null,
+    );
+  }
+
+  /// Sends [content] with [options], silently unless a caller asks for
+  /// Telegram's defaults with null.
   Future<td.Message> _send(
     int chatId,
     td.InputMessageContent content, {
+    td.MessageSendOptions? options = _silent,
     void Function(td.Message pending)? onPending,
   }) async {
     final pending = await _client.send<td.Message>(
       td.SendMessage(
         chatId: chatId,
         messageThreadId: 0,
-        options: _silent,
+        options: options,
         inputMessageContent: content,
       ),
     );
