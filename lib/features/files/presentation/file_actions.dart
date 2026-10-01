@@ -946,6 +946,11 @@ abstract final class FileActions {
                   onTap: () => run(() => move(context, ref, files: [file])),
                 ),
                 _SheetAction(
+                  icon: Icons.folder_open_outlined,
+                  label: 'Show in folder',
+                  onTap: () => run(() => showInFolder(context, ref, file)),
+                ),
+                _SheetAction(
                   icon: Icons.info_outline_rounded,
                   label: 'Details',
                   onTap: () => run(() => showDetails(context, ref, file)),
@@ -1034,11 +1039,11 @@ abstract final class FileActions {
   ) async {
     final path = await ref.read(driveRepositoryProvider).pathTo(file.folderId);
     if (!context.mounted) return;
-    final location = ['Files', ...path.map((f) => f.name)].join(' / ');
+    final location = ['Files', ...path.map((f) => f.name)].join(' › ');
     await showModalBottomSheet<void>(
       context: context,
       useRootNavigator: true,
-      builder: (context) => SafeArea(
+      builder: (sheetContext) => SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
           child: Column(
@@ -1047,12 +1052,19 @@ abstract final class FileActions {
             children: [
               Text(
                 file.name,
-                style: Theme.of(context).textTheme.titleMedium,
+                style: Theme.of(sheetContext).textTheme.titleMedium,
               ),
               const SizedBox(height: 16),
               _DetailRow('Type', file.extension.isEmpty ? file.mimeType : '${file.kind.label.replaceAll(RegExp(r's$'), '')} · ${file.extension}'),
               _DetailRow('Size', '${Formatters.bytes(file.size)} (${Formatters.count(file.size, 'byte')})'),
-              _DetailRow('Location', location),
+              _DetailRow(
+                'Location',
+                location,
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  showInFolder(context, ref, file);
+                },
+              ),
               _DetailRow('Added', Formatters.fullDate(file.createdAt)),
               _DetailRow('Modified', Formatters.fullDate(file.modifiedAt)),
               if (file.isSplit)
@@ -1064,6 +1076,29 @@ abstract final class FileActions {
           ),
         ),
       ),
+    );
+  }
+
+  /// Opens the folder [file] lives in, where its row is tinted for a
+  /// moment. When that folder isn't one Files lists, the root opens, which
+  /// is where a file whose folder is gone is listed. Going rather than
+  /// pushing closes a screen opened over the shell, such as Search or the
+  /// viewer.
+  static Future<void> showInFolder(
+    BuildContext context,
+    WidgetRef ref,
+    DriveFile file,
+  ) async {
+    final folderId = file.folderId;
+    final folder = folderId == null
+        ? null
+        : await ref.read(driveRepositoryProvider).shownFolderById(folderId);
+    if (!context.mounted) return;
+    final highlight = Uri.encodeQueryComponent(file.id);
+    context.go(
+      folder == null
+          ? '/files?highlight=$highlight'
+          : '/files/${folder.id}?highlight=$highlight',
     );
   }
 
@@ -1633,14 +1668,17 @@ class _OfflineAction extends ConsumerWidget {
 }
 
 class _DetailRow extends StatelessWidget {
-  const _DetailRow(this.label, this.value);
+  const _DetailRow(this.label, this.value, {this.onTap});
 
   final String label;
   final String value;
 
+  /// Makes the row a link, marked with a chevron at its end.
+  final VoidCallback? onTap;
+
   @override
   Widget build(BuildContext context) {
-    return Padding(
+    final row = Padding(
       padding: const EdgeInsets.symmetric(vertical: Space.s),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1655,8 +1693,16 @@ class _DetailRow extends StatelessWidget {
               ),
             ),
           ),
+          if (onTap != null)
+            Icon(Icons.chevron_right_rounded, size: 20, color: context.colors.text3),
         ],
       ),
+    );
+    if (onTap == null) return row;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(Radii.thumb),
+      child: row,
     );
   }
 }

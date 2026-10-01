@@ -7,6 +7,7 @@ import '../../../core/widgets/common.dart';
 import '../../drive/data/drive_repository.dart';
 import '../../drive/domain/drive_models.dart';
 import '../../files/presentation/file_actions.dart';
+import '../../files/presentation/file_location.dart';
 import '../../files/presentation/file_tiles.dart';
 import '../data/pending_deletes.dart';
 
@@ -21,6 +22,11 @@ class TrashScreen extends ConsumerWidget {
     final hidden = ref.watch(pendingDeletesProvider.select((s) => s.hiddenIds));
     final trash = ref.watch(trashProvider).whenData((c) => c.without(hidden));
     final contents = trash.value;
+    // Where each item goes back to on Restore. Null until the folders are
+    // read; rows then go without a place rather than all reading 'Files'.
+    final byId = ref.watch(folderIndexProvider).value;
+    String place(String? folderId) =>
+        byId == null ? '' : ' · ${locationOf(byId, folderId)}';
 
     return Scaffold(
       appBar: AppBar(
@@ -63,14 +69,16 @@ class TrashScreen extends ConsumerWidget {
                       for (final folder in contents.folders)
                         FolderListTile(
                           folder: folder,
-                          subtitle: _left(folder.trashedAt),
+                          subtitle: '${_left(folder.trashedAt)}${place(folder.parentId)}',
                           onTap: () => _showSheet(context, ref, folders: [folder]),
                           onMore: () => _showSheet(context, ref, folders: [folder]),
                         ),
                       for (final file in contents.files)
                         FileListTile(
                           file: file,
-                          subtitle: '${Formatters.bytes(file.size)} · ${_left(file.trashedAt)}',
+                          subtitle:
+                              '${Formatters.bytes(file.size)} · ${_left(file.trashedAt)}'
+                              '${place(file.folderId)}',
                           onTap: () => _showSheet(context, ref, files: [file]),
                           onMore: () => _showSheet(context, ref, files: [file]),
                         ),

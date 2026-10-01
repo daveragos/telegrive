@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show RenderSliver;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -15,9 +18,13 @@ import 'file_tiles.dart';
 
 /// The folder browser. `folderId == null` is the drive root.
 class FilesScreen extends ConsumerStatefulWidget {
-  const FilesScreen({super.key, this.folderId});
+  const FilesScreen({super.key, this.folderId, this.highlight});
 
   final String? folderId;
+
+  /// The id of a file to point out on arrival, from Show in folder: its
+  /// row is brought into view and tinted for a moment.
+  final String? highlight;
 
   @override
   ConsumerState<FilesScreen> createState() => _FilesScreenState();
@@ -43,6 +50,114 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
     if (!_folders.remove(folder.id)) _folders.add(folder.id);
   });
 
+  /// How long a pointed-out row stays tinted before it fades.
+  static const _highlightFor = Duration(milliseconds: 1500);
+
+  /// How far down the screen a pointed-out row is brought, when it has to
+  /// be brought at all.
+  static const _highlightAt = 1 / 3;
+
+  /// The file being pointed out. Its row keeps [_highlightKey] after the
+  /// tint is gone, so the row is the same one while the tint fades out.
+  String? _highlightId;
+  bool _tinted = false;
+  bool _scrolledToHighlight = false;
+  Timer? _highlightTimer;
+  final _highlightKey = GlobalKey();
+  final _filesListKey = GlobalKey();
+  final _scroll = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    _startHighlight();
+  }
+
+  @override
+  void didUpdateWidget(FilesScreen old) {
+    super.didUpdateWidget(old);
+    // Showing this folder again for another file keeps this screen, so the
+    // new file is pointed out here.
+    if (widget.highlight != old.highlight) _startHighlight();
+  }
+
+  @override
+  void dispose() {
+    _highlightTimer?.cancel();
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  void _startHighlight() {
+    _highlightTimer?.cancel();
+    _highlightId = widget.highlight;
+    _tinted = false;
+    _scrolledToHighlight = false;
+  }
+
+  /// Brings the pointed-out row into view and tints it. The tint goes on
+  /// once the folder has been read rather than when the screen opens, so a
+  /// slow first read doesn't use up its moment. A file that isn't here
+  /// leaves the folder as it is, with nothing tinted.
+  void _showHighlight(FolderContents data, ViewMode mode) {
+    if (!mounted) return;
+    final index = data.files.indexWhere((f) => f.id == _highlightId);
+    if (index < 0) return;
+    setState(() => _tinted = true);
+    _highlightTimer?.cancel();
+    _highlightTimer = Timer(_highlightFor, () {
+      if (mounted) setState(() => _tinted = false);
+    });
+    // Rows are built only near the screen, so in a long list the row may
+    // not exist yet: jump to about where it is, then ease it into place
+    // once it has been built.
+    final offset = mode == ViewMode.list && _highlightKey.currentContext == null
+        ? _listOffsetOf(index, data.files.length)
+        : null;
+    if (offset == null || !_scroll.hasClients) {
+      _easeToHighlight();
+      return;
+    }
+    final position = _scroll.position;
+    _scroll.jumpTo(
+      (offset - position.viewportDimension * _highlightAt)
+          .clamp(0.0, position.maxScrollExtent),
+    );
+    WidgetsBinding.instance.addPostFrameCallback((_) => _easeToHighlight());
+  }
+
+  /// Where the row of the file at [index] starts in list view. The files'
+  /// list knows where it begins and, from the rows it has built, how tall
+  /// a row is, so this holds at any text size.
+  double? _listOffsetOf(int index, int count) {
+    final sliver = _filesListKey.currentContext?.findRenderObject();
+    if (sliver is! RenderSliver || sliver.geometry == null) return null;
+    final row = sliver.geometry!.scrollExtent / count;
+    return sliver.constraints.precedingScrollExtent + index * row;
+  }
+
+  /// Eases the pointed-out row onto the screen. A row already wholly on
+  /// it stays where it is, so the list doesn't shift under the person.
+  void _easeToHighlight() {
+    final row = _highlightKey.currentContext;
+    if (row == null || _whollyInView(row)) return;
+    Scrollable.ensureVisible(
+      row,
+      alignment: _highlightAt,
+      duration: const Duration(milliseconds: 200),
+      curve: Curves.easeOut,
+    );
+  }
+
+  bool _whollyInView(BuildContext row) {
+    final box = row.findRenderObject();
+    final view = Scrollable.maybeOf(row)?.context.findRenderObject();
+    if (box is! RenderBox || view is! RenderBox || !box.hasSize) return false;
+    final rect = box.localToGlobal(Offset.zero) & box.size;
+    final visible = view.localToGlobal(Offset.zero) & view.size;
+    return rect.top >= visible.top && rect.bottom <= visible.bottom;
+  }
+
   @override
   Widget build(BuildContext context) {
     final contents = ref.watch(folderContentsProvider(widget.folderId));
@@ -57,6 +172,11 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
     if (data != null && _selecting) {
       _files.retainWhere((id) => data.files.any((f) => f.id == id));
       _folders.retainWhere((id) => data.folders.any((f) => f.id == id));
+    }
+    if (data != null && _highlightId != null && !_scrolledToHighlight) {
+      _scrolledToHighlight = true;
+      final mode = prefs.viewMode;
+      WidgetsBinding.instance.addPostFrameCallback((_) => _showHighlight(data, mode));
     }
 
     return PopScope(
@@ -119,6 +239,7 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
         body: RefreshIndicator(
           onRefresh: () => ref.read(driveSyncProvider.notifier).refresh(),
           child: CustomScrollView(
+            controller: _scroll,
             physics: const AlwaysScrollableScrollPhysics(),
             slivers: [
               if (widget.folderId != null)
@@ -188,11 +309,15 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
     if (data.folders.isNotEmpty && data.files.isNotEmpty)
       const SliverToBoxAdapter(child: SectionHeader('Files')),
     SliverList.builder(
+      key: _filesListKey,
       itemCount: data.files.length,
       itemBuilder: (context, index) {
         final file = data.files[index];
+        final pointed = file.id == _highlightId;
         return FileListTile(
+          key: pointed ? _highlightKey : null,
           file: file,
+          highlighted: pointed && _tinted,
           selected: _files.contains(file.id),
           selecting: _selecting,
           onTap: () => _onFileTap(file),
@@ -245,8 +370,11 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
           itemCount: data.files.length,
           itemBuilder: (context, index) {
             final file = data.files[index];
+            final pointed = file.id == _highlightId;
             return FileGridCard(
+              key: pointed ? _highlightKey : null,
               file: file,
+              highlighted: pointed && _tinted,
               selected: _files.contains(file.id),
               selecting: _selecting,
               onTap: () => _onFileTap(file),

@@ -41,6 +41,7 @@ import 'package:telegrive/features/drive/data/telegram_wait.dart';
 import 'package:telegrive/features/drive/domain/drive_models.dart';
 import 'package:telegrive/features/files/data/bulk_edits.dart';
 import 'package:telegrive/features/files/presentation/file_list_screen.dart';
+import 'package:telegrive/features/files/presentation/file_location.dart';
 import 'package:telegrive/features/files/presentation/files_screen.dart';
 import 'package:telegrive/features/home/presentation/home_screen.dart';
 import 'package:telegrive/features/settings/data/settings_providers.dart';
@@ -241,11 +242,11 @@ DriveFile _file(
   );
 }
 
-DriveFolder _folder(String name, int daysAgo) {
+DriveFolder _folder(String name, int daysAgo, {String? parentId}) {
   final at = DateTime.now().subtract(Duration(days: daysAgo));
   return DriveFolder(
     id: name,
-    parentId: null,
+    parentId: parentId,
     name: name,
     createdAt: at,
     modifiedAt: at,
@@ -490,7 +491,12 @@ void main() {
             ),
             StatefulShellBranch(
               routes: [
-                GoRoute(path: '/files', builder: (_, _) => const FilesScreen()),
+                GoRoute(
+                  path: '/files',
+                  builder: (_, state) => FilesScreen(
+                    highlight: state.uri.queryParameters['highlight'],
+                  ),
+                ),
               ],
             ),
             StatefulShellBranch(
@@ -575,7 +581,7 @@ void main() {
                 folders: [
                   DriveFolder(
                     id: 'old',
-                    parentId: null,
+                    parentId: 'Documents',
                     name: 'Old taxes',
                     createdAt: DateTime(2024),
                     modifiedAt: DateTime(2024),
@@ -586,7 +592,7 @@ void main() {
                   _file('Draft v1.docx', 900000, 40),
                   _file('Screen recording.mp4', 84 * _mb, 300),
                 ].map((f) => DriveFile(
-                  id: f.id, folderId: null, name: f.name, mimeType: f.mimeType,
+                  id: f.id, folderId: f.size > _mb ? null : 'Clients', name: f.name, mimeType: f.mimeType,
                   kind: f.kind, size: f.size, createdAt: f.createdAt,
                   modifiedAt: f.modifiedAt, partCount: 1, starred: false,
                   trashedAt: DateTime.now().subtract(Duration(days: f.size > _mb ? 26 : 2)),
@@ -907,6 +913,17 @@ void main() {
     await snap(tester, 'files_grid');
   });
 
+  testWidgets('show in folder', (tester) async {
+    await prepareData(tester);
+    await pumpApp(tester, location: '/files');
+    final highlight = Uri.encodeQueryComponent('Tax return 2025.pdf');
+    GoRouter.of(tester.element(find.byType(FilesScreen))).go('/files?highlight=$highlight');
+    for (var i = 0; i < 3; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    await snap(tester, 'show_in_folder');
+  });
+
   testWidgets('file sheet', (tester) async {
     await prepareData(tester);
     await pumpApp(tester, location: '/files');
@@ -1018,15 +1035,23 @@ void main() {
     await snap(tester, 'transfers_saving');
   });
 
+  /// The folders Trash's items came from, for their location lines.
+  Override trashPlaces() => folderIndexProvider.overrideWith(
+    (ref) => Stream.value({
+      for (final folder in [...folders, _folder('Clients', 9, parentId: 'Work')])
+        folder.id: folder,
+    }),
+  );
+
   testWidgets('trash', (tester) async {
     await prepareData(tester);
-    await pumpApp(tester, location: '/trash');
+    await pumpApp(tester, location: '/trash', overrides: [trashPlaces()]);
     await snap(tester, 'trash');
   });
 
   testWidgets('trash deleting', (tester) async {
     await prepareData(tester);
-    await pumpApp(tester, location: '/trash');
+    await pumpApp(tester, location: '/trash', overrides: [trashPlaces()]);
     await tester.tap(find.text('Draft v1.docx'));
     for (var i = 0; i < 4; i++) {
       await tester.pump(const Duration(milliseconds: 100));

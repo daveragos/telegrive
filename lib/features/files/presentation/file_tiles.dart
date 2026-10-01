@@ -17,6 +17,7 @@ class FileListTile extends ConsumerWidget {
     this.onMore,
     this.selected = false,
     this.selecting = false,
+    this.highlighted = false,
     this.subtitle,
   });
 
@@ -26,6 +27,9 @@ class FileListTile extends ConsumerWidget {
   final VoidCallback? onMore;
   final bool selected;
   final bool selecting;
+
+  /// Pointed out for a moment, after Show in folder.
+  final bool highlighted;
 
   /// Replaces the default "size · date" line.
   final String? subtitle;
@@ -37,6 +41,7 @@ class FileListTile extends ConsumerWidget {
     );
     return _Row(
       selected: selected,
+      highlighted: highlighted,
       onTap: onTap,
       onLongPress: onLongPress,
       slot: _Selectable(selected: selected, child: FileThumbnail(file: file)),
@@ -102,9 +107,11 @@ class _Row extends StatelessWidget {
     this.onMore,
     this.starred = false,
     this.offline = false,
+    this.highlighted = false,
   });
 
   final bool selected;
+  final bool highlighted;
   final VoidCallback onTap;
   final VoidCallback? onLongPress;
   final Widget slot;
@@ -119,65 +126,68 @@ class _Row extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return Material(
-      color: selected ? colors.accentSoft : Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        onLongPress: onLongPress,
-        child: Padding(
-          padding: EdgeInsets.fromLTRB(
-            Space.gutter,
-            Space.s + 2,
-            onMore == null ? Space.gutter : Space.xs,
-            Space.s + 2,
-          ),
-          child: Row(
-            children: [
-              slot,
-              const SizedBox(width: Space.l),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: context.text.titleSmall,
-                    ),
-                    const SizedBox(height: 2),
-                    Row(
-                      children: [
-                        if (starred) ...[
-                          Icon(Icons.star_rounded, size: 14, color: colors.text2),
-                          const SizedBox(width: Space.xs),
-                        ],
-                        if (offline) ...[
-                          Icon(Icons.offline_pin_rounded, size: 14, color: colors.text2),
-                          const SizedBox(width: Space.xs),
-                        ],
-                        Flexible(
-                          child: Text(
-                            meta,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: context.text.bodySmall?.copyWith(
-                              fontFeatures: tabularFigures,
+    return _Tint(
+      on: highlighted,
+      child: Material(
+        color: selected ? colors.accentSoft : Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          onLongPress: onLongPress,
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(
+              Space.gutter,
+              Space.s + 2,
+              onMore == null ? Space.gutter : Space.xs,
+              Space.s + 2,
+            ),
+            child: Row(
+              children: [
+                slot,
+                const SizedBox(width: Space.l),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: context.text.titleSmall,
+                      ),
+                      const SizedBox(height: 2),
+                      Row(
+                        children: [
+                          if (starred) ...[
+                            Icon(Icons.star_rounded, size: 14, color: colors.text2),
+                            const SizedBox(width: Space.xs),
+                          ],
+                          if (offline) ...[
+                            Icon(Icons.offline_pin_rounded, size: 14, color: colors.text2),
+                            const SizedBox(width: Space.xs),
+                          ],
+                          Flexible(
+                            child: Text(
+                              meta,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: context.text.bodySmall?.copyWith(
+                                fontFeatures: tabularFigures,
+                              ),
                             ),
                           ),
-                        ),
-                      ],
-                    ),
-                  ],
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              if (onMore != null)
-                IconButton(
-                  onPressed: onMore,
-                  icon: Icon(Icons.more_vert_rounded, color: colors.text3),
-                  tooltip: 'More',
-                ),
-            ],
+                if (onMore != null)
+                  IconButton(
+                    onPressed: onMore,
+                    icon: Icon(Icons.more_vert_rounded, color: colors.text3),
+                    tooltip: 'More',
+                  ),
+              ],
+            ),
           ),
         ),
       ),
@@ -213,6 +223,31 @@ class _Selectable extends StatelessWidget {
   }
 }
 
+/// The brief tint on the file Show in folder led to. It is a tone rather
+/// than the accent, since nothing is selected, and it fades in and out.
+class _Tint extends StatelessWidget {
+  const _Tint({required this.on, required this.child, this.radius});
+
+  final bool on;
+  final Widget child;
+  final double? radius;
+
+  @override
+  Widget build(BuildContext context) {
+    final tone = context.colors.surface2;
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 150),
+      curve: Curves.easeOut,
+      decoration: BoxDecoration(
+        // Clear in the same tone, so the fade changes only how much shows.
+        color: on ? tone : tone.withValues(alpha: 0),
+        borderRadius: radius == null ? null : BorderRadius.circular(radius!),
+      ),
+      child: child,
+    );
+  }
+}
+
 /// A file in grid view: the picture, then its name and size under it.
 class FileGridCard extends StatelessWidget {
   const FileGridCard({
@@ -223,6 +258,7 @@ class FileGridCard extends StatelessWidget {
     this.onMore,
     this.selected = false,
     this.selecting = false,
+    this.highlighted = false,
   });
 
   final DriveFile file;
@@ -232,75 +268,82 @@ class FileGridCard extends StatelessWidget {
   final bool selected;
   final bool selecting;
 
+  /// Pointed out for a moment, after Show in folder.
+  final bool highlighted;
+
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return InkWell(
-      onTap: onTap,
-      onLongPress: onLongPress,
-      borderRadius: BorderRadius.circular(Radii.control),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Expanded(
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                FileThumbnail(file: file, expand: true, radius: Radii.control),
-                if (selected)
-                  DecoratedBox(
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(Radii.control),
-                      border: Border.all(color: colors.accent, width: 3),
+    return _Tint(
+      on: highlighted,
+      radius: Radii.control,
+      child: InkWell(
+        onTap: onTap,
+        onLongPress: onLongPress,
+        borderRadius: BorderRadius.circular(Radii.control),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  FileThumbnail(file: file, expand: true, radius: Radii.control),
+                  if (selected)
+                    DecoratedBox(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(Radii.control),
+                        border: Border.all(color: colors.accent, width: 3),
+                      ),
                     ),
+                  if (selected)
+                    Positioned(
+                      top: 8,
+                      left: 8,
+                      child: Icon(Icons.check_circle_rounded, color: colors.accent),
+                    ),
+                ],
+              ),
+            ),
+            const SizedBox(height: Space.s),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        file.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: context.text.titleSmall?.copyWith(fontSize: 14),
+                      ),
+                      Text(
+                        [
+                          Formatters.bytes(file.size),
+                          if (file.starred) 'starred',
+                        ].join(' · '),
+                        style: context.text.bodySmall?.copyWith(fontFeatures: tabularFigures),
+                      ),
+                    ],
                   ),
-                if (selected)
-                  Positioned(
-                    top: 8,
-                    left: 8,
-                    child: Icon(Icons.check_circle_rounded, color: colors.accent),
+                ),
+                if (!selecting && onMore != null)
+                  SizedBox.square(
+                    dimension: 32,
+                    child: IconButton(
+                      padding: EdgeInsets.zero,
+                      iconSize: 20,
+                      onPressed: onMore,
+                      icon: Icon(Icons.more_vert_rounded, color: colors.text3),
+                      tooltip: 'More',
+                    ),
                   ),
               ],
             ),
-          ),
-          const SizedBox(height: Space.s),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      file.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: context.text.titleSmall?.copyWith(fontSize: 14),
-                    ),
-                    Text(
-                      [
-                        Formatters.bytes(file.size),
-                        if (file.starred) 'starred',
-                      ].join(' · '),
-                      style: context.text.bodySmall?.copyWith(fontFeatures: tabularFigures),
-                    ),
-                  ],
-                ),
-              ),
-              if (!selecting && onMore != null)
-                SizedBox.square(
-                  dimension: 32,
-                  child: IconButton(
-                    padding: EdgeInsets.zero,
-                    iconSize: 20,
-                    onPressed: onMore,
-                    icon: Icon(Icons.more_vert_rounded, color: colors.text3),
-                    tooltip: 'More',
-                  ),
-                ),
-            ],
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

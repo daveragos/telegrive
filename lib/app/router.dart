@@ -77,12 +77,16 @@ final routerProvider = Provider<GoRouter>((ref) {
             routes: [
               GoRoute(
                 path: '/files',
-                builder: (_, _) => const FilesScreen(),
+                builder: (_, state) => FilesScreen(
+                  highlight: state.uri.queryParameters['highlight'],
+                ),
                 routes: [
                   GoRoute(
                     path: ':folderId',
-                    builder: (_, state) =>
-                        FilesScreen(folderId: state.pathParameters['folderId']),
+                    builder: (_, state) => FilesScreen(
+                      folderId: state.pathParameters['folderId'],
+                      highlight: state.uri.queryParameters['highlight'],
+                    ),
                   ),
                 ],
               ),

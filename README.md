@@ -33,7 +33,11 @@ phone number.
 - **Free up space.** Delete the phone's copies of photos and videos that are
   safely backed up; they stay in the drive.
 - **Real folders.** Create, rename, move and delete folders; breadcrumbs;
-  list and grid views; sort by name, date, size or type.
+  list and grid views; sort by name, date, size or type. Show in folder,
+  in any file's menu or its Details, opens the folder the file lives in
+  and points it out for a moment. Starred, Recent and each category say
+  which folder each file is in, and Trash says where each item goes back
+  to.
 - **Recent, as you use it.** Home lists the files you last opened, shared
   or sent on this phone together with the ones you added, each saying which
   and when. Backed-up photos stay in Photos, so a batch of them never

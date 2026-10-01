@@ -11,6 +11,7 @@ import '../../drive/data/drive_repository.dart';
 import '../../drive/domain/drive_models.dart';
 import '../data/browse_preferences.dart';
 import 'file_actions.dart';
+import 'file_location.dart';
 import 'file_tiles.dart';
 
 /// The last files this phone opened, shared or sent, most recent first.
@@ -192,15 +193,16 @@ class _FileListScreenState extends ConsumerState<FileListScreen> {
   }
 }
 
-/// A count line, then [files] as rows or a grid.
+/// A count line, then [files] as rows or a grid. Each row ends with the
+/// folder its file lives in, since the list mixes files from everywhere.
 class _Files extends ConsumerWidget {
   const _Files({super.key, required this.files, required this.grid, this.subtitles});
 
   final List<DriveFile> files;
   final bool grid;
 
-  /// Each row's meta line, in place of the default "size · date". The grid
-  /// keeps its size-only cards.
+  /// Each row's meta line before its folder, in place of the default
+  /// "size · date". The grid keeps its size-only cards.
   final List<String>? subtitles;
 
   @override
@@ -243,6 +245,9 @@ class _Files extends ConsumerWidget {
         ],
       );
     }
+    // Null until the folders are read; rows then go without a place rather
+    // than all reading 'Files'.
+    final byId = ref.watch(folderIndexProvider).value;
     return ListView.builder(
       padding: const EdgeInsets.only(bottom: 24),
       itemCount: files.length + 1,
@@ -251,7 +256,11 @@ class _Files extends ConsumerWidget {
         final file = files[index - 1];
         return FileListTile(
           file: file,
-          subtitle: subtitles?[index - 1],
+          subtitle: [
+            subtitles?[index - 1] ??
+                '${Formatters.bytes(file.size)} · ${Formatters.date(file.modifiedAt)}',
+            if (byId != null) locationOf(byId, file.folderId),
+          ].join(' · '),
           onTap: () => FileActions.open(context, ref, file),
           onLongPress: () => FileActions.showFileSheet(context, ref, file),
           onMore: () => FileActions.showFileSheet(context, ref, file),
