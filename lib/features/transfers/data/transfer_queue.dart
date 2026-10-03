@@ -750,6 +750,20 @@ class TransferQueue extends Notifier<TransfersState> {
     _pump();
   }
 
+  /// Keeps [ids] for Wi-Fi: while the phone is on mobile data they wait,
+  /// and those running step back into the queue, as when the phone moves
+  /// onto it. [useMobileData] lets them go again.
+  Future<void> waitForWifi(Iterable<String> ids) async {
+    for (final id in ids) {
+      final row = _rows[id];
+      if (row == null || row.wifiOnly || !row.status.isPending) continue;
+      await _save(row.copyWith(wifiOnly: true));
+    }
+    _holdForWifi();
+    _emit();
+    _pump();
+  }
+
   /// Rows that wait for Wi-Fi step back into the queue when the phone moves
   /// onto mobile data, and start again once it is on Wi-Fi.
   void _onNetwork(NetworkState next) {

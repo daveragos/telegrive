@@ -7,17 +7,20 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:handy_tdlib/api.dart' as td;
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:telegrive/core/files/file_kind.dart';
 import 'package:telegrive/features/drive/data/drive_repository.dart';
 import 'package:telegrive/features/drive/data/drive_session.dart';
 import 'package:telegrive/features/drive/domain/drive_models.dart';
 import 'package:telegrive/features/drive/domain/manifest.dart';
 import 'package:telegrive/features/offline/data/offline_sync.dart';
+import 'package:telegrive/features/transfers/data/transfer_policy.dart';
 import 'package:telegrive/features/transfers/data/transfer_queue.dart';
 import 'package:telegrive/features/transfers/domain/transfer_wait.dart';
 import 'package:telegrive/infrastructure/database/app_database.dart';
 import 'package:telegrive/infrastructure/network/network_status.dart';
 import 'package:telegrive/infrastructure/storage/device_storage.dart';
+import 'package:telegrive/infrastructure/storage/preferences.dart';
 import 'package:telegrive/infrastructure/telegram/telegram_client.dart';
 import 'package:telegrive/infrastructure/telegram/telegram_exception.dart';
 
@@ -203,10 +206,19 @@ void main() {
   }
 
   /// The queue on a phone that starts on [network], once it has read its
-  /// saved rows.
-  Future<_Opened> open(FakeTelegram telegram, NetworkState network) async {
+  /// saved rows. With [onlyOverWifi], files kept offline download only over
+  /// Wi-Fi.
+  Future<_Opened> open(
+    FakeTelegram telegram,
+    NetworkState network, {
+    bool onlyOverWifi = false,
+  }) async {
+    // ignore: invalid_use_of_visible_for_testing_member
+    SharedPreferences.setMockInitialValues({'offline_wifi_only': onlyOverWifi});
+    final shared = await SharedPreferences.getInstance();
     final container = ProviderContainer(
       overrides: [
+        sharedPreferencesProvider.overrideWithValue(shared),
         appDatabaseProvider.overrideWithValue(db),
         telegramClientProvider.overrideWithValue(telegram),
         driveSessionProvider.overrideWith(TestSession.new),
@@ -452,13 +464,15 @@ void main() {
     /// [starting] of them start fetching. With [talks], Talks is kept
     /// offline already and its 30 MB talk is still to come. With
     /// [alongside], a reconcile after a sync runs at the same time as the
-    /// pin. Says which wait for Wi-Fi.
+    /// pin. With [onlyOverWifi], Only over Wi-Fi is on. Says which wait for
+    /// Wi-Fi.
     Future<Map<String, bool>> pin(
       NetworkState network, {
       bool? wifiOnly,
       required int starting,
       bool talks = false,
       bool alongside = false,
+      bool onlyOverWifi = false,
     }) async {
       for (final (index, (id, name)) in [('trips', 'Trips'), if (talks) ('talks', 'Talks')].indexed) {
         await db.upsertFolder(
@@ -500,7 +514,11 @@ void main() {
         );
       }
       final telegram = _FakeTelegram(fetched.path, stall: true);
-      final (:container, queue: _, network: _, file: _) = await open(telegram, network);
+      final (:container, queue: _, network: _, file: _) = await open(
+        telegram,
+        network,
+        onlyOverWifi: onlyOverWifi,
+      );
       final folder = DriveFolder.fromRow((await db.folderById('trips'))!);
       final sync = container.read(offlineSyncProvider.notifier);
       final pinned = sync.pin(folder: folder, wifiOnly: wifiOnly);
@@ -543,6 +561,136 @@ void main() {
         await pin(_mobile, wifiOnly: false, starting: 2, alongside: true),
         {'small.jpg': false, 'big.jpg': false},
       );
+    });
+
+    test('with Only over Wi-Fi on, every copy waits, even after Keep', () async {
+      expect(
+        await pin(_mobile, wifiOnly: false, starting: 0, onlyOverWifi: true),
+        {'small.jpg': true, 'big.jpg': true},
+      );
+    });
+  });
+
+  group('Only over Wi-Fi', () {
+    /// Where the copy kept offline goes.
+    void mockOfflineStore() {
+      const paths = MethodChannel('plugins.flutter.io/path_provider');
+      final messenger = TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(paths, (call) async => dir.path);
+      addTearDown(() => messenger.setMockMethodCallHandler(paths, null));
+    }
+
+    /// The report kept offline on mobile data, its copy on its way.
+    Future<({ProviderContainer container, _FakeTelegram telegram})> keepReport() async {
+      mockOfflineStore();
+      final telegram = _FakeTelegram(fetched.path, holdFirst: true);
+      final (:container, queue: _, network: _, :file) = await open(telegram, _mobile);
+      await container.read(offlineSyncProvider.notifier).pin(file: file);
+      await until(() => telegram.downloads == 1);
+      return (container: container, telegram: telegram);
+    }
+
+    test('switched on, a copy on mobile data steps back until Wi-Fi', () async {
+      final (:container, :telegram) = await keepReport();
+      TransferItem item() => container.read(transferQueueProvider).items.single;
+      expect(item().status, TransferStatus.running);
+
+      await container.read(offlineSyncProvider.notifier).setWifiOnly(true);
+      expect(container.read(offlineSyncProvider), isTrue);
+      expect(container.read(preferencesProvider).offlineWifiOnly, isTrue);
+      await until(() => item().status == TransferStatus.queued);
+      expect(item().row.wifiOnly, isTrue);
+      expect(item().wait, isA<WaitingForWifi>());
+      expect(telegram.cancels, 1);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(telegram.downloads, 1);
+
+      (container.read(networkStatusProvider.notifier) as _TestNetwork).set(_wifi);
+      await until(() => container.read(transferQueueProvider).items.isEmpty);
+      expect(telegram.downloads, 2);
+      expect(await db.offlineCopyOf('report'), isNotNull);
+    });
+
+    test('Download now brings a copy that waits over mobile data', () async {
+      final (:container, :telegram) = await keepReport();
+      final queue = container.read(transferQueueProvider.notifier);
+      await container.read(offlineSyncProvider.notifier).setWifiOnly(true);
+      await until(
+        () => container.read(transferQueueProvider).items.single.wait is WaitingForWifi,
+      );
+
+      await queue.useMobileData([container.read(transferQueueProvider).items.single.id]);
+      await until(() => container.read(transferQueueProvider).items.isEmpty);
+      expect(telegram.downloads, 2);
+      expect(await db.offlineCopyOf('report'), isNotNull);
+      // The switch stays on for what comes later.
+      expect(container.read(offlineSyncProvider), isTrue);
+    });
+
+    test('switched off, small copies that wait go on mobile data', () async {
+      final (:container, :telegram) = await keepReport();
+      final sync = container.read(offlineSyncProvider.notifier);
+      await sync.setWifiOnly(true);
+      await until(
+        () => container.read(transferQueueProvider).items.single.wait is WaitingForWifi,
+      );
+
+      await sync.setWifiOnly(false);
+      await until(() => container.read(transferQueueProvider).items.isEmpty);
+      expect(telegram.downloads, 2);
+      expect(container.read(preferencesProvider).offlineWifiOnly, isFalse);
+    });
+
+    test('switched off, a copy of 20 MB or more keeps waiting until Download now', () async {
+      mockOfflineStore();
+      const size = TransferPolicy.followUpOnDataBelow;
+      await db.upsertFilePart(
+        DriveFilesCompanion.insert(
+          id: 'film',
+          name: 'film.mp4',
+          mimeType: 'video/mp4',
+          kind: FileKind.video,
+          size: size,
+          createdAt: now,
+          modifiedAt: now,
+          partCount: const Value(1),
+        ),
+        FilePartsCompanion.insert(
+          fileId: 'film',
+          partIndex: 0,
+          messageId: 2,
+          tdFileId: 7,
+          size: size,
+        ),
+      );
+      final telegram = _FakeTelegram(fetched.path, holdFirst: true);
+      final (:container, :queue, network: _, file: _) = await open(telegram, _mobile);
+      final film = (await container.read(driveRepositoryProvider).fileById('film'))!;
+      final sync = container.read(offlineSyncProvider.notifier);
+      TransferItem item() => container.read(transferQueueProvider).items.single;
+
+      await sync.pin(file: film);
+      await until(() => container.read(transferQueueProvider).items.isNotEmpty);
+      await sync.setWifiOnly(true);
+      await sync.setWifiOnly(false);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(container.read(preferencesProvider).offlineWifiOnly, isFalse);
+      expect(item().row.wifiOnly, isTrue);
+      expect(item().wait, isA<WaitingForWifi>());
+      expect(telegram.downloads, 0);
+
+      await queue.useMobileData([item().id]);
+      await until(() => telegram.downloads == 1);
+    });
+
+    test('a copy still on its way stops when the file is no longer kept', () async {
+      final (:container, :telegram) = await keepReport();
+      final file = (await container.read(driveRepositoryProvider).fileById('report'))!;
+
+      await container.read(offlineSyncProvider.notifier).unpin(file: file);
+      await until(() => container.read(transferQueueProvider).items.isEmpty);
+      expect(telegram.cancels, 1);
+      expect(await db.offlineCopyList(), isEmpty);
     });
   });
 

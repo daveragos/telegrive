@@ -27,6 +27,7 @@ import '../../backup/data/backup_controller.dart';
 import '../../backup/data/free_up_space.dart';
 import '../../capture/data/device_capture.dart';
 import '../../offline/data/offline_sync.dart';
+import '../../offline/presentation/keep_offline_sheet.dart';
 import '../../send/data/send_bundle.dart';
 import '../../send/data/telegram_chats.dart';
 import '../../share/data/recent_destinations.dart';
@@ -251,8 +252,11 @@ abstract final class FileActions {
   // ---------------------------------------------------------------------------
 
   /// Keeps [file] or [folder] (with everything in it, now and later) on
-  /// this phone for use without a connection, or stops keeping it. On
-  /// mobile data, something big asks first whether to wait for Wi-Fi.
+  /// this phone for use without a connection, or stops keeping it. A folder
+  /// with files in it first says what keeping it costs, in a sheet that
+  /// also holds Only over Wi-Fi. A big file on mobile data asks whether to
+  /// wait for Wi-Fi, unless Only over Wi-Fi already says it does. View on
+  /// the snack opens the Offline screen.
   static Future<bool> setOffline(
     BuildContext context,
     WidgetRef ref, {
@@ -270,39 +274,76 @@ abstract final class FileActions {
       );
     }
     bool? wifiOnly;
-    final network = ref.read(networkStatusProvider);
-    if (network.metered) {
+    if (folder != null) {
       var items = const <SaveItem>[];
+      int? free;
       final counted = await _guard(context, () async {
-        items = await ref
-            .read(driveRepositoryProvider)
-            .collectForSaving(files: [?file], folders: [?folder]);
+        (items, free) = await (
+          ref.read(driveRepositoryProvider).collectForSaving(folders: [folder]),
+          ref.read(deviceStorageProvider).freeBytes(),
+        ).wait;
       });
       if (!counted || !context.mounted) return false;
-      final bytes = items.fold<int>(0, (sum, i) => sum + i.file.size);
-      if (TransferPolicy.shouldAsk(network: network, bytes: bytes)) {
+      if (items.isNotEmpty) {
+        final estimate = KeepOfflineEstimate.of(
+          items,
+          freeBytes: free,
+          android: Platform.isAndroid,
+        );
+        final kept = await showModalBottomSheet<bool>(
+          context: context,
+          useRootNavigator: true,
+          isScrollControlled: true,
+          builder: (_) => KeepOfflineSheet(
+            folderName: name,
+            count: estimate.count,
+            bytes: estimate.bytes,
+            largest: estimate.largest,
+            freeBytes: free,
+          ),
+        );
+        if (kept != true || !context.mounted) return false;
+        // The sheet said what this costs on mobile data, so Keep there
+        // brings the copies now, unless Only over Wi-Fi holds them.
+        if (ref.read(networkStatusProvider).metered) wifiOnly = false;
+      }
+    } else if (!ref.read(offlineSyncProvider)) {
+      final network = ref.read(networkStatusProvider);
+      if (TransferPolicy.shouldAsk(network: network, bytes: file!.size)) {
         final choice = await askAboutMobileData(
           context,
-          bytes: bytes,
+          bytes: file.size,
           doing: 'Keeping "$name" offline',
-          files: items.length,
+          files: 1,
           nowLabel: 'Keep offline now',
         );
         if (choice == null || !context.mounted) return false;
         wifiOnly = wifiOnlyFrom(choice);
-      } else {
+      } else if (network.metered) {
         // Too small to ask about, so it comes now, as anything this size
         // does on mobile data.
         wifiOnly = false;
       }
     }
-    return _guard(
+    final waits = !OfflineSync.allowed(
+      wifiOnly: ref.read(offlineSyncProvider) || wifiOnly == true,
+      network: ref.read(networkStatusProvider),
+    );
+    // View can be tapped after the screen that asked is gone.
+    final router = GoRouter.of(context);
+    final pinned = await _guard(
       context,
       () => offline.pin(file: file, folder: folder, wifiOnly: wifiOnly),
-      success: wifiOnly == true
-          ? 'Waiting for Wi-Fi to keep "$name" offline'
-          : '"$name" will be available offline',
     );
+    if (pinned && context.mounted) {
+      showSnack(
+        context,
+        waits ? '"$name" will download over Wi-Fi' : '"$name" will be available offline',
+        actionLabel: 'View',
+        onAction: () => router.push('/offline'),
+      );
+    }
+    return pinned;
   }
 
   // ---------------------------------------------------------------------------

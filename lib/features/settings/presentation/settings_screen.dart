@@ -298,22 +298,8 @@ class SettingsScreen extends ConsumerWidget {
                     '${Formatters.count(count, 'file')} · ${Formatters.bytes(bytes)}',
                   _ => 'Nothing yet. Choose files or folders from their menu.',
                 }),
-                trailing: (offline.value?.$1 ?? 0) > 0
-                    ? TextButton(
-                        onPressed: () async {
-                          final ok = await showConfirmDialog(
-                            context,
-                            title: 'Stop keeping files offline?',
-                            message:
-                                'Their copies on this phone are removed. The files stay '
-                                'in your drive.',
-                            confirmLabel: 'Remove',
-                          );
-                          if (ok) await ref.read(offlineSyncProvider.notifier).removeAll();
-                        },
-                        child: const Text('Remove all'),
-                      )
-                    : null,
+                trailing: Icon(Icons.chevron_right_rounded, color: colors.text3),
+                onTap: () => context.push('/offline'),
               ),
               ListTile(
                 title: const Text('Free up space'),

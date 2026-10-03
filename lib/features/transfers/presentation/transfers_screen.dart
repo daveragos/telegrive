@@ -11,6 +11,7 @@ import '../../../infrastructure/database/app_database.dart';
 import '../../../infrastructure/storage/device_storage.dart';
 import '../../backup/data/backup_controller.dart';
 import '../../backup/presentation/backup_card.dart';
+import '../../offline/data/offline_sync.dart';
 import '../data/transfer_queue.dart';
 import '../domain/transfer_error.dart';
 import '../domain/transfer_wait.dart';
@@ -189,13 +190,19 @@ class _SaveGroup extends ConsumerWidget {
     );
 
     if (!moving && held.isNotEmpty) {
+      // Held by Only over Wi-Fi on the Offline screen, which is where it
+      // changes.
+      final keptOnWifi =
+          ref.watch(offlineSyncProvider) && held.every((t) => t.row.saveTo == SaveTarget.offline);
       return StatusLine(
         icon: Icons.wifi_off_rounded,
         color: colors.text2,
         text:
             'Waiting for Wi-Fi · ${Formatters.number(saved.length)} of '
             '${Formatters.count(total, 'file')} saved',
-        detail: 'They carry on over Wi-Fi.',
+        detail: keptOnWifi
+            ? 'Kept-offline files download over Wi-Fi. Change this in Available offline.'
+            : 'They carry on over Wi-Fi.',
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [

@@ -71,6 +71,7 @@ void main() {
       'backup_enabled': true,
       'photos_hidden_folders': ['Screenshots'],
       'delete_phone_copy_too': true,
+      'offline_wifi_only': true,
       'recent_send_chats': ['42', '7'],
       'recent_destinations': ['docs', ''],
     });
@@ -157,9 +158,11 @@ void main() {
     expect(prefs.syncedChatIds, isEmpty);
 
     // Deleting phone copies along with the trash starts off again, and so
-    // does showing the folders Photos keeps out.
+    // do showing the folders Photos keeps out and keeping offline files to
+    // Wi-Fi.
     expect(prefs.deletePhoneCopyToo, isFalse);
     expect(container.read(revealHiddenProvider), isFalse);
+    expect(prefs.offlineWifiOnly, isFalse);
 
     // The chats this account sent files to aren't offered to the next one.
     expect(prefs.recentSendChats, isEmpty);

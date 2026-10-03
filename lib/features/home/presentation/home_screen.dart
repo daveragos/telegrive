@@ -20,11 +20,13 @@ import '../../drive/data/drive_sync.dart';
 import '../../drive/domain/drive_models.dart';
 import '../../files/presentation/file_actions.dart';
 import '../../files/presentation/file_tiles.dart';
+import '../../offline/data/offline_sync.dart';
 import '../../transfers/data/transfer_queue.dart';
 import 'drive_health.dart';
 
 /// What is in the drive and what is happening to it. Where the space goes
-/// first, which doubles as the way into each kind of file; then the files
+/// first, which doubles as the way into each kind of file and, once
+/// something is kept offline, into what this phone keeps; then the files
 /// this phone opened or added lately.
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
@@ -34,6 +36,8 @@ class HomeScreen extends ConsumerWidget {
     final summary = ref.watch(storageSummaryProvider).value;
     final recent = ref.watch(recentActivityProvider(12));
     final starred = ref.watch(starredFilesProvider).value?.length ?? 0;
+    final pinned = ref.watch(offlinePinsProvider).value?.isNotEmpty ?? false;
+    final offline = ref.watch(offlineUsageProvider).value;
     final starredRow = starred > 0
         ? ListTile(
             leading: const Icon(Icons.star_outline_rounded),
@@ -64,7 +68,9 @@ class HomeScreen extends ConsumerWidget {
             const SliverToBoxAdapter(child: _Activity()),
             if (summary != null && summary.fileCount > 0) ...[
               const SliverToBoxAdapter(child: SectionHeader('Storage')),
-              SliverToBoxAdapter(child: _Storage(summary: summary)),
+              SliverToBoxAdapter(
+                child: _Storage(summary: summary, offline: pinned ? offline ?? (0, 0) : null),
+              ),
             ],
             SliverToBoxAdapter(
               child: SectionHeader(
@@ -330,11 +336,16 @@ class _NothingYet extends ConsumerWidget {
   }
 }
 
-/// Total, one proportional bar, then a row per kind that opens it.
+/// Total, one proportional bar, then a row per kind that opens it, and the
+/// way into what this phone keeps offline.
 class _Storage extends StatelessWidget {
-  const _Storage({required this.summary});
+  const _Storage({required this.summary, required this.offline});
 
   final StorageSummary summary;
+
+  /// How many files are kept offline and their size, or null while nothing
+  /// is, which leaves the row out.
+  final (int, int)? offline;
 
   @override
   Widget build(BuildContext context) {
@@ -390,7 +401,41 @@ class _Storage extends StatelessWidget {
           ),
         ),
         for (final total in kinds) _KindRow(total: total),
+        if (offline case (final count, final bytes)?) _OfflineRow(count: count, bytes: bytes),
       ],
+    );
+  }
+}
+
+/// Files kept on this phone for use without a connection, laid out as a
+/// kind row is, opening the Offline screen.
+class _OfflineRow extends StatelessWidget {
+  const _OfflineRow({required this.count, required this.bytes});
+
+  final int count;
+  final int bytes;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return InkWell(
+      onTap: () => context.push('/offline'),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: Space.gutter, vertical: 14),
+        child: Row(
+          children: [
+            Icon(Icons.offline_pin_outlined, size: 22, color: colors.text2),
+            const SizedBox(width: Space.l),
+            Expanded(child: Text('Available offline', style: context.text.titleSmall)),
+            Text(
+              '${Formatters.count(count, 'file')} · ${Formatters.bytes(bytes)}',
+              style: context.text.bodyMedium?.copyWith(fontFeatures: tabularFigures),
+            ),
+            const SizedBox(width: Space.xs),
+            Icon(Icons.chevron_right_rounded, color: colors.text3, size: 20),
+          ],
+        ),
+      ),
     );
   }
 }

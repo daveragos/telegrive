@@ -48,6 +48,9 @@ import 'package:telegrive/features/files/presentation/folder_picker.dart';
 import 'package:telegrive/features/home/presentation/home_screen.dart';
 import 'package:telegrive/features/import/data/chat_media.dart';
 import 'package:telegrive/features/import/presentation/import_screen.dart';
+import 'package:telegrive/features/offline/data/offline_sync.dart';
+import 'package:telegrive/features/offline/presentation/keep_offline_sheet.dart';
+import 'package:telegrive/features/offline/presentation/offline_screen.dart';
 import 'package:telegrive/features/settings/data/settings_providers.dart';
 import 'package:telegrive/features/settings/presentation/settings_screen.dart';
 import 'package:telegrive/features/share/data/recent_destinations.dart';
@@ -625,6 +628,7 @@ void main() {
           ),
         ),
         GoRoute(path: '/trash', builder: (_, _) => const TrashScreen()),
+        GoRoute(path: '/offline', builder: (_, _) => const OfflineScreen()),
         GoRoute(path: '/albums', builder: (_, _) => const AlbumsScreen()),
         GoRoute(path: '/transfers', builder: (_, _) => const TransfersScreen()),
         GoRoute(path: '/settings', builder: (_, _) => const SettingsScreen()),
@@ -806,6 +810,25 @@ void main() {
     await prepareData(tester);
     await pumpApp(tester, location: '/home', themeMode: ThemeMode.dark);
     await snap(tester, 'home_dark');
+  });
+
+  testWidgets('home offline', (tester) async {
+    await prepareData(tester);
+    await pumpApp(
+      tester,
+      location: '/home',
+      overrides: [
+        // Something is kept offline, so Storage offers the way there.
+        offlinePinsProvider.overrideWith((ref) => Stream.value({'Work'})),
+        offlineUsageProvider.overrideWith((ref) => Stream.value((19, 353 * _mb))),
+      ],
+    );
+    // Scrolled so the row sits above the New button.
+    await tester.drag(find.byType(CustomScrollView).first, const Offset(0, -400));
+    for (var i = 0; i < 4; i++) {
+      await tester.pump(const Duration(milliseconds: 200));
+    }
+    await snap(tester, 'home_offline');
   });
 
   testWidgets('home recent', (tester) async {
@@ -1039,7 +1062,17 @@ void main() {
 
   testWidgets('files grid', (tester) async {
     await prepareData(tester);
-    await pumpApp(tester, location: '/files', prefs: {'view_mode': 'grid'});
+    await pumpApp(
+      tester,
+      location: '/files',
+      prefs: {'view_mode': 'grid'},
+      overrides: [
+        offlinePinsProvider.overrideWith((ref) => Stream.value({'Work'})),
+        offlineCopiesProvider.overrideWith(
+          (ref) => Stream.value({'Budget 2026.xlsx': '/offline/budget/Budget 2026.xlsx'}),
+        ),
+      ],
+    );
     await snap(tester, 'files_grid');
   });
 
@@ -1479,6 +1512,141 @@ void main() {
     await prepareData(tester);
     await pumpApp(tester, location: '/settings');
     await snap(tester, 'settings');
+  });
+
+  /// Trips on its way, the tax return on the phone, and two receipts that
+  /// didn't download.
+  OfflineOverview keptOffline() {
+    final tax = files.firstWhere((f) => f.name == 'Tax return 2025.pdf');
+    return OfflineOverview(
+      pins: [
+        OfflinePinStatus(
+          folder: _folder('Trips', 2),
+          wanted: 40,
+          bytes: (1.4 * _gb).round(),
+          kept: 3,
+          keptBytes: 310 * _mb,
+          downloading: 37,
+          waiting: 0,
+          paused: 0,
+          leftBytes: (1.1 * _gb).round(),
+          failedTransferIds: const [],
+        ),
+        OfflinePinStatus(
+          file: tax,
+          wanted: 1,
+          bytes: tax.size,
+          kept: 1,
+          keptBytes: tax.size,
+          downloading: 0,
+          waiting: 0,
+          paused: 0,
+          leftBytes: 0,
+          failedTransferIds: const [],
+        ),
+        OfflinePinStatus(
+          folder: _folder('Receipts', 14),
+          wanted: 17,
+          bytes: 48 * _mb,
+          kept: 15,
+          keptBytes: 41 * _mb,
+          downloading: 0,
+          waiting: 0,
+          paused: 0,
+          leftBytes: 0,
+          failedTransferIds: const ['receipt-1', 'receipt-2'],
+        ),
+      ],
+      keptFiles: 19,
+      keptBytes: 351 * _mb + tax.size,
+      downloading: 37,
+      downloadingLeft: (1.1 * _gb).round(),
+      speed: 2.4 * _mb,
+      waitingTransferIds: const [],
+      waitingLeft: 0,
+      paused: 0,
+      pausedLeft: 0,
+      progress: 0.24,
+    );
+  }
+
+  testWidgets('offline', (tester) async {
+    await prepareData(tester);
+    await pumpApp(
+      tester,
+      location: '/offline',
+      overrides: [
+        offlineOverviewProvider.overrideWith((ref) => AsyncData(keptOffline())),
+        offlinePinsProvider.overrideWith(
+          (ref) => Stream.value({'Trips', 'Receipts', 'Tax return 2025.pdf'}),
+        ),
+        offlineCopiesProvider.overrideWith(
+          (ref) => Stream.value({'Tax return 2025.pdf': '/offline/tax/Tax return 2025.pdf'}),
+        ),
+      ],
+    );
+    await snap(tester, 'offline');
+  });
+
+  testWidgets('offline empty', (tester) async {
+    await prepareData(tester);
+    await pumpApp(
+      tester,
+      location: '/offline',
+      overrides: [
+        offlineOverviewProvider.overrideWith(
+          (ref) => const AsyncData(
+            OfflineOverview(
+              pins: [],
+              keptFiles: 0,
+              keptBytes: 0,
+              downloading: 0,
+              downloadingLeft: 0,
+              speed: 0,
+              waitingTransferIds: [],
+              waitingLeft: 0,
+              paused: 0,
+              pausedLeft: 0,
+              progress: 0,
+            ),
+          ),
+        ),
+      ],
+    );
+    await snap(tester, 'offline_empty');
+  });
+
+  /// The sheet that keeps Trips offline, over Files, on [network].
+  Future<void> keepOfflineSheet(WidgetTester tester, NetworkState network) async {
+    await prepareData(tester);
+    await pumpApp(tester, location: '/files', network: network);
+    unawaited(
+      showModalBottomSheet<bool>(
+        context: tester.element(find.byType(Scaffold).first),
+        useRootNavigator: true,
+        isScrollControlled: true,
+        builder: (_) => KeepOfflineSheet(
+          folderName: 'Trips',
+          count: 212,
+          bytes: 5 * _gb,
+          largest: (1.2 * _gb).round(),
+          freeBytes: 23 * _gb,
+        ),
+      ),
+    );
+    for (var i = 0; i < 6; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+  }
+
+  testWidgets('keep offline sheet', (tester) async {
+    await keepOfflineSheet(tester, NetworkState.unknown);
+    await snap(tester, 'keep_offline_sheet');
+  });
+
+  testWidgets('keep offline sheet on mobile data', (tester) async {
+    await keepOfflineSheet(tester, const NetworkState(online: true, metered: true));
+    await snap(tester, 'keep_offline_sheet_mobile_data');
   });
 
   testWidgets('settings mobile data', (tester) async {

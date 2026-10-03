@@ -26,11 +26,15 @@ abstract final class TransferPolicy {
       bigWaitForWifi && bytes >= bigFrom;
 
   /// Whether [row] has to wait for Wi-Fi on [network]: it is marked Wi-Fi
-  /// only, and the phone is on mobile data or on nothing at all. Without a
-  /// network it doesn't start either, since the next one may well be mobile
-  /// data and TDLib would be sending on it before the phone said so.
+  /// only, and the phone is not [onWifi].
   static bool waitsForWifi(TransferRow row, NetworkState network) =>
-      row.wifiOnly && (network.metered || !network.online);
+      row.wifiOnly && !onWifi(network);
+
+  /// Whether [network] lets a Wi-Fi-only transfer run: online, and not on
+  /// mobile data. Without a network it doesn't start either, since the next
+  /// one may well be mobile data and TDLib would be sending on it before the
+  /// phone said so.
+  static bool onWifi(NetworkState network) => network.online && !network.metered;
 
   /// Whether a queued [row] may start at [now]. It may not before its next
   /// try is due ([notBefore]: Telegram's pause, or a retry after a dropped

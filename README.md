@@ -133,8 +133,13 @@ phone number.
   drive's folders under Download › Telegrive; photos and videos can go back
   into the gallery.
 - **Available offline.** Keep files or folders on the phone to open without
-  a connection; new files in a kept folder follow on their own, those of
-  20 MB or more over Wi-Fi only.
+  a connection. Keeping a folder first says how many files it holds, how
+  big they are and how much room the phone has. New files in a kept folder
+  follow on their own, those of 20 MB or more over Wi-Fi only; switch on
+  Only over Wi-Fi and every kept file waits for Wi-Fi unless you tap
+  Download now. Available offline, under Storage on Home and in Settings,
+  lists what is kept and how far along each is, retries what failed, and
+  stops keeping a file or folder, or all of them.
 - **App lock** with the phone's fingerprint, face or screen lock.
 - **Private by default.** API credentials and the local-database key live in
   the platform keystore. TDLib's cache is encrypted from the first launch.

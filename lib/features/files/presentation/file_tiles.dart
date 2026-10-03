@@ -19,6 +19,8 @@ class FileListTile extends ConsumerWidget {
     this.selecting = false,
     this.highlighted = false,
     this.subtitle,
+    this.subtitleColor,
+    this.trailing,
   });
 
   final DriveFile file;
@@ -34,6 +36,12 @@ class FileListTile extends ConsumerWidget {
   /// Replaces the default "size · date" line.
   final String? subtitle;
 
+  /// Colours [subtitle] when it says something went wrong.
+  final Color? subtitleColor;
+
+  /// An action of the row's own, before the menu.
+  final Widget? trailing;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final offline = ref.watch(
@@ -48,8 +56,10 @@ class FileListTile extends ConsumerWidget {
       title: file.name,
       meta: subtitle ??
           '${Formatters.bytes(file.size)} · ${Formatters.date(file.modifiedAt)}',
+      metaColor: subtitleColor,
       starred: file.starred,
       offline: offline,
+      trailing: trailing,
       onMore: selecting ? null : onMore,
     );
   }
@@ -66,12 +76,20 @@ class FolderListTile extends ConsumerWidget {
     this.selected = false,
     this.selecting = false,
     this.subtitle,
+    this.subtitleColor,
+    this.trailing,
   });
 
   final DriveFolder folder;
 
   /// Replaces the default "Folder · date" line.
   final String? subtitle;
+
+  /// Colours [subtitle] when it says something went wrong.
+  final Color? subtitleColor;
+
+  /// An action of the row's own, before the menu.
+  final Widget? trailing;
   final VoidCallback onTap;
   final VoidCallback? onLongPress;
   final VoidCallback? onMore;
@@ -91,6 +109,8 @@ class FolderListTile extends ConsumerWidget {
       slot: _Selectable(selected: selected, child: const FolderIconTile()),
       title: folder.name,
       meta: subtitle ?? 'Folder · ${Formatters.date(folder.modifiedAt)}',
+      metaColor: subtitleColor,
+      trailing: trailing,
       onMore: selecting ? null : onMore,
     );
   }
@@ -108,6 +128,8 @@ class _Row extends StatelessWidget {
     this.starred = false,
     this.offline = false,
     this.highlighted = false,
+    this.metaColor,
+    this.trailing,
   });
 
   final bool selected;
@@ -117,6 +139,8 @@ class _Row extends StatelessWidget {
   final Widget slot;
   final String title;
   final String meta;
+  final Color? metaColor;
+  final Widget? trailing;
   final VoidCallback? onMore;
   final bool starred;
 
@@ -171,6 +195,7 @@ class _Row extends StatelessWidget {
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: context.text.bodySmall?.copyWith(
+                                color: metaColor,
                                 fontFeatures: tabularFigures,
                               ),
                             ),
@@ -180,6 +205,7 @@ class _Row extends StatelessWidget {
                     ],
                   ),
                 ),
+                ?trailing,
                 if (onMore != null)
                   IconButton(
                     onPressed: onMore,
@@ -248,8 +274,9 @@ class _Tint extends StatelessWidget {
   }
 }
 
-/// A file in grid view: the picture, then its name and size under it.
-class FileGridCard extends StatelessWidget {
+/// A file in grid view: the picture, then its name and size under it, with
+/// the same marks as the list row.
+class FileGridCard extends ConsumerWidget {
   const FileGridCard({
     super.key,
     required this.file,
@@ -272,8 +299,11 @@ class FileGridCard extends StatelessWidget {
   final bool highlighted;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.colors;
+    final offline = ref.watch(
+      offlineCopiesProvider.select((copies) => copies.value?.containsKey(file.id) ?? false),
+    );
     return _Tint(
       on: highlighted,
       radius: Radii.control,
@@ -319,12 +349,26 @@ class FileGridCard extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                         style: context.text.titleSmall?.copyWith(fontSize: 14),
                       ),
-                      Text(
-                        [
-                          Formatters.bytes(file.size),
-                          if (file.starred) 'starred',
-                        ].join(' · '),
-                        style: context.text.bodySmall?.copyWith(fontFeatures: tabularFigures),
+                      Row(
+                        children: [
+                          if (offline) ...[
+                            Icon(Icons.offline_pin_rounded, size: 14, color: colors.text2),
+                            const SizedBox(width: Space.xs),
+                          ],
+                          Flexible(
+                            child: Text(
+                              [
+                                Formatters.bytes(file.size),
+                                if (file.starred) 'starred',
+                              ].join(' · '),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: context.text.bodySmall?.copyWith(
+                                fontFeatures: tabularFigures,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
@@ -349,8 +393,9 @@ class FileGridCard extends StatelessWidget {
   }
 }
 
-/// A folder in grid view: an outlined row, lighter than a file.
-class FolderGridCard extends StatelessWidget {
+/// A folder in grid view: an outlined row, lighter than a file, with the
+/// same mark as the list row when it is kept offline.
+class FolderGridCard extends ConsumerWidget {
   const FolderGridCard({
     super.key,
     required this.folder,
@@ -369,8 +414,11 @@ class FolderGridCard extends StatelessWidget {
   final bool selecting;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.colors;
+    final offline = ref.watch(
+      offlinePinsProvider.select((pins) => pins.value?.contains(folder.id) ?? false),
+    );
     return Material(
       color: selected ? colors.accentSoft : colors.surface,
       shape: RoundedRectangleBorder(
@@ -393,6 +441,10 @@ class FolderGridCard extends StatelessWidget {
                 size: 22,
               ),
               const SizedBox(width: Space.m),
+              if (offline) ...[
+                Icon(Icons.offline_pin_rounded, size: 14, color: colors.text2),
+                const SizedBox(width: Space.xs),
+              ],
               Expanded(
                 child: Text(
                   folder.name,

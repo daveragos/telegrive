@@ -802,4 +802,33 @@ void main() {
     expect(await db.offlinePinList(), isEmpty);
     expect(await db.offlineCopyList(), isEmpty);
   });
+
+  test('the Offline screen reads every pin with when it was made, and every copy', () async {
+    final before = DateTime.now().subtract(const Duration(seconds: 1));
+    await db.pinOffline('trips', isFolder: true);
+    await db.pinOffline('report', isFolder: false);
+    await db.saveOfflineCopy('a', '/x/a.jpg', 10);
+    await db.saveOfflineCopy('b', '/x/b.jpg', 20);
+    await db.saveOfflineCopy('report', '/x/report.pdf', 30);
+
+    final pins = {for (final pin in await db.offlinePinList()) pin.itemId: pin};
+    expect(pins.keys, unorderedEquals(['trips', 'report']));
+    expect(pins['trips']!.isFolder, isTrue);
+    expect(pins['report']!.isFolder, isFalse);
+    // Rows are newest first by this, which the screen sorts on.
+    for (final pin in pins.values) {
+      expect(pin.pinnedAt.isAfter(before), isTrue);
+    }
+    expect(
+      {for (final copy in await db.offlineCopyList()) copy.fileId: copy.size},
+      {'a': 10, 'b': 20, 'report': 30},
+    );
+
+    // Pinning again keeps one row, and Remove all leaves nothing.
+    await db.pinOffline('trips', isFolder: true);
+    expect(await db.offlinePinList(), hasLength(2));
+    await db.clearOffline();
+    expect(await db.offlinePinList(), isEmpty);
+    expect(await db.offlineCopyList(), isEmpty);
+  });
 }

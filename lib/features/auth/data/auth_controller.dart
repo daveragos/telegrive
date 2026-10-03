@@ -7,6 +7,7 @@ import '../../../infrastructure/storage/preferences.dart';
 import '../../../infrastructure/telegram/telegram_client.dart';
 import '../../../infrastructure/telegram/telegram_exception.dart';
 import '../../drive/data/drive_session.dart';
+import '../../offline/data/offline_sync.dart';
 import '../../photos/data/photos_visibility.dart';
 import '../../share/data/recent_destinations.dart';
 import '../../transfers/data/transfer_queue.dart';
@@ -110,8 +111,9 @@ class AuthController extends Notifier<AuthUiState> {
   ///
   /// App settings (theme, app lock, photo backup choices, the folders Photos
   /// keeps out) and the drive channel remembered per account stay. The 'Also
-  /// delete from this phone' answer and Photos' Show for kept-out folders
-  /// don't: whoever signs in next starts with both off. The chats files were
+  /// delete from this phone' answer, Photos' Show for kept-out folders and
+  /// Only over Wi-Fi for files kept offline don't: whoever signs in next
+  /// starts with all three off. The chats files were
   /// last sent to go too, since they belong to the account that sent them,
   /// and so do the recent upload folders, and with them their targets in the
   /// system share sheet, so no folder name of this drive is left in other
@@ -125,8 +127,10 @@ class AuthController extends Notifier<AuthUiState> {
       await prefs.clearSyncState(chatId);
     }
     await prefs.setDeletePhoneCopyToo(false);
+    await prefs.setOfflineWifiOnly(false);
     await prefs.forgetRecentSendChats();
     ref.invalidate(revealHiddenProvider);
+    ref.invalidate(offlineSyncProvider);
     await ref.read(recentDestinationsProvider.notifier).clear();
     await ref.read(appDatabaseProvider).clearAll();
     await _deleteOfflineCopies();

@@ -73,6 +73,9 @@ void main() {
             // Nothing opened, and nothing added by hand.
             recentActivityProvider(12).overrideWith((ref) => Stream.value(const [])),
             starredFilesProvider.overrideWith((ref) => Stream.value(const [])),
+            // Nothing kept offline either.
+            offlinePinsProvider.overrideWith((ref) => Stream.value(const {})),
+            offlineUsageProvider.overrideWith((ref) => Stream.value((0, 0))),
           ],
           child: MaterialApp(theme: AppTheme.light(), home: const HomeScreen()),
         ),

@@ -116,6 +116,12 @@ class Preferences {
   Future<void> setBigTransfersWifiOnly(bool on) =>
       _prefs.setBool('big_transfers_wifi_only', on);
 
+  /// Files kept offline download only over Wi-Fi, whatever their size. Off
+  /// until switched on, on the Offline screen or in the sheet that keeps a
+  /// folder.
+  bool get offlineWifiOnly => _prefs.getBool('offline_wifi_only') ?? false;
+  Future<void> setOfflineWifiOnly(bool on) => _prefs.setBool('offline_wifi_only', on);
+
   bool get hasSeenWelcome => _prefs.getBool('seen_welcome') ?? false;
   Future<void> setSeenWelcome() => _prefs.setBool('seen_welcome', true);
 
