@@ -150,7 +150,7 @@ void main() {
     // ignore: invalid_use_of_visible_for_testing_member
     SharedPreferences.setMockInitialValues({
       BackupPrefKeys.enabled: true,
-      'backup_wifi_only': wifiOnly,
+      BackupPrefKeys.mobileData: (wifiOnly ? BackupMobileData.off : BackupMobileData.all).name,
       'full_sync_$testChatId': DateTime.now().millisecondsSinceEpoch,
     });
     final shared = await SharedPreferences.getInstance();

@@ -84,12 +84,14 @@ DriveHealth _top({
   TransfersState transfers = TransfersState.empty,
   DateTime? lastFullSync,
   double backupSpeed = 0,
+  int renewDay = 1,
 }) => describeDriveHealth(
   backup: backup,
   sync: sync ?? _synced,
   transfers: transfers,
   lastFullSync: lastFullSync,
   backupSpeed: backupSpeed,
+  renewDay: renewDay,
   now: _now,
 );
 
@@ -175,6 +177,53 @@ void main() {
       expect(health.detail, 'Backup uses Wi-Fi only.');
       expect(health.tone, HealthTone.neutral);
       expect(health.action, HealthAction.useData);
+    });
+
+    test('videos held for Wi-Fi say the photos are done, and offer mobile data', () {
+      final health = _top(
+        backup: const BackupState(
+          phase: BackupPhase.waitingForWifi,
+          total: 300,
+          done: 262,
+          heldVideos: 38,
+        ),
+      );
+      expect(health.text, 'Videos wait for Wi-Fi');
+      expect(health.detail, '38 videos left. Photos are backed up.');
+      expect(health.action, HealthAction.useData);
+    });
+
+    test('the monthly data limit says when backup carries on, and offers to go past it', () {
+      final health = _top(
+        backup: const BackupState(
+          phase: BackupPhase.waitingForBudget,
+          total: 4530,
+          done: 4320,
+          heldForBudget: 3,
+        ),
+        renewDay: 3,
+      );
+      expect(health.text, 'Monthly data limit reached');
+      expect(health.detail, '210 items left. Backup carries on over Wi-Fi, or on the 3rd.');
+      expect(health.icon, Icons.data_usage_rounded);
+      expect(health.tone, HealthTone.neutral);
+      expect(health.action, HealthAction.useDataAnyway);
+      expect(health.target, HealthTarget.backup);
+    });
+
+    test('the monthly data limit beats a long Telegram wait and transfers waiting for Wi-Fi', () {
+      const backup = BackupState(phase: BackupPhase.waitingForBudget, total: 10, done: 4);
+      final transfers = TransfersState([_held('a.zip'), _onWifi('b.zip')]);
+      final health = _top(backup: backup, transfers: transfers);
+      expect(health.text, 'Monthly data limit reached');
+      expect(
+        secondaryHealth(health, backup: backup, transfers: transfers, now: _now)?.action,
+        HealthAction.useDataForTransfers,
+      );
+      expect(
+        _top(backup: const BackupState(phase: BackupPhase.stopped), transfers: transfers).text,
+        'Backup stopped',
+      );
     });
 
     test('stopped beats per-item failures, in red with Retry', () {

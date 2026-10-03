@@ -26,6 +26,9 @@ enum HealthAction {
   /// Lets transfers waiting for Wi-Fi go over mobile data; [useData] is the
   /// backup setting.
   useDataForTransfers,
+
+  /// Lets backup go past the monthly mobile data limit for now.
+  useDataAnyway,
 }
 
 /// Where tapping a line goes: a screen, or another try at syncing.
@@ -84,21 +87,25 @@ class DriveHealth {
 /// they are a second-row concern, with their Retry (see [secondaryHealth]).
 ///
 /// Telegram asking for a long pause ranks below a backup that is stopped,
-/// can't see the photos or waits for Wi-Fi, since each of those has a
-/// button that unblocks it, and above work in progress, which the pause is
-/// holding up. The phone having no network at all ranks the same way and
-/// above that pause, since nothing can move until it is back.
+/// can't see the photos, waits for Wi-Fi or is held by the monthly data
+/// limit, since each of those has a button that unblocks it, and above work
+/// in progress, which the pause is holding up. The phone having no network
+/// at all ranks the same way and above that pause, since nothing can move
+/// until it is back.
 ///
 /// Transfers waiting for Wi-Fi take the line only when nothing else is
 /// going on: no pause from Telegram, nothing moving, and backup neither
-/// stopped nor kept from the photos. Otherwise they keep the second row,
-/// with their Use data.
+/// stopped, kept from the photos nor held by the monthly data limit.
+/// Otherwise they keep the second row, with their Use data. The limit
+/// ranks above them and above backup waiting for Wi-Fi, since it says when
+/// backup carries on without Wi-Fi ([renewDay], the day the limit renews).
 DriveHealth describeDriveHealth({
   required BackupState backup,
   required SyncState sync,
   required TransfersState transfers,
   DateTime? lastFullSync,
   double backupSpeed = 0,
+  int renewDay = 1,
   DateTime? now,
 }) {
   final at = now ?? DateTime.now();
@@ -114,7 +121,10 @@ DriveHealth describeDriveHealth({
       if (item.wait case WaitingForTelegram(:final until)) until,
   ];
   final backupBlocked = switch (backup.phase) {
-    BackupPhase.stopped || BackupPhase.needsPermission || BackupPhase.waitingForWifi => true,
+    BackupPhase.stopped ||
+    BackupPhase.needsPermission ||
+    BackupPhase.waitingForWifi ||
+    BackupPhase.waitingForBudget => true,
     _ => false,
   };
   if (!backupBlocked && _allWaitForNetwork(transfers.activeAt(at))) {
@@ -179,6 +189,7 @@ DriveHealth describeDriveHealth({
   }
   if (backup.phase == BackupPhase.stopped) return _stopped(backup);
   if (backup.phase == BackupPhase.needsPermission) return _needsPermission;
+  if (backup.phase == BackupPhase.waitingForBudget) return _waitingForBudget(backup, renewDay);
   final heldForWifi = transfersWaitingForWifi(transfers);
   if (heldForWifi.isNotEmpty) return _transfersWaitingForWifi(heldForWifi);
   if (backup.phase == BackupPhase.waitingForWifi) return _waitingForWifi(backup);
@@ -227,6 +238,7 @@ DriveHealth? secondaryHealth(
   DriveHealth top, {
   required BackupState backup,
   required TransfersState transfers,
+  int renewDay = 1,
   DateTime? now,
 }) {
   final at = now ?? DateTime.now();
@@ -238,6 +250,7 @@ DriveHealth? secondaryHealth(
   final candidates = [
     if (backup.phase == BackupPhase.stopped) _stopped(backup),
     if (backup.phase == BackupPhase.needsPermission) _needsPermission,
+    if (backup.phase == BackupPhase.waitingForBudget) _waitingForBudget(backup, renewDay),
     if (backup.phase == BackupPhase.waitingForWifi) _waitingForWifi(backup),
     if (backup.enabled && backup.failed > 0) _failedItems(backup),
     if (failedTransfers > 0) _failedTransfers(transfers),
@@ -294,15 +307,34 @@ const _needsPermission = DriveHealth(
 );
 
 /// Before the first scan after launch nothing has been counted, so the line
-/// leaves the number out instead of saying zero.
+/// leaves the number out instead of saying zero. With mobile data for
+/// photos only, the photos are done and the videos are what waits.
 DriveHealth _waitingForWifi(BackupState backup) => DriveHealth(
   icon: Icons.wifi_off_rounded,
   tone: HealthTone.neutral,
-  text: backup.remaining > 0
+  text: backup.heldVideos > 0
+      ? 'Videos wait for Wi-Fi'
+      : backup.remaining > 0
       ? 'Waiting for Wi-Fi · ${Formatters.count(backup.remaining, 'item')} left'
       : 'Waiting for Wi-Fi',
-  detail: 'Backup uses Wi-Fi only.',
+  detail: backup.heldVideos > 0
+      ? '${Formatters.count(backup.heldVideos, 'video')} left. Photos are backed up.'
+      : 'Backup uses Wi-Fi only.',
   action: HealthAction.useData,
+  target: HealthTarget.backup,
+  topic: HealthTopic.backup,
+);
+
+/// What is left would pass the monthly mobile data limit; it goes on Wi-Fi,
+/// or once the limit renews on [renewDay].
+DriveHealth _waitingForBudget(BackupState backup, int renewDay) => DriveHealth(
+  icon: Icons.data_usage_rounded,
+  tone: HealthTone.neutral,
+  text: 'Monthly data limit reached',
+  detail:
+      '${Formatters.count(backup.remaining, 'item')} left. Backup carries on over '
+      'Wi-Fi, or on the ${Formatters.dayOfMonth(renewDay)}.',
+  action: HealthAction.useDataAnyway,
   target: HealthTarget.backup,
   topic: HealthTopic.backup,
 );

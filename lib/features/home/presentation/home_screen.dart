@@ -20,6 +20,7 @@ import '../../drive/data/drive_sync.dart';
 import '../../drive/domain/drive_models.dart';
 import '../../files/presentation/file_actions.dart';
 import '../../files/presentation/file_tiles.dart';
+import '../../network/data/mobile_data.dart';
 import '../../offline/data/offline_sync.dart';
 import '../../transfers/data/transfer_queue.dart';
 import 'drive_health.dart';
@@ -219,6 +220,7 @@ class _Activity extends ConsumerWidget {
     final sync = ref.watch(driveSyncProvider);
     final transfers = ref.watch(transferQueueProvider);
     final chatId = ref.watch(driveSessionProvider)?.chatId;
+    final renewDay = ref.watch(mobileDataProvider.select((d) => d.renewDay));
 
     final top = describeDriveHealth(
       backup: backup,
@@ -226,8 +228,14 @@ class _Activity extends ConsumerWidget {
       transfers: transfers,
       lastFullSync: chatId == null ? null : ref.read(preferencesProvider).lastFullSync(chatId),
       backupSpeed: transfers.backupActive.fold<double>(0, (sum, t) => sum + t.bytesPerSecond),
+      renewDay: renewDay,
     );
-    final second = secondaryHealth(top, backup: backup, transfers: transfers);
+    final second = secondaryHealth(
+      top,
+      backup: backup,
+      transfers: transfers,
+      renewDay: renewDay,
+    );
 
     return Padding(
       padding: const EdgeInsets.only(top: Space.l),
@@ -268,8 +276,12 @@ class _Activity extends ConsumerWidget {
           child: const Text('Allow'),
         ),
         HealthAction.useData => TextButton(
-          onPressed: () => controller.setWifiOnly(false),
+          onPressed: () => controller.setMobileData(BackupMobileData.all),
           child: const Text('Use data'),
+        ),
+        HealthAction.useDataAnyway => TextButton(
+          onPressed: controller.useDataAnyway,
+          child: const Text('Use data anyway'),
         ),
         HealthAction.retryBackup => TextButton(
           onPressed: () => controller.schedule(immediate: true),

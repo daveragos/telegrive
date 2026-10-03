@@ -18,11 +18,13 @@ import '../../drive/data/drive_sync.dart';
 import '../../files/data/browse_preferences.dart';
 import '../../files/presentation/file_actions.dart';
 import '../../lock/data/app_lock.dart';
+import '../../network/data/mobile_data.dart';
 import '../../offline/data/offline_sync.dart';
 import '../../search/data/content_indexer.dart';
 import '../../transfers/data/transfer_queue.dart';
 import '../../trash/data/pending_deletes.dart';
 import '../data/settings_providers.dart';
+import 'data_limit_sheet.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -46,6 +48,7 @@ class SettingsScreen extends ConsumerWidget {
     final indexer = ref.watch(contentIndexerProvider);
     final indexed = ref.watch(indexedCountProvider).value ?? 0;
     final prefs = ref.watch(preferencesProvider);
+    final mobileData = ref.watch(mobileDataProvider);
 
     Text trailingValue(String value) => Text(
       value,
@@ -110,6 +113,7 @@ class SettingsScreen extends ConsumerWidget {
                       BackupPhase.uploading =>
                         '${Formatters.number(backup.remaining)} left',
                       BackupPhase.waitingForWifi => 'Waiting for Wi-Fi',
+                      BackupPhase.waitingForBudget => 'Limit reached',
                       BackupPhase.needsPermission => 'Needs access',
                       BackupPhase.stopped => 'Stopped',
                       _ => 'On',
@@ -182,6 +186,40 @@ class SettingsScreen extends ConsumerWidget {
                 onTap: sync.running
                     ? null
                     : () => ref.read(driveSyncProvider.notifier).rebuildIndex(),
+              ),
+            ],
+          ),
+          const SectionHeader('Mobile data'),
+          ListGroup(
+            children: [
+              _MonthlyLimit(data: mobileData),
+              if (!mobileData.failed)
+                ListTile(
+                  title: Text(
+                    mobileData.renewDay == 1
+                        ? 'This month'
+                        : 'Since the ${Formatters.dayOfMonth(mobileData.renewDay)}',
+                  ),
+                  subtitle: Text(
+                    mobileData.measured
+                        ? '${Formatters.bytes(mobileData.mobileBytes)} on mobile data · '
+                              '${Formatters.bytes(mobileData.wifiBytes)} on Wi-Fi'
+                        : 'Measuring',
+                    style: context.text.bodySmall?.copyWith(fontFeatures: tabularFigures),
+                  ),
+                ),
+              SwitchListTile(
+                title: const Text('Big transfers wait for Wi-Fi'),
+                // A non-breaking hyphen, so a wrapped line never ends in 'Wi-'.
+                subtitle: const Text(
+                  'Uploads and downloads of 200 MB or more pause on mobile data and '
+                  'carry on over Wi\u2011Fi. A phone\'s hotspot counts as mobile data.',
+                ),
+                value: prefs.bigTransfersWifiOnly,
+                onChanged: (on) async {
+                  await prefs.setBigTransfersWifiOnly(on);
+                  ref.invalidate(preferencesProvider);
+                },
               ),
             ],
           ),
@@ -268,24 +306,6 @@ class SettingsScreen extends ConsumerWidget {
                     ),
                   ),
                 ),
-            ],
-          ),
-          const SectionHeader('Mobile data'),
-          ListGroup(
-            children: [
-              SwitchListTile(
-                title: const Text('Big transfers wait for Wi-Fi'),
-                // A non-breaking hyphen, so a wrapped line never ends in 'Wi-'.
-                subtitle: const Text(
-                  'Uploads and downloads of 200 MB or more pause on mobile data and '
-                  'carry on over Wi\u2011Fi. A phone\'s hotspot counts as mobile data.',
-                ),
-                value: prefs.bigTransfersWifiOnly,
-                onChanged: (on) async {
-                  await prefs.setBigTransfersWifiOnly(on);
-                  ref.invalidate(preferencesProvider);
-                },
-              ),
             ],
           ),
           const SectionHeader('This phone'),
@@ -453,6 +473,64 @@ class SettingsScreen extends ConsumerWidget {
           ),
         );
       },
+    );
+  }
+}
+
+/// The monthly mobile data limit and how much of it this period has used,
+/// with a bar that turns red once it is used up. It opens the sheet that
+/// sets the limit.
+class _MonthlyLimit extends ConsumerWidget {
+  const _MonthlyLimit({required this.data});
+
+  final MobileDataState data;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colors = context.colors;
+    final limit = data.limit;
+    final figures = context.text.bodySmall?.copyWith(fontFeatures: tabularFigures);
+    return ListTile(
+      title: const Text('Monthly limit'),
+      subtitle: limit == null
+          ? const Text('None. Set one to keep backup inside your data plan.')
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${Formatters.bytes(data.mobileBytes)} of '
+                  '${Formatters.bytes(limit, decimals: 0)} used · '
+                  'renews on the ${Formatters.dayOfMonth(data.renewDay)}',
+                  style: figures,
+                ),
+                const SizedBox(height: Space.s),
+                Padding(
+                  padding: const EdgeInsets.only(right: Space.s),
+                  child: TweenAnimationBuilder<double>(
+                    tween: Tween(end: (data.mobileBytes / limit).clamp(0.0, 1.0)),
+                    duration: const Duration(milliseconds: 200),
+                    curve: Curves.easeOut,
+                    builder: (context, value, _) => ClipRRect(
+                      borderRadius: BorderRadius.circular(2),
+                      child: LinearProgressIndicator(
+                        value: value,
+                        minHeight: 4,
+                        color: data.mobileBytes >= limit ? colors.danger : colors.accent,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (limit == null)
+            Text('Off', style: context.text.bodyMedium?.copyWith(fontFeatures: tabularFigures)),
+          Icon(Icons.chevron_right_rounded, color: colors.text3),
+        ],
+      ),
+      onTap: () => showDataLimitSheet(context, ref),
     );
   }
 }

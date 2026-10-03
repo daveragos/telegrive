@@ -22,7 +22,8 @@ phone number.
   Bigger files are split into 512 MiB parts and joined back on download.
 - **Photo backup.** Turn it on once and the whole camera roll goes up in
   full quality — then every new photo and video follows on its own. Choose
-  device folders, videos on or off, Wi-Fi only or mobile data. A Photos tab
+  device folders, videos on or off, and whether mobile data carries nothing,
+  photos only, or photos and videos. A Photos tab
   shows your photos and videos as a timeline grouped by month, with a
   swipeable full-screen viewer. Screenshots and chat folders back up too,
   but the timeline leaves them out until you tap Show. Long-press and drag
@@ -94,6 +95,14 @@ phone number.
   and they resume from what they already have. A phone's hotspot counts as
   mobile data, for transfers, photo backup and reading documents for
   search.
+- **A monthly data limit.** Set one in Settings › Mobile data, with the day
+  your plan renews, and photo backup stays inside it. Usage is what
+  Telegram itself sent and received this period, and Settings shows it next
+  to what went over Wi-Fi. Each photo or video is checked before it starts,
+  so a video too big for what is left waits while the smaller photos behind
+  it still go. Backup then says the limit is reached and carries on over
+  Wi-Fi or once the plan renews; Use data anyway lets it go past the limit
+  until the phone is next on Wi-Fi.
 - **Patient with Telegram.** When Telegram asks for a pause, transfers count
   down and carry on by themselves; when it asks an upload, the other
   uploads hold off too, a split one before its next part, rather than send
@@ -188,6 +197,11 @@ phone number.
 - **Exactly once.** Each photo's device id is remembered, and anything
   already in the drive with the same name and size (after a reinstall, or
   from an old phone) is recognised and skipped.
+- **Mobile data.** Don't use (the default), Photos only, or Photos and
+  videos. With Photos only, videos wait for Wi-Fi, and one that is going up
+  when the phone leaves Wi-Fi steps back and carries on from where it was
+  once Wi-Fi returns. With a monthly limit set, each one is checked against
+  what is left of it before it starts.
 - **Nothing silently skipped.** A photo that fails is tried again a few
   seconds later. After three tries it is listed under Backup › Not backed
   up with the reason, and can be retried or skipped one by one. The same
@@ -296,6 +310,12 @@ two commands are at the top of that test.
 - When Telegram asks for a pause longer than five minutes, Telegrive lets the
   phone sleep rather than keep it awake, so a transfer may wait until you next
   open the app.
+- Files you open, stream or download yourself count toward the monthly
+  data limit but are never held back by it, so heavy use on mobile data
+  can leave backup waiting for Wi-Fi or the next period.
+- While the app is closed, the job that notices new photos doesn't know
+  about the monthly limit, so it may still say there are photos to back up
+  when the limit holds them.
 - Transfers that step back to wait for Wi-Fi keep Telegrive running in the
   background for ten minutes. If Wi-Fi takes longer, they start when it
   returns while the app is still running, or the next time you open it.

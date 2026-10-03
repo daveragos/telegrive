@@ -10,15 +10,18 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:photo_manager/photo_manager.dart';
 
+import '../../../core/files/file_kind.dart';
 import '../../../infrastructure/database/app_database.dart';
 import '../../../infrastructure/network/network_status.dart';
 import '../../../infrastructure/storage/preferences.dart';
 import '../../drive/data/drive_repository.dart';
 import '../../drive/data/drive_session.dart';
 import '../../drive/data/drive_sync.dart';
+import '../../network/data/mobile_data.dart';
 import '../../transfers/data/transfer_queue.dart';
 import '../../transfers/domain/transfer_error.dart';
 import 'backup_notifications.dart';
+import 'backup_rules.dart';
 import 'backup_worker.dart';
 
 enum BackupPhase {
@@ -31,9 +34,15 @@ enum BackupPhase {
   /// On, waiting for the drive to open (right after launch).
   waitingForDrive,
 
-  /// On, but only allowed over Wi-Fi and the phone is on mobile data. A
-  /// phone's hotspot counts as mobile data.
+  /// On, but the phone is on mobile data and what is left may not use it:
+  /// backup isn't allowed mobile data at all, or only for photos and the
+  /// videos wait ([BackupState.heldVideos]). A phone's hotspot counts as
+  /// mobile data.
   waitingForWifi,
+
+  /// On, but what is left would pass the monthly mobile data limit, so it
+  /// waits for Wi-Fi or the next period.
+  waitingForBudget,
 
   /// Looking through the photo library.
   scanning,
@@ -78,6 +87,8 @@ class BackupState {
     this.waiting = const [],
     this.failedIds = const {},
     this.skippedIds = const {},
+    this.heldVideos = 0,
+    this.heldForBudget = 0,
   });
 
   final BackupPhase phase;
@@ -115,6 +126,14 @@ class BackupState {
   /// The newest photos still to go up, at most twenty, newest first.
   final List<PendingAsset> waiting;
 
+  /// Videos the last pass left for Wi-Fi, since mobile data is for photos
+  /// only.
+  final int heldVideos;
+
+  /// Items the last pass left because they would pass the monthly mobile
+  /// data limit.
+  final int heldForBudget;
+
   bool get enabled => phase != BackupPhase.off;
   bool get isWorking =>
       phase == BackupPhase.scanning || phase == BackupPhase.uploading;
@@ -134,6 +153,8 @@ class BackupState {
     List<PendingAsset>? waiting,
     Set<String>? failedIds,
     Set<String>? skippedIds,
+    int? heldVideos,
+    int? heldForBudget,
   }) => BackupState(
     phase: phase ?? this.phase,
     total: total ?? this.total,
@@ -145,6 +166,8 @@ class BackupState {
     waiting: waiting ?? this.waiting,
     failedIds: failedIds ?? this.failedIds,
     skippedIds: skippedIds ?? this.skippedIds,
+    heldVideos: heldVideos ?? this.heldVideos,
+    heldForBudget: heldForBudget ?? this.heldForBudget,
   );
 
   /// This state with [ids] as the photos out of tries, and [failed]
@@ -228,6 +251,12 @@ class BackupController extends Notifier<BackupState> {
   /// A photo failed in the running pass with tries left.
   bool _retryLater = false;
 
+  /// Uploads that stepped back into the queue to wait for Wi-Fi, by media
+  /// id. They keep what they have sent, and the queue starts them again on
+  /// Wi-Fi by itself; the pass that reaches the photo next follows its
+  /// upload rather than sending the photo a second time.
+  final Map<String, String> _heldUploads = {};
+
   Preferences get _prefs => ref.read(preferencesProvider);
   AppDatabase get _db => ref.read(appDatabaseProvider);
   DriveRepository get _repository => ref.read(driveRepositoryProvider);
@@ -241,6 +270,7 @@ class BackupController extends Notifier<BackupState> {
       if (next == null) {
         _stopRequested = true;
         _folderIds.clear();
+        _heldUploads.clear();
       } else if (previous?.chatId != next.chatId) {
         _folderIds.clear();
         schedule(immediate: true);
@@ -258,15 +288,29 @@ class BackupController extends Notifier<BackupState> {
     });
 
     ref.listen<NetworkState>(networkStatusProvider, (_, next) {
-      if (state.phase == BackupPhase.waitingForWifi && next.online && !next.metered) {
+      final waiting = state.phase == BackupPhase.waitingForWifi ||
+          state.phase == BackupPhase.waitingForBudget;
+      if (waiting && next.online && !next.metered) {
         schedule(immediate: true);
-      } else if (state.isWorking && !_networkAllowed()) {
+      } else if (state.isWorking && _waitsForWifi()) {
         // Uploads under way step back in the queue on their own; the pass
         // stops starting new ones and says why.
         _stopRequested = true;
-        state = state.copyWith(phase: BackupPhase.waitingForWifi, clearCurrent: true);
+        _pauseForWifi();
+      } else if (next.metered && _prefs.backupEnabled) {
+        // Uploads under way that may not use mobile data step back too:
+        // videos on their own when it is for photos only, and those past
+        // the monthly limit once marked.
+        unawaited(_markQueued());
       }
     });
+    // A new period makes room under the limit again.
+    ref.listen<MobileDataState>(mobileDataProvider, (previous, next) {
+      if (previous?.periodStart != next.periodStart &&
+          state.phase == BackupPhase.waitingForBudget) {
+        schedule(immediate: true);
+      }
+    }, weak: true);
     BackupWorker.onNewMediaInApp = () => schedule();
     if (enabled) {
       _watchLibrary();
@@ -329,6 +373,7 @@ class BackupController extends Notifier<BackupState> {
     for (final item in uploads) {
       unawaited(_queue.cancel(item.id));
     }
+    _heldUploads.clear();
     state = BackupState(phase: BackupPhase.off, lastCompleted: state.lastCompleted);
   }
 
@@ -337,19 +382,21 @@ class BackupController extends Notifier<BackupState> {
     _restart();
   }
 
-  Future<void> setWifiOnly(bool value) async {
-    await _prefs.setBackupWifiOnly(value);
-    // Uploads already waiting for Wi-Fi go now, rather than hold up the
-    // pass that is waiting for them.
-    if (!value) {
-      final waiting = ref
-          .read(transferQueueProvider)
-          .items
-          .where((t) => t.origin == TransferOrigin.backup && t.row.wifiOnly)
-          .map((t) => t.id);
-      await _queue.useMobileData(waiting.toList());
-    }
+  /// What backup may send over mobile data. Uploads already in the queue
+  /// follow the new choice at once: those it keeps for Wi-Fi step back if
+  /// they are under way on mobile data, and those it allows go, as far as
+  /// the monthly limit lets them.
+  Future<void> setMobileData(BackupMobileData mode) async {
+    await _prefs.setBackupMobileData(mode);
+    await _markQueued();
     _restart();
+  }
+
+  /// Lets backup go past the monthly mobile data limit until the phone is
+  /// on an unmetered network again, or the app restarts, and carries on.
+  void useDataAnyway() {
+    ref.read(mobileDataProvider.notifier).useDataAnyway();
+    schedule(immediate: true);
   }
 
   /// Where [folder] stands, compared by name without regard to case.
@@ -571,9 +618,10 @@ class BackupController extends Notifier<BackupState> {
     // counts what is left. While it waits, the pass doesn't read as
     // working, which would start the transfer service for nothing. The
     // check after the scan is the one that decides.
-    final allowed = _networkAllowed();
     state = state.copyWith(
-      phase: allowed ? BackupPhase.scanning : BackupPhase.waitingForWifi,
+      phase: _waitsForWifi() ? BackupPhase.waitingForWifi : BackupPhase.scanning,
+      heldVideos: 0,
+      heldForBudget: 0,
       clearCurrent: true,
       clearError: true,
     );
@@ -632,7 +680,7 @@ class BackupController extends Notifier<BackupState> {
     }
 
     final asked = _priority.toSet();
-    final pending = orderPending(waiting, asked, (a) => a.id);
+    var pending = orderPending(waiting, asked, (a) => a.id);
     // A request for a photo the scan didn't find has nothing left to send:
     // the photo was deleted, or its folder switched off. Nor has one for a
     // photo that is in the drive, such as one asked for while it was going
@@ -640,6 +688,20 @@ class BackupController extends Notifier<BackupState> {
     _priority.removeWhere(
       (id) => !inScope.containsKey(id) || known[id]?.state == BackupAssetState.done,
     );
+    // Read after the scan, so a phone that moved onto mobile data while the
+    // library was read is caught. With mobile data for photos only, videos
+    // wait for Wi-Fi without their files being opened. One asked for with
+    // Back up now stays, and is held when its turn comes.
+    var heldVideos = 0;
+    if (ref.read(networkStatusProvider).metered &&
+        _prefs.backupMobileData == BackupMobileData.photos) {
+      final kept = [
+        for (final asset in pending)
+          if (asset.type != AssetType.video || asked.contains(asset.id)) asset,
+      ];
+      heldVideos = pending.length - kept.length;
+      pending = kept;
+    }
     final hasWork = pending.isNotEmpty || _priority.isNotEmpty;
     _passIds = hasWork ? inScope.keys.toSet() : const {};
 
@@ -647,22 +709,34 @@ class BackupController extends Notifier<BackupState> {
     // says how much is left.
     state = state
         ._withFailed(failedIds, total: inScope.length)
-        .copyWith(done: done, waiting: shown(), skippedIds: skippedIds);
+        .copyWith(
+          done: done,
+          waiting: shown(),
+          skippedIds: skippedIds,
+          heldVideos: heldVideos,
+        );
     if (!hasWork) {
-      await _finishPass(startedAt);
+      if (heldVideos > 0) {
+        state = state.copyWith(phase: BackupPhase.waitingForWifi, clearCurrent: true);
+      } else {
+        await _finishPass(startedAt);
+      }
       return;
     }
     // Requests stay queued while the pass waits, so the photos still go
-    // first once Wi-Fi is back. This check also catches a phone that moved
-    // onto mobile data while the library was read.
-    if (!_networkAllowed()) {
-      state = state.copyWith(phase: BackupPhase.waitingForWifi, clearCurrent: true);
+    // first once Wi-Fi is back.
+    if (_waitsForWifi()) {
+      _pauseForWifi();
       return;
     }
     // The ones the order above put first go up from the front of it.
     final placed = {for (final asset in waiting) asset.id}.intersection(asked);
     _priority.removeWhere(placed.contains);
     state = state.copyWith(phase: BackupPhase.uploading);
+    // Uploads earlier passes left in the queue go, or wait, by the rule as
+    // it stands now: the limit may have renewed, or 'Use data anyway' been
+    // tapped.
+    await _markQueued();
 
     final fingerprints = await _repository.mediaFingerprints();
     final queue = pending.iterator;
@@ -670,8 +744,8 @@ class BackupController extends Notifier<BackupState> {
 
     Future<void> worker() async {
       while (!_stopRequested && _prefs.backupEnabled) {
-        if (!_networkAllowed()) {
-          state = state.copyWith(phase: BackupPhase.waitingForWifi, clearCurrent: true);
+        if (_waitsForWifi()) {
+          _pauseForWifi();
           _stopRequested = true;
           return;
         }
@@ -688,12 +762,19 @@ class BackupController extends Notifier<BackupState> {
         // cleared it since, or an earlier request sent the photo up.
         final record = await _db.backupAssetOf(asset.id);
         if (!_due(record)) continue;
-        final outcome = await _backUp(asset, fingerprints, record);
-        if (outcome == null) continue;
-        settled.add(asset.id);
-        state = outcome
-            ? state.copyWith(done: state.done + 1, waiting: shown())
-            : state._withFailed({...state.failedIds, asset.id}).copyWith(waiting: shown());
+        // A held item stays on the list of what is waiting, and the worker
+        // moves on, so smaller photos behind a video too big for the limit
+        // still go.
+        switch (await _backUp(asset, fingerprints, record)) {
+          case _Outcome.skipped || _Outcome.held:
+            continue;
+          case _Outcome.done:
+            settled.add(asset.id);
+            state = state.copyWith(done: state.done + 1, waiting: shown());
+          case _Outcome.failed:
+            settled.add(asset.id);
+            state = state._withFailed({...state.failedIds, asset.id}).copyWith(waiting: shown());
+        }
       }
     }
 
@@ -703,7 +784,24 @@ class BackupController extends Notifier<BackupState> {
     _passIds = const {};
 
     if (_stopRequested || !_prefs.backupEnabled) return;
-    if (_retryLater) {
+    if (state.heldForBudget > 0 || state.heldVideos > 0) {
+      // Not up to date: what is held goes on Wi-Fi, or once the limit
+      // allows, and a photo that failed with tries left still gets its
+      // next try.
+      state = state.copyWith(
+        phase: state.heldForBudget > 0
+            ? BackupPhase.waitingForBudget
+            : BackupPhase.waitingForWifi,
+        clearCurrent: true,
+      );
+      final network = ref.read(networkStatusProvider);
+      if (network.online && !network.metered) {
+        // Wi-Fi came back while the pass ran, so what it held goes now.
+        _rerun = true;
+      } else if (_retryLater && !_rerun) {
+        schedule();
+      }
+    } else if (_retryLater) {
       // A photo that failed with tries left gets its next try in a few
       // seconds, and backup isn't up to date until then.
       state = state.copyWith(clearCurrent: true);
@@ -739,17 +837,47 @@ class BackupController extends Notifier<BackupState> {
     );
   }
 
-  /// Backs one asset up. True when it is in the drive, false when it has
-  /// now failed [maxFailures] times, null when it stays waiting (already in
-  /// flight, the pass was stopped, or a failure with tries left).
-  Future<bool?> _backUp(
+  /// Backs one asset up, and says how it went: [_Outcome.done] once it is
+  /// in the drive, [_Outcome.failed] once it is out of tries,
+  /// [_Outcome.held] when it may not go up on this network now, and
+  /// [_Outcome.skipped] when it stays waiting for another reason (already
+  /// in flight, the pass was stopped, or a failure with tries left).
+  Future<_Outcome> _backUp(
     AssetEntity asset,
     Map<String, String> fingerprints,
     BackupAssetRow? record,
   ) async {
-    if (!_activeAssets.add(asset.id)) return null;
+    if (!_activeAssets.add(asset.id)) return _Outcome.skipped;
+    final isVideo = asset.type == AssetType.video;
     String? thumbnail;
     try {
+      // An earlier pass left its upload waiting for Wi-Fi, with what it has
+      // sent so far: this one follows it, unless it still has to wait.
+      if (_heldUploads.remove(asset.id) case final id?) {
+        final held = ref
+            .read(transferQueueProvider)
+            .items
+            .where((t) => t.id == id)
+            .firstOrNull
+            ?.row;
+        if (held?.status == TransferStatus.completed) {
+          await _db.markAssetBackedUp(asset.id, held!.fileId);
+          return _Outcome.done;
+        }
+        if (held != null && held.status.isPending) {
+          if (held.wifiOnly && ref.read(networkStatusProvider).metered) {
+            _heldUploads[asset.id] = id;
+            return _hold(isVideo: isVideo);
+          }
+          state = state.copyWith(current: held.name);
+          return await _follow(asset, id, record, (fileId) {
+            fingerprints['${held.name}|${held.totalBytes}'] = fileId;
+          });
+        }
+      }
+      // Mobile data it may not use at all: there is no need to open the file.
+      if (_waitsForWifi(isVideo: isVideo)) return _hold(isVideo: isVideo);
+
       final file = await asset.originFile;
       if (file == null || !await file.exists()) {
         return await _fail(asset, record, 'This photo is no longer on this phone.');
@@ -761,65 +889,196 @@ class BackupController extends Notifier<BackupState> {
       final existing = fingerprints['$name|$size'];
       if (existing != null) {
         await _db.markAssetBackedUp(asset.id, existing);
-        return true;
+        return _Outcome.done;
+      }
+
+      // Android 11+ hands back the original; only delete our own copies.
+      final temp = (await getTemporaryDirectory()).path;
+      final ownsSource = file.path.startsWith(temp);
+      if (await _allowance(isVideo: isVideo, bytes: size) != BackupAllowance.go) {
+        if (ownsSource) await _deleteQuietly(file.path);
+        return _hold(isVideo: isVideo);
       }
 
       state = state.copyWith(current: name);
       final folderId = await _folderFor(asset);
       thumbnail = await _thumbnailFor(asset);
-      final temp = (await getTemporaryDirectory()).path;
 
       final ids = await _queue.enqueueUploads([
         UploadRequest(
           name: name,
           path: file.path,
           size: size,
-          // Android 11+ hands back the original; only delete our own copies.
-          ownsSource: file.path.startsWith(temp),
+          ownsSource: ownsSource,
           origin: TransferOrigin.backup,
           assetId: asset.id,
           takenAt: asset.createDateTime,
           thumbnailPath: thumbnail,
-          // An upload under way when a hotspot takes over steps back too.
-          wifiOnly: _prefs.backupWifiOnly,
+          // An upload under way when the phone moves onto mobile data it
+          // may not use (a hotspot included) steps back to wait for Wi-Fi.
+          wifiOnly: !mayUseMobileData(_prefs.backupMobileData, isVideo: isVideo),
         ),
       ], folderId: folderId);
       if (ids.isEmpty) return await _fail(asset, record, 'Couldn\'t start the upload.');
       thumbnail = null; // The queue owns it now.
 
-      final row = await _queue.whenFinished(ids.first);
-      switch (row.status) {
-        case TransferStatus.completed:
-          await _db.markAssetBackedUp(asset.id, row.fileId);
-          fingerprints['$name|$size'] = row.fileId;
-          return true;
-        case TransferStatus.cancelled:
-          return null;
-        default:
-          return await _fail(asset, record, row.error ?? 'Something went wrong.');
-      }
+      return await _follow(asset, ids.first, record, (fileId) {
+        fingerprints['$name|$size'] = fileId;
+      });
     } catch (e) {
       debugPrint('[Backup] ${asset.id}: $e');
       return _fail(asset, record, describeTransferError(e));
     } finally {
       _activeAssets.remove(asset.id);
-      if (thumbnail != null) {
-        try {
-          await File(thumbnail).delete();
-        } catch (_) {}
-      }
+      if (thumbnail != null) await _deleteQuietly(thumbnail);
     }
   }
 
-  /// Records a failed try with [reason]. False once the photo is out of
-  /// tries, null while it has tries left, in which case the pass asks for
-  /// another soon after it ends.
-  Future<bool?> _fail(AssetEntity asset, BackupAssetRow? record, String reason) async {
+  /// Waits for [asset]'s upload [id] to end, and calls [uploaded] with the
+  /// new file's id once it is in the drive. An upload that steps back into
+  /// the queue to wait for Wi-Fi is left there for a later pass to follow,
+  /// so the worker can move on to what may still go.
+  Future<_Outcome> _follow(
+    AssetEntity asset,
+    String id,
+    BackupAssetRow? record,
+    void Function(String fileId) uploaded,
+  ) async {
+    final row = await _untilEndedOrHeld(id);
+    if (row == null) {
+      _heldUploads[asset.id] = id;
+      return _hold(isVideo: asset.type == AssetType.video);
+    }
+    switch (row.status) {
+      case TransferStatus.completed:
+        await _db.markAssetBackedUp(asset.id, row.fileId);
+        uploaded(row.fileId);
+        return _Outcome.done;
+      case TransferStatus.cancelled:
+        return _Outcome.skipped;
+      default:
+        return _fail(asset, record, row.error ?? 'Something went wrong.');
+    }
+  }
+
+  /// Upload [id]'s final row, or null once it is back in the queue waiting
+  /// for Wi-Fi while the phone is on mobile data.
+  Future<TransferRow?> _untilEndedOrHeld(String id) async {
+    final ended = Completer<TransferRow?>();
+    final queue = ref.listen<TransfersState>(transferQueueProvider, (_, transfers) {
+      final row = transfers.items.where((t) => t.id == id).firstOrNull?.row;
+      if (row != null &&
+          row.status == TransferStatus.queued &&
+          row.wifiOnly &&
+          ref.read(networkStatusProvider).metered &&
+          !ended.isCompleted) {
+        ended.complete(null);
+      }
+    }, fireImmediately: true);
+    unawaited(
+      _queue.whenFinished(id).then((row) {
+        if (!ended.isCompleted) ended.complete(row);
+      }),
+    );
+    try {
+      return await ended.future;
+    } finally {
+      queue.close();
+    }
+  }
+
+  /// Records a failed try with [reason]. [_Outcome.failed] once the photo
+  /// is out of tries; while it has tries left it stays waiting, and the
+  /// pass asks for another soon after it ends.
+  Future<_Outcome> _fail(AssetEntity asset, BackupAssetRow? record, String reason) async {
     final failures = (record?.failures ?? 0) + 1;
     await _db.markAssetFailed(asset.id, failures, reason: reason);
-    if (failures >= maxFailures) return false;
+    if (failures >= maxFailures) return _Outcome.failed;
     _retryLater = true;
-    return null;
+    return _Outcome.skipped;
+  }
+
+  /// Counts an item that may not go up on this network now, for the line
+  /// the pass ends on: the monthly limit when its kind may use mobile data,
+  /// or Wi-Fi for a video when mobile data is for photos only. With mobile
+  /// data off altogether the pass says so itself.
+  _Outcome _hold({required bool isVideo}) {
+    final mode = _prefs.backupMobileData;
+    if (mayUseMobileData(mode, isVideo: isVideo)) {
+      state = state.copyWith(heldForBudget: state.heldForBudget + 1);
+    } else if (mode == BackupMobileData.photos) {
+      state = state.copyWith(heldVideos: state.heldVideos + 1);
+    }
+    return _Outcome.held;
+  }
+
+  /// The backup rule for an item of [bytes], against the monthly limit as
+  /// TDLib counts it now, with what the backup uploads already let onto
+  /// mobile data still have to send.
+  Future<BackupAllowance> _allowance({required bool isVideo, required int bytes}) async {
+    await ref.read(mobileDataProvider.notifier).refresh();
+    final committed = ref
+        .read(transferQueueProvider)
+        .items
+        .where((t) => t.origin == TransferOrigin.backup && t.status.isPending && !t.row.wifiOnly)
+        .fold<int>(0, (sum, t) => sum + t.row.totalBytes - t.row.doneBytes);
+    return backupAllowance(
+      data: ref.read(mobileDataProvider),
+      mode: _prefs.backupMobileData,
+      isVideo: isVideo,
+      bytes: committed + bytes,
+    );
+  }
+
+  /// Marks the backup uploads in the queue by the backup rule as it stands,
+  /// oldest first so what is under way keeps going. Those it holds become
+  /// Wi-Fi only, so the queue keeps them and steps back any under way on
+  /// mobile data; those it lets go are released.
+  Future<void> _markQueued() async {
+    if (!ref.read(transferQueueProvider).items.any((t) => t.origin == TransferOrigin.backup)) {
+      return;
+    }
+    await ref.read(mobileDataProvider.notifier).refresh();
+    final data = ref.read(mobileDataProvider);
+    final mode = _prefs.backupMobileData;
+    final hold = <String>[];
+    final release = <String>[];
+    var planned = 0;
+    for (final item in ref.read(transferQueueProvider).items.reversed) {
+      if (item.origin != TransferOrigin.backup || !item.status.isPending) continue;
+      final row = item.row;
+      final isVideo = item.fileKind == FileKind.video;
+      final left = row.totalBytes - row.doneBytes;
+      final allowed =
+          mayUseMobileData(mode, isVideo: isVideo) &&
+          backupAllowance(data: data, mode: mode, isVideo: isVideo, bytes: planned + left) ==
+              BackupAllowance.go;
+      if (allowed) planned += left;
+      if (allowed && row.wifiOnly) release.add(row.id);
+      if (!allowed && !row.wifiOnly) hold.add(row.id);
+    }
+    if (hold.isNotEmpty) await _queue.waitForWifi(hold);
+    if (release.isNotEmpty) await _queue.useMobileData(release);
+  }
+
+  /// The phone is on mobile data, and backup may not use it for anything,
+  /// or, given [isVideo], for this item.
+  bool _waitsForWifi({bool? isVideo}) {
+    final mode = _prefs.backupMobileData;
+    return ref.read(networkStatusProvider).metered &&
+        (isVideo == null
+            ? mode == BackupMobileData.off
+            : !mayUseMobileData(mode, isVideo: isVideo));
+  }
+
+  /// Backup as a whole waits for Wi-Fi, so no count of held videos applies.
+  void _pauseForWifi() =>
+      state = state.copyWith(phase: BackupPhase.waitingForWifi, heldVideos: 0, clearCurrent: true);
+
+  static Future<void> _deleteQuietly(String path) async {
+    try {
+      await File(path).delete();
+    } catch (_) {}
   }
 
   /// Everything in scope, newest first.
@@ -903,11 +1162,6 @@ class BackupController extends Notifier<BackupState> {
     }
   }
 
-  /// Mobile data is allowed, or the phone isn't on it. A phone's hotspot
-  /// counts as mobile data, since Android reports it as metered.
-  bool _networkAllowed() =>
-      !_prefs.backupWifiOnly || !ref.read(networkStatusProvider).metered;
-
   // ---------------------------------------------------------------------------
   // Watching the library while the app is alive
   // ---------------------------------------------------------------------------
@@ -930,6 +1184,9 @@ class BackupController extends Notifier<BackupState> {
     unawaited(PhotoManager.stopChangeNotify());
   }
 }
+
+/// How one item's turn in a pass ended.
+enum _Outcome { done, failed, skipped, held }
 
 final backupControllerProvider = NotifierProvider<BackupController, BackupState>(
   BackupController.new,

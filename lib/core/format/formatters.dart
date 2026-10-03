@@ -69,6 +69,20 @@ abstract final class Formatters {
   static String fullDate(DateTime value) =>
       DateFormat.yMMMd().add_jm().format(value);
 
+  /// `3` → `3rd`, `11` → `11th`, `22` → `22nd`: a day of the month the way
+  /// it is said, as in 'renews on the 3rd'.
+  static String dayOfMonth(int day) {
+    final suffix = day % 100 >= 11 && day % 100 <= 13
+        ? 'th'
+        : switch (day % 10) {
+            1 => 'st',
+            2 => 'nd',
+            3 => 'rd',
+            _ => 'th',
+          };
+    return '$day$suffix';
+  }
+
   /// `12345` → `12,345`.
   static String number(int value) => NumberFormat.decimalPattern().format(value);
 

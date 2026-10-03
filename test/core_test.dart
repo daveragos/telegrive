@@ -7,6 +7,7 @@ import 'package:telegrive/features/drive/domain/drive_models.dart';
 import 'package:telegrive/features/files/presentation/file_location.dart';
 import 'package:telegrive/features/transfers/data/transfer_keep_alive.dart';
 import 'package:telegrive/features/transfers/data/transfer_queue.dart';
+import 'package:telegrive/features/transfers/domain/transfer_wait.dart';
 import 'package:telegrive/infrastructure/database/app_database.dart';
 import 'package:telegrive/infrastructure/storage/preferences.dart';
 import 'package:telegrive/infrastructure/telegram/telegram_exception.dart';
@@ -104,6 +105,20 @@ void main() {
       expect(Formatters.inWords(const Duration(seconds: 37)), '37 seconds');
       expect(Formatters.inWords(const Duration(minutes: 5)), '5 minutes');
       expect(Formatters.inWords(const Duration(hours: 2)), '2 hours');
+    });
+
+    test('dayOfMonth', () {
+      expect(Formatters.dayOfMonth(1), '1st');
+      expect(Formatters.dayOfMonth(2), '2nd');
+      expect(Formatters.dayOfMonth(3), '3rd');
+      expect(Formatters.dayOfMonth(4), '4th');
+      expect(Formatters.dayOfMonth(11), '11th');
+      expect(Formatters.dayOfMonth(12), '12th');
+      expect(Formatters.dayOfMonth(13), '13th');
+      expect(Formatters.dayOfMonth(21), '21st');
+      expect(Formatters.dayOfMonth(22), '22nd');
+      expect(Formatters.dayOfMonth(23), '23rd');
+      expect(Formatters.dayOfMonth(28), '28th');
     });
   });
 
@@ -364,6 +379,52 @@ void main() {
       expect(title, 'Uploading 1 file · Saving 80 files from Telegram');
       expect(text, '50%');
     });
+  });
+
+  test('a backup pass with a video waiting for Wi-Fi still says it is backing up', () {
+    TransferItem backupUpload(String name, TransferStatus status, {TransferWait? wait}) =>
+        TransferItem(
+          TransferRow(
+            id: name,
+            kind: TransferKind.upload,
+            status: status,
+            name: name,
+            mimeType: mimeTypeFor(name),
+            fileId: name,
+            ownsSource: false,
+            wifiOnly: wait is WaitingForWifi,
+            totalBytes: 10,
+            doneBytes: 0,
+            partCount: 1,
+            completedParts: 0,
+            createdAt: DateTime(2026, 10, 1),
+            origin: TransferOrigin.backup,
+          ),
+          wait: wait,
+        );
+    const uploading = BackupState(phase: BackupPhase.uploading, total: 10, done: 4);
+
+    final (title, text) = TransferKeepAlive.describe(
+      TransfersState([
+        backupUpload('VID_1.mp4', TransferStatus.queued, wait: const WaitingForWifi()),
+        backupUpload('IMG_2.jpg', TransferStatus.running),
+      ]),
+      uploading,
+    );
+    expect(title, 'Backing up photos');
+    expect(text, '6 items left');
+
+    final (paused, _) = TransferKeepAlive.describe(
+      TransfersState([
+        backupUpload(
+          'IMG_3.jpg',
+          TransferStatus.queued,
+          wait: WaitingForTelegram(DateTime.now().add(const Duration(hours: 1))),
+        ),
+      ]),
+      uploading,
+    );
+    expect(paused, 'Telegrive');
   });
 
   group('Preferences', () {

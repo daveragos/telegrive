@@ -142,13 +142,13 @@ void main() {
 
   Future<ProviderContainer> open({
     required NetworkState network,
-    required bool wifiOnly,
+    required BackupMobileData mobileData,
     List<TransferItem> transfers = const [],
   }) async {
     // ignore: invalid_use_of_visible_for_testing_member
     SharedPreferences.setMockInitialValues({
       BackupPrefKeys.enabled: true,
-      'backup_wifi_only': wifiOnly,
+      BackupPrefKeys.mobileData: mobileData.name,
       'full_sync_$testChatId': DateTime.now().millisecondsSinceEpoch,
     });
     final shared = await SharedPreferences.getInstance();
@@ -171,9 +171,9 @@ void main() {
     return container;
   }
 
-  test('on a hotspot, Wi-Fi-only backup counts the library and waits for Wi-Fi', () async {
+  test('on a hotspot, backup kept off mobile data counts the library and waits for Wi-Fi', () async {
     library = [_photo('p1')];
-    final container = await open(network: _hotspot, wifiOnly: true);
+    final container = await open(network: _hotspot, mobileData: BackupMobileData.off);
 
     await container.read(backupControllerProvider.notifier).run();
 
@@ -181,8 +181,8 @@ void main() {
     expect(container.read(backupControllerProvider).phase, BackupPhase.waitingForWifi);
   });
 
-  test('on a hotspot with nothing new, Wi-Fi-only backup is up to date', () async {
-    final container = await open(network: _hotspot, wifiOnly: true);
+  test('on a hotspot with nothing new, backup kept off mobile data is up to date', () async {
+    final container = await open(network: _hotspot, mobileData: BackupMobileData.off);
 
     await container.read(backupControllerProvider.notifier).run();
 
@@ -191,7 +191,7 @@ void main() {
 
   test('moving onto mobile data while the library is read waits for Wi-Fi', () async {
     library = [_photo('p1')];
-    final container = await open(network: _wifi, wifiOnly: true);
+    final container = await open(network: _wifi, mobileData: BackupMobileData.off);
     final controller = container.read(backupControllerProvider.notifier) as _Backup;
     final network = container.read(networkStatusProvider.notifier) as _Network;
     onScan = () => network.set(_hotspot);
@@ -207,7 +207,7 @@ void main() {
   });
 
   test('with mobile data allowed, a hotspot does not hold backup up', () async {
-    final container = await open(network: _hotspot, wifiOnly: false);
+    final container = await open(network: _hotspot, mobileData: BackupMobileData.all);
 
     await container.read(backupControllerProvider.notifier).run();
 
@@ -217,7 +217,7 @@ void main() {
   test('allowing mobile data lets backup uploads waiting for Wi-Fi go', () async {
     final container = await open(
       network: _hotspot,
-      wifiOnly: true,
+      mobileData: BackupMobileData.off,
       transfers: [
         _upload('photo', origin: TransferOrigin.backup, wifiOnly: true),
         _upload('mine', origin: TransferOrigin.manual, wifiOnly: true),
@@ -225,7 +225,7 @@ void main() {
     );
     final controller = container.read(backupControllerProvider.notifier) as _Backup;
 
-    await controller.setWifiOnly(false);
+    await controller.setMobileData(BackupMobileData.all);
 
     final queue = container.read(transferQueueProvider.notifier) as _Queue;
     expect(queue.released, ['photo']);

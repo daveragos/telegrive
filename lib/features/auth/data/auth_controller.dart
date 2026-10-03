@@ -110,7 +110,10 @@ class AuthController extends Notifier<AuthUiState> {
   /// again.
   ///
   /// App settings (theme, app lock, photo backup choices, the folders Photos
-  /// keeps out) and the drive channel remembered per account stay. The 'Also
+  /// keeps out) and the drive channel remembered per account stay. So do the
+  /// monthly mobile data limit and what this period has used of it: they
+  /// belong to the phone's data plan, and TDLib starts its counters over
+  /// after a sign-out, so the use counted so far has to carry on. The 'Also
   /// delete from this phone' answer, Photos' Show for kept-out folders and
   /// Only over Wi-Fi for files kept offline don't: whoever signs in next
   /// starts with all three off. The chats files were

@@ -6,6 +6,8 @@ import 'package:photo_manager/photo_manager.dart';
 import '../../../app/theme/tokens.dart';
 import '../../../core/format/formatters.dart';
 import '../../../core/widgets/common.dart';
+import '../../../infrastructure/storage/preferences.dart';
+import '../../network/data/mobile_data.dart';
 import '../../transfers/data/transfer_queue.dart';
 import '../data/backup_controller.dart';
 
@@ -26,7 +28,8 @@ class BackupStatusLine extends ConsumerWidget {
         (s) => s.backupActive.fold<double>(0, (sum, t) => sum + t.bytesPerSecond),
       ),
     );
-    final status = describeBackup(backup, speed: speed);
+    final renewDay = ref.watch(mobileDataProvider.select((d) => d.renewDay));
+    final status = describeBackup(backup, speed: speed, renewDay: renewDay);
 
     return StatusLine(
       icon: status.icon,
@@ -57,8 +60,12 @@ class BackupStatusLine extends ConsumerWidget {
         child: const Text('Allow'),
       ),
       BackupPhase.waitingForWifi => TextButton(
-        onPressed: () => controller.setWifiOnly(false),
+        onPressed: () => controller.setMobileData(BackupMobileData.all),
         child: const Text('Use data'),
+      ),
+      BackupPhase.waitingForBudget => TextButton(
+        onPressed: controller.useDataAnyway,
+        child: const Text('Use data anyway'),
       ),
       BackupPhase.stopped => TextButton(
         onPressed: () => controller.schedule(immediate: true),
@@ -82,7 +89,8 @@ class BackupStatusPanel extends ConsumerWidget {
         (s) => s.backupActive.fold<double>(0, (sum, t) => sum + t.bytesPerSecond),
       ),
     );
-    final status = describeBackup(backup, speed: speed);
+    final renewDay = ref.watch(mobileDataProvider.select((d) => d.renewDay));
+    final status = describeBackup(backup, speed: speed, renewDay: renewDay);
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(Space.gutter, Space.s, Space.gutter, Space.l),
@@ -156,9 +164,10 @@ Future<void> enableBackup(BuildContext context, WidgetRef ref) async {
   }
 }
 
-/// Backup state as words.
+/// Backup state as words. [renewDay] is the day of the month the mobile
+/// data limit renews on, which a backup held by the limit waits for.
 ({IconData icon, String title, String? detail, double? progress, bool done})
-describeBackup(BackupState backup, {double speed = 0}) {
+describeBackup(BackupState backup, {double speed = 0, int renewDay = 1}) {
   return switch (backup.phase) {
     BackupPhase.off => (
       icon: Icons.cloud_off_outlined,
@@ -181,10 +190,27 @@ describeBackup(BackupState backup, {double speed = 0}) {
       progress: null,
       done: false,
     ),
+    // Mobile data is for photos only, and they are done.
+    BackupPhase.waitingForWifi when backup.heldVideos > 0 => (
+      icon: Icons.wifi_off_rounded,
+      title: 'Videos wait for Wi-Fi',
+      detail: '${Formatters.count(backup.heldVideos, 'video')} left. Photos are backed up.',
+      progress: null,
+      done: false,
+    ),
     BackupPhase.waitingForWifi => (
       icon: Icons.wifi_off_rounded,
       title: 'Waiting for Wi-Fi',
       detail: '${Formatters.count(backup.remaining, 'item')} left. Backup uses Wi-Fi only.',
+      progress: null,
+      done: false,
+    ),
+    BackupPhase.waitingForBudget => (
+      icon: Icons.data_usage_rounded,
+      title: 'Monthly data limit reached',
+      detail:
+          '${Formatters.count(backup.remaining, 'item')} left. Backup carries on '
+          'over Wi-Fi, or on the ${Formatters.dayOfMonth(renewDay)}.',
       progress: null,
       done: false,
     ),
@@ -201,6 +227,7 @@ describeBackup(BackupState backup, {double speed = 0}) {
       detail: [
         '${Formatters.count(backup.remaining, 'item')} left',
         if (speed > 0) Formatters.speed(speed),
+        if (backup.heldVideos > 0) 'videos wait for Wi-Fi',
       ].join(' · '),
       progress: backup.total == 0 ? -1 : backup.progress,
       done: false,

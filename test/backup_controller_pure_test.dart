@@ -1,5 +1,6 @@
 import 'dart:collection';
 
+import 'package:flutter/material.dart' show Icons;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:telegrive/features/backup/data/backup_controller.dart';
 import 'package:telegrive/features/backup/presentation/backup_card.dart';
@@ -94,6 +95,37 @@ void main() {
     expect(state.copyWith(done: 1).waiting, waiting);
     expect(state.copyWith(waiting: const []).waiting, isEmpty);
     expect(const BackupState(phase: BackupPhase.off).waiting, isEmpty);
+  });
+
+  test('backup held by the monthly data limit says when it carries on', () {
+    final status = describeBackup(
+      const BackupState(phase: BackupPhase.waitingForBudget, total: 4530, done: 4320),
+      renewDay: 3,
+    );
+    expect(status.icon, Icons.data_usage_rounded);
+    expect(status.title, 'Monthly data limit reached');
+    expect(status.detail, '210 items left. Backup carries on over Wi-Fi, or on the 3rd.');
+  });
+
+  test('with mobile data for photos only, the videos are what waits', () {
+    const held = BackupState(
+      phase: BackupPhase.waitingForWifi,
+      total: 300,
+      done: 262,
+      heldVideos: 38,
+    );
+    expect(describeBackup(held).title, 'Videos wait for Wi-Fi');
+    expect(describeBackup(held).detail, '38 videos left. Photos are backed up.');
+
+    final waiting = describeBackup(const BackupState(phase: BackupPhase.waitingForWifi, total: 4));
+    expect(waiting.title, 'Waiting for Wi-Fi');
+    expect(waiting.detail, '4 items left. Backup uses Wi-Fi only.');
+
+    final uploading = describeBackup(
+      const BackupState(phase: BackupPhase.uploading, total: 300, done: 90, heldVideos: 38),
+      speed: 2.1 * 1024 * 1024,
+    );
+    expect(uploading.detail, '210 items left · 2.1 MB/s · videos wait for Wi-Fi');
   });
 
   test('a stopped backup says so, with the reason as the detail', () {

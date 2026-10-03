@@ -7,6 +7,7 @@ import '../../../app/theme/tokens.dart';
 import '../../../core/format/formatters.dart';
 import '../../../core/widgets/common.dart';
 import '../../../infrastructure/storage/preferences.dart';
+import '../../network/data/mobile_data.dart';
 import '../data/backup_controller.dart';
 import 'backup_card.dart';
 import 'duplicates_sheet.dart';
@@ -26,6 +27,8 @@ class BackupScreen extends ConsumerWidget {
     final backup = ref.watch(backupControllerProvider);
     final controller = ref.read(backupControllerProvider.notifier);
     final prefs = ref.watch(preferencesProvider);
+    final mobileData = prefs.backupMobileData;
+    final limit = ref.watch(mobileDataProvider.select((d) => d.limit));
 
     return Scaffold(
       appBar: AppBar(title: const Text('Photo backup')),
@@ -101,16 +104,33 @@ class BackupScreen extends ConsumerWidget {
             const SectionHeader('When'),
             ListGroup(
               children: [
-                SwitchListTile(
-                  title: const Text('Use mobile data'),
-                  subtitle: const Text(
-                    'Off: backup waits for Wi-Fi. A phone\'s hotspot counts as mobile data.',
+                ListTile(
+                  title: const Text('Mobile data'),
+                  subtitle: Text(
+                    [
+                      mobileData.explanation,
+                      if (limit != null && mobileData != BackupMobileData.off)
+                        'Stays within your ${Formatters.bytes(limit, decimals: 0)} monthly limit.',
+                    ].join(' '),
                   ),
-                  value: !prefs.backupWifiOnly,
-                  onChanged: (value) async {
-                    await controller.setWifiOnly(!value);
-                    ref.invalidate(preferencesProvider);
-                  },
+                  trailing: PopupMenuButton<BackupMobileData>(
+                    initialValue: mobileData,
+                    onSelected: (choice) async {
+                      await controller.setMobileData(choice);
+                      ref.invalidate(preferencesProvider);
+                    },
+                    itemBuilder: (_) => [
+                      for (final option in BackupMobileData.values)
+                        PopupMenuItem(value: option, child: Text(option.label)),
+                    ],
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(mobileData.label, style: context.text.bodyMedium),
+                        Icon(Icons.arrow_drop_down_rounded, color: colors.text3),
+                      ],
+                    ),
+                  ),
                 ),
               ],
             ),
@@ -244,4 +264,19 @@ class _FolderList extends ConsumerWidget {
       ),
     };
   }
+}
+
+/// The Mobile data choice, in the words the Backup screen uses.
+extension on BackupMobileData {
+  String get label => switch (this) {
+    BackupMobileData.off => 'Don\'t use',
+    BackupMobileData.photos => 'Photos only',
+    BackupMobileData.all => 'Photos and videos',
+  };
+
+  String get explanation => switch (this) {
+    BackupMobileData.off => 'Backup waits for Wi-Fi.',
+    BackupMobileData.photos => 'Videos wait for Wi-Fi.',
+    BackupMobileData.all => 'Everything goes up on mobile data.',
+  };
 }

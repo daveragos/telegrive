@@ -48,6 +48,7 @@ import 'package:telegrive/features/files/presentation/folder_picker.dart';
 import 'package:telegrive/features/home/presentation/home_screen.dart';
 import 'package:telegrive/features/import/data/chat_media.dart';
 import 'package:telegrive/features/import/presentation/import_screen.dart';
+import 'package:telegrive/features/network/data/mobile_data.dart';
 import 'package:telegrive/features/offline/data/offline_sync.dart';
 import 'package:telegrive/features/offline/presentation/keep_offline_sheet.dart';
 import 'package:telegrive/features/offline/presentation/offline_screen.dart';
@@ -114,6 +115,40 @@ class _Backup extends BackupController {
     DeviceFolder(name: 'Telegram', count: 208),
   ];
 }
+
+/// The monthly mobile data count as [_state] has it, without asking TDLib.
+class _MobileData extends MobileDataController {
+  _MobileData(this._state);
+
+  final MobileDataState _state;
+
+  @override
+  MobileDataState build() => _state;
+}
+
+/// No monthly limit, with this month's use measured.
+final _noLimit = MobileDataState(
+  metered: false,
+  limit: null,
+  renewDay: 1,
+  periodStart: DateTime(2026, 10),
+  periodEnd: DateTime(2026, 11),
+  mobileBytes: (1.4 * _gb).round(),
+  wifiBytes: (6.2 * _gb).round(),
+  measured: true,
+);
+
+/// 380 MB of a 400 MB limit used, renewing on the 3rd.
+final _nearLimit = MobileDataState(
+  metered: false,
+  limit: 400 * _mb,
+  renewDay: 3,
+  periodStart: DateTime(2026, 9, 3),
+  periodEnd: DateTime(2026, 10, 3),
+  mobileBytes: 380 * _mb,
+  wifiBytes: (6.2 * _gb).round(),
+  measured: true,
+);
 
 class _Storage extends DeviceStorage {
   @override
@@ -545,6 +580,7 @@ void main() {
     BulkEdit? bulk,
     DateTime? telegramWait,
     NetworkState network = NetworkState.unknown,
+    MobileDataState? mobileData,
     CaptureSupport captureSupport = const CaptureSupport(scan: true, photo: true),
     List<Override> overrides = const [],
     Future<void> Function(AppDatabase db)? seed,
@@ -684,6 +720,7 @@ void main() {
           bulkEditsProvider.overrideWith(() => _Bulk(bulk)),
           telegramWaitProvider.overrideWith(() => _Wait(telegramWait)),
           networkStatusProvider.overrideWith(() => _Network(network)),
+          mobileDataProvider.overrideWith(() => _MobileData(mobileData ?? _noLimit)),
           captureSupportProvider.overrideWith((ref) async => captureSupport),
           mediaTimelineProvider.overrideWith((ref) => Stream.value(photos)),
           trashProvider.overrideWith(
@@ -1510,8 +1547,31 @@ void main() {
 
   testWidgets('settings', (tester) async {
     await prepareData(tester);
-    await pumpApp(tester, location: '/settings');
+    await pumpApp(tester, location: '/settings', mobileData: _nearLimit);
     await snap(tester, 'settings');
+  });
+
+  testWidgets('data limit sheet', (tester) async {
+    await prepareData(tester);
+    // One of the limits the sheet offers, so it shows as chosen.
+    await pumpApp(
+      tester,
+      location: '/settings',
+      mobileData: MobileDataState(
+        metered: false,
+        limit: 500 * _mb,
+        renewDay: 3,
+        periodStart: DateTime(2026, 9, 3),
+        periodEnd: DateTime(2026, 10, 3),
+        mobileBytes: 380 * _mb,
+        measured: true,
+      ),
+    );
+    await tester.tap(find.text('Monthly limit'));
+    for (var i = 0; i < 6; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    await snap(tester, 'data_limit_sheet');
   });
 
   /// Trips on its way, the tax return on the phone, and two receipts that
@@ -1652,7 +1712,7 @@ void main() {
   testWidgets('settings mobile data', (tester) async {
     await prepareData(tester);
     await pumpApp(tester, location: '/settings');
-    await tester.drag(find.byType(ListView).first, const Offset(0, -760));
+    await tester.drag(find.byType(ListView).first, const Offset(0, -560));
     for (var i = 0; i < 4; i++) {
       await tester.pump(const Duration(milliseconds: 200));
     }
@@ -1685,9 +1745,11 @@ void main() {
       ),
       prefs: {
         'backup_enabled': true,
+        'backup_mobile_data': 'photos',
         'backup_excluded_folders': ['WhatsApp Images'],
         'photos_hidden_folders': ['Screenshots'],
       },
+      mobileData: _nearLimit,
     );
     await snap(tester, 'backup_settings');
   });
@@ -1801,6 +1863,22 @@ void main() {
       ),
     );
     await snap(tester, 'photos_waiting');
+  });
+
+  testWidgets('backup limit reached', (tester) async {
+    await prepareData(tester);
+    await pumpApp(
+      tester,
+      location: '/photos',
+      backup: const BackupState(
+        phase: BackupPhase.waitingForBudget,
+        total: 4530,
+        done: 4320,
+        heldForBudget: 3,
+      ),
+      mobileData: _nearLimit,
+    );
+    await snap(tester, 'backup_limit_reached');
   });
 
   testWidgets('transfers with backup', (tester) async {

@@ -157,10 +157,10 @@ class Preferences {
   Future<void> setBackupVideos(bool value) =>
       _prefs.setBool(BackupPrefKeys.videos, value);
 
-  /// Back up only on Wi-Fi (the default), or on mobile data too.
-  bool get backupWifiOnly => _prefs.getBool('backup_wifi_only') ?? true;
-  Future<void> setBackupWifiOnly(bool value) =>
-      _prefs.setBool('backup_wifi_only', value);
+  /// What backup sends over mobile data; see [BackupPrefKeys.mobileDataOf].
+  BackupMobileData get backupMobileData => BackupPrefKeys.mobileDataOf(_prefs);
+  Future<void> setBackupMobileData(BackupMobileData value) =>
+      _prefs.setString(BackupPrefKeys.mobileData, value.name);
 
   /// Device folders ("WhatsApp Images", "Screenshots") left out of backup.
   /// Everything else — including folders that appear later — is included.
@@ -222,6 +222,112 @@ class Preferences {
   Future<void> setRecentDestinations(List<String> ids) =>
       _prefs.setStringList('recent_destinations', ids);
   Future<void> clearRecentDestinations() => _prefs.remove('recent_destinations');
+
+  // ---------------------------------------------------------------------------
+  // The monthly mobile data limit and what the current period has used.
+  // They describe the phone's data plan rather than the drive, so they stay
+  // when an account signs out.
+  // ---------------------------------------------------------------------------
+
+  /// The monthly mobile data limit in bytes, or null for none.
+  int? get dataLimitBytes => _prefs.getInt('data_limit_bytes');
+
+  /// The day of the month the data plan renews on, 1 to 28.
+  int get dataRenewDay => (_prefs.getInt('data_limit_renew_day') ?? 1).clamp(1, 28);
+
+  Future<void> setDataLimit(int? bytes, int renewDay) async {
+    if (bytes == null) {
+      await _prefs.remove('data_limit_bytes');
+    } else {
+      await _prefs.setInt('data_limit_bytes', bytes);
+    }
+    await _prefs.setInt('data_limit_renew_day', renewDay);
+  }
+
+  /// Where the count for the current period stands, or null before one has
+  /// started.
+  DataPeriodSnapshot? get dataPeriod {
+    int? read(String key) => _prefs.getInt(key);
+    final start = read(_DataKeys.start);
+    final mobileBase = read(_DataKeys.mobileBase);
+    final wifiBase = read(_DataKeys.wifiBase);
+    final mobileCarry = read(_DataKeys.mobileCarry);
+    final wifiCarry = read(_DataKeys.wifiCarry);
+    final since = read(_DataKeys.since);
+    if (start == null ||
+        mobileBase == null ||
+        wifiBase == null ||
+        mobileCarry == null ||
+        wifiCarry == null ||
+        since == null) {
+      return null;
+    }
+    return (
+      start: start,
+      mobileBase: mobileBase,
+      wifiBase: wifiBase,
+      mobileCarry: mobileCarry,
+      wifiCarry: wifiCarry,
+      since: since,
+    );
+  }
+
+  Future<void> setDataPeriod(DataPeriodSnapshot period) async {
+    await _prefs.setInt(_DataKeys.start, period.start);
+    await _prefs.setInt(_DataKeys.mobileBase, period.mobileBase);
+    await _prefs.setInt(_DataKeys.wifiBase, period.wifiBase);
+    await _prefs.setInt(_DataKeys.mobileCarry, period.mobileCarry);
+    await _prefs.setInt(_DataKeys.wifiCarry, period.wifiCarry);
+    await _prefs.setInt(_DataKeys.since, period.since);
+  }
+
+  /// Drops the current period, so the next count starts a new one.
+  Future<void> clearDataPeriod() async {
+    for (final key in _DataKeys.all) {
+      await _prefs.remove(key);
+    }
+  }
+}
+
+/// How far the current data period's count has got, in TDLib's terms.
+///
+/// * [start]: when the period began, in milliseconds since the epoch.
+/// * [mobileBase], [wifiBase]: TDLib's cumulative mobile and Wi-Fi counters
+///   when [mobileCarry] and [wifiCarry] were last brought up to date.
+/// * [mobileCarry], [wifiCarry]: bytes this period had used by then,
+///   including what was counted before TDLib's counters last restarted.
+/// * [since]: the date TDLib counts from (its NetworkStatistics.sinceDate,
+///   in seconds). A different one means its counters restarted, after a
+///   sign-out or a reset of its database.
+typedef DataPeriodSnapshot = ({
+  int start,
+  int mobileBase,
+  int wifiBase,
+  int mobileCarry,
+  int wifiCarry,
+  int since,
+});
+
+abstract final class _DataKeys {
+  static const String start = 'data_period_start';
+  static const String mobileBase = 'data_mobile_baseline';
+  static const String wifiBase = 'data_wifi_baseline';
+  static const String mobileCarry = 'data_mobile_carry';
+  static const String wifiCarry = 'data_wifi_carry';
+  static const String since = 'data_stats_since';
+  static const List<String> all = [start, mobileBase, wifiBase, mobileCarry, wifiCarry, since];
+}
+
+/// What photo backup may send over mobile data, a phone's hotspot included.
+enum BackupMobileData {
+  /// Nothing: backup waits for Wi-Fi.
+  off,
+
+  /// Photos; videos wait for Wi-Fi.
+  photos,
+
+  /// Photos and videos.
+  all,
 }
 
 /// Preference keys the background worker reads without the rest of the app.
@@ -230,4 +336,21 @@ abstract final class BackupPrefKeys {
   static const String videos = 'backup_videos';
   static const String checkpoint = 'backup_checkpoint';
   static const String notifiedCount = 'backup_notified_count';
+  static const String mobileData = 'backup_mobile_data';
+
+  /// The switch [mobileData] took over from: true meant Wi-Fi only. It is
+  /// read until a choice is saved, and never written.
+  static const String _wifiOnly = 'backup_wifi_only';
+
+  /// What backup may send over mobile data, from the app or the worker's
+  /// isolate. A phone that never chose keeps the old switch's answer: Wi-Fi
+  /// only, or never set, reads as [BackupMobileData.off], and mobile data
+  /// allowed as [BackupMobileData.all].
+  static BackupMobileData mobileDataOf(SharedPreferences prefs) {
+    final saved = prefs.getString(mobileData);
+    for (final value in BackupMobileData.values) {
+      if (value.name == saved) return value;
+    }
+    return (prefs.getBool(_wifiOnly) ?? true) ? BackupMobileData.off : BackupMobileData.all;
+  }
 }

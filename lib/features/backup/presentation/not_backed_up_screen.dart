@@ -148,10 +148,12 @@ class NotBackedUpScreen extends ConsumerWidget {
     BackupState backup,
     BackupController controller,
   ) {
-    // While backup is off or held up (no Wi-Fi, no photo access, the drive
-    // still opening), nothing goes up, so neither can one photo first.
+    // While backup is off or held up (no Wi-Fi, the monthly data limit, no
+    // photo access, the drive still opening), nothing goes up, so neither
+    // can one photo first.
     final canStart = switch (backup.phase) {
       BackupPhase.waitingForWifi ||
+      BackupPhase.waitingForBudget ||
       BackupPhase.needsPermission ||
       BackupPhase.off ||
       BackupPhase.waitingForDrive => false,
@@ -199,6 +201,7 @@ class NotBackedUpScreen extends ConsumerWidget {
   /// What the waiting photos are waiting on, after their count.
   static String _why(BackupPhase phase) => switch (phase) {
     BackupPhase.waitingForWifi => 'waiting for Wi-Fi',
+    BackupPhase.waitingForBudget => 'monthly data limit reached',
     BackupPhase.scanning || BackupPhase.uploading => 'backing up now',
     BackupPhase.needsPermission => 'allow photo access to continue',
     BackupPhase.off => 'backup is off',

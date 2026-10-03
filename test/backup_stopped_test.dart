@@ -74,7 +74,7 @@ void main() {
     // ignore: invalid_use_of_visible_for_testing_member
     SharedPreferences.setMockInitialValues({
       BackupPrefKeys.enabled: true,
-      'backup_wifi_only': false,
+      BackupPrefKeys.mobileData: BackupMobileData.all.name,
       // Read in full, so a pass that gets that far looks at the library.
       'full_sync_$testChatId': DateTime.now().millisecondsSinceEpoch,
     });
