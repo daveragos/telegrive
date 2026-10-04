@@ -49,6 +49,13 @@ class Preferences {
   bool get appLock => _prefs.getBool('app_lock') ?? false;
   Future<void> setAppLock(bool on) => _prefs.setBool('app_lock', on);
 
+  /// Whether the person wants the drive in Android's file picker. Off until
+  /// switched on, and set back to off when the drive leaves the phone. App
+  /// lock keeps the picker off without changing this.
+  bool get pickerEnabled => _prefs.getBool('picker_enabled') ?? false;
+  Future<void> setPickerEnabled(bool on) =>
+      _prefs.setBool('picker_enabled', on);
+
   /// Name of the app lock's delay, see `LockAfter`.
   String? get appLockAfter => _prefs.getString('app_lock_after');
   Future<void> setAppLockAfter(String name) =>

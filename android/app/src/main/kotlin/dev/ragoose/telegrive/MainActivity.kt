@@ -2,6 +2,7 @@ package dev.ragoose.telegrive
 
 import android.Manifest
 import android.app.ActivityManager
+import android.content.ComponentName
 import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
@@ -25,6 +26,7 @@ import android.provider.OpenableColumns
 import android.provider.Settings
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.FragmentManager
+import dev.ragoose.telegrive.picker.DriveDocumentsProvider
 import io.flutter.embedding.android.FlutterFragment
 import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -199,6 +201,22 @@ class MainActivity : FlutterFragmentActivity() {
                 else -> result.notImplemented()
             }
         }
+        MethodChannel(messenger, "telegrive/picker").setMethodCallHandler { call, result ->
+            when (call.method) {
+                "setEnabled" -> {
+                    val on = call.arguments == true
+                    io.execute {
+                        try {
+                            setPickerEnabled(on)
+                            main.post { result.success(null) }
+                        } catch (e: Exception) {
+                            main.post { result.error("picker_failed", e.message, null) }
+                        }
+                    }
+                }
+                else -> result.notImplemented()
+            }
+        }
         MethodChannel(messenger, "telegrive/device_storage")
             .setMethodCallHandler { call, result ->
                 when (call.method) {
@@ -364,6 +382,25 @@ class MainActivity : FlutterFragmentActivity() {
 
     private fun appDetailsSettings(): Intent =
         Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", packageName, null))
+
+    /**
+     * Shows the drive in Android's file picker, or takes it out, and tells
+     * the picker its roots changed so an open one updates. Only the
+     * component is switched here: the provider reads the index with
+     * Android's own SQLite, which must never open it in this process, where
+     * Drift's copy of SQLite holds it.
+     */
+    private fun setPickerEnabled(on: Boolean) {
+        val component = ComponentName(this, DriveDocumentsProvider::class.java)
+        val state = if (on) {
+            PackageManager.COMPONENT_ENABLED_STATE_ENABLED
+        } else {
+            PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+        }
+        if (packageManager.getComponentEnabledSetting(component) == state) return
+        packageManager.setComponentEnabledSetting(component, state, PackageManager.DONT_KILL_APP)
+        contentResolver.notifyChange(DocumentsContract.buildRootsUri("$packageName.documents"), null)
+    }
 
     /** How much memory the phone has, so a small one can use less of it. */
     private fun deviceProfile(): Map<String, Any>? = try {

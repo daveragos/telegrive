@@ -70,6 +70,7 @@ import 'package:telegrive/features/network/domain/proxy_link.dart';
 import 'package:telegrive/features/offline/data/offline_sync.dart';
 import 'package:telegrive/features/offline/presentation/keep_offline_sheet.dart';
 import 'package:telegrive/features/offline/presentation/offline_screen.dart';
+import 'package:telegrive/features/picker/data/picker_access.dart';
 import 'package:telegrive/features/settings/data/settings_providers.dart';
 import 'package:telegrive/features/settings/presentation/settings_screen.dart';
 import 'package:telegrive/features/share/data/recent_destinations.dart';
@@ -1056,6 +1057,8 @@ void main() {
           folderInfoProvider('Work')
               .overrideWith((ref) => Stream.value(folders[2])),
           cacheSizeProvider.overrideWith((ref) async => 734 * _mb),
+          // Settings draws its file picker switch as it does on a phone.
+          pickerSupportedProvider.overrideWithValue(true),
           notificationsEnabledProvider.overrideWith(
             (ref) async => notificationsEnabled,
           ),

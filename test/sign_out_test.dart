@@ -11,6 +11,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:telegrive/features/auth/data/auth_controller.dart';
 import 'package:telegrive/features/drive/data/drive_session.dart';
 import 'package:telegrive/features/photos/data/photos_visibility.dart';
+import 'package:telegrive/features/picker/data/picker_access.dart';
 import 'package:telegrive/features/trash/data/pending_deletes.dart';
 import 'package:telegrive/infrastructure/database/app_database.dart';
 import 'package:telegrive/infrastructure/storage/preferences.dart';
@@ -78,6 +79,7 @@ void main() {
       'recent_destinations': ['docs', ''],
       'cache_swept_at': DateTime(2026, 9, 26).millisecondsSinceEpoch,
       'notifications_asked': true,
+      'picker_enabled': true,
       BackupPrefKeys.remindAfter: DateTime(2026, 9, 27).millisecondsSinceEpoch,
     });
     final shared = await SharedPreferences.getInstance();
@@ -128,6 +130,10 @@ void main() {
       ..createSync(recursive: true)
       ..writeAsStringSync('page one');
     container.read(revealHiddenProvider.notifier).toggle();
+    // Where Android's file picker finds the stream server.
+    final bridge = File('${support.path}/picker/bridge.json')
+      ..createSync(recursive: true)
+      ..writeAsStringSync('{"port": 4000, "token": "t"}');
 
     // Two phone folders whose new files upload, each read on a grant
     // Android keeps until it is given back.
@@ -206,6 +212,12 @@ void main() {
     expect(prefs.deletePhoneCopyToo, isFalse);
     expect(container.read(revealHiddenProvider), isFalse);
     expect(prefs.offlineWifiOnly, isFalse);
+
+    // The drive leaves Android's file picker, and the next account turns
+    // it on for its own.
+    expect(prefs.pickerEnabled, isFalse);
+    expect(container.read(pickerEnabledProvider), isFalse);
+    expect(bridge.existsSync(), isFalse);
 
     // The chats this account sent files to aren't offered to the next one.
     expect(prefs.recentSendChats, isEmpty);

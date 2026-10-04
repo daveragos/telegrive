@@ -30,7 +30,9 @@ import '../../transfers/data/transfer_queue.dart';
 /// download in Transfers needs it; what it has fetched stays on the phone.
 ///
 /// Only this app can use it: it listens on 127.0.0.1 and every URL carries
-/// a random token made fresh each launch.
+/// a random token made fresh each launch. Android's file picker, which runs
+/// in Telegrive's own picker process, learns the port and token from
+/// [endpoint] through a file only this app can read.
 class StreamServer {
   StreamServer(
     this._ref, {
@@ -77,15 +79,22 @@ class StreamServer {
   TelegramClient get _client => _ref.read(telegramClientProvider);
   DriveRepository get _repository => _ref.read(driveRepositoryProvider);
 
+  /// The port this server listens on and the token every URL starts with,
+  /// starting the server if it isn't running yet.
+  Future<({int port, String token})> endpoint() async {
+    final server = await (_server ??= _start());
+    return (port: server.port, token: _token);
+  }
+
   /// A URL the player, or the PDF reader, can read [file] from.
   Future<Uri> urlFor(DriveFile file) async {
-    final server = await (_server ??= _start());
+    final (:port, :token) = await endpoint();
     return Uri(
       scheme: 'http',
       host: InternetAddress.loopbackIPv4.address,
-      port: server.port,
+      port: port,
       // The name's extension helps the player pick a format.
-      pathSegments: [_token, file.id, DeviceStorage.safeName(file.name)],
+      pathSegments: [token, file.id, DeviceStorage.safeName(file.name)],
     );
   }
 
@@ -99,6 +108,13 @@ class StreamServer {
     final response = request.response;
     try {
       final segments = request.uri.pathSegments;
+      // The file picker asks this to tell a running app from a bridge file
+      // left behind by one that has gone. Without the token it gets the 404
+      // any stranger does.
+      if (segments.length == 2 && segments[0] == _token && segments[1] == 'ping') {
+        response.statusCode = HttpStatus.noContent;
+        return;
+      }
       final file = segments.length >= 2 && segments[0] == _token
           ? await _repository.fileById(segments[1])
           : null;

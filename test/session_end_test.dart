@@ -109,7 +109,7 @@ void main() {
   }
 
   test('a log-out nobody asked for here is an ended session', () async {
-    final (container, _, prefs) = await open();
+    final (container, _, prefs) = await open(stored: {'picker_enabled': true});
     final before = DateTime.now();
     var deleted = false;
     container
@@ -128,6 +128,9 @@ void main() {
     // The index stays, so signing back in soon shows the drive at once.
     expect(prefs.lastFullSync(testChatId), isNotNull);
     expect(prefs.lastSyncedMessageId(testChatId), 900);
+    // Android's file picker stops showing it, which it would do from that
+    // index to anyone holding the phone.
+    expect(prefs.pickerEnabled, isFalse);
   });
 
   test('signing out is not an ended session, and forgets the checkpoints', () async {

@@ -231,6 +231,8 @@ class AppDatabase extends _$AppDatabase {
       f.partsPresent.isBiggerOrEqual(f.partCount);
 
   /// Complete and not in the trash: what every view but Trash shows.
+  /// Android's file picker reads the index with its own SQL that follows
+  /// this rule and [_inFolder]; test/picker_contract_test.dart runs it.
   Expression<bool> _shown(DriveFiles f) =>
       _complete(f) & f.hidden.equals(false);
 

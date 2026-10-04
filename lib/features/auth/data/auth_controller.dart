@@ -13,6 +13,7 @@ import '../../checkup/data/drive_checkup.dart';
 import '../../drive/data/drive_session.dart';
 import '../../offline/data/offline_sync.dart';
 import '../../photos/data/photos_visibility.dart';
+import '../../picker/data/picker_access.dart';
 import '../../preview/data/pdf_block_cache.dart';
 import '../../share/data/recent_destinations.dart';
 import '../../transfers/data/transfer_queue.dart';
@@ -69,12 +70,15 @@ class AuthController extends Notifier<AuthUiState> {
   /// which stops the transfer queue and backup, and the moment is kept for
   /// Welcome to explain. The index stays for a week, so signing back in
   /// soon after opens the drive straight away; after that it is wiped, like
-  /// a sign-out would have.
+  /// a sign-out would have. The drive leaves Android's file picker at once,
+  /// though, since the picker reads that index without asking anyone and an
+  /// ended session is often a lost phone.
   void _onAuthState(td.AuthorizationState? state) {
     switch (state) {
       case td.AuthorizationStateLoggingOut() when !_signingOut:
         unawaited(_prefs.setSessionEndedAt(DateTime.now()));
         ref.read(pendingDeletesProvider.notifier).discardAll();
+        unawaited(ref.read(pickerEnabledProvider.notifier).set(false));
         ref.read(driveSessionProvider.notifier).close();
       case td.AuthorizationStateReady():
         unawaited(_prefs.clearSessionEnded());
@@ -186,7 +190,10 @@ class AuthController extends Notifier<AuthUiState> {
   /// apps. The phone folders watched for new files go, and Android gets
   /// back the access to each, so no grant is left that nothing uses. When
   /// the phone's caches were last trimmed is forgotten as well,
-  /// so the next drive to open trims them once straight away. Anything new
+  /// so the next drive to open trims them once straight away. The drive
+  /// leaves Android's file picker, and the picker's bridge to the stream
+  /// server goes with it, so whoever signs in next turns the picker on for
+  /// their own drive. Anything new
   /// that the phone keeps per drive, whether a table, a preference or a
   /// file, adds its cleanup here.
   Future<void> wipeDeviceState() async {
@@ -204,6 +211,8 @@ class AuthController extends Notifier<AuthUiState> {
     await prefs.setOfflineWifiOnly(false);
     await prefs.forgetRecentSendChats();
     await prefs.forgetCacheSweptAt();
+    await ref.read(pickerEnabledProvider.notifier).set(false);
+    await deletePickerBridge();
     ref.invalidate(checkupLastRunProvider);
     ref.invalidate(revealHiddenProvider);
     ref.invalidate(offlineSyncProvider);

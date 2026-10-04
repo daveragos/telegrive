@@ -24,6 +24,7 @@ import '../../network/data/mobile_data.dart';
 import '../../network/data/proxies.dart';
 import '../../network/presentation/proxy_sheet.dart';
 import '../../offline/data/offline_sync.dart';
+import '../../picker/data/picker_access.dart';
 import '../../search/data/content_indexer.dart';
 import '../../trash/data/pending_deletes.dart';
 import '../data/settings_providers.dart';
@@ -56,6 +57,8 @@ class SettingsScreen extends ConsumerWidget {
     final currentSession = ref.watch(currentSessionProvider).value;
     final accountTtl = ref.watch(accountTtlProvider).value;
     final checkupLastRun = ref.watch(checkupLastRunProvider);
+    final pickerSupported = ref.watch(pickerSupportedProvider);
+    final picker = ref.watch(pickerEnabledProvider);
     // Said only while the phone, not the person, decides.
     final memoryReason =
         prefs.saveMemory == null && profile.suggestSaveMemory && profile.totalRamBytes > 0
@@ -383,6 +386,22 @@ class SettingsScreen extends ConsumerWidget {
           const SectionHeader('This phone'),
           ListGroup(
             children: [
+              if (pickerSupported)
+                SwitchListTile(
+                  title: const Text('Show the drive in other apps'),
+                  subtitle: Text(
+                    lock.enabled
+                        ? 'Off while app lock is on.'
+                        : picker
+                        ? 'Files on this phone open at once. Others download while Telegrive is open.'
+                        : 'Attach drive files in other apps, from Android\'s file picker.',
+                  ),
+                  // Off while app lock keeps the drive out of the picker, which
+                  // can't ask for a fingerprint. The person's choice is kept and
+                  // shows again once app lock is off.
+                  value: picker && !lock.enabled,
+                  onChanged: lock.enabled ? null : ref.read(pickerEnabledProvider.notifier).set,
+                ),
               SwitchListTile(
                 title: const Text('Save memory'),
                 subtitle: Text(

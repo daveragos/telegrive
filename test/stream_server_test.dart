@@ -232,6 +232,40 @@ void main() {
     expect(status, HttpStatus.requestedRangeNotSatisfiable);
   });
 
+  group('the file picker', () {
+    /// A URL on the server's own endpoint, the way the picker builds one
+    /// from the bridge file.
+    Future<Uri> at(List<String> Function(String token) segments) async {
+      final (:port, :token) = await container.read(streamServerProvider).endpoint();
+      return Uri(scheme: 'http', host: '127.0.0.1', port: port, pathSegments: segments(token));
+    }
+
+    test('finds the server at the port and token its URLs carry', () async {
+      final server = container.read(streamServerProvider);
+      final file = (await container.read(driveRepositoryProvider).fileById('movie'))!;
+      final url = await server.urlFor(file);
+      final (:port, :token) = await server.endpoint();
+      expect(url.port, port);
+      expect(url.pathSegments.first, token);
+      expect(await server.endpoint(), (port: port, token: token));
+    });
+
+    test('gets an answer to its ping only with the token', () async {
+      expect((await get(await at((token) => [token, 'ping']))).$1, HttpStatus.noContent);
+      expect((await get(await at((_) => ['wrong', 'ping']))).$1, HttpStatus.notFound);
+    });
+
+    test('reads a range through the endpoint', () async {
+      final (status, headers, body) = await get(
+        await at((token) => [token, 'movie', 'movie.mp4']),
+        range: 'bytes=${partOne - 10}-${partOne + 9}',
+      );
+      expect(status, HttpStatus.partialContent);
+      expect(headers['content-range'], 'bytes ${partOne - 10}-${partOne + 9}/${partOne + partTwo}');
+      expect(body, expected(partOne - 10, partOne + 10));
+    });
+  });
+
   group('what TDLib is asked for', () {
     Future<Uri> urlOf(
       String fileId, {

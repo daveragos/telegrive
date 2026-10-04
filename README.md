@@ -277,6 +277,11 @@ phone number.
   folder on the phone, such as Recordings or Download › Bank, and each new
   file in it goes up once to Files › Auto upload, or a drive folder you
   choose.
+- **In other apps' file pickers.** Turn on Settings › This phone › Show the
+  drive in other apps to attach drive files anywhere Android's picker
+  opens, browsing the drive's folders or searching them by name. Files on
+  the phone open at once; others download while Telegrive is open, and a
+  video picked into a player can skip ahead while it comes down.
 - **Download to this phone.** Files, folders or the whole drive, in the
   drive's folders under Download › Telegrive; photos and videos can go back
   into the gallery.
@@ -529,6 +534,14 @@ two commands are at the top of that test.
 - A watched folder sends each file once. A file changed after it went up
   isn't sent again, and one renamed on the phone looks new and goes up
   again under its new name. Folders are only checked while Telegrive runs.
+- Android's file picker shows the drive only while app lock is off, since
+  the picker can't ask for a fingerprint; turning app lock off brings it
+  back. Signing out, or a session ended from Telegram, takes it out of the
+  picker until it is turned on again after the next sign-in. A file that
+  isn't on the phone comes down only while Telegrive is running, on screen
+  or in the background. On Android 7 it arrives from its start only, so an
+  app that jumps around in a file may not read it until the file is on the
+  phone.
 - Where you stopped in a video or recording is kept on this phone only, for
   files of three minutes or longer and for 60 days after you last played
   them. Rebuild index keeps these points; signing out clears them.

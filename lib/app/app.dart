@@ -13,6 +13,7 @@ import '../features/drive/data/drive_sync.dart';
 import '../features/network/data/proxy_link_intake.dart';
 import '../features/network/domain/proxy_link.dart';
 import '../features/network/presentation/proxy_sheet.dart';
+import '../features/picker/data/picker_access.dart';
 import '../features/settings/data/settings_providers.dart';
 import '../features/setup/data/drive_setup.dart';
 import '../features/transfers/data/transfer_keep_alive.dart';
@@ -118,6 +119,9 @@ class _TelegriveAppState extends ConsumerState<TelegriveApp>
     // opens, not the first time someone visits the Transfers tab.
     ref.watch(transferQueueProvider.select((s) => s.activeCount));
     ref.watch(transferKeepAliveProvider);
+    // At the root rather than in the shell, so it still sees the drive
+    // close on sign-out and takes the bridge to the stream server away.
+    ref.watch(pickerAccessProvider);
     // Alive from the start so backup resumes the moment the drive opens,
     // and the watched folders are checked then too.
     ref.watch(backupControllerProvider.select((b) => b.phase));
