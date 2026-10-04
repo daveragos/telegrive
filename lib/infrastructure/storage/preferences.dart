@@ -92,6 +92,14 @@ class Preferences {
   Future<void> clearDriveChatId(int userId) =>
       _prefs.remove('drive_chat_$userId');
 
+  /// The account and channel of the drive last opened here, as JSON
+  /// without the phone number, so Home can show the drive before Telegram
+  /// answers. The wipe removes it with the drive.
+  String? get driveSnapshot => _prefs.getString('drive_snapshot');
+  Future<void> setDriveSnapshot(String json) =>
+      _prefs.setString('drive_snapshot', json);
+  Future<void> clearDriveSnapshot() => _prefs.remove('drive_snapshot');
+
   /// Newest channel message already in the index; incremental syncs stop
   /// when they reach it.
   int lastSyncedMessageId(int chatId) =>

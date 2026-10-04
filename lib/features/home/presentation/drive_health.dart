@@ -48,12 +48,37 @@ enum HealthAction {
 
   /// Takes the report of forwards filed by their comment off Home.
   dismissFiling,
+
+  /// Tries again to open the drive behind Home, after finding it in
+  /// Telegram failed.
+  retryOpening,
+
+  /// Starts TDLib again after it failed to start.
+  restartTelegram,
+}
+
+/// How far opening the drive has got while Home shows it from the index,
+/// which a returning person sees before Telegram has started.
+enum DriveOpening {
+  /// The drive's session is open, or Home isn't showing a saved drive.
+  open,
+
+  /// Telegram is starting, or the drive is being found in it.
+  connecting,
+
+  /// Finding the drive in Telegram failed, often for want of a connection.
+  failed,
+
+  /// TDLib itself didn't start.
+  notStarted,
 }
 
 /// Where tapping a line goes: a screen, another try at syncing, the proxy
 /// sheet, or the folder forwards were just filed into ([filed]; Files
-/// itself when there were several).
-enum HealthTarget { backup, notBackedUp, transfers, refresh, proxy, filed }
+/// itself when there were several). A line about opening the drive goes
+/// nowhere ([none]): it says what is happening, and its button, when it
+/// has one, is the one thing to do.
+enum HealthTarget { backup, notBackedUp, transfers, refresh, proxy, filed, none }
 
 /// What a line is about. The second row keeps to a different topic from the
 /// top line, so the two rows say different things and their buttons never
@@ -103,6 +128,13 @@ class DriveHealth {
 /// up, and only when none of that applies, that everything is backed up
 /// and in sync.
 ///
+/// While Home shows the drive from the index before its session is open
+/// ([opening]), the line says so, since nothing else it could say has
+/// been checked: TDLib that didn't start first, with [openingError] and
+/// Try again; then a connection stuck on its network, whose proxy is what
+/// unblocks it; then a failed try at finding the drive, with its
+/// [openingError] and Retry; otherwise that Telegram is connecting.
+///
 /// Of the ways of not reaching Telegram, a [connection] stuck on a network
 /// that has internet goes first, with its proxy, since a proxy is the one
 /// thing that unblocks it; [proxy] names the proxy in use, if known. A
@@ -142,13 +174,18 @@ DriveHealth describeDriveHealth({
   int renewDay = 1,
   ConnectionHealth connection = ConnectionHealth.ok,
   String? proxy,
+  DriveOpening opening = DriveOpening.open,
+  String? openingError,
   DateTime? now,
 }) {
   final at = now ?? DateTime.now();
   final active = _manualActive(transfers, at);
 
+  if (opening == DriveOpening.notStarted) return _notStarted(openingError);
   final blocked = describeConnection(connection, proxy: proxy);
   if (blocked != null) return blocked;
+  if (opening == DriveOpening.failed) return _openingFailed(openingError);
+  if (opening == DriveOpening.connecting) return _connecting;
   if (sync.error != null) {
     return _unreachable(_latest([sync.lastSynced, lastFullSync]), at, retrying: sync.running);
   }
@@ -354,6 +391,41 @@ DriveHealth? describeConnection(ConnectionHealth health, {String? proxy}) => swi
   ),
   ConnectionHealth.ok || ConnectionHealth.noNetwork => null,
 };
+
+/// Home shows the drive from the index while Telegram starts behind it.
+/// Uploads and downloads wait in the queue meanwhile; other changes say
+/// to try again in a moment.
+const _connecting = DriveHealth(
+  icon: Icons.cloud_sync_outlined,
+  tone: HealthTone.busy,
+  text: 'Connecting to Telegram',
+  detail: 'Your files are here. Changes wait until it connects.',
+  progress: -1,
+  target: HealthTarget.none,
+  topic: HealthTopic.sync,
+);
+
+/// Finding the drive in Telegram failed; [error] says why.
+DriveHealth _openingFailed(String? error) => DriveHealth(
+  icon: Icons.cloud_off_outlined,
+  tone: HealthTone.bad,
+  text: 'Couldn\'t reach Telegram',
+  detail: error,
+  action: HealthAction.retryOpening,
+  target: HealthTarget.none,
+  topic: HealthTopic.sync,
+);
+
+/// TDLib failed to start, which the splash says for everyone else.
+DriveHealth _notStarted(String? error) => DriveHealth(
+  icon: Icons.error_outline_rounded,
+  tone: HealthTone.bad,
+  text: 'Telegram didn\'t start',
+  detail: error,
+  action: HealthAction.restartTelegram,
+  target: HealthTarget.none,
+  topic: HealthTopic.sync,
+);
 
 /// The failure stays on the line while another try runs, with a bar to show
 /// the try, so a retry that is still offline never reads as in sync.

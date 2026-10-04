@@ -36,7 +36,11 @@ class SettingsScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.colors;
-    final session = ref.watch(driveSessionProvider);
+    // The account shows from the drive saved when it last opened while
+    // Telegram starts; the phone number and the way into the channel come
+    // once the session is open.
+    final session = ref.watch(visibleSessionProvider);
+    final openSession = ref.watch(driveSessionProvider);
     final backup = ref.watch(backupControllerProvider);
     final sync = ref.watch(driveSyncProvider);
     final summary = ref.watch(storageSummaryProvider).value;
@@ -188,7 +192,7 @@ class SettingsScreen extends ConsumerWidget {
                 title: Text(session?.channelTitle ?? 'Drive channel'),
                 subtitle: const Text('The private channel that holds your files'),
                 trailing: Icon(Icons.open_in_new_rounded, size: 20, color: colors.text3),
-                onTap: session == null ? null : () => _openChannel(ref, session),
+                onTap: openSession == null ? null : () => _openChannel(ref, openSession),
               ),
               ListTile(
                 title: const Text('Rebuild index'),
@@ -208,7 +212,13 @@ class SettingsScreen extends ConsumerWidget {
                     : null,
                 onTap: sync.running
                     ? null
-                    : () => ref.read(driveSyncProvider.notifier).rebuildIndex(),
+                    : () {
+                        if (openSession == null) {
+                          showSnack(context, stillConnecting);
+                          return;
+                        }
+                        ref.read(driveSyncProvider.notifier).rebuildIndex();
+                      },
               ),
               ListTile(
                 title: const Text('Check my drive'),

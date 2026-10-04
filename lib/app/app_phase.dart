@@ -53,12 +53,27 @@ final fatalErrorProvider = _listenable<String?>(
   (ref) => ref.watch(telegramClientProvider).fatalError,
 );
 
+/// Whether [auth] says no account is signed in, or one is on its way out.
+/// TDLib's other states without an account (none yet, waiting for its
+/// parameters, closing and closed) come and go while the client restarts,
+/// so they never count.
+bool _signedOut(td.AuthorizationState? auth) =>
+    asksToSignIn(auth) || auth is td.AuthorizationStateLoggingOut;
+
 final appPhaseProvider = Provider<AppPhase>((ref) {
+  // Watched first, so its listener follows TDLib from the start whatever
+  // phase this returns.
+  final ui = ref.watch(authControllerProvider);
+  final auth = ref.watch(authStateProvider).value;
+
+  // A drive this phone opened before shows from its index on the first
+  // frame, while Telegram starts behind Home, which says how that goes,
+  // failures included.
+  if (ref.watch(driveSnapshotProvider) != null && !_signedOut(auth)) {
+    return AppPhase.ready;
+  }
   if (ref.watch(fatalErrorProvider) != null) return AppPhase.starting;
 
-  final ui = ref.watch(authControllerProvider);
-
-  final auth = ref.watch(authStateProvider).value;
   switch (auth) {
     case td.AuthorizationStateWaitPhoneNumber():
       return ui.startedSignIn ? AppPhase.phone : AppPhase.welcome;

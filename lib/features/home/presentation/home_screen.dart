@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:photo_manager/photo_manager.dart';
 
+import '../../../app/app_phase.dart';
 import '../../../app/theme/file_style.dart';
 import '../../../app/theme/tokens.dart';
 import '../../../core/files/file_kind.dart';
@@ -12,6 +13,7 @@ import '../../../core/widgets/common.dart';
 import '../../../infrastructure/database/app_database.dart'
     show KindTotal, TransferOrigin, TransferStatus;
 import '../../../infrastructure/storage/preferences.dart';
+import '../../../infrastructure/telegram/telegram_client.dart';
 import '../../backup/data/backup_controller.dart';
 import '../../backup/data/free_up_space.dart';
 import '../../backup/presentation/backup_card.dart';
@@ -29,6 +31,7 @@ import '../../network/data/proxies.dart';
 import '../../network/presentation/proxy_sheet.dart';
 import '../../offline/data/offline_sync.dart';
 import '../../player/data/play_positions.dart';
+import '../../setup/data/drive_setup.dart';
 import '../../transfers/data/transfer_queue.dart';
 import 'drive_health.dart';
 
@@ -202,7 +205,7 @@ class _Header extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.colors;
-    final session = ref.watch(driveSessionProvider);
+    final session = ref.watch(visibleSessionProvider);
     return Padding(
       padding: const EdgeInsets.fromLTRB(Space.gutter, Space.m, Space.m, 0),
       child: Column(
@@ -277,9 +280,24 @@ class _Header extends ConsumerWidget {
 /// One line that says whether the drive is safe, always there, plus at most
 /// one more for a different concern that needs doing. What they say is
 /// worked out in [describeDriveHealth] and [secondaryHealth]; this only
-/// draws them.
+/// draws them, and lets the group grow and shrink as they change, so the
+/// line about connecting folds away once the drive opens.
 class _Activity extends ConsumerWidget {
   const _Activity();
+
+  /// How far opening the drive has got while Home shows the one this phone
+  /// saved, before its session opens, and what went wrong if it failed.
+  static (DriveOpening, String?) _opening(WidgetRef ref) {
+    if (ref.watch(driveSessionProvider) != null ||
+        ref.watch(driveSnapshotProvider) == null) {
+      return (DriveOpening.open, null);
+    }
+    final fatal = ref.watch(fatalErrorProvider);
+    if (fatal != null) return (DriveOpening.notStarted, fatal);
+    final failed = ref.watch(driveSetupProvider.select((s) => s.error));
+    if (failed != null) return (DriveOpening.failed, failed);
+    return (DriveOpening.connecting, null);
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -289,6 +307,7 @@ class _Activity extends ConsumerWidget {
     final chatId = ref.watch(driveSessionProvider)?.chatId;
     final renewDay = ref.watch(mobileDataProvider.select((d) => d.renewDay));
     final connection = ref.watch(connectionHealthProvider);
+    final (opening, openingError) = _opening(ref);
 
     final top = describeDriveHealth(
       backup: backup,
@@ -308,6 +327,8 @@ class _Activity extends ConsumerWidget {
       proxy: connection == ConnectionHealth.proxyStuck
           ? ref.watch(enabledProxyProvider)?.label
           : null,
+      opening: opening,
+      openingError: openingError,
     );
     // What could be freed is only worked out while the phone is low on
     // space, since it reads the whole photo library.
@@ -324,13 +345,17 @@ class _Activity extends ConsumerWidget {
       filed: ref.watch(forwardFilerProvider),
     );
 
-    return Padding(
-      padding: const EdgeInsets.only(top: Space.l),
-      child: ListGroup(
-        children: [
-          _line(context, ref, top),
-          if (second != null) _line(context, ref, second),
-        ],
+    return AnimatedSize(
+      duration: const Duration(milliseconds: 200),
+      curve: Curves.easeOut,
+      child: Padding(
+        padding: const EdgeInsets.only(top: Space.l),
+        child: ListGroup(
+          children: [
+            _line(context, ref, top),
+            if (second != null) _line(context, ref, second),
+          ],
+        ),
       ),
     );
   }
@@ -419,6 +444,19 @@ class _Activity extends ConsumerWidget {
           icon: const Icon(Icons.close_rounded),
           tooltip: 'Dismiss',
         ),
+        HealthAction.retryOpening => TextButton(
+          onPressed: ref.read(driveSetupProvider.notifier).run,
+          child: const Text('Retry'),
+        ),
+        HealthAction.restartTelegram => TextButton(
+          onPressed: () {
+            final client = ref.read(telegramClientProvider);
+            client.fatalError.value = null;
+            // A failure comes back on this line through fatalError.
+            client.start().ignore();
+          },
+          child: const Text('Try again'),
+        ),
         HealthAction.none => null,
       },
       onTap: switch (health.target) {
@@ -436,6 +474,7 @@ class _Activity extends ConsumerWidget {
           context.go(folderId == null ? '/files' : '/files/$folderId');
           ref.read(forwardFilerProvider.notifier).clear();
         },
+        HealthTarget.none => null,
       },
     );
   }

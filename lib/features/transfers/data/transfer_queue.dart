@@ -1022,6 +1022,10 @@ class TransferQueue extends Notifier<TransfersState> {
   // ---------------------------------------------------------------------------
 
   void _pump() {
+    // Home can show the drive before Telegram has started. What is queued
+    // meanwhile is saved and waits; opening the drive reads it back and
+    // starts it.
+    if (!ref.mounted || ref.read(driveSessionProvider) == null) return;
     // Saves to the phone can be thousands deep; anything else goes first.
     int rank(TransferRow r) => r.origin == TransferOrigin.save ? 1 : 0;
     final now = DateTime.now();

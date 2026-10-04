@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter/services.dart';
@@ -8,6 +10,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:telegrive/core/files/file_kind.dart';
 import 'package:telegrive/features/backup/data/backup_controller.dart';
 import 'package:telegrive/features/checkup/data/drive_checkup.dart';
+import 'package:telegrive/features/drive/data/drive_repository.dart';
 import 'package:telegrive/features/drive/data/drive_session.dart';
 import 'package:telegrive/features/drive/data/drive_sync.dart';
 import 'package:telegrive/infrastructure/database/app_database.dart';
@@ -95,6 +98,7 @@ void main() {
 
   Future<(ProviderContainer, _Telegram, AppDatabase)> open({
     bool passwordFails = false,
+    bool driveOpen = true,
     Map<String, Object> stored = const {},
   }) async {
     // ignore: invalid_use_of_visible_for_testing_member
@@ -103,11 +107,12 @@ void main() {
     final db = AppDatabase(NativeDatabase.memory());
     final telegram = _Telegram(passwordFails: passwordFails);
     final container = ProviderContainer(
+      retry: (_, _) => null,
       overrides: [
         sharedPreferencesProvider.overrideWithValue(shared),
         appDatabaseProvider.overrideWithValue(db),
         telegramClientProvider.overrideWithValue(telegram),
-        driveSessionProvider.overrideWith(TestSession.new),
+        if (driveOpen) driveSessionProvider.overrideWith(TestSession.new),
         driveSyncProvider.overrideWith(_Sync.new),
         backupControllerProvider.overrideWith(_Backup.new),
       ],
@@ -209,6 +214,41 @@ void main() {
     expect(report.find<TwoStepFinding>()!.severity, CheckSeverity.neutral);
     expect(report.find<ChannelFinding>()!.autoDeleteSeconds, 2592000);
     expect(report.find<AccountTtlFinding>()!.days, 180);
+  });
+
+  test('with no drive open the check-up fails rather than report an empty all-clear', () async {
+    final (container, telegram, _) = await open(driveOpen: false);
+    final keep = container.listen(driveCheckupProvider, (_, _) {});
+    addTearDown(keep.close);
+
+    await expectLater(
+      container.read(driveCheckupProvider.future),
+      throwsA(isA<DriveException>().having((e) => e.message, 'message', 'Your drive is not open.')),
+    );
+    final state = container.read(driveCheckupProvider);
+    expect(state.hasError, isTrue);
+    expect(state.hasValue, isFalse);
+    // Nothing was asked, and no last-checked time was recorded.
+    expect(telegram.requests, isEmpty);
+    expect(container.read(preferencesProvider).checkupLastRun, isNull);
+  });
+
+  test('with the drive only saved the check-up says Telegram is still connecting', () async {
+    final (container, _, _) = await open(
+      driveOpen: false,
+      stored: {
+        'drive_snapshot': jsonEncode(testSession.toJson()),
+        'drive_chat_1': testChatId,
+        'full_sync_$testChatId': DateTime.now().millisecondsSinceEpoch,
+      },
+    );
+    final keep = container.listen(driveCheckupProvider, (_, _) {});
+    addTearDown(keep.close);
+
+    await expectLater(
+      container.read(driveCheckupProvider.future),
+      throwsA(isA<DriveException>().having((e) => e.message, 'message', stillConnecting)),
+    );
   });
 
   test('turning the timer off sends zero and the row turns fine', () async {

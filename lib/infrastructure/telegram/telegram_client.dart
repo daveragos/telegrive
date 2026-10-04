@@ -45,6 +45,7 @@ class TelegramClient {
   td.AuthorizationState? _authState;
   final _connectionStates = StreamController<td.ConnectionState>.broadcast();
   td.ConnectionState? _connectionState;
+  Completer<void> _ready = Completer<void>();
 
   /// Set when configuration itself failed — a missing native library, a
   /// corrupt database that could not be recovered. Shown on the splash screen.
@@ -60,6 +61,13 @@ class TelegramClient {
     if (current != null) yield current;
     yield* _authStates.stream;
   }
+
+  /// Completes once an account is signed in, from which point TDLib answers
+  /// about the account's chats and files. Home can show the drive before
+  /// that, so work only Telegram can do (fetching a thumbnail, finding a
+  /// file to download, play or read) waits for this first. A log-out starts
+  /// the wait over, for the next account to sign in.
+  Future<void> get ready => _ready.future;
 
   /// TDLib's own view of the connection: waiting for a network, connecting,
   /// catching up, ready. It is the one place the app asks whether Telegram
@@ -205,15 +213,25 @@ class TelegramClient {
       case td.AuthorizationStateWaitTdlibParameters():
         unawaited(_configure());
       case td.AuthorizationStateReady():
+        if (!_ready.isCompleted) _ready.complete();
         // A drive app has no business showing its owner as "online" to
         // their contacts every time they browse files.
         unawaited(_setOption('online', const td.OptionValueBoolean(value: false)));
+      case td.AuthorizationStateLoggingOut():
+        _waitForSignIn();
       case td.AuthorizationStateClosed():
+        _waitForSignIn();
         _failPending();
         if (!_disposed) _createClient();
       default:
         break;
     }
+  }
+
+  /// Makes [ready] wait for the next sign-in. Work already waiting keeps
+  /// waiting on the same future, which the next sign-in completes.
+  void _waitForSignIn() {
+    if (_ready.isCompleted) _ready = Completer<void>();
   }
 
   Future<void> _configure() async {

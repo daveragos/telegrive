@@ -29,6 +29,16 @@ class DriveException implements Exception {
   String toString() => message;
 }
 
+/// What a change says while Home shows the drive from the index and
+/// Telegram is still starting behind it.
+const stillConnecting = 'Still connecting to Telegram. Try again in a moment.';
+
+/// Why a change can't reach the drive's channel: Telegram is still starting
+/// behind the drive saved as [snapshot], or no drive is open at all.
+DriveException driveNotOpen(DriveSession? snapshot) => snapshot != null
+    ? const DriveException(stillConnecting)
+    : const DriveException('Your drive is not open.');
+
 /// Reads the local index and changes the drive.
 ///
 /// Every change goes to Telegram first and is written to the index from the
@@ -46,7 +56,7 @@ class DriveRepository {
 
   int get _chatId {
     final session = _ref.read(driveSessionProvider);
-    if (session == null) throw const DriveException('Your drive is not open.');
+    if (session == null) throw driveNotOpen(_ref.read(driveSnapshotProvider));
     return session.chatId;
   }
 
@@ -357,9 +367,13 @@ class DriveRepository {
 
   /// TDLib's file for [part]. The stored id is tried first; if TDLib no
   /// longer knows it (its database was reset), it is looked up again from
-  /// the message and remembered.
+  /// the message and remembered. Downloads, previews, streaming and reading
+  /// documents for search all come through here, so each waits a minute at
+  /// most for Telegram to finish starting, as it may not have when Home
+  /// opens.
   Future<td.File> resolveTdFile(PartRow part) async {
     final client = _ref.read(telegramClientProvider);
+    await client.ready.timeout(const Duration(minutes: 1));
     try {
       return await client.send<td.File>(td.GetFile(fileId: part.tdFileId));
     } on TelegramException {

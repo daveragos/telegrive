@@ -26,6 +26,10 @@ class _FakeTelegram extends TelegramClient {
   final downloads = <({int fileId, int offset, int limit})>[];
   final cancels = <({int fileId, bool onlyIfPending})>[];
 
+  /// Signed in from the start, so streaming finds its files at once.
+  @override
+  Future<void> get ready => Future<void>.value();
+
   @override
   Stream<td.File> get fileUpdates => _files.stream;
 

@@ -387,6 +387,7 @@ abstract final class FileActions {
     String? bundleName,
     bool byMoment = false,
   }) async {
+    if (!_connected(context, ref)) return false;
     final repository = ref.read(driveRepositoryProvider);
     final telegram = ref.read(telegramChatsProvider);
     final preferences = ref.read(preferencesProvider);
@@ -450,6 +451,7 @@ abstract final class FileActions {
     String? folderId,
     bool photos = false,
   }) async {
+    if (!_connected(context, ref)) return;
     final chat = await showImportChatPicker(context);
     if (chat == null || !context.mounted) return;
     await context.push(
@@ -1492,7 +1494,8 @@ abstract final class FileActions {
 
   /// Deletes [files] and [folders] for good, and everything inside the
   /// folders. They leave the list at once, and the messages go once Undo
-  /// has had its time. Returns true: there is nothing left to confirm.
+  /// has had its time. Returns whether the delete is under way: there is
+  /// nothing left to confirm.
   static Future<bool> deleteForever(
     BuildContext context,
     WidgetRef ref, {
@@ -1501,7 +1504,7 @@ abstract final class FileActions {
   }) async {
     final repository = ref.read(driveRepositoryProvider);
     final what = _describe(files, folders);
-    deleteLater(
+    return deleteLater(
       context,
       ref,
       fileIds: {for (final file in files) file.id},
@@ -1510,7 +1513,6 @@ abstract final class FileActions {
       message: 'Deleting $what for good',
       run: () => repository.delete(files: files, folders: folders),
     );
-    return true;
   }
 
   /// Deletes what the trash holds now, [contents], for good, the same way
@@ -1537,8 +1539,10 @@ abstract final class FileActions {
   /// Hides [fileIds], [folderIds] and [albumIds] at once and runs [run],
   /// which deletes them for good, only once the Undo on [message] has had
   /// [PendingDeletes.wait]. Undo keeps them. [label] names what goes, for
-  /// the sentence the shell shows if the delete fails later.
-  static void deleteLater(
+  /// the sentence the shell shows if the delete fails later. While
+  /// Telegram is still starting nothing is hidden, and it says so; returns
+  /// whether the delete is under way.
+  static bool deleteLater(
     BuildContext context,
     WidgetRef ref, {
     Set<String> fileIds = const {},
@@ -1548,6 +1552,7 @@ abstract final class FileActions {
     required String message,
     required Future<void> Function() run,
   }) {
+    if (!_connected(context, ref)) return false;
     final pending = ref.read(pendingDeletesProvider.notifier);
     final token = pending.schedule(
       fileIds: fileIds,
@@ -1575,6 +1580,7 @@ abstract final class FileActions {
         );
       },
     );
+    return true;
   }
 
   /// `"report.pdf"`, or `3 items`.
@@ -1957,8 +1963,8 @@ abstract final class FileActions {
     WidgetRef ref,
     int messageId,
   ) async {
-    final session = ref.read(driveSessionProvider);
-    if (session == null) return;
+    if (!_connected(context, ref)) return;
+    final session = ref.read(driveSessionProvider)!;
     // Private channel links use the bare channel id and the server message id.
     final channel = -session.chatId - 1000000000000;
     final opened = await launchUrl(
@@ -1968,6 +1974,17 @@ abstract final class FileActions {
     if (!opened && context.mounted) {
       showSnack(context, 'Couldn\'t open Telegram.');
     }
+  }
+
+  /// Whether the drive is open for something that starts in Telegram. While
+  /// Home shows the drive from the index and Telegram is still starting,
+  /// it says so, as a change that reached the repository would, and the
+  /// person tries again once it has connected.
+  static bool _connected(BuildContext context, WidgetRef ref) {
+    if (ref.read(driveSessionProvider) != null) return true;
+    final snapshot = ref.read(driveSnapshotProvider);
+    if (snapshot != null) showSnack(context, driveNotOpen(snapshot).message);
+    return false;
   }
 
   /// Runs [action], turning failures into a snackbar. With [undo], the
@@ -2202,8 +2219,13 @@ class _DownloadDialogState extends ConsumerState<_DownloadDialog> {
       fontFeatures: tabularFigures,
     );
 
+    // Downloads wait in the queue until the drive's session opens.
+    final connecting = ref.watch(driveSessionProvider) == null;
     return AlertDialog(
-      title: Text('Downloading', style: theme.textTheme.titleMedium),
+      title: Text(
+        connecting ? 'Connecting to Telegram' : 'Downloading',
+        style: theme.textTheme.titleMedium,
+      ),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,

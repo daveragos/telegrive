@@ -170,7 +170,7 @@ class TelegramChats {
     String message = '',
   }) async {
     final drive = _driveChatId;
-    if (drive == null) throw const DriveException('Your drive is not open.');
+    if (drive == null) throw driveNotOpen(_ref.read(driveSnapshotProvider));
     final repository = _ref.read(driveRepositoryProvider);
     final messenger = _ref.read(channelMessengerProvider);
     final groups = [

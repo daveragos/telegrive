@@ -11,27 +11,34 @@ import '../domain/drive_models.dart';
 import 'drive_repository.dart';
 
 /// Local path of a server-made thumbnail, fetched at low priority the first
-/// time a tile asks for it. Paths stay cached once resolved.
+/// time a tile asks for it. Paths stay cached once resolved. Home can show
+/// tiles before Telegram has started, so the fetch waits for it; a photo
+/// still on the phone shows from there meanwhile.
 ///
 /// When the last tile waiting for it goes away first (scrolled off the
 /// screen), the fetch is called off if TDLib hasn't started it, so a long
 /// scroll doesn't leave a queue of thumbnails nobody will see. One TDLib
 /// has already started is left to finish: it is a few kilobytes, and the
-/// next look at that tile costs nothing.
+/// next look at that tile costs nothing. A tile gone while Telegram was
+/// still starting asks for nothing.
 final thumbnailPathProvider = FutureProvider.autoDispose.family<String?, int>((
   ref,
   tdFileId,
 ) async {
   final client = ref.watch(telegramClientProvider);
+  var asked = false;
   var settled = false;
   ref.onDispose(() {
-    if (settled) return;
+    if (!asked || settled) return;
     unawaited(
       client
           .send<td.Ok>(td.CancelDownloadFile(fileId: tdFileId, onlyIfPending: true))
           .then<void>((_) {}, onError: (Object _) {}),
     );
   });
+  await client.ready;
+  if (!ref.mounted) return null;
+  asked = true;
   try {
     final file = await client.send<td.File>(
       td.DownloadFile(

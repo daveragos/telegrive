@@ -7,19 +7,22 @@ import 'package:telegrive/infrastructure/telegram/telegram_exception.dart';
 /// The drive channel every test opens.
 const testChatId = -100;
 
-/// An open drive on [testChatId], without Premium.
+/// The drive on [testChatId] of account 1, without Premium.
+const testSession = DriveSession(
+  userId: 1,
+  chatId: testChatId,
+  channelTitle: 'Telegrive',
+  firstName: 'A',
+  lastName: '',
+  phoneNumber: '',
+  username: null,
+  isPremium: false,
+);
+
+/// [testSession], open from the start.
 class TestSession extends DriveSessionNotifier {
   @override
-  DriveSession? build() => const DriveSession(
-    userId: 1,
-    chatId: testChatId,
-    channelTitle: 'Telegrive',
-    firstName: 'A',
-    lastName: '',
-    phoneNumber: '',
-    username: null,
-    isPremium: false,
-  );
+  DriveSession? build() => testSession;
 }
 
 /// Telegram for tests: a channel that holds [messages], applies caption and
@@ -29,7 +32,15 @@ class TestSession extends DriveSessionNotifier {
 /// and deletes them. Anything else goes to [answer], which a test overrides
 /// for what it needs (downloads, failures).
 class FakeTelegram extends TelegramClient {
-  FakeTelegram() : super(SecureStore());
+  FakeTelegram({this.signedIn = true}) : super(SecureStore());
+
+  /// Whether an account counts as signed in from the start, so work that
+  /// waits for [ready] goes ahead at once. Without it, [ready] waits for an
+  /// authorization update, as the real client's does.
+  final bool signedIn;
+
+  @override
+  Future<void> get ready => signedIn ? Future<void>.value() : super.ready;
 
   final Map<int, td.Message> messages = {};
 
@@ -356,4 +367,68 @@ td.Message textMessage(int id, String text, {int date = 1_700_000_000}) => chann
   id,
   td.MessageText(text: td.FormattedText(text: text, entities: const [])),
   date: date,
+);
+
+/// Account 1 as TDLib describes it.
+td.User testUser() => const td.User(
+  id: 1,
+  firstName: 'A',
+  lastName: '',
+  phoneNumber: '251911000000',
+  status: td.UserStatusEmpty(),
+  accentColorId: 0,
+  backgroundCustomEmojiId: 0,
+  profileAccentColorId: -1,
+  profileBackgroundCustomEmojiId: 0,
+  isContact: false,
+  isMutualContact: false,
+  isCloseFriend: false,
+  isVerified: false,
+  isPremium: false,
+  isSupport: false,
+  restrictionReason: '',
+  isScam: false,
+  isFake: false,
+  hasActiveStories: false,
+  hasUnreadActiveStories: false,
+  restrictsNewChats: false,
+  haveAccess: true,
+  type: td.UserTypeRegular(),
+  languageCode: 'en',
+  addedToAttachmentMenu: false,
+);
+
+/// The drive channel's full record, its description carrying the tag that
+/// marks a Telegrive drive.
+td.SupergroupFullInfo channelInfo() => const td.SupergroupFullInfo(
+  description: 'Storage for the Telegrive app. #telegrive',
+  memberCount: 1,
+  administratorCount: 1,
+  restrictedCount: 0,
+  bannedCount: 0,
+  linkedChatId: 0,
+  slowModeDelay: 0,
+  slowModeDelayExpiresIn: 0,
+  canEnablePaidReaction: false,
+  canGetMembers: true,
+  hasHiddenMembers: false,
+  canHideMembers: false,
+  canSetStickerSet: false,
+  canSetLocation: false,
+  canGetStatistics: false,
+  canGetRevenueStatistics: false,
+  canGetStarRevenueStatistics: false,
+  canToggleAggressiveAntiSpam: false,
+  isAllHistoryAvailable: true,
+  canHaveSponsoredMessages: false,
+  hasAggressiveAntiSpamEnabled: false,
+  hasPaidMediaAllowed: false,
+  hasPinnedStories: false,
+  myBoostCount: 0,
+  unrestrictBoostCount: 0,
+  stickerSetId: 0,
+  customEmojiStickerSetId: 0,
+  botCommands: [],
+  upgradedFromBasicGroupId: 0,
+  upgradedFromMaxMessageId: 0,
 );

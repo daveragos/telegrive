@@ -106,7 +106,13 @@ phone number.
   and when. Backed-up photos stay in Photos, so a batch of them never
   pushes the rest out. See all splits the list into Opened and Added.
 - **Fast and offline-friendly.** A local index (SQLite) makes browsing and
-  search instant; the channel stays the source of truth. Photos fetches
+  search instant; the channel stays the source of truth. Opening the app on
+  a phone that has read the drive before goes straight to Home, from the
+  index, while Telegram starts behind one line, "Connecting to Telegram",
+  which goes once the drive is open, or offers Retry when it couldn't be
+  reached. Files, Photos and Search work meanwhile, with the phone's own
+  thumbnails; uploads and downloads wait and start on their own once it
+  connects, and other changes say to try again in a moment. Photos fetches
   thumbnails only for what stops on screen, not for what scrolls past, and
   on Wi-Fi it fetches the newest ones ahead, so browsing them later on
   mobile data costs nothing.
@@ -423,6 +429,14 @@ Telegram (source of truth)                 This device
   one's index before its own drive opens. A session ended from Telegram
   closes the drive and keeps the index for seven days, so signing back in
   soon shows it at once; after that it is wiped too.
+- **Home before Telegram answers.** Each time the drive opens, the phone
+  keeps the account's name and id and which channel holds the drive (never
+  the phone number), and the next start shows Home from them and the
+  index, once the channel has been read in full at least once. Signing out, or a
+  session ended from Telegram, forgets them. If Telegram starts up asking
+  for a sign-in without the phone having seen the session end, the drive
+  leaves the phone at once. A drive channel found anew in place of the
+  old one has the old one's index cleared before it is read.
 - **Forwards are filed by their comment.** A file that arrives without a
   manifest is a forward, or a file sent from another Telegram app, whose
   own caption is read instead. The plain text message sent just before a
@@ -445,7 +459,8 @@ lib/
 │   └── storage/       # small preferences
 └── features/
     ├── auth/          # welcome, credentials, phone/code/password/QR
-    ├── setup/         # splash, find-or-create (and brand) the drive channel
+    ├── setup/         # splash, find-or-create (and brand) the drive channel,
+    │                  # open a known drive behind Home
     ├── drive/         # manifest format, indexer, repository, sync
     ├── transfers/     # upload/download queue, background keep-alive
     ├── backup/        # photo backup: controller, worker, notification, UI
@@ -542,6 +557,14 @@ two commands are at the top of that test.
   or in the background. On Android 7 it arrives from its start only, so an
   app that jumps around in a file may not read it until the file is on the
   phone.
+- While Telegram is still connecting, Home shows what the index held when
+  the app last ran, so it can be behind what other devices did since.
+  New folders, renames, moves, stars, the trash, sending, Show in
+  Telegram and Rebuild index wait for the connection: they say "Still
+  connecting to Telegram. Try again in a moment." rather than queue. Check
+  my drive can't look at anything yet, so it says it didn't finish, and
+  Check again runs it once the drive is open. In Settings, the timer for
+  an unused account and this session's name fill in once Telegram answers.
 - Where you stopped in a video or recording is kept on this phone only, for
   files of three minutes or longer and for 60 days after you last played
   them. Rebuild index keeps these points; signing out clears them.

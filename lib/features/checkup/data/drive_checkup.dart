@@ -221,7 +221,8 @@ const List<int> accountTtlChoices = [30, 90, 180, 365, 548, 730];
 /// Looks the drive over: the channel, the index, split files, photo
 /// backup, the trash and the account, each in its own try, so a check that
 /// fails only degrades its own row. Reading it runs the check-up;
-/// invalidating it runs it again.
+/// invalidating it runs it again. With no drive open there is nothing to
+/// look at, so it fails rather than report an empty all-clear.
 class DriveCheckup extends AsyncNotifier<CheckupReport> {
   TelegramClient get _client => ref.read(telegramClientProvider);
   Preferences get _prefs => ref.read(preferencesProvider);
@@ -235,7 +236,7 @@ class DriveCheckup extends AsyncNotifier<CheckupReport> {
   @override
   Future<CheckupReport> build() async {
     final session = ref.read(driveSessionProvider);
-    if (session == null) return CheckupReport(findings: const [], at: DateTime.now());
+    if (session == null) throw driveNotOpen(ref.read(driveSnapshotProvider));
     final findings = <CheckFinding>[
       await _channel(session.chatId),
       _index(session.chatId),
@@ -420,12 +421,14 @@ final driveCheckupProvider = AsyncNotifierProvider.autoDispose<DriveCheckup, Che
 
 /// After how many days without activity Telegram deletes the account, and
 /// the drive with it. Settings and the check-up read and set it here.
+/// Settings can open while Telegram is still starting, so the first read
+/// waits for it.
 class AccountTtlNotifier extends AsyncNotifier<int> {
   @override
   Future<int> build() async {
-    final ttl = await ref
-        .watch(telegramClientProvider)
-        .send<td.AccountTtl>(const td.GetAccountTtl());
+    final client = ref.watch(telegramClientProvider);
+    await client.ready;
+    final ttl = await client.send<td.AccountTtl>(const td.GetAccountTtl());
     return ttl.days;
   }
 
@@ -462,11 +465,12 @@ class CheckupLastRun extends Notifier<DateTime?> {
 final checkupLastRunProvider = NotifierProvider<CheckupLastRun, DateTime?>(CheckupLastRun.new);
 
 /// This phone's entry in Telegram's Devices list, as 'Telegrive 1.0.0 ·
-/// Pixel 8 · Android 15', or null when Telegram doesn't list it.
+/// Pixel 8 · Android 15', or null when Telegram doesn't list it. It asks
+/// once Telegram has started, as Settings can open before.
 final currentSessionProvider = FutureProvider.autoDispose<String?>((ref) async {
-  final sessions = await ref
-      .watch(telegramClientProvider)
-      .send<td.Sessions>(const td.GetActiveSessions());
+  final client = ref.watch(telegramClientProvider);
+  await client.ready;
+  final sessions = await client.send<td.Sessions>(const td.GetActiveSessions());
   final current = sessions.sessions.where((s) => s.isCurrent).firstOrNull;
   if (current == null) return null;
   return '${current.applicationName} ${current.applicationVersion} · '

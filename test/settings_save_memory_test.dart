@@ -29,6 +29,12 @@ class _Backup extends BackupController {
   BackupState build() => const BackupState(phase: BackupPhase.off);
 }
 
+/// The drive saved on the phone, shown while Telegram is still starting.
+class _Snapshot extends DriveSnapshotNotifier {
+  @override
+  DriveSession? build() => testSession;
+}
+
 class _MobileData extends MobileDataController {
   @override
   MobileDataState build() => MobileDataState(
@@ -58,6 +64,7 @@ void main() {
     WidgetTester tester,
     DeviceProfile profile, {
     Map<String, Object> prefs = const {},
+    bool connecting = false,
   }) async {
     // ignore: invalid_use_of_visible_for_testing_member
     SharedPreferences.setMockInitialValues(prefs);
@@ -71,7 +78,10 @@ void main() {
         overrides: [
           sharedPreferencesProvider.overrideWithValue(shared),
           deviceProfileProvider.overrideWithValue(profile),
-          driveSessionProvider.overrideWith(TestSession.new),
+          if (connecting)
+            driveSnapshotProvider.overrideWith(_Snapshot.new)
+          else
+            driveSessionProvider.overrideWith(TestSession.new),
           driveSyncProvider.overrideWith(_Sync.new),
           backupControllerProvider.overrideWith(_Backup.new),
           mobileDataProvider.overrideWith(_MobileData.new),
@@ -130,5 +140,17 @@ void main() {
     await tester.pumpAndSettle();
     expect(isOn(tester), isFalse);
     expect(reason, findsNothing);
+  });
+
+  testWidgets('Rebuild index says Telegram is still connecting rather than do nothing', (
+    tester,
+  ) async {
+    await pumpSettings(tester, roomy, connecting: true);
+    expect(find.text('Telegrive'), findsOneWidget);
+
+    await tester.tap(find.text('Rebuild index'));
+    await tester.pump();
+
+    expect(find.text(stillConnecting), findsOneWidget);
   });
 }

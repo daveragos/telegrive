@@ -130,11 +130,11 @@ abstract final class AlbumActions {
   }
 
   /// Takes the album off the list at once and deletes it once its Undo has
-  /// had its time; its photos and videos stay in the drive. Returns true,
-  /// so the album's screen closes.
+  /// had its time; its photos and videos stay in the drive. Returns whether
+  /// the delete is under way, so the album's screen closes.
   static Future<bool> delete(BuildContext context, WidgetRef ref, DriveAlbum album) async {
     final repository = ref.read(driveRepositoryProvider);
-    FileActions.deleteLater(
+    return FileActions.deleteLater(
       context,
       ref,
       albumIds: {album.id},
@@ -142,7 +142,6 @@ abstract final class AlbumActions {
       message: 'Deleting "${album.name}"',
       run: () => repository.deleteAlbum(album.id),
     );
-    return true;
   }
 
   static Future<bool> removeFrom(

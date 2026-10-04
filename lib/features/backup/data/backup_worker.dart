@@ -31,7 +31,14 @@ abstract final class BackupWorker {
 
   static bool get _supported => !kIsWeb && Platform.isAndroid;
 
-  static Future<void> initialize() async {
+  static Future<void>? _initializing;
+
+  /// Hands Android the job's entry point, once. The app does it after its
+  /// first frame, and backup may arm the jobs before that, so whichever
+  /// comes first does it and the other waits for it.
+  static Future<void> initialize() => _initializing ??= _initialize();
+
+  static Future<void> _initialize() async {
     if (!_supported) return;
     try {
       await Workmanager().initialize(backupWorkerDispatcher);
@@ -43,6 +50,7 @@ abstract final class BackupWorker {
   /// Arms both jobs. Idempotent: existing registrations are kept.
   static Future<void> schedule() async {
     if (!_supported) return;
+    await initialize();
     try {
       await Workmanager().registerPeriodicTask(
         _periodicTask,

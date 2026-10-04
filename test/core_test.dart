@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -9,6 +10,7 @@ import 'package:telegrive/core/files/file_kind.dart';
 import 'package:telegrive/core/format/formatters.dart';
 import 'package:telegrive/features/backup/data/backup_controller.dart';
 import 'package:telegrive/features/backup/data/local_media.dart';
+import 'package:telegrive/features/drive/data/drive_session.dart';
 import 'package:telegrive/features/drive/domain/drive_models.dart';
 import 'package:telegrive/features/files/presentation/file_location.dart';
 import 'package:telegrive/features/search/data/content_indexer.dart';
@@ -284,6 +286,54 @@ void main() {
       final sorted = [...files]
         ..sort(const SortOrder(SortField.modified).compareFiles);
       expect(sorted.map((f) => f.name), ['A.txt', 'c.txt', 'b.txt']);
+    });
+  });
+
+  group('DriveSession', () {
+    const session = DriveSession(
+      userId: 7,
+      chatId: -1001234567890,
+      channelTitle: 'Telegrive',
+      firstName: 'Dawit',
+      lastName: 'Beyene',
+      phoneNumber: '251911000000',
+      username: 'dawit',
+      isPremium: true,
+    );
+
+    test('comes back from JSON as it was, without its phone number', () {
+      final back = DriveSession.fromJson(
+        (jsonDecode(jsonEncode(session.toJson())) as Map).cast<String, Object?>(),
+      );
+      expect(back.userId, 7);
+      expect(back.chatId, -1001234567890);
+      expect(back.channelTitle, 'Telegrive');
+      expect(back.firstName, 'Dawit');
+      expect(back.lastName, 'Beyene');
+      expect(back.username, 'dawit');
+      expect(back.isPremium, isTrue);
+      expect(back.initials, 'DB');
+      expect(back.phoneNumber, '');
+    });
+
+    test('never writes the phone number', () {
+      final json = jsonEncode(session.toJson());
+      expect(json, isNot(contains('251911000000')));
+      expect(session.toJson().keys, isNot(contains('phoneNumber')));
+    });
+
+    test('keeps an account with no username', () {
+      const plain = DriveSession(
+        userId: 7,
+        chatId: -100,
+        channelTitle: 'Telegrive',
+        firstName: 'A',
+        lastName: '',
+        phoneNumber: '',
+        username: null,
+        isPremium: false,
+      );
+      expect(DriveSession.fromJson(plain.toJson()).username, isNull);
     });
   });
 

@@ -6,7 +6,7 @@
 // Images land in tool/screenshots/out/.
 
 import 'dart:async';
-import 'dart:convert' show base64Encode;
+import 'dart:convert' show base64Encode, jsonEncode;
 import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
@@ -97,19 +97,29 @@ import 'package:video_player/video_player.dart';
 const _gb = 1024 * 1024 * 1024;
 const _mb = 1024 * 1024;
 
+const _account = DriveSession(
+  userId: 1,
+  chatId: -1001234567890,
+  channelTitle: 'Telegrive',
+  firstName: 'Dawit',
+  lastName: 'Beyene',
+  phoneNumber: '251911000000',
+  username: 'dawit',
+  isPremium: false,
+);
+
 class _Session extends DriveSessionNotifier {
   @override
-  DriveSession? build() => const DriveSession(
-    userId: 1,
-    chatId: -1001234567890,
-    channelTitle: 'Telegrive',
-    firstName: 'Dawit',
-    lastName: 'Beyene',
-    phoneNumber: '251911000000',
-    username: 'dawit',
-    isPremium: false,
-  );
+  DriveSession? build() => _account;
 }
+
+/// What the phone keeps of [_account]'s drive, read in full a moment ago,
+/// so Home shows it from the index before Telegram answers.
+Map<String, Object> _savedDrive() => {
+  'drive_snapshot': jsonEncode(_account.toJson()),
+  'drive_chat_${_account.userId}': _account.chatId,
+  'full_sync_${_account.chatId}': DateTime.now().millisecondsSinceEpoch,
+};
 
 class _Sync extends DriveSync {
   @override
@@ -872,6 +882,7 @@ void main() {
     Freeable? freeable,
     bool forwarded = false,
     List<WatchedFolderView>? watched,
+    bool connecting = false,
   }) async {
     debugDisableShadows = false;
     tester.view.physicalSize = const Size(1080, 2340);
@@ -881,6 +892,7 @@ void main() {
     // ignore: invalid_use_of_visible_for_testing_member
     SharedPreferences.setMockInitialValues({
       'backup_prompt_shown': true,
+      if (connecting) ..._savedDrive(),
       ...prefs,
     });
     final shared = await SharedPreferences.getInstance();
@@ -1007,7 +1019,11 @@ void main() {
               totalRamBytes: 8 << 30,
             ),
           ),
-          driveSessionProvider.overrideWith(_Session.new),
+          // While connecting, Home shows the drive saved when it last
+          // opened, before its session is open.
+          driveSessionProvider.overrideWith(
+            connecting ? DriveSessionNotifier.new : _Session.new,
+          ),
           driveSyncProvider.overrideWith(_Sync.new),
           transferQueueProvider.overrideWith(() => _Queue(transfers)),
           storageSummaryProvider.overrideWith((ref) => Stream.value(summary)),
@@ -1364,6 +1380,21 @@ void main() {
       ),
     );
     await snap(tester, 'home_all_good');
+  });
+
+  /// Home on a cold start, from the index, while Telegram starts behind it.
+  testWidgets('home connecting', (tester) async {
+    await prepareData(tester);
+    transfers = TransfersState.empty;
+    await pumpApp(
+      tester,
+      location: '/home',
+      connecting: true,
+      backup: const BackupState(phase: BackupPhase.waitingForDrive),
+    );
+    expect(find.text('Connecting to Telegram'), findsOneWidget);
+    expect(find.text('DB'), findsOneWidget);
+    await snap(tester, 'home_connecting');
   });
 
   /// Home just after forwards named Wedding in their comment went there.

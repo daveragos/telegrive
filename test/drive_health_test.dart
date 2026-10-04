@@ -99,6 +99,8 @@ DriveHealth _top({
   int renewDay = 1,
   ConnectionHealth connection = ConnectionHealth.ok,
   String? proxy,
+  DriveOpening opening = DriveOpening.open,
+  String? openingError,
 }) => describeDriveHealth(
   backup: backup,
   sync: sync ?? _synced,
@@ -108,6 +110,8 @@ DriveHealth _top({
   renewDay: renewDay,
   connection: connection,
   proxy: proxy,
+  opening: opening,
+  openingError: openingError,
   now: _now,
 );
 
@@ -656,6 +660,106 @@ void main() {
       final health = _top(backup: const BackupState(phase: BackupPhase.waitingForDrive));
       expect(health.text, 'Backup is starting');
       expect(health.tone, HealthTone.neutral);
+    });
+
+    group('while the drive opens behind Home', () {
+      const busy = [
+        BackupState(phase: BackupPhase.waitingForDrive),
+        BackupState(phase: BackupPhase.uploading, total: 20, done: 3),
+        BackupState(phase: BackupPhase.stopped),
+        _off,
+      ];
+
+      test('connecting beats everything else, in the accent with a moving bar', () {
+        for (final backup in busy) {
+          final health = _top(
+            backup: backup,
+            sync: SyncState(error: 'No connection', lastSynced: _now),
+            transfers: TransfersState([
+              _transfer('a.zip', TransferStatus.queued),
+              _needsRoom('b.zip', _gb),
+            ]),
+            opening: DriveOpening.connecting,
+          );
+          expect(health.text, 'Connecting to Telegram');
+          expect(health.detail, 'Your files are here. Changes wait until it connects.');
+          expect(health.icon, Icons.cloud_sync_outlined);
+          expect(health.tone, HealthTone.busy);
+          expect(health.progress, lessThan(0));
+          expect(health.action, HealthAction.none);
+          expect(health.target, HealthTarget.none);
+          expect(health.topic, HealthTopic.sync);
+        }
+      });
+
+      test('a failed try at finding the drive says why, in red with Retry', () {
+        final health = _top(
+          backup: busy.first,
+          opening: DriveOpening.failed,
+          openingError: 'Telegram took too long to answer.',
+        );
+        expect(health.text, 'Couldn\'t reach Telegram');
+        expect(health.detail, 'Telegram took too long to answer.');
+        expect(health.icon, Icons.cloud_off_outlined);
+        expect(health.tone, HealthTone.bad);
+        expect(health.progress, isNull);
+        expect(health.action, HealthAction.retryOpening);
+        expect(health.target, HealthTarget.none);
+      });
+
+      test('TDLib that didn\'t start says so, in red with Try again', () {
+        final health = _top(
+          opening: DriveOpening.notStarted,
+          openingError: 'Could not start Telegram: no library',
+        );
+        expect(health.text, 'Telegram didn\'t start');
+        expect(health.detail, 'Could not start Telegram: no library');
+        expect(health.icon, Icons.error_outline_rounded);
+        expect(health.tone, HealthTone.bad);
+        expect(health.action, HealthAction.restartTelegram);
+      });
+
+      test('a connection stuck on its network offers a proxy instead', () {
+        for (final opening in const [DriveOpening.connecting, DriveOpening.failed]) {
+          final health = _top(
+            opening: opening,
+            openingError: 'Telegram took too long to answer.',
+            connection: ConnectionHealth.stuck,
+          );
+          expect(health.text, 'Telegram isn\'t reachable on this network');
+          expect(health.action, HealthAction.useProxy);
+        }
+        // Without TDLib there is no connection for a proxy to help.
+        expect(
+          _top(opening: DriveOpening.notStarted, connection: ConnectionHealth.stuck).text,
+          'Telegram didn\'t start',
+        );
+      });
+
+      test('no network at all still says it is connecting', () {
+        expect(
+          _top(opening: DriveOpening.connecting, connection: ConnectionHealth.noNetwork).text,
+          'Connecting to Telegram',
+        );
+      });
+
+      test('an open drive leaves the line to the rest', () {
+        expect(_top().text, 'Backed up and in sync');
+      });
+
+      test('the second row keeps to other concerns, such as a failed transfer', () {
+        final transfers = TransfersState([
+          _transfer('a.zip', TransferStatus.failed, error: 'The original file is no longer available.'),
+        ]);
+        final top = _top(transfers: transfers, opening: DriveOpening.connecting);
+        final second = secondaryHealth(
+          top,
+          backup: _upToDate,
+          transfers: transfers,
+          now: _now,
+        );
+        expect(second?.text, '1 transfer failed');
+      });
     });
   });
 

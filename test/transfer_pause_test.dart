@@ -17,10 +17,12 @@ import 'package:telegrive/infrastructure/telegram/telegram_client.dart';
 import 'support/fake_telegram.dart';
 
 /// A download of file 7 that takes a moment, unless it is cancelled first.
+/// The attempts from [finishFrom] on are allowed to finish.
 class _FakeTelegram extends FakeTelegram {
-  _FakeTelegram(this.path);
+  _FakeTelegram(this.path, {this.finishFrom = 2});
 
   final String path;
+  final int finishFrom;
   bool done = false;
   int downloads = 0;
   int cancels = 0;
@@ -36,8 +38,7 @@ class _FakeTelegram extends FakeTelegram {
       case td.DownloadFile():
         downloads++;
         final inFlight = _inFlight = Completer<td.File>();
-        // The second attempt is allowed to finish.
-        if (downloads > 1) {
+        if (downloads >= finishFrom) {
           Timer(const Duration(milliseconds: 50), () {
             done = true;
             if (!inFlight.isCompleted) inFlight.complete(_file());
@@ -55,7 +56,75 @@ class _FakeTelegram extends FakeTelegram {
   }
 }
 
+/// A file of ten bytes in one part, on TDLib's file 7.
+Future<void> _seed(AppDatabase db) async {
+  final now = DateTime(2026, 9, 26);
+  await db.upsertFilePart(
+    DriveFilesCompanion.insert(
+      id: 'report',
+      name: 'report.pdf',
+      mimeType: 'application/pdf',
+      kind: FileKind.document,
+      size: 10,
+      createdAt: now,
+      modifiedAt: now,
+      partCount: const Value(1),
+    ),
+    FilePartsCompanion.insert(
+      fileId: 'report',
+      partIndex: 0,
+      messageId: 1,
+      tdFileId: 7,
+      size: 10,
+    ),
+  );
+}
+
 void main() {
+  test('a download asked for before the drive opens waits, then finishes once it does', () async {
+    final dir = await Directory.systemTemp.createTemp('telegrive_late');
+    addTearDown(() => dir.delete(recursive: true));
+    final fetched = File('${dir.path}/report.pdf')..writeAsStringSync('0123456789');
+
+    final db = AppDatabase(NativeDatabase.memory());
+    final telegram = _FakeTelegram(fetched.path, finishFrom: 1);
+    // No session yet: Home shows the drive from the index while Telegram
+    // starts.
+    final container = ProviderContainer(
+      overrides: [
+        appDatabaseProvider.overrideWithValue(db),
+        telegramClientProvider.overrideWithValue(telegram),
+        saveMemoryProvider.overrideWithBuild((ref, notifier) => false),
+      ],
+    );
+    addTearDown(() async {
+      container.dispose();
+      await db.close();
+    });
+    await _seed(db);
+
+    container.listen(transferQueueProvider, (_, _) {});
+    final queue = container.read(transferQueueProvider.notifier);
+    final file = (await container.read(driveRepositoryProvider).fileById('report'))!;
+    final result = queue.download(file);
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+
+    expect(telegram.downloads, 0);
+    final waiting = container.read(transferQueueProvider).items.single;
+    expect(waiting.status, TransferStatus.queued);
+    // Kept, so opening the drive finds it.
+    expect((await db.allTransfers()).single.status, TransferStatus.queued);
+
+    container.read(driveSessionProvider.notifier).open(testSession);
+
+    expect(await result.timeout(const Duration(seconds: 5)), fetched.path);
+    expect(telegram.downloads, 1);
+    expect(
+      container.read(transferQueueProvider).items.single.status,
+      TransferStatus.completed,
+    );
+  });
+
   test('a paused download waits, then finishes when resumed', () async {
     final dir = await Directory.systemTemp.createTemp('telegrive_pause');
     addTearDown(() => dir.delete(recursive: true));
@@ -76,26 +145,7 @@ void main() {
       await db.close();
     });
 
-    final now = DateTime(2026, 9, 26);
-    await db.upsertFilePart(
-      DriveFilesCompanion.insert(
-        id: 'report',
-        name: 'report.pdf',
-        mimeType: 'application/pdf',
-        kind: FileKind.document,
-        size: 10,
-        createdAt: now,
-        modifiedAt: now,
-        partCount: const Value(1),
-      ),
-      FilePartsCompanion.insert(
-        fileId: 'report',
-        partIndex: 0,
-        messageId: 1,
-        tdFileId: 7,
-        size: 10,
-      ),
-    );
+    await _seed(db);
 
     container.listen(transferQueueProvider, (_, _) {});
     final queue = container.read(transferQueueProvider.notifier);

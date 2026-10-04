@@ -19,6 +19,19 @@ import '../../share/data/recent_destinations.dart';
 import '../../transfers/data/transfer_queue.dart';
 import '../../trash/data/pending_deletes.dart';
 
+/// Whether TDLib is asking for an account to sign in: one of the steps of
+/// signing in, from the phone number to the email code.
+bool asksToSignIn(td.AuthorizationState? state) => switch (state) {
+  td.AuthorizationStateWaitPhoneNumber() ||
+  td.AuthorizationStateWaitOtherDeviceConfirmation() ||
+  td.AuthorizationStateWaitCode() ||
+  td.AuthorizationStateWaitPassword() ||
+  td.AuthorizationStateWaitRegistration() ||
+  td.AuthorizationStateWaitEmailAddress() ||
+  td.AuthorizationStateWaitEmailCode() => true,
+  _ => false,
+};
+
 /// Choices the person made on the sign-in screens that TDLib's state alone
 /// can't express.
 @immutable
@@ -62,6 +75,9 @@ class AuthController extends Notifier<AuthUiState> {
     return const AuthUiState();
   }
 
+  /// Any log-out ends opening the drive from the one saved when it last
+  /// opened, so Home doesn't come back while TDLib starts again signed out.
+  ///
   /// A log-out the person didn't ask for here is a session ended from
   /// Telegram: another device tapped Terminate, or the account's own
   /// sessions were cleared. Deletes still waiting out their Undo are
@@ -75,7 +91,9 @@ class AuthController extends Notifier<AuthUiState> {
   /// ended session is often a lost phone.
   void _onAuthState(td.AuthorizationState? state) {
     switch (state) {
-      case td.AuthorizationStateLoggingOut() when !_signingOut:
+      case td.AuthorizationStateLoggingOut():
+        unawaited(ref.read(driveSnapshotProvider.notifier).clear());
+        if (_signingOut) break;
         unawaited(_prefs.setSessionEndedAt(DateTime.now()));
         ref.read(pendingDeletesProvider.notifier).discardAll();
         unawaited(ref.read(pickerEnabledProvider.notifier).set(false));
@@ -165,7 +183,9 @@ class AuthController extends Notifier<AuthUiState> {
   ///
   /// Deletes still waiting out their Undo are dropped before anything
   /// else, so nothing is deleted once the drive has gone, from Telegram or
-  /// from the phone over the Welcome screen. What they would have deleted is
+  /// from the phone over the Welcome screen. The drive saved for opening
+  /// Home before Telegram answers goes with the session, so the next start
+  /// waits for whoever signs in. What they would have deleted is
   /// still in the channel for the next sign-in. Files kept available offline
   /// go with the index that knew about them, or nothing would find them
   /// again, and so do the pages of PDFs read in the app, which are pieces of
@@ -199,6 +219,7 @@ class AuthController extends Notifier<AuthUiState> {
   Future<void> wipeDeviceState() async {
     ref.read(pendingDeletesProvider.notifier).discardAll();
     ref.read(driveSessionProvider.notifier).close();
+    await ref.read(driveSnapshotProvider.notifier).clear();
     final prefs = ref.read(preferencesProvider);
     for (final chatId in prefs.syncedChatIds) {
       await prefs.clearSyncState(chatId);

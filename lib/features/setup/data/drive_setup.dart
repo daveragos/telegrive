@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:handy_tdlib/api.dart' as td;
 import 'package:path_provider/path_provider.dart';
 
+import '../../../infrastructure/database/app_database.dart';
 import '../../../infrastructure/storage/preferences.dart';
 import '../../../infrastructure/telegram/telegram_client.dart';
 import '../../../infrastructure/telegram/telegram_exception.dart';
@@ -54,6 +55,10 @@ class SetupState {
 ///
 /// Finding comes first on purpose. Someone signing in on a new phone, or
 /// after a reinstall, gets their existing drive back without doing anything.
+///
+/// The setup screen runs it after sign-in. For someone whose drive this
+/// phone has opened before, the drive opener runs it behind Home instead,
+/// once Telegram has started, and Home says how it is going.
 class DriveSetup extends Notifier<SetupState> {
   static const String channelTitle = 'Telegrive';
 
@@ -92,8 +97,19 @@ class DriveSetup extends Notifier<SetupState> {
       }
       await _prefs.setLastUserId(me.id);
 
+      // Read before the channel is looked up, since a channel found anew
+      // no longer matches it.
+      final snapshot = ref.read(driveSnapshotProvider);
       state = state.copyWith(step: SetupStep.channel);
       final (chat, created) = await _locateOrCreate(me.id);
+      if (snapshot != null && chat.id != snapshot.chatId) {
+        // The drive channel was replaced. The index read from the old one
+        // goes before the new one is read in full, so the two never mix,
+        // and Home stops showing it while that runs.
+        await ref.read(driveSnapshotProvider.notifier).clear();
+        await ref.read(appDatabaseProvider).clearIndex();
+        await _prefs.clearSyncState(snapshot.chatId);
+      }
       await _prefs.setDriveChatId(me.id, chat.id);
 
       final session = DriveSession(
@@ -108,6 +124,7 @@ class DriveSetup extends Notifier<SetupState> {
       );
       final sync = ref.read(driveSyncProvider.notifier);
       ref.read(driveSessionProvider.notifier).open(session);
+      await ref.read(driveSnapshotProvider.notifier).save(session);
 
       if (_prefs.lastFullSync(chat.id) == null) {
         // First time on this device: build the index before showing an

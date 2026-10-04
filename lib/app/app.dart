@@ -10,17 +10,20 @@ import '../features/backup/data/backup_controller.dart';
 import '../features/backup/data/watched_folders.dart';
 import '../features/drive/data/drive_session.dart';
 import '../features/drive/data/drive_sync.dart';
+import '../features/network/data/proxies.dart';
 import '../features/network/data/proxy_link_intake.dart';
 import '../features/network/domain/proxy_link.dart';
 import '../features/network/presentation/proxy_sheet.dart';
 import '../features/picker/data/picker_access.dart';
 import '../features/settings/data/settings_providers.dart';
+import '../features/setup/data/drive_opener.dart';
 import '../features/setup/data/drive_setup.dart';
 import '../features/transfers/data/transfer_keep_alive.dart';
 import '../features/transfers/data/transfer_queue.dart';
 import '../features/trash/data/pending_deletes.dart';
 import '../infrastructure/network/network_status.dart';
 import '../infrastructure/storage/device_profile.dart';
+import '../infrastructure/telegram/telegram_client.dart';
 import 'app_phase.dart';
 import 'app_shell.dart';
 import 'router.dart';
@@ -90,16 +93,19 @@ class _TelegriveAppState extends ConsumerState<TelegriveApp>
   /// there is a screen that stays for the sheet to open over: not the
   /// splash, and not setup while it runs, which an open drive replaces in
   /// a blink. A setup that failed stays, and on a blocked network that is
-  /// where the proxy is wanted. Waiting for the splash to go also waits
-  /// for TDLib's parameters, before which it takes no proxy.
+  /// where the proxy is wanted. It also waits for TDLib's parameters,
+  /// before which it takes no proxy, since Home can show a drive this
+  /// phone knows before Telegram has started.
   void _offerProxyLink() {
     final link = ref.read(proxyLinkIntakeProvider);
     if (link == null) return;
-    final settled = switch (ref.read(appPhaseProvider)) {
-      AppPhase.starting => false,
-      AppPhase.setup => ref.read(driveSetupProvider).error != null,
-      _ => true,
-    };
+    final settled =
+        telegramConfigured(ref.read(authStateProvider).value) &&
+        switch (ref.read(appPhaseProvider)) {
+          AppPhase.starting => false,
+          AppPhase.setup => ref.read(driveSetupProvider).error != null,
+          _ => true,
+        };
     if (!settled) return;
     ref.read(proxyLinkIntakeProvider.notifier).clear();
     // After the frame that puts this phase's screen in place, so the sheet
@@ -119,6 +125,9 @@ class _TelegriveAppState extends ConsumerState<TelegriveApp>
     // opens, not the first time someone visits the Transfers tab.
     ref.watch(transferQueueProvider.select((s) => s.activeCount));
     ref.watch(transferKeepAliveProvider);
+    // Opens a drive this phone knows behind Home, as soon as Telegram is
+    // signed in.
+    ref.watch(driveOpenerProvider);
     // At the root rather than in the shell, so it still sees the drive
     // close on sign-out and takes the bridge to the stream server away.
     ref.watch(pickerAccessProvider);
@@ -132,6 +141,10 @@ class _TelegriveAppState extends ConsumerState<TelegriveApp>
     // A tapped proxy link waits for a screen to be offered over.
     ref.listen<ProxyLink?>(proxyLinkIntakeProvider, (_, _) => _offerProxyLink());
     ref.listen<AppPhase>(appPhaseProvider, (_, _) => _offerProxyLink());
+    ref.listen<bool>(
+      authStateProvider.select((auth) => telegramConfigured(auth.value)),
+      (_, _) => _offerProxyLink(),
+    );
     ref.listen<String?>(driveSetupProvider.select((s) => s.error), (_, _) => _offerProxyLink());
 
     final router = ref.watch(routerProvider);
