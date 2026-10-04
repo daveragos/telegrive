@@ -89,8 +89,10 @@ enum HealthTarget { backup, notBackedUp, transfers, refresh, proxy, filed, chang
 /// phone's own connection, none at all or only mobile data, are [network];
 /// the line about the phone's free space is [storage]; the report of
 /// forwards filed by their comment is [filing]; changes made without a
-/// connection that are still to reach Telegram are [changes].
-enum HealthTopic { backup, transfers, sync, network, storage, filing, changes }
+/// connection that are still to reach Telegram are [changes]; whether
+/// backup can run while the app is closed is [background], apart from how
+/// backup stands now.
+enum HealthTopic { backup, transfers, sync, network, storage, filing, changes, background }
 
 /// One line of Home's Activity group, worked out from state alone so the
 /// wording and its priority can be tested without a widget.
@@ -200,6 +202,7 @@ DriveHealth describeDriveHealth({
   final waits = [
     for (final item in transfers.heldAt(at))
       if (item.wait case WaitingForTelegram(:final until)) until,
+    if (backup.pausedUntil case final until? when until.isAfter(at)) until,
   ];
   final backupBlocked = switch (backup.phase) {
     BackupPhase.stopped ||
@@ -320,7 +323,10 @@ DriveHealth describeDriveHealth({
 /// ([changes]) come after what needs doing about transfers, and so does
 /// the report of forwards the filer just put where their comment said
 /// ([filed]), after them; both come before the offers, since neither asks
-/// for more than a look.
+/// for more than a look. Backup that can't run while the app is closed
+/// ([backgroundBlocked]: its checks aren't armed with Android, or haven't
+/// run for two days) follows; it shows even while backup is up to date,
+/// since it is about the photos still to come.
 ///
 /// Last of all, when the phone is [lowOnSpace] and more than
 /// [freeUpWorthwhile] of backed-up photos ([freeableBytes]) could leave it,
@@ -336,6 +342,7 @@ DriveHealth? secondaryHealth(
   int freeableBytes = 0,
   OutboxState? changes,
   FilingSummary? filed,
+  bool backgroundBlocked = false,
   DateTime? now,
 }) {
   final at = now ?? DateTime.now();
@@ -366,6 +373,7 @@ DriveHealth? secondaryHealth(
       ),
     ?waitingChanges,
     if (filed != null && filed.count > 0) _filed(filed),
+    if (backgroundBlocked) _backgroundBlocked,
     if (backup.phase == BackupPhase.off) _off,
     if (lowOnSpace && freeableBytes > freeUpWorthwhile) _freeUp(freeableBytes),
   ];
@@ -529,6 +537,17 @@ DriveHealth _failedTransfers(TransfersState transfers) {
     topic: HealthTopic.transfers,
   );
 }
+
+/// Android isn't letting backup's checks run, so photos taken while the
+/// app is closed wait for it to open.
+const _backgroundBlocked = DriveHealth(
+  icon: Icons.error_outline_rounded,
+  tone: HealthTone.bad,
+  text: 'Backup can\'t run while the app is closed',
+  detail: 'Open backup settings to fix it.',
+  target: HealthTarget.backup,
+  topic: HealthTopic.background,
+);
 
 const _off = DriveHealth(
   icon: Icons.cloud_off_outlined,

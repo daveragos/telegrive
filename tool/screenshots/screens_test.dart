@@ -22,6 +22,7 @@ import 'package:telegrive/app/app_shell.dart';
 import 'package:telegrive/app/theme/app_theme.dart';
 import 'package:telegrive/features/auth/presentation/phone_screen.dart';
 import 'package:telegrive/features/auth/presentation/welcome_screen.dart';
+import 'package:telegrive/features/backup/data/background_health.dart';
 import 'package:telegrive/features/backup/data/backup_controller.dart';
 import 'package:telegrive/features/backup/data/free_up_space.dart';
 import 'package:telegrive/features/backup/data/local_media.dart';
@@ -895,6 +896,7 @@ void main() {
     bool forwarded = false,
     List<WatchedFolderView>? watched,
     bool connecting = false,
+    BackgroundHealth? background,
   }) async {
     debugDisableShadows = false;
     tester.view.physicalSize = const Size(1080, 2340);
@@ -1091,6 +1093,7 @@ void main() {
           cacheSizeProvider.overrideWith((ref) async => 734 * _mb),
           // Settings draws its file picker switch as it does on a phone.
           pickerSupportedProvider.overrideWithValue(true),
+          backgroundHealthProvider.overrideWith((ref) async => background),
           notificationsEnabledProvider.overrideWith(
             (ref) async => notificationsEnabled,
           ),
@@ -1527,6 +1530,26 @@ void main() {
     );
     expect(find.text('Free up'), findsOneWidget);
     await snap(tester, 'home_low_space');
+  });
+
+  /// Home with everything backed up, while Android isn't running the
+  /// checks that back up with the app closed.
+  testWidgets('home backup warning', (tester) async {
+    await prepareData(tester);
+    transfers = TransfersState.empty;
+    await pumpApp(
+      tester,
+      location: '/home',
+      backup: BackupState(
+        phase: BackupPhase.upToDate,
+        total: 4847,
+        done: 4847,
+        lastCompleted: DateTime.now().subtract(const Duration(minutes: 3)),
+      ),
+      background: const BackgroundHealth(watching: false),
+    );
+    expect(find.text('Backup can\'t run while the app is closed'), findsOneWidget);
+    await snap(tester, 'home_backup_warning');
   });
 
   testWidgets('home backup stopped', (tester) async {
@@ -2976,8 +2999,11 @@ void main() {
     await snap(tester, 'photos_month');
   });
 
-  testWidgets('backup settings', (tester) async {
-    await prepareData(tester);
+  /// Backup running on its own: it last ran overnight, the checks run, and
+  /// battery saver may still stop it.
+  Future<void> pumpBackupSettings(WidgetTester tester) async {
+    final today = DateTime.now();
+    final ran = DateTime(today.year, today.month, today.day, 2, 14);
     await pumpApp(
       tester,
       location: '/backup',
@@ -2992,10 +3018,36 @@ void main() {
         'backup_mobile_data': 'photos',
         'backup_excluded_folders': ['WhatsApp Images'],
         'photos_hidden_folders': ['Screenshots'],
+        'backup_unattended': true,
+        'backup_bg_last_run': ran.millisecondsSinceEpoch,
+        'backup_bg_last_uploaded': 40,
       },
       mobileData: _nearLimit,
+      background: BackgroundHealth(
+        watching: true,
+        batteryOk: false,
+        lastChecked: DateTime(today.year, today.month, today.day, 7, 40),
+        lastRun: ran,
+        lastUploaded: 40,
+      ),
     );
+  }
+
+  testWidgets('backup settings', (tester) async {
+    await prepareData(tester);
+    await pumpBackupSettings(tester);
     await snap(tester, 'backup_settings');
+  });
+
+  testWidgets('backup while the app is closed', (tester) async {
+    await prepareData(tester);
+    await pumpBackupSettings(tester);
+    // Down to the group about the app being closed.
+    await tester.drag(find.byType(ListView).first, const Offset(0, -1100));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('Last ran 2:14\u202fAM · 40 items'), findsOneWidget);
+    expect(find.text('Battery saver may stop backup'), findsOneWidget);
+    await snap(tester, 'backup_while_closed');
   });
 
   testWidgets('backup folders', (tester) async {

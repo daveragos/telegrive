@@ -2,6 +2,7 @@ import 'dart:collection';
 
 import 'package:flutter/material.dart' show Icons;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:telegrive/core/format/formatters.dart';
 import 'package:telegrive/features/backup/data/backup_controller.dart';
 import 'package:telegrive/features/backup/presentation/backup_card.dart';
 
@@ -126,6 +127,26 @@ void main() {
       speed: 2.1 * 1024 * 1024,
     );
     expect(uploading.detail, '210 items left · 2.1 MB/s · videos wait for Wi-Fi');
+  });
+
+  test('backup paused for a wait Telegram asked for says when it carries on', () {
+    final until = DateTime.now().add(const Duration(days: 3));
+    final paused = BackupState(
+      phase: BackupPhase.uploading,
+      total: 300,
+      done: 90,
+      pausedUntil: until,
+    );
+    final status = describeBackup(paused);
+    expect(status.icon, Icons.hourglass_empty_rounded);
+    expect(status.title, 'Telegram asked us to wait');
+    expect(
+      status.detail,
+      '210 items left. Backup carries on by itself on ${Formatters.date(until)}.',
+    );
+    expect(status.progress, isNull);
+    expect(paused.isWorking, isFalse);
+    expect(paused.copyWith(clearPaused: true).isWorking, isTrue);
   });
 
   test('a stopped backup says so, with the reason as the detail', () {

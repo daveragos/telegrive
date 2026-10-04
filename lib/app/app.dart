@@ -6,6 +6,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/config/app_config.dart';
+import '../features/backup/data/background_health.dart';
 import '../features/backup/data/backup_controller.dart';
 import '../features/backup/data/watched_folders.dart';
 import '../features/drive/data/drive_session.dart';
@@ -76,7 +77,12 @@ class _TelegriveAppState extends ConsumerState<TelegriveApp>
     if (state == AppLifecycleState.paused || state == AppLifecycleState.detached) {
       unawaited(pending.appPaused());
     }
-    if (state == AppLifecycleState.resumed) unawaited(pending.appResumed());
+    if (state == AppLifecycleState.resumed) {
+      unawaited(pending.appResumed());
+      // Whether backup can run with the app closed may have changed in the
+      // system's settings, or a background job run meanwhile.
+      ref.invalidate(backgroundHealthProvider);
+    }
     if (state == AppLifecycleState.resumed &&
         ref.read(driveSessionProvider) != null) {
       // Catch up on anything added from another device while away, back up
@@ -85,7 +91,7 @@ class _TelegriveAppState extends ConsumerState<TelegriveApp>
       // let go transfers waiting for room that was made in another app.
       ref.read(driveSyncProvider.notifier).refresh();
       ref.read(editOutboxProvider.notifier).soon();
-      ref.read(backupControllerProvider.notifier).schedule(immediate: true);
+      ref.read(backupControllerProvider.notifier).scheduleOnResume();
       ref.read(watchedFoldersProvider.notifier).schedule(immediate: true);
       unawaited(ref.read(transferQueueProvider.notifier).recheckRoom());
     }

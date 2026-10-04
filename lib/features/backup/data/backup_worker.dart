@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:ui' show DartPluginRegistrant;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
@@ -7,6 +8,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:workmanager/workmanager.dart';
 
 import '../../../infrastructure/storage/preferences.dart';
+import '../../../infrastructure/telegram/td_ownership.dart';
+import 'background_backup.dart';
 import 'backup_notifications.dart';
 
 /// Notices new photos while Telegrive isn't open (Android).
@@ -17,19 +20,18 @@ import 'backup_notifications.dart';
 ///   the photo library, and
 /// * a **periodic check** every few hours as a safety net.
 ///
-/// Either one counts photos newer than the last finished backup and, if
-/// there are any, posts "N new photos to back up", unless that reminder was
-/// swiped away less than a day ago. When the app itself is running, the
-/// job runs on its engine instead and simply starts the backup.
+/// Each runs on an engine of its own and notes when it ran. While the
+/// app's engine is alive it backs up by itself, so the job leaves it at
+/// that. Otherwise it counts photos newer than the last finished backup
+/// and, if there are any, asks for [BackgroundBackup] when backup runs on
+/// its own, and posts "N new photos to back up", unless that reminder was
+/// swiped away less than a day ago.
 abstract final class BackupWorker {
   static const String _periodicTask = 'telegrive.backup-check';
   static const String _triggerTask = 'telegrive.media-trigger';
 
-  /// Set by the running app; lets a job that lands on the app's own engine
-  /// start the backup directly instead of notifying.
-  static VoidCallback? onNewMediaInApp;
-
-  static bool get _supported => !kIsWeb && Platform.isAndroid;
+  /// Android, where the jobs exist.
+  static bool get supported => !kIsWeb && Platform.isAndroid;
 
   static Future<void>? _initializing;
 
@@ -39,7 +41,7 @@ abstract final class BackupWorker {
   static Future<void> initialize() => _initializing ??= _initialize();
 
   static Future<void> _initialize() async {
-    if (!_supported) return;
+    if (!supported) return;
     try {
       await Workmanager().initialize(backupWorkerDispatcher);
     } catch (e) {
@@ -49,7 +51,7 @@ abstract final class BackupWorker {
 
   /// Arms both jobs. Idempotent: existing registrations are kept.
   static Future<void> schedule() async {
-    if (!_supported) return;
+    if (!supported) return;
     await initialize();
     try {
       await Workmanager().registerPeriodicTask(
@@ -64,12 +66,26 @@ abstract final class BackupWorker {
     }
   }
 
+  /// Calls off both checks and a backup job waiting to run.
   static Future<void> cancel() async {
-    if (!_supported) return;
+    if (!supported) return;
     try {
       await Workmanager().cancelByUniqueName(_periodicTask);
       await Workmanager().cancelByUniqueName(_triggerTask);
+      await Workmanager().cancelByUniqueName(BackgroundBackup.runTask);
     } catch (_) {}
+  }
+
+  /// Whether either check is armed with Android.
+  static Future<bool> armed() async {
+    if (!supported) return false;
+    try {
+      return await Workmanager().isScheduledByUniqueName(_periodicTask) ||
+          await Workmanager().isScheduledByUniqueName(_triggerTask);
+    } catch (e) {
+      debugPrint('[BackupWorker] armed: $e');
+      return false;
+    }
   }
 
   /// Content-URI triggers fire once, so the job re-arms itself each run.
@@ -94,28 +110,31 @@ abstract final class BackupWorker {
   }
 
   static Future<void> _run(String task) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.reload();
-    if (!(prefs.getBool(BackupPrefKeys.enabled) ?? false)) return;
+    final shared = await SharedPreferences.getInstance();
+    await shared.reload();
+    final prefs = Preferences(shared);
+    await prefs.setBackgroundChecked(DateTime.now());
+    if (!prefs.backupEnabled) return;
 
     if (task == _triggerTask) await _armTrigger(replace: true);
 
-    final inApp = onNewMediaInApp;
-    if (inApp != null) {
-      inApp();
-      return;
-    }
+    // The app's engine owns TDLib while it is alive, and backs the photos
+    // up by itself.
+    if (await (await TdOwnership.inAppSupport()).isHeld()) return;
 
-    final count = await _countNewMedia(prefs);
+    final count = await _countNewMedia(shared);
+    final unattended = prefs.backupUnattended;
+    final wifiOnly = prefs.backupMobileData == BackupMobileData.off;
+    if (unattended && count > 0) await BackgroundBackup.enqueue(wifiOnly: wifiOnly);
     final remind = shouldRemind(
       count: count,
-      notifiedCount: prefs.getInt(BackupPrefKeys.notifiedCount),
-      remindAfterMillis: prefs.getInt(BackupPrefKeys.remindAfter),
+      notifiedCount: shared.getInt(BackupPrefKeys.notifiedCount),
+      remindAfterMillis: shared.getInt(BackupPrefKeys.remindAfter),
       now: DateTime.now(),
     );
     if (!remind) return;
-    await BackupNotifications.showNewMedia(count);
-    await prefs.setInt(BackupPrefKeys.notifiedCount, count);
+    await BackupNotifications.showNewMedia(count, unattended: unattended, wifiOnly: wifiOnly);
+    await shared.setInt(BackupPrefKeys.notifiedCount, count);
   }
 
   /// Whether to post the reminder for [count] new photos. It is said once
@@ -161,16 +180,25 @@ abstract final class BackupWorker {
   }
 }
 
-/// Entry point for scheduled jobs, in the app's engine or a background one.
+/// Entry point for scheduled jobs. Android runs each on a background engine
+/// of its own, never the app's, and that engine runs no main(), so the
+/// plugins written in Dart are registered here.
 @pragma('vm:entry-point')
 void backupWorkerDispatcher() {
   WidgetsFlutterBinding.ensureInitialized();
-  Workmanager().executeTask((task, _) async {
-    try {
-      await BackupWorker._run(task);
-    } catch (e) {
-      debugPrint('[BackupWorker] $task failed: $e');
-    }
-    return true;
-  });
+  DartPluginRegistrant.ensureInitialized();
+  Workmanager().executeTask(
+    (task, _) async {
+      if (task == BackgroundBackup.runTask) return BackgroundBackup.run();
+      try {
+        await BackupWorker._run(task);
+      } catch (e) {
+        debugPrint('[BackupWorker] $task failed: $e');
+      }
+      return true;
+    },
+    onTaskStopped: (task, _) async {
+      if (task == BackgroundBackup.runTask) await BackgroundBackup.stop();
+    },
+  );
 }

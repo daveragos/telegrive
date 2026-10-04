@@ -146,6 +146,35 @@ class DriveSetup extends Notifier<SetupState> {
     }
   }
 
+  /// Opens the drive this phone last opened, for the background job, and
+  /// catches the index up with an incremental read. It changes nothing in
+  /// Telegram: it never searches for a channel, makes one or changes how
+  /// one looks. It answers null, opening nothing, unless Telegram's account
+  /// is the one whose index this phone holds and the saved channel is still
+  /// a channel it created; the saved drive counts only once the index has
+  /// been read from it in full, which backup needs.
+  Future<DriveSession?> openExisting() async {
+    final saved = ref.read(driveSnapshotProvider);
+    if (saved == null) return null;
+    final me = await _client.send<td.User>(const td.GetMe());
+    if (me.id != saved.userId || _prefs.lastUserId != me.id) return null;
+    final channel = await _ownedDriveChannel(saved.chatId, requireTag: false);
+    if (channel == null) return null;
+    final session = DriveSession(
+      userId: me.id,
+      chatId: channel.chat.id,
+      channelTitle: channel.chat.title,
+      firstName: me.firstName,
+      lastName: me.lastName,
+      phoneNumber: me.phoneNumber,
+      username: me.usernames?.activeUsernames.firstOrNull,
+      isPremium: me.isPremium,
+    );
+    ref.read(driveSessionProvider.notifier).open(session);
+    await ref.read(driveSyncProvider.notifier).refresh();
+    return session;
+  }
+
   Future<(td.Chat, bool)> _locateOrCreate(int userId) async {
     final saved = _prefs.driveChatId(userId);
     if (saved != null) {

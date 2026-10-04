@@ -21,8 +21,10 @@ import '../../drive/data/drive_sync.dart';
 import '../../network/data/mobile_data.dart';
 import '../../transfers/data/transfer_queue.dart';
 import '../../transfers/domain/transfer_error.dart';
+import 'background_backup.dart';
 import 'backup_notifications.dart';
 import 'backup_rules.dart';
+import 'backup_run_mode.dart';
 import 'backup_worker.dart';
 
 enum BackupPhase {
@@ -123,6 +125,7 @@ class BackupState {
     this.skippedIds = const {},
     this.heldVideos = 0,
     this.heldForBudget = 0,
+    this.pausedUntil,
   });
 
   final BackupPhase phase;
@@ -168,9 +171,18 @@ class BackupState {
   /// data limit.
   final int heldForBudget;
 
+  /// When the pass that stopped because Telegram asked the account to wait
+  /// carries on. Backup isn't moving meanwhile, and nothing it left counts
+  /// as failed.
+  final DateTime? pausedUntil;
+
   bool get enabled => phase != BackupPhase.off;
+
+  /// Looking through the library or uploading, and not paused for a wait
+  /// Telegram asked for.
   bool get isWorking =>
-      phase == BackupPhase.scanning || phase == BackupPhase.uploading;
+      (phase == BackupPhase.scanning || phase == BackupPhase.uploading) &&
+      pausedUntil == null;
   int get remaining => math.max(0, total - done - failed);
   double get progress => total == 0 ? 1 : (done / total).clamp(0.0, 1.0);
 
@@ -189,6 +201,8 @@ class BackupState {
     Set<String>? skippedIds,
     int? heldVideos,
     int? heldForBudget,
+    DateTime? pausedUntil,
+    bool clearPaused = false,
   }) => BackupState(
     phase: phase ?? this.phase,
     total: total ?? this.total,
@@ -202,6 +216,7 @@ class BackupState {
     skippedIds: skippedIds ?? this.skippedIds,
     heldVideos: heldVideos ?? this.heldVideos,
     heldForBudget: heldForBudget ?? this.heldForBudget,
+    pausedUntil: clearPaused ? null : (pausedUntil ?? this.pausedUntil),
   );
 
   /// This state with [ids] as the photos out of tries, and [failed]
@@ -236,11 +251,19 @@ class DeviceFolder {
 
 /// Backs the camera roll up to the drive.
 ///
-/// Turned on once, it keeps going by itself: a full pass when the drive
-/// opens and whenever the app returns to the foreground, and a quick pass
-/// whenever the photo library changes while the app is alive (the transfer
-/// service keeps it alive in the background). Each photo lands in
-/// `Photo backup/<device folder>` with its capture time in the manifest.
+/// Turned on once, it keeps going by itself: a pass when the drive opens,
+/// when the app returns to the foreground after a while or with new photos,
+/// and whenever the photo library changes while the app is alive (the
+/// transfer service keeps it alive in the background while it uploads).
+/// With the app closed, the background job runs the same pass; see
+/// [BackgroundBackup]. Each photo lands in `Photo backup/<device folder>`
+/// with its capture time in the manifest.
+///
+/// A pass looks through the whole library once a day, or after a change to
+/// what is backed up. In between it looks only at the photos added to the
+/// phone since the last pass that dealt with everything, the ones still to
+/// be tried again and the ones asked for with Back up now, and counts the
+/// rest from its records.
 ///
 /// A photo is uploaded once: the device's media id is remembered, and
 /// anything already in the drive under the same name and size — say, after a
@@ -291,18 +314,49 @@ class BackupController extends Notifier<BackupState> {
   /// upload rather than sending the photo a second time.
   final Map<String, String> _heldUploads = {};
 
+  /// When the latest pass started, and whether the library changed since,
+  /// for [scheduleOnResume].
+  DateTime? _lastPassAt;
+  bool _libraryChanged = false;
+
+  /// Starts the next pass once a wait Telegram asked for is over.
+  Timer? _pauseTimer;
+
+  /// The running pass is looking through the whole library, and records
+  /// that as the last look once it has dealt with everything, which is also
+  /// when the checkpoint moves. Recorded any earlier, a look that never got
+  /// that far would have the next pass skip the older photos it didn't
+  /// deal with. [_unfound] is how many of the records the look found no
+  /// photo for.
+  bool _recordsFullScan = false;
+  int _unfound = 0;
+
+  /// Photos the running [runInBackground] pass sent up.
+  int _uploaded = 0;
+
+  /// Completed by [stop] while [runInBackground] runs: [_halted] when the
+  /// pass is to end, [_hurried] when what is under way is to go at once.
+  Completer<void>? _halted;
+  Completer<void>? _hurried;
+
   Preferences get _prefs => ref.read(preferencesProvider);
   AppDatabase get _db => ref.read(appDatabaseProvider);
   DriveRepository get _repository => ref.read(driveRepositoryProvider);
   TransferQueue get _queue => ref.read(transferQueueProvider.notifier);
 
+  /// Running in the background job, which runs its one pass itself.
+  bool get _background => ref.read(backupRunModeProvider) == BackupRunMode.background;
+
   /// How many photos a pass works on at once: one while the phone saves
-  /// memory, so a pass holds one photo's copy and upload at a time.
-  int get _parallel => ref.read(saveMemoryProvider) ? 1 : 3;
+  /// memory, so a pass holds one photo's copy and upload at a time, and at
+  /// most two in the background job, which shares the phone with whatever
+  /// the person is doing.
+  int get _parallel => ref.read(saveMemoryProvider) ? 1 : (_background ? 2 : 3);
 
   @override
   BackupState build() {
     final enabled = ref.read(preferencesProvider).backupEnabled;
+    final background = _background;
 
     ref.listen<DriveSession?>(driveSessionProvider, (previous, next) {
       if (next == null) {
@@ -335,6 +389,20 @@ class BackupController extends Notifier<BackupState> {
       }
     });
 
+    ref.onDispose(() {
+      _debounce?.cancel();
+      _pauseTimer?.cancel();
+      _unwatchLibrary();
+    });
+    // The background job's network is fixed for its run, and it watches
+    // nothing: the check jobs notice new photos, and the job runs one pass.
+    if (background) {
+      return BackupState(
+        phase: enabled ? BackupPhase.waitingForDrive : BackupPhase.off,
+        lastCompleted: ref.read(preferencesProvider).backupLastCompleted,
+      );
+    }
+
     ref.listen<NetworkState>(networkStatusProvider, (_, next) {
       final waiting =
           state.phase == BackupPhase.waitingForWifi ||
@@ -360,18 +428,11 @@ class BackupController extends Notifier<BackupState> {
         schedule(immediate: true);
       }
     }, weak: true);
-    BackupWorker.onNewMediaInApp = () => schedule();
     if (enabled) {
       _watchLibrary();
       // Re-arm the background checks (a no-op when they are already set).
       unawaited(BackupWorker.schedule());
     }
-
-    ref.onDispose(() {
-      _debounce?.cancel();
-      _unwatchLibrary();
-      BackupWorker.onNewMediaInApp = null;
-    });
 
     return BackupState(
       phase: enabled ? BackupPhase.waitingForDrive : BackupPhase.off,
@@ -395,6 +456,8 @@ class BackupController extends Notifier<BackupState> {
       return false;
     }
     await _prefs.setBackupEnabled(true);
+    // Whatever changed while backup was off, the first pass sees it all.
+    await _forgetFullScan();
     state = state.copyWith(phase: BackupPhase.waitingForDrive);
     _watchLibrary();
     unawaited(BackupNotifications.requestPermission());
@@ -410,6 +473,7 @@ class BackupController extends Notifier<BackupState> {
   Future<void> disable() async {
     await _prefs.setBackupEnabled(false);
     _stopRequested = true;
+    _pauseTimer?.cancel();
     _unwatchLibrary();
     unawaited(BackupWorker.cancel());
     unawaited(BackupNotifications.clear());
@@ -442,6 +506,19 @@ class BackupController extends Notifier<BackupState> {
     await _prefs.setBackupMobileData(mode);
     await _markQueued();
     _restart();
+  }
+
+  /// Whether backup runs on its own while the phone charges, with the app
+  /// closed. On, the background checks are armed and start the job when
+  /// new photos arrive; off, a job waiting to run is called off, and the
+  /// checks go on reminding.
+  Future<void> setUnattended(bool on) async {
+    await _prefs.setBackupUnattended(on);
+    if (on) {
+      await BackupWorker.schedule();
+    } else {
+      await BackgroundBackup.cancel();
+    }
   }
 
   /// Lets backup go past the monthly mobile data limit until the phone is
@@ -483,6 +560,9 @@ class BackupController extends Notifier<BackupState> {
   /// again straight away, so nothing reads as backed up meanwhile.
   Future<void> retryFailed() async {
     await _db.clearBackupFailures();
+    // Their records are gone, and most were added to the phone long ago,
+    // so only a look through the whole library finds them again.
+    await _forgetFullScan();
     state = state._withFailed(const {});
     schedule(immediate: true);
   }
@@ -527,6 +607,7 @@ class BackupController extends Notifier<BackupState> {
   /// Brings every skipped photo back; the next pass counts them as waiting.
   Future<void> unskipAll() async {
     await _db.clearSkipped();
+    await _forgetFullScan();
     schedule(immediate: true);
   }
 
@@ -564,6 +645,7 @@ class BackupController extends Notifier<BackupState> {
   /// elsewhere in the drive is recognised by name and size, as in any pass.
   Future<void> retryMissing() async {
     await _db.backUpMissingAgain();
+    await _forgetFullScan();
     schedule(immediate: true);
   }
 
@@ -654,7 +736,17 @@ class BackupController extends Notifier<BackupState> {
     return folders;
   }
 
+  /// Makes the next pass look through the whole library. A pass under way
+  /// that began before this doesn't record its own look as the last.
+  Future<void> _forgetFullScan() {
+    _recordsFullScan = false;
+    return _prefs.forgetBackupFullScan();
+  }
+
+  /// A backup choice changed, so the next pass looks through the whole
+  /// library by the new choice, and one under way makes way for it.
   void _restart() {
+    unawaited(_forgetFullScan());
     if (!state.enabled) return;
     if (_running) _stopRequested = true;
     schedule(immediate: true);
@@ -665,14 +757,106 @@ class BackupController extends Notifier<BackupState> {
   // ---------------------------------------------------------------------------
 
   /// Runs a pass soon. Library changes arrive in bursts (a camera writes
-  /// several rows per photo), so non-urgent calls are debounced.
+  /// several rows per photo), so non-urgent calls are debounced. The
+  /// background job runs its one pass itself and schedules none.
   void schedule({bool immediate = false}) {
-    if (!_prefs.backupEnabled) return;
+    if (!_prefs.backupEnabled || _background) return;
     _debounce?.cancel();
     _debounce = Timer(
       immediate ? Duration.zero : const Duration(seconds: 4),
       () => unawaited(run()),
     );
+  }
+
+  /// How long after a pass coming back to the app starts no other, unless
+  /// the library changed.
+  static const Duration _resumeQuiet = Duration(minutes: 15);
+
+  /// Runs a pass as the app comes back to the foreground, unless one that
+  /// left everything up to date started less than [_resumeQuiet] ago and
+  /// the library hasn't changed since: a quick look at another app doesn't
+  /// look through the photos again.
+  void scheduleOnResume() {
+    final due = resumeDue(
+      lastPass: _lastPassAt,
+      upToDate: state.phase == BackupPhase.upToDate,
+      libraryChanged: _libraryChanged,
+      now: DateTime.now(),
+    );
+    if (due) schedule(immediate: true);
+  }
+
+  /// Whether coming back to the app at [now] starts a pass: always, unless
+  /// the last one began at [lastPass], left everything [upToDate] and
+  /// less than [_resumeQuiet] ago, and the library hasn't changed since.
+  @visibleForTesting
+  static bool resumeDue({
+    DateTime? lastPass,
+    required bool upToDate,
+    required bool libraryChanged,
+    required DateTime now,
+  }) =>
+      lastPass == null ||
+      libraryChanged ||
+      !upToDate ||
+      lastPass.isAfter(now) ||
+      now.difference(lastPass) >= _resumeQuiet;
+
+  /// Ends the pass under way, without another after it. Workers take no
+  /// new photo, and in [runInBackground] the uploads under way get the
+  /// job's grace to finish, or none when [now], before they are cancelled.
+  void stop({bool now = false}) {
+    _stopRequested = true;
+    _rerun = false;
+    _debounce?.cancel();
+    final halted = _halted;
+    if (halted != null && !halted.isCompleted) halted.complete();
+    final hurried = _hurried;
+    if (now && hurried != null && !hurried.isCompleted) hurried.complete();
+  }
+
+  /// How long uploads under way get to finish once the background job's
+  /// time is up.
+  static const Duration _grace = Duration(seconds: 45);
+
+  /// Runs one pass for the background job, for at most [budget], and
+  /// answers how many photos it sent up. Once the time is up, or [stop] is
+  /// called, the uploads under way get [_grace] to finish and the rest are
+  /// cancelled, so no message half sent outlives the job.
+  Future<int> runInBackground(Duration budget) async {
+    _uploaded = 0;
+    final halted = _halted = Completer<void>();
+    final hurried = _hurried = Completer<void>();
+    final timer = Timer(budget, stop);
+    try {
+      final pass = run();
+      await Future.any([pass, halted.future]);
+      if (halted.isCompleted) {
+        final grace = Timer(_grace, () {
+          if (!hurried.isCompleted) hurried.complete();
+        });
+        await Future.any([pass, hurried.future]);
+        grace.cancel();
+        await _cancelUploads();
+        await pass;
+      }
+    } finally {
+      timer.cancel();
+      _halted = null;
+      _hurried = null;
+    }
+    return _uploaded;
+  }
+
+  Future<void> _cancelUploads() async {
+    final left = ref
+        .read(transferQueueProvider)
+        .items
+        .where((t) => t.origin == TransferOrigin.backup && t.status.isPending)
+        .toList();
+    for (final item in left) {
+      await _queue.cancel(item.id);
+    }
   }
 
   Future<void> run() async {
@@ -688,6 +872,8 @@ class BackupController extends Notifier<BackupState> {
         _stopRequested = false;
         _retryLater = false;
         _passIds = null;
+        _lastPassAt = DateTime.now();
+        _libraryChanged = false;
         await _pass();
       } while (_rerun && _prefs.backupEnabled);
     } catch (e, stack) {
@@ -734,6 +920,7 @@ class BackupController extends Notifier<BackupState> {
       heldForBudget: 0,
       clearCurrent: true,
       clearError: true,
+      clearPaused: true,
     );
     await ref.read(driveSyncProvider.notifier).whenIdle();
     // "Already in the drive" is judged against the index, so it has to hold
@@ -746,11 +933,32 @@ class BackupController extends Notifier<BackupState> {
       );
       return;
     }
-    final assets = await _scan();
     final known = await _db.backupAssetMap();
+    final checkpoint = _prefs.backupCheckpoint;
+    final full = fullScanDue(
+      lastFullScan: _prefs.backupLastFullScan,
+      checkpoint: checkpoint,
+      now: startedAt,
+    );
+    // Set before the scan, so a change that comes while it runs and makes
+    // the next pass look through everything is not undone by this one.
+    _recordsFullScan = full;
+    // Between full looks, the photos added since everything was last dealt
+    // with, an hour's overlap included, plus the ones still to be tried
+    // again and the ones asked for, which may be older.
+    final assets = full
+        ? await _scan()
+        : await _scan(
+            since: checkpoint!.subtract(_scanOverlap),
+            also: {
+              for (final record in known.values)
+                if (classify(record) == BackupDisposition.pending) record.assetId,
+              ..._priority,
+            },
+          );
     final inScope = <String, AssetEntity>{};
-    final failedIds = <String>{};
-    final skippedIds = <String>{};
+    var failedIds = <String>{};
+    var skippedIds = <String>{};
     final waiting = <AssetEntity>[];
     var done = 0;
     for (final asset in assets) {
@@ -823,10 +1031,37 @@ class BackupController extends Notifier<BackupState> {
     final hasWork = pending.isNotEmpty || _priority.isNotEmpty;
     _passIds = hasWork ? inScope.keys.toSet() : const {};
 
+    var total = inScope.length;
+    final records = known.values.where((r) => classify(r) != BackupDisposition.skip).length;
+    if (full) {
+      final found = inScope.keys.where(known.containsKey).length;
+      _unfound = math.max(0, records - found);
+    } else {
+      // The photos this pass didn't look at are counted from the records:
+      // the failed and skipped ones by their own, and the rest as done.
+      failedIds = {
+        for (final record in known.values)
+          if (classify(record) == BackupDisposition.failed) record.assetId,
+      };
+      skippedIds = {
+        for (final record in known.values)
+          if (record.state == BackupAssetState.skipped) record.assetId,
+      };
+      final totals = incrementalTotals(
+        records: records,
+        unfound: _prefs.backupUnfoundRecords,
+        unrecorded: inScope.keys.where((id) => !known.containsKey(id)).length,
+        pending: waiting.length,
+        failed: failedIds.length,
+      );
+      total = totals.total;
+      done = totals.done;
+    }
+
     // Counted before the network decides, so a backup waiting for Wi-Fi
     // says how much is left.
     state = state
-        ._withFailed(failedIds, total: inScope.length)
+        ._withFailed(failedIds, total: total)
         .copyWith(
           done: done,
           waiting: shown(),
@@ -953,6 +1188,10 @@ class BackupController extends Notifier<BackupState> {
 
   Future<void> _finishPass(DateTime startedAt) async {
     await _prefs.setBackupCompleted(startedAt);
+    if (_recordsFullScan) {
+      await _prefs.setBackupFullScan(startedAt, unfound: _unfound);
+      _recordsFullScan = false;
+    }
     await BackupNotifications.clear();
     state = state.copyWith(
       phase: BackupPhase.upToDate,
@@ -986,6 +1225,7 @@ class BackupController extends Notifier<BackupState> {
             ?.row;
         if (held?.status == TransferStatus.completed) {
           await _db.markAssetBackedUp(asset.id, held!.fileId);
+          _uploaded++;
           return _Outcome.done;
         }
         if (held != null && held.status.isPending) {
@@ -1065,6 +1305,7 @@ class BackupController extends Notifier<BackupState> {
       });
     } catch (e) {
       debugPrint('[Backup] ${asset.id}: $e');
+      if (_pauseFor(e)) return _Outcome.skipped;
       return _fail(asset, record, describeTransferError(e));
     } finally {
       _activeAssets.remove(asset.id);
@@ -1091,12 +1332,39 @@ class BackupController extends Notifier<BackupState> {
       case TransferStatus.completed:
         await _db.markAssetBackedUp(asset.id, row.fileId);
         uploaded(row.fileId);
+        _uploaded++;
         return _Outcome.done;
       case TransferStatus.cancelled:
         return _Outcome.skipped;
       default:
+        if (_pauseFor(null)) return _Outcome.skipped;
         return _fail(asset, record, row.error ?? 'Something went wrong.');
     }
+  }
+
+  /// Telegram asked the account to wait, for [error] or for the uploads in
+  /// the queue: the photo stays waiting without a failure counted, the
+  /// pass stops, and in the app the next one starts once the wait is over.
+  /// The background job ends with photos left, so Android runs it again.
+  bool _pauseFor(Object? error) {
+    final wait = error == null ? null : telegramWaitOf(error);
+    final own = wait == null ? null : DateTime.now().add(wait);
+    final queued = _queue.floodWaitUntil;
+    final until = own == null || (queued != null && queued.isAfter(own)) ? queued : own;
+    if (until == null) return false;
+    _stopRequested = true;
+    _rerun = false;
+    final paused = state.pausedUntil;
+    if (paused != null && !until.isAfter(paused)) return true;
+    state = state.copyWith(pausedUntil: until, clearCurrent: true);
+    if (!_background) {
+      _pauseTimer?.cancel();
+      _pauseTimer = Timer(until.difference(DateTime.now()) + const Duration(seconds: 1), () {
+        _pauseTimer = null;
+        schedule(immediate: true);
+      });
+    }
+    return true;
   }
 
   /// Records a failed try with [reason]. [_Outcome.failed] once the photo
@@ -1218,34 +1486,89 @@ class BackupController extends Notifier<BackupState> {
     } catch (_) {}
   }
 
-  /// Everything in scope, newest first.
-  Future<List<AssetEntity>> _scan() async {
+  /// How far before the checkpoint a look at the newest photos starts, so
+  /// a photo the phone added just as the last pass began isn't missed.
+  static const Duration _scanOverlap = Duration(hours: 1);
+
+  /// How often a pass looks through the whole library at the least.
+  static const Duration _fullScanEvery = Duration(hours: 24);
+
+  /// Whether the pass starting at [now] looks through the whole library:
+  /// it never has ([lastFullScan] null, which a change to what is backed
+  /// up also makes it), it last did a day or more ago, or no pass has yet
+  /// dealt with everything ([checkpoint] null), so there is no telling
+  /// which photos are new.
+  @visibleForTesting
+  static bool fullScanDue({
+    DateTime? lastFullScan,
+    DateTime? checkpoint,
+    required DateTime now,
+  }) =>
+      lastFullScan == null ||
+      checkpoint == null ||
+      lastFullScan.isAfter(now) ||
+      now.difference(lastFullScan) >= _fullScanEvery;
+
+  /// The counts after a pass that looked only at the newest photos: every
+  /// record still in scope, less the [unfound] ones the last full look
+  /// found no photo for, plus the [unrecorded] photos the pass found that
+  /// have none yet, makes the total. What isn't [pending] or [failed] of
+  /// that is done.
+  @visibleForTesting
+  static ({int total, int done}) incrementalTotals({
+    required int records,
+    required int unfound,
+    required int unrecorded,
+    required int pending,
+    required int failed,
+  }) {
+    final total = math.max(0, records - unfound) + unrecorded;
+    return (total: total, done: math.max(0, total - pending - failed));
+  }
+
+  /// Everything in scope, newest first, or with [since] only the photos
+  /// added to the phone since then, which Android tells by when each was
+  /// added, so an old photo saved today counts as new. The photos in
+  /// [also] are fetched one by one and follow, when they are still on the
+  /// phone and in scope.
+  Future<List<AssetEntity>> _scan({DateTime? since, Set<String> also = const {}}) async {
+    final videos = _prefs.backupVideos;
     final paths = await PhotoManager.getAssetPathList(
-      type: _prefs.backupVideos ? RequestType.common : RequestType.image,
+      type: videos ? RequestType.common : RequestType.image,
       onlyAll: true,
       filterOption: FilterOptionGroup(
         orders: [
           const OrderOption(type: OrderOptionType.createDate, asc: false),
         ],
+        createTimeCond: since == null
+            ? null
+            : DateTimeCond(min: since, max: DateTime.now()),
       ),
     );
-    if (paths.isEmpty) return const [];
-    final all = paths.first;
-    final count = await all.assetCountAsync;
     final excluded = _prefs.backupExcludedFolders
         .map((f) => f.toLowerCase())
         .toSet();
+    bool inScope(AssetEntity asset) =>
+        (asset.type == AssetType.image || (videos && asset.type == AssetType.video)) &&
+        !excluded.contains(_folderName(asset).toLowerCase());
 
     final assets = <AssetEntity>[];
-    for (var start = 0; start < count; start += _pageSize) {
-      final page = await all.getAssetListRange(
-        start: start,
-        end: math.min(start + _pageSize, count),
-      );
-      for (final asset in page) {
-        if (excluded.contains(_folderName(asset).toLowerCase())) continue;
-        assets.add(asset);
+    if (paths.isNotEmpty) {
+      final all = paths.first;
+      final count = await all.assetCountAsync;
+      for (var start = 0; start < count; start += _pageSize) {
+        final page = await all.getAssetListRange(
+          start: start,
+          end: math.min(start + _pageSize, count),
+        );
+        assets.addAll(page.where(inScope));
       }
+    }
+    final seen = {for (final asset in assets) asset.id};
+    for (final id in also) {
+      if (seen.contains(id)) continue;
+      final asset = await AssetEntity.fromId(id);
+      if (asset != null && inScope(asset)) assets.add(asset);
     }
     return assets;
   }
@@ -1307,7 +1630,16 @@ class BackupController extends Notifier<BackupState> {
 
   bool _watching = false;
 
-  void _onLibraryChanged(MethodCall _) => schedule();
+  /// A photo deleted from the phone still has its record, so the next pass
+  /// looks through the whole library to count it out.
+  void _onLibraryChanged(MethodCall call) {
+    _libraryChanged = true;
+    final change = call.arguments;
+    if (change is Map && change['type'] == 'delete') {
+      unawaited(_forgetFullScan());
+    }
+    schedule();
+  }
 
   void _watchLibrary() {
     if (_watching) return;

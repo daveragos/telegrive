@@ -12,8 +12,26 @@ import '../../core/config/app_config.dart';
 import '../../core/config/telegram_api.dart';
 import 'device_info.dart';
 import 'secure_store.dart';
+import 'td_ownership.dart';
 import 'td_receiver.dart';
 import 'telegram_exception.dart';
+
+/// Which engine a [TelegramClient] runs in: the app's own, or the
+/// background backup job's, which never takes TDLib from the app and never
+/// starts its database over.
+enum TdRole { app, worker }
+
+/// The background job's client didn't start, because the app's engine owns
+/// TDLib or a client another engine in this process opened may still be
+/// running. The app backs up by itself then.
+class TdBusy implements Exception {
+  const TdBusy(this.reason);
+
+  final String reason;
+
+  @override
+  String toString() => 'TdBusy($reason)';
+}
 
 /// The one connection to Telegram.
 ///
@@ -25,13 +43,22 @@ import 'telegram_exception.dart';
 /// The client is restartable. Signing out closes the
 /// TDLib instance; when it reports `authorizationStateClosed` a fresh client
 /// is created on the same receiver, which lands back on the sign-in screen.
+///
+/// Only one engine in the process runs TDLib at a time; see [TdOwnership].
+/// The app's client asks a background job holding it to hand over, and the
+/// job's client ([TdRole.worker]) gives up when the app holds it.
 class TelegramClient {
-  TelegramClient(this._secureStore) {
+  TelegramClient(this._secureStore, {this.role = TdRole.app}) {
     _receiver = TdReceiver(onPayload: _handlePayload);
   }
 
   final SecureStore _secureStore;
   late final TdReceiver _receiver;
+  final TdRole role;
+
+  /// TDLib's folder in app support, once [start] has found it.
+  Directory? _root;
+  TdOwnership? _ownership;
 
   int? _clientId;
   int _requestSeq = 0;
@@ -53,6 +80,10 @@ class TelegramClient {
   final ValueNotifier<String?> fatalError = ValueNotifier(null);
 
   Stream<td.TdObject> get updates => _updates.stream;
+
+  /// Each time another engine asks this one to hand TDLib over: the app
+  /// opening while the background job runs.
+  Stream<void> get yieldRequests => _ownership?.yieldRequests ?? const Stream.empty();
 
   td.AuthorizationState? get authState => _authState;
 
@@ -104,11 +135,42 @@ class TelegramClient {
       .map((u) => (u as td.UpdateFile).file);
 
   /// Loads TDLib, starts receiving and creates the first client. Safe to call
-  /// more than once.
-  Future<void> start() => _starting ??= _start();
+  /// more than once: a call while TDLib still waits for its parameters, after
+  /// they failed, sends them again.
+  Future<void> start() {
+    if (_clientId != null &&
+        _authState is td.AuthorizationStateWaitTdlibParameters &&
+        fatalError.value == null) {
+      unawaited(_configureOnce());
+    }
+    return _starting ??= _start();
+  }
+
+  Future<void>? _configuring;
+
+  /// Sends TDLib its parameters, joining a send already under way: a second
+  /// one TDLib doesn't expect would read as a database it can't open.
+  Future<void> _configureOnce() =>
+      _configuring ??= _configure().whenComplete(() => _configuring = null);
+
+  /// How long the app waits for a background job to hand TDLib over.
+  static const Duration _handOverTimeout = Duration(seconds: 20);
+  static const Duration _handOverPoll = Duration(milliseconds: 250);
 
   Future<void> _start() async {
     try {
+      final root = _root = Directory(
+        '${(await getApplicationSupportDirectory()).path}/tdlib',
+      );
+      await _own(_ownership = TdOwnership(root));
+      // A client this process opened and never closed: the engine that
+      // opened it went away and this one took its place. The app takes it
+      // over, rather than open the database a second time; the job can't
+      // know that receiver has stopped, so it leaves it to the app.
+      final leftOpen = await _leftOpenClient(root);
+      if (leftOpen != null && role == TdRole.worker) {
+        throw const TdBusy('A client opened in this process is still open.');
+      }
       await TdPlugin.initialize();
       // Keep TDLib's own logging to errors only; it is chatty by default and
       // writes to logcat on every network hiccup.
@@ -116,19 +178,117 @@ class TelegramClient {
         jsonEncode(const td.SetLogVerbosityLevel(newVerbosityLevel: 1).toJson()),
       );
       await _receiver.start();
-      _createClient();
+      if (leftOpen != null) {
+        _adopt(leftOpen);
+      } else {
+        _createClient();
+      }
+    } on TdBusy {
+      _starting = null;
+      await _letGo();
+      rethrow;
     } catch (e) {
       _starting = null;
+      await _letGo();
       fatalError.value = 'Could not start Telegram: $e';
       rethrow;
     }
   }
 
+  /// Releases the ownership a start that failed was holding, so a retry
+  /// builds its own rather than finding this one's socket answering.
+  Future<void> _letGo() async {
+    final ownership = _ownership;
+    _ownership = null;
+    await ownership?.release();
+  }
+
+  /// Takes ownership of TDLib. The app asks a job that holds it to hand
+  /// over and waits for it, and after [_handOverTimeout] goes ahead
+  /// regardless, since it is the one the person is looking at. The job
+  /// never waits.
+  Future<void> _own(TdOwnership ownership) async {
+    if (await ownership.tryAcquire()) return;
+    if (role == TdRole.worker) throw const TdBusy('The app holds TDLib.');
+    await ownership.requestYield();
+    final until = DateTime.now().add(_handOverTimeout);
+    while (DateTime.now().isBefore(until)) {
+      await Future<void>.delayed(_handOverPoll);
+      if (await ownership.tryAcquire()) return;
+    }
+    debugPrint('[Telegram] No hand-over after ${_handOverTimeout.inSeconds} s; going ahead');
+    unawaited(_ownWhenFree(ownership));
+  }
+
+  /// Takes ownership as soon as the job lets go, so no other job starts
+  /// TDLib while the app runs it.
+  Future<void> _ownWhenFree(TdOwnership ownership) async {
+    while (!_disposed && identical(_ownership, ownership) && !await ownership.tryAcquire()) {
+      await Future<void>.delayed(const Duration(seconds: 5));
+    }
+  }
+
+  /// The client id `client.json` names, when this very process wrote it.
+  static Future<int?> _leftOpenClient(Directory root) async {
+    try {
+      final saved = jsonDecode(await File('${root.path}/client.json').readAsString());
+      if (saved is Map && saved['pid'] == pid && saved['clientId'] is int) {
+        return saved['clientId'] as int;
+      }
+    } catch (_) {
+      // None saved, or unreadable: there is nothing to take over.
+    }
+    return null;
+  }
+
+  /// Records which client this process has open, so an engine that takes
+  /// this one's place in the same process can take it over.
+  Future<void> _saveClient(int clientId) async {
+    final root = _root;
+    if (root == null) return;
+    try {
+      await File('${root.path}/client.json').writeAsString(
+        jsonEncode({'pid': pid, 'clientId': clientId}),
+      );
+    } catch (e) {
+      debugPrint('[Telegram] Could not save the client id: $e');
+    }
+  }
+
+  Future<void> _forgetClient() async {
+    final root = _root;
+    if (root == null) return;
+    try {
+      await File('${root.path}/client.json').delete();
+    } on FileSystemException {
+      // Nothing saved.
+    }
+  }
+
   void _createClient() {
-    _clientId = TdPlugin.instance.tdCreateClientId();
-    debugPrint('[Telegram] Client $_clientId created');
+    final clientId = _clientId = TdPlugin.instance.tdCreateClientId();
+    debugPrint('[Telegram] Client $clientId created');
+    unawaited(_saveClient(clientId));
     // TDLib emits its first authorization state in response to any request.
     unawaited(_sendQuietly(const td.GetOption(name: 'version')));
+  }
+
+  /// Carries on with [clientId], which TDLib still has open. It sends no
+  /// update for a state it is already in, so the state is asked for. One
+  /// TDLib no longer knows makes way for a new client.
+  void _adopt(int clientId) {
+    _clientId = clientId;
+    debugPrint('[Telegram] Client $clientId taken over');
+    unawaited(() async {
+      try {
+        _onAuthorizationState(
+          await send<td.AuthorizationState>(const td.GetAuthorizationState()),
+        );
+      } catch (e) {
+        debugPrint('[Telegram] Could not take client $clientId over: $e');
+        if (!_disposed) _createClient();
+      }
+    }());
   }
 
   /// Sends [function] and waits for its typed reply.
@@ -229,7 +389,7 @@ class TelegramClient {
 
     switch (state) {
       case td.AuthorizationStateWaitTdlibParameters():
-        unawaited(_configure());
+        unawaited(_configureOnce());
       case td.AuthorizationStateReady():
         if (!_ready.isCompleted) _ready.complete();
         // A drive app has no business showing its owner as "online" to
@@ -263,6 +423,12 @@ class TelegramClient {
     // allows changing the key after sign-in, so there is no "encrypt later".
     var key = await _secureStore.readDatabaseKey();
     if (key == null || key.isEmpty) {
+      // The job can't tell a key it couldn't read from one that was never
+      // made, and a new key would start the app's database over.
+      if (role == TdRole.worker) {
+        fatalError.value = 'The database key could not be read.';
+        return;
+      }
       key = SecureStore.generateDatabaseKey();
       await _secureStore.writeDatabaseKey(key);
     }
@@ -290,6 +456,18 @@ class TelegramClient {
     try {
       await send<td.Ok>(parameters(key));
     } on TelegramException catch (e) {
+      // Another TDLib in this process, the background job's, hasn't let go
+      // of the database yet. It is sound, so it is never started over.
+      if (e.isDatabaseInUse) {
+        fatalError.value = 'Telegram is still running in the background. Try again in a moment.';
+        return;
+      }
+      // The job leaves the database as it is, whatever went wrong; the app
+      // deals with it when it next opens.
+      if (role == TdRole.worker) {
+        fatalError.value = e.friendlyMessage;
+        return;
+      }
       // The database and its key disagree — typically restored app data
       // without the keystore entry. The local cache is only a cache; start it
       // over rather than leaving the app stuck.
@@ -318,9 +496,12 @@ class TelegramClient {
   Future<void> _setOption(String name, td.OptionValue value) =>
       _sendQuietly(td.SetOption(name: name, value: value));
 
-  Future<void> _sendQuietly(td.TdFunction function) async {
+  Future<void> _sendQuietly(
+    td.TdFunction function, {
+    Duration timeout = const Duration(seconds: 10),
+  }) async {
     try {
-      await send<td.TdObject>(function, timeout: const Duration(seconds: 10));
+      await send<td.TdObject>(function, timeout: timeout);
     } catch (e) {
       debugPrint('[Telegram] ${function.runtimeType} failed: $e');
     }
@@ -343,6 +524,33 @@ class TelegramClient {
     await _sendQuietly(const td.Close());
   }
 
+  /// How long TDLib gets to take the request to close, and again to flush
+  /// and close. With the receive loop's exit, it keeps [shutDown] inside the
+  /// app's [_handOverTimeout].
+  static const Duration _closeTimeout = Duration(seconds: 5);
+
+  /// Closes TDLib and gives it up for another engine in this process: the
+  /// background job ending, or handing over to the app. TDLib gets
+  /// [_closeTimeout] to take the request and again to flush and close; then
+  /// the receive loop stops and ownership is released, in that order, so
+  /// the next owner never receives while this one still does. No new client
+  /// is made after.
+  Future<void> shutDown() async {
+    _disposed = true;
+    if (_clientId != null && _authState is! td.AuthorizationStateClosed) {
+      final closed = Completer<void>();
+      final watch = _authStates.stream.listen((state) {
+        if (state is td.AuthorizationStateClosed && !closed.isCompleted) closed.complete();
+      });
+      await _sendQuietly(const td.Close(), timeout: _closeTimeout);
+      await closed.future.timeout(_closeTimeout, onTimeout: () {});
+      await watch.cancel();
+    }
+    await _forgetClient();
+    await _receiver.stop();
+    await _ownership?.release();
+  }
+
   Future<void> dispose() async {
     _disposed = true;
     await _receiver.stop();
@@ -355,8 +563,15 @@ class TelegramClient {
   }
 }
 
+/// The engine this container runs in. The background backup job overrides
+/// it with [TdRole.worker].
+final tdRoleProvider = Provider<TdRole>((ref) => TdRole.app);
+
 final telegramClientProvider = Provider<TelegramClient>((ref) {
-  final client = TelegramClient(ref.watch(secureStoreProvider));
+  final client = TelegramClient(
+    ref.watch(secureStoreProvider),
+    role: ref.watch(tdRoleProvider),
+  );
   ref.onDispose(client.dispose);
   return client;
 });

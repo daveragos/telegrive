@@ -21,7 +21,9 @@ phone number.
 - **Any size.** Telegram caps a message at 2000 MiB (4000 MiB with Premium).
   Bigger files are split into 512 MiB parts and joined back on download.
 - **Photo backup.** Turn it on once and the whole camera roll goes up in
-  full quality — then every new photo and video follows on its own. Choose
+  full quality — then every new photo and video follows on its own, and
+  with Back up on its own, even with the app closed while the phone
+  charges. Choose
   device folders, videos on or off, and whether mobile data carries nothing,
   photos only, or photos and videos. A Photos tab
   shows your photos and videos as a timeline grouped by month, with a
@@ -374,7 +376,16 @@ phone number.
   instead.
 - **Keeps going.** A pass runs when the drive opens, when the app comes back
   to the foreground, and whenever the photo library changes while the app is
-  alive; a foreground service keeps it running in the background.
+  alive; a foreground service keeps it running in the background while it
+  uploads, and only then. Coming back within 15 minutes of a pass that left
+  everything backed up starts none, unless new photos arrived. A pass looks
+  through the whole library once a day, after a change to what is backed
+  up, or once a photo was deleted from the phone. That look counts only
+  once the pass has dealt with everything, so one cut short (the phone left
+  Wi-Fi, Telegram asked for a wait, the time ran out) is followed by
+  another. In between, a pass looks only at the photos added since the last
+  pass that dealt with everything, so a library of thousands takes about a
+  second.
 - **Other folders.** Pick any folder on the phone (Recordings, Download ›
   Bank); new files in it upload once to Files › Auto upload, or a folder
   you choose. Checked when Telegrive opens and while it runs. Each folder
@@ -388,10 +399,28 @@ phone number.
   so no storage permission is asked for, and the list stays on this phone;
   signing out gives every folder's access back.
 - **When the app is closed**, Android wakes a tiny job the moment new photos
-  land (a MediaStore content trigger) and every few hours as a fallback. It
-  posts "N new photos to back up"; tapping it, or Back up now, opens the
-  app, which backs them up. Swiping it away puts it off for a day, after
-  which it comes back if photos are still waiting.
+  land (a MediaStore content trigger) and every few hours as a fallback.
+  While the app is still alive in the background it leaves backup to the
+  app. Otherwise it posts "N new photos to back up"; tapping it, or Back up
+  now, opens the app, which backs them up. Swiping it away puts it off for
+  a day, after which it comes back if photos are still waiting.
+- **Back up on its own** (Backup › While the app is closed, off until you
+  turn it on) has that job also ask Android to back the photos up the next
+  time the phone is charging and on Wi-Fi, or on any network when Mobile
+  data lets backup use it. That job opens the drive this phone already
+  knows, never searching for, creating or changing a channel, and never
+  signs out or starts Telegram's database over. It runs the usual pass for
+  up to eight minutes, leaving your own transfers for the app, and Android
+  runs it again when the time ran out or Telegram asked for a wait. What
+  waits for Wi-Fi, the monthly limit or photo access is left for the app,
+  since running again wouldn't change that. Opening the app while it runs
+  hands backup back to the app within seconds, and unplugging stops it with
+  nothing half sent. Only one of the two runs Telegram at a time. Backup
+  says when it last ran and whether Android is letting the checks run, with
+  Fix when it isn't, and points to battery saver or notifications when
+  they are in the way; Home says so too when the checks aren't armed or
+  haven't run for two days. A wait Telegram asks for pauses backup instead
+  of counting the photo as failed.
 
 ## How it works
 
@@ -463,7 +492,8 @@ lib/
 ├── app/               # app root, router (phase-driven), shell, theme
 ├── core/              # config, formatting, file kinds, shared widgets
 ├── infrastructure/
-│   ├── telegram/      # TDLib client, background receiver, secure storage
+│   ├── telegram/      # TDLib client, background receiver, which engine
+│   │                  # owns TDLib, secure storage
 │   ├── database/      # Drift schema and queries (the local index)
 │   └── storage/       # small preferences
 └── features/
@@ -473,7 +503,8 @@ lib/
     ├── drive/         # manifest format, indexer, repository, sync, and the
     │                  # outbox for changes made without a connection
     ├── transfers/     # upload/download queue, background keep-alive
-    ├── backup/        # photo backup: controller, worker, notification, UI
+    ├── backup/        # photo backup: controller, checks and the job that
+    │                  # backs up with the app closed, notification, UI
     ├── files/ home/ photos/ search/ settings/ viewer/
 ```
 
@@ -507,9 +538,6 @@ two commands are at the top of that test.
   binding.
 - **End-to-end encryption** of file bodies and captions with a recovery
   passphrase.
-- **Fully unattended background backup** with the app closed. Today the
-  closed-app job notifies and the app does the upload; running TDLib inside
-  the background job would remove that tap.
 - **Share-sheet intake on iOS**, which needs a share extension.
 
 ## Good to know
@@ -545,7 +573,14 @@ two commands are at the top of that test.
   can leave backup waiting for Wi-Fi or the next period.
 - While the app is closed, the job that notices new photos doesn't know
   about the monthly limit, so it may still say there are photos to back up
-  when the limit holds them.
+  when the limit holds them. Backing up on its own over a connection that
+  isn't certain to be Wi-Fi, it counts that connection as mobile data, so
+  the limit and the Mobile data choice hold even when the phone is on
+  Wi-Fi, and the app sends the rest.
+- Between its daily looks through the whole library, backup counts the
+  photos it didn't look at from its records, so a photo moved into a
+  folder that is backed up, or into one left out, may be counted the old
+  way until the next one.
 - Saving a file to the phone needs room for it twice over for a moment,
   since it is downloaded first and then copied into Download, the gallery
   or offline; the transfer says exactly how much it needs.

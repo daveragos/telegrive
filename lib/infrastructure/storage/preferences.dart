@@ -305,6 +305,60 @@ class Preferences {
     await _prefs.remove(BackupPrefKeys.remindAfter);
   }
 
+  /// Whether backup also runs on its own while the phone charges, with the
+  /// app closed. Off until switched on.
+  bool get backupUnattended => _prefs.getBool(BackupPrefKeys.unattended) ?? false;
+  Future<void> setBackupUnattended(bool on) =>
+      _prefs.setBool(BackupPrefKeys.unattended, on);
+
+  /// When the last pass that left everything dealt with started; photos
+  /// added to the phone since then are the ones a pass has to look at.
+  DateTime? get backupCheckpoint => _dateTime(BackupPrefKeys.checkpoint);
+
+  /// When a pass last looked through the whole library, or null when the
+  /// next one has to: what is backed up changed, or a photo left the phone.
+  DateTime? get backupLastFullScan => _dateTime(_lastFullScan);
+
+  /// How many of backup's records were for photos the last look through the
+  /// whole library didn't find: deleted from the phone, or in folders left
+  /// out. Passes in between count from the records, and take these off.
+  int get backupUnfoundRecords => _prefs.getInt(_unfoundRecords) ?? 0;
+
+  Future<void> setBackupFullScan(DateTime at, {required int unfound}) async {
+    await _prefs.setInt(_lastFullScan, at.millisecondsSinceEpoch);
+    await _prefs.setInt(_unfoundRecords, unfound);
+  }
+
+  /// Makes the next pass look through the whole library.
+  Future<void> forgetBackupFullScan() async {
+    await _prefs.remove(_lastFullScan);
+    await _prefs.remove(_unfoundRecords);
+  }
+
+  static const String _lastFullScan = 'backup_last_full_scan';
+  static const String _unfoundRecords = 'backup_unfound_records';
+
+  /// When a background job last looked for new photos: the check, or the
+  /// job that backs them up. Written from the jobs' own engines.
+  DateTime? get backgroundChecked => _dateTime(BackupPrefKeys.lastChecked);
+  Future<void> setBackgroundChecked(DateTime at) =>
+      _prefs.setInt(BackupPrefKeys.lastChecked, at.millisecondsSinceEpoch);
+
+  /// When the background backup job last ran a pass, and how many photos
+  /// it sent up then.
+  DateTime? get backgroundRun => _dateTime(BackupPrefKeys.lastRun);
+  int get backgroundUploaded => _prefs.getInt(BackupPrefKeys.lastUploaded) ?? 0;
+
+  Future<void> setBackgroundRun(DateTime at, int uploaded) async {
+    await _prefs.setInt(BackupPrefKeys.lastRun, at.millisecondsSinceEpoch);
+    await _prefs.setInt(BackupPrefKeys.lastUploaded, uploaded);
+  }
+
+  Future<void> forgetBackgroundRun() async {
+    await _prefs.remove(BackupPrefKeys.lastRun);
+    await _prefs.remove(BackupPrefKeys.lastUploaded);
+  }
+
   /// Whether the "back up your photos?" question has been asked.
   bool get backupPromptShown => _prefs.getBool('backup_prompt_shown') ?? false;
   Future<void> setBackupPromptShown() =>
@@ -455,6 +509,19 @@ abstract final class BackupPrefKeys {
   static const String checkpoint = 'backup_checkpoint';
   static const String notifiedCount = 'backup_notified_count';
   static const String mobileData = 'backup_mobile_data';
+
+  /// Backing up on its own while the phone charges; see
+  /// [Preferences.backupUnattended].
+  static const String unattended = 'backup_unattended';
+
+  /// When a background job last looked for new photos, in milliseconds
+  /// since the epoch.
+  static const String lastChecked = 'backup_bg_last_checked';
+
+  /// When the background backup job last ran a pass, in milliseconds since
+  /// the epoch, and how many photos it sent up.
+  static const String lastRun = 'backup_bg_last_run';
+  static const String lastUploaded = 'backup_bg_last_uploaded';
 
   /// When, in milliseconds since the epoch, the background check may post
   /// the backup reminder again after it was swiped away. A finished backup

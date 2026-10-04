@@ -17,6 +17,7 @@ import '../../../infrastructure/storage/device_profile.dart';
 import '../../../infrastructure/storage/device_storage.dart';
 import '../../../infrastructure/telegram/telegram_client.dart';
 import '../../../infrastructure/telegram/telegram_exception.dart';
+import '../../backup/data/backup_run_mode.dart';
 import '../../drive/data/channel_messenger.dart';
 import '../../drive/data/drive_repository.dart';
 import '../../drive/data/drive_session.dart';
@@ -357,6 +358,10 @@ class _Tracked {
 /// Telegram asks, but Telegram makes them in one request each, with nothing
 /// sent from the phone. They go one at a time, a moment apart, and leave
 /// the upload slots free.
+///
+/// In the background backup job ([BackupRunMode.background]) the queue
+/// reads and sends only photo backup's uploads. The person's own transfers
+/// stay in the database as they are, for the app to carry on with.
 class TransferQueue extends Notifier<TransfersState> {
   static const int _maxCopies = 1;
 
@@ -455,6 +460,9 @@ class TransferQueue extends Notifier<TransfersState> {
   DriveRepository get _repository => ref.read(driveRepositoryProvider);
   ChannelMessenger get _messenger => ref.read(channelMessengerProvider);
 
+  /// Running in the background backup job, for backup's uploads only.
+  bool get _background => ref.read(backupRunModeProvider) == BackupRunMode.background;
+
   @override
   TransfersState build() {
     _fileSubscription = _client.fileUpdates.listen(_onFileUpdate);
@@ -492,6 +500,14 @@ class TransferQueue extends Notifier<TransfersState> {
   /// for as the app opens, from a notification, say, finds the rows it is
   /// about.
   Future<void> get loaded => _ready.future;
+
+  /// When uploads may go again after Telegram asked one of them to wait,
+  /// while that wait runs, or null. Photo backup reads it to tell a pause
+  /// from a failure.
+  DateTime? get floodWaitUntil {
+    final until = _uploadsNotBefore;
+    return until != null && until.isAfter(DateTime.now()) ? until : null;
+  }
 
   /// Queues [requests]; returns the new transfers' ids, in order.
   Future<List<String>> enqueueUploads(
@@ -1035,6 +1051,7 @@ class TransferQueue extends Notifier<TransfersState> {
               (r) =>
                   r.status == TransferStatus.queued &&
                   !_running.contains(r.id) &&
+                  (!_background || r.origin == TransferOrigin.backup) &&
                   TransferPolicy.mayRun(
                     r,
                     now: now,
@@ -1912,6 +1929,8 @@ class TransferQueue extends Notifier<TransfersState> {
   Future<void> _loadRows() async {
     _rows.clear();
     for (final row in await _db.allTransfers()) {
+      // The person's own transfers wait for the app, untouched.
+      if (_background && row.origin != TransferOrigin.backup) continue;
       _rows[row.id] = row;
     }
 
@@ -1990,7 +2009,9 @@ class TransferQueue extends Notifier<TransfersState> {
     _holdForWifi();
     _emit();
     _pump();
-    unawaited(_sweepOnOpen());
+    // The job doesn't know the person's transfers, so it can't tell what
+    // they still use from what is left over.
+    if (!_background) unawaited(_sweepOnOpen());
   }
 
   /// Clears the [leftovers] once the drive has opened and its transfers are

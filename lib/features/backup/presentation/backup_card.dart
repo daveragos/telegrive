@@ -221,6 +221,13 @@ describeBackup(BackupState backup, {double speed = 0, int renewDay = 1}) {
       progress: -1,
       done: false,
     ),
+    BackupPhase.uploading when backup.pausedUntil != null => (
+      icon: Icons.hourglass_empty_rounded,
+      title: 'Telegram asked us to wait',
+      detail: _carriesOn(backup.pausedUntil!, backup.remaining),
+      progress: null,
+      done: false,
+    ),
     BackupPhase.uploading => (
       icon: Icons.cloud_upload_outlined,
       title: 'Backing up photos',
@@ -251,4 +258,11 @@ describeBackup(BackupState backup, {double speed = 0, int renewDay = 1}) {
       done: true,
     ),
   };
+}
+
+/// When a pass paused for Telegram goes on by itself, with what is left.
+String _carriesOn(DateTime until, int remaining) {
+  final now = DateTime.now();
+  return '${Formatters.count(remaining, 'item')} left. Backup carries on by itself '
+      '${DateUtils.isSameDay(until, now) ? 'at' : 'on'} ${Formatters.date(until, now: now)}.';
 }

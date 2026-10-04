@@ -24,6 +24,10 @@ class TdReceiver {
 
   static const Duration _readyTimeout = Duration(seconds: 3);
 
+  /// A native wait lasts [_receiveTimeoutSeconds], so the loop has gone well
+  /// within this.
+  static const Duration _exitTimeout = Duration(seconds: 3);
+
   final void Function(Map<String, dynamic> payload) onPayload;
 
   Isolate? _isolate;
@@ -65,9 +69,20 @@ class TdReceiver {
     debugPrint('[TdReceiver] Receiving on a background isolate');
   }
 
+  /// Ends the receive loop and waits for its isolate to exit. A kill lands
+  /// only once the native wait under way returns, so until then the loop
+  /// may still be inside `td_receive`; another engine in this process
+  /// starts receiving only after this completes.
   Future<void> stop() async {
-    _isolate?.kill(priority: Isolate.immediate);
+    final isolate = _isolate;
     _isolate = null;
+    if (isolate != null) {
+      final exited = ReceivePort();
+      isolate.addOnExitListener(exited.sendPort);
+      isolate.kill(priority: Isolate.immediate);
+      await exited.first.timeout(_exitTimeout, onTimeout: () => null);
+      exited.close();
+    }
     await _subscription?.cancel();
     _subscription = null;
     _port?.close();

@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:telegrive/app/launch_action.dart';
 import 'package:telegrive/core/files/file_kind.dart';
+import 'package:telegrive/features/backup/data/backup_notifications.dart';
 import 'package:telegrive/features/backup/data/backup_worker.dart';
 import 'package:telegrive/features/transfers/data/transfer_keep_alive.dart';
 import 'package:telegrive/features/transfers/data/transfer_notifications.dart';
@@ -396,6 +397,26 @@ void main() {
 
     test('not when nothing is new', () {
       expect(BackupWorker.shouldRemind(count: 0, now: now), isFalse);
+    });
+  });
+
+  group('the new photos reminder', () {
+    test('asks for a tap while backup waits for the app', () {
+      expect(
+        BackupNotifications.newMediaBody(unattended: false, wifiOnly: true),
+        'Tap to back them up to Telegram.',
+      );
+    });
+
+    test('says when they go up once backup runs on its own', () {
+      expect(
+        BackupNotifications.newMediaBody(unattended: true, wifiOnly: true),
+        'They go up on their own next time the phone charges on Wi-Fi. Tap to back up now.',
+      );
+      expect(
+        BackupNotifications.newMediaBody(unattended: true, wifiOnly: false),
+        'They go up on their own next time the phone charges. Tap to back up now.',
+      );
     });
   });
 }

@@ -426,6 +426,19 @@ void main() {
       expect(const TelegramException(420, 'FLOOD_WAIT_37').isFloodWait, isTrue);
     });
 
+    test('knows the database another TDLib in this process still holds', () {
+      // What TDLib says when the background job hasn't closed its client
+      // yet; the database is sound, so it is never started over.
+      const locked = TelegramException(
+        400,
+        "Can't lock file \"/data/user/0/dev.ragoose.telegrive/files/tdlib/db/td.binlog\", "
+        'because it is already in use; check for another program instance running',
+      );
+      expect(locked.isDatabaseInUse, isTrue);
+      expect(const TelegramException(401, 'Wrong database encryption key').isDatabaseInUse, isFalse);
+      expect(const TelegramException(420, 'FLOOD_WAIT_37').isDatabaseInUse, isFalse);
+    });
+
     test('tells a request that never got an answer from a refusal', () {
       expect(
         const TelegramException(408, 'Request timeout').isNetworkProblem,

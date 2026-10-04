@@ -181,6 +181,11 @@ class AuthController extends Notifier<AuthUiState> {
   /// when the drive was last checked and when its backed-up photos were
   /// last matched against the index, which were findings about this drive.
   ///
+  /// Backup's records go with the rest of the database, so the note of when
+  /// a pass last looked through the whole library goes too, with what it
+  /// counted, and the next pass looks through everything again. So does what
+  /// the background backup job last did, which was about this drive.
+  ///
   /// Deletes still waiting out their Undo are dropped before anything
   /// else, so nothing is deleted once the drive has gone, from Telegram or
   /// from the phone over the Welcome screen. The drive saved for opening
@@ -192,12 +197,13 @@ class AuthController extends Notifier<AuthUiState> {
   /// the drive's documents. So do changes made without a connection that
   /// haven't reached Telegram yet, as the question before signing out says.
   ///
-  /// App settings (theme, app lock, Save memory, photo backup choices, the
-  /// folders Photos keeps out, how much Free up space keeps on the phone,
-  /// the player's last speed for audio and for video)
-  /// and the drive channel remembered per account
-  /// stay, and so do whether Telegrive has asked to post notifications and
-  /// when a swiped-away backup reminder may come back, which are about the
+  /// App settings (theme, app lock, Save memory, photo backup choices, Back
+  /// up on its own included, the folders Photos keeps out, how much Free up
+  /// space keeps on the phone, the player's last speed for audio and for
+  /// video) and the drive channel remembered per account
+  /// stay, and so do whether Telegrive has asked to post notifications,
+  /// when a swiped-away backup reminder may come back, when the background
+  /// check last ran and what Android calls this phone, which are about the
   /// phone. So do the
   /// monthly mobile data limit and what this period has used of it: they
   /// belong to the phone's data plan, and TDLib starts its counters over
@@ -229,6 +235,8 @@ class AuthController extends Notifier<AuthUiState> {
     await prefs.clearLastUserId();
     await prefs.clearCheckupLastRun();
     await prefs.clearBackupVerified();
+    await prefs.forgetBackupFullScan();
+    await prefs.forgetBackgroundRun();
     await prefs.setDeletePhoneCopyToo(false);
     await prefs.setOfflineWifiOnly(false);
     await prefs.forgetRecentSendChats();

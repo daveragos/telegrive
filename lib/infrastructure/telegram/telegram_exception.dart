@@ -30,6 +30,11 @@ class TelegramException implements Exception {
       message.contains('MESSAGE_EDIT_TIME_EXPIRED') ||
       message.contains('MESSAGE_AUTHOR_REQUIRED');
 
+  /// TDLib found its database locked by another instance in this process,
+  /// such as the background backup job's that hasn't closed yet. The
+  /// database is sound, so this is never a reason to start it over.
+  bool get isDatabaseInUse => message.contains('already in use');
+
   /// Seconds Telegram asked us to wait, when it said.
   int? get retryAfterSeconds {
     final match = _retryAfter.firstMatch(message);

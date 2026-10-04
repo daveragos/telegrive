@@ -103,10 +103,11 @@ class TransferKeepAlive {
   }
 
   /// Anything worth keeping the process alive for: a transfer, a photo
-  /// backup pass or a check of the watched folders (both have short gaps
-  /// between files that must not bounce the service off and on, since
-  /// Android won't let an app in the background start it again), or
-  /// transfers that only just began to wait for Wi-Fi.
+  /// backup pass that is uploading or a check of the watched folders (both
+  /// have short gaps between files that must not bounce the service off and
+  /// on, since Android won't let an app in the background start it again),
+  /// or transfers that only just began to wait for Wi-Fi. Looking through
+  /// the library sends nothing, so it holds no wake or Wi-Fi lock.
   bool _isActive(TransfersState state, BackupState backup) =>
       state.activeCount > 0 ||
       _backingUp(state, backup) ||
@@ -141,13 +142,15 @@ class TransferKeepAlive {
     }
   }
 
-  /// A backup pass that is moving. One whose upload Telegram has put on a
-  /// long wait, or that waits for room on the phone, sits out that wait
-  /// without the service, and so without a wake lock; the service starts
-  /// again when the upload does. A backup upload waiting for Wi-Fi doesn't
-  /// stop the pass, which moves on to the photos mobile data may carry.
+  /// A backup pass that is uploading. One whose upload Telegram has put on
+  /// a long wait, or that waits for room on the phone, or that stopped for
+  /// a wait Telegram asked for, sits out that wait without the service, and
+  /// so without a wake lock; the service starts again when the upload does.
+  /// A backup upload waiting for Wi-Fi doesn't stop the pass, which moves
+  /// on to the photos mobile data may carry.
   static bool _backingUp(TransfersState state, BackupState backup) =>
-      backup.isWorking &&
+      backup.phase == BackupPhase.uploading &&
+      backup.pausedUntil == null &&
       !state.held.any(
         (t) =>
             t.origin == TransferOrigin.backup &&

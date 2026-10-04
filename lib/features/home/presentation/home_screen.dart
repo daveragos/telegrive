@@ -14,6 +14,7 @@ import '../../../infrastructure/database/app_database.dart'
     show KindTotal, TransferOrigin, TransferStatus;
 import '../../../infrastructure/storage/preferences.dart';
 import '../../../infrastructure/telegram/telegram_client.dart';
+import '../../backup/data/background_health.dart';
 import '../../backup/data/backup_controller.dart';
 import '../../backup/data/free_up_space.dart';
 import '../../backup/presentation/backup_card.dart';
@@ -345,6 +346,8 @@ class _Activity extends ConsumerWidget {
           : 0,
       changes: ref.watch(editOutboxProvider),
       filed: ref.watch(forwardFilerProvider),
+      backgroundBlocked:
+          ref.watch(backgroundHealthProvider).value?.needsAttention(backup.enabled) ?? false,
     );
 
     return AnimatedSize(

@@ -8,9 +8,12 @@ import 'package:photo_manager/photo_manager.dart';
 import '../../../app/theme/tokens.dart';
 import '../../../core/format/formatters.dart';
 import '../../../core/widgets/common.dart';
+import '../../../infrastructure/notifications/app_notifications.dart';
 import '../../../infrastructure/storage/preferences.dart';
 import '../../network/data/mobile_data.dart';
+import '../data/background_health.dart';
 import '../data/backup_controller.dart';
+import '../data/backup_worker.dart';
 import '../data/phone_folders.dart';
 import '../data/watched_folders.dart';
 import 'backup_card.dart';
@@ -23,8 +26,8 @@ final _deviceFoldersProvider = FutureProvider.autoDispose<List<DeviceFolder>>(
 );
 
 /// Everything about photo backup: where it stands, the switch, what and
-/// when to back up, and the other phone folders whose new files upload by
-/// themselves.
+/// when to back up, what happens while the app is closed, and the other
+/// phone folders whose new files upload by themselves.
 class BackupScreen extends ConsumerWidget {
   const BackupScreen({super.key});
 
@@ -179,6 +182,7 @@ class BackupScreen extends ConsumerWidget {
               ],
             ),
             ...when,
+            const _WhileClosed(),
             if (folders) const _WatchedFolders(),
             const SizedBox(height: Space.xxl),
             const DuplicateBackupsTile(),
@@ -223,6 +227,112 @@ class BackupScreen extends ConsumerWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Backup with the app closed: the switch that lets it run on its own and
+/// when it last did, whether Android is letting the checks for new photos
+/// run, with Fix when it isn't, and only when they need it, battery saver
+/// and notifications, each with the way to put it right.
+class _WhileClosed extends ConsumerWidget {
+  const _WhileClosed();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colors = context.colors;
+    final prefs = ref.watch(preferencesProvider);
+    final unattended = prefs.backupUnattended;
+    final health = ref.watch(backgroundHealthProvider).value;
+    final lastRun = health?.lastRun ?? prefs.backgroundRun;
+    final uploaded = health?.lastUploaded ?? prefs.backgroundUploaded;
+    final checked = health?.lastChecked;
+    void recheck() => ref.invalidate(backgroundHealthProvider);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const SectionHeader('While the app is closed'),
+        ListGroup(
+          children: [
+            SwitchListTile(
+              title: const Text('Back up on its own'),
+              subtitle: Text(
+                prefs.backupMobileData == BackupMobileData.off
+                    ? 'When the phone is charging and on Wi-Fi.'
+                    : 'When the phone is charging.',
+              ),
+              value: unattended,
+              onChanged: (on) async {
+                await ref.read(backupControllerProvider.notifier).setUnattended(on);
+                ref.invalidate(preferencesProvider);
+                recheck();
+              },
+            ),
+            if (unattended)
+              StatusLine(
+                icon: Icons.history_rounded,
+                text: lastRun == null
+                    ? 'Hasn\'t run yet'
+                    : 'Last ran ${Formatters.date(lastRun)} · ${Formatters.count(uploaded, 'item')}',
+                detail: 'Checks new photos as they arrive. Looks through everything once a day.',
+              ),
+            if (health != null) ...[
+              if (health.needsAttention(true))
+                StatusLine(
+                  icon: Icons.error_outline_rounded,
+                  color: colors.danger,
+                  text: 'Not watching for new photos',
+                  detail: checked == null
+                      ? null
+                      : 'Last checked in the background · ${Formatters.date(checked)}',
+                  trailing: TextButton(
+                    onPressed: () async {
+                      await BackupWorker.schedule();
+                      recheck();
+                    },
+                    child: const Text('Fix'),
+                  ),
+                )
+              else
+                StatusLine(
+                  icon: Icons.check_circle_outline_rounded,
+                  color: colors.success,
+                  text: 'Watching for new photos',
+                  detail: checked == null
+                      ? null
+                      : 'Last checked in the background · ${Formatters.date(checked)}',
+                ),
+              if (!health.batteryOk)
+                StatusLine(
+                  icon: Icons.battery_alert_outlined,
+                  text: 'Battery saver may stop backup',
+                  detail: 'Set Telegrive to Unrestricted in battery settings.',
+                  trailing: TextButton(
+                    onPressed: () async {
+                      await BatterySettings.open();
+                      recheck();
+                    },
+                    child: const Text('Open'),
+                  ),
+                ),
+              if (!health.notificationsOk)
+                StatusLine(
+                  icon: Icons.notifications_off_outlined,
+                  text: 'Notifications are off',
+                  detail: 'You won\'t hear about new photos waiting.',
+                  trailing: TextButton(
+                    onPressed: () async {
+                      await AppNotifications.openSettings();
+                      recheck();
+                    },
+                    child: const Text('Turn on'),
+                  ),
+                ),
+            ],
+          ],
+        ),
+      ],
     );
   }
 }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart' show Icons;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:telegrive/core/format/formatters.dart';
+import 'package:telegrive/features/backup/data/background_health.dart';
 import 'package:telegrive/features/backup/data/backup_controller.dart';
 import 'package:telegrive/features/drive/data/drive_sync.dart';
 import 'package:telegrive/features/drive/data/edit_outbox.dart';
@@ -316,6 +317,16 @@ void main() {
       );
       expect(health.tone, HealthTone.neutral);
       expect(health.target, HealthTarget.transfers);
+    });
+
+    test('a backup pass paused for a Telegram wait says so, not that it is moving', () {
+      final resumes = _now.add(const Duration(minutes: 40));
+      final health = _top(
+        backup: BackupState(phase: BackupPhase.uploading, total: 20, done: 3, pausedUntil: resumes),
+      );
+      expect(health.text, 'Telegram asked us to wait');
+      expect(health.tone, HealthTone.neutral);
+      expect(health.progress, isNull);
     });
 
     test('a long Telegram wait beats transfers in progress', () {
@@ -1176,6 +1187,70 @@ void main() {
         const stopped = BackupState(phase: BackupPhase.stopped);
         expect(lowSpace(stopped, waiting)?.action, HealthAction.freeUpSpace);
       });
+    });
+
+    group('backup with the app closed', () {
+      DriveHealth? closed(BackupState backup, {TransfersState transfers = TransfersState.empty}) =>
+          secondaryHealth(
+            _top(backup: backup, transfers: transfers),
+            backup: backup,
+            transfers: transfers,
+            backgroundBlocked: true,
+            now: _now,
+          );
+
+      test('shows under all good, and opens Backup', () {
+        final row = closed(_upToDate);
+        expect(_top(backup: _upToDate).text, 'Backed up and in sync');
+        expect(row?.text, 'Backup can\'t run while the app is closed');
+        expect(row?.detail, 'Open backup settings to fix it.');
+        expect(row?.icon, Icons.error_outline_rounded);
+        expect(row?.tone, HealthTone.bad);
+        expect(row?.action, HealthAction.none);
+        expect(row?.target, HealthTarget.backup);
+      });
+
+      test('comes after what needs doing now, and before Free up', () {
+        final failed = TransfersState([_transfer('a.zip', TransferStatus.failed)]);
+        expect(closed(_upToDate, transfers: failed)?.action, HealthAction.retryTransfers);
+        final row = secondaryHealth(
+          _top(),
+          backup: _upToDate,
+          transfers: TransfersState.empty,
+          backgroundBlocked: true,
+          lowOnSpace: true,
+          freeableBytes: 9 * _gb,
+          now: _now,
+        );
+        expect(row?.text, 'Backup can\'t run while the app is closed');
+      });
+
+      test('is nothing to say while the checks run', () {
+        expect(
+          secondaryHealth(_top(), backup: _upToDate, transfers: TransfersState.empty, now: _now),
+          isNull,
+        );
+      });
+    });
+  });
+
+  group('whether backup can run with the app closed needs attention', () {
+    test('only while backup is on', () {
+      const health = BackgroundHealth(watching: false);
+      expect(health.needsAttention(true, now: _now), isTrue);
+      expect(health.needsAttention(false, now: _now), isFalse);
+    });
+
+    test('when no check has run for two days', () {
+      BackgroundHealth checkedAgo(Duration ago) =>
+          BackgroundHealth(watching: true, lastChecked: _now.subtract(ago));
+      expect(checkedAgo(const Duration(hours: 47)).needsAttention(true, now: _now), isFalse);
+      expect(checkedAgo(const Duration(hours: 49)).needsAttention(true, now: _now), isTrue);
+    });
+
+    test('not for checks just armed that haven\'t run yet, nor for battery or notifications', () {
+      const health = BackgroundHealth(watching: true, batteryOk: false, notificationsOk: false);
+      expect(health.needsAttention(true, now: _now), isFalse);
     });
   });
 }

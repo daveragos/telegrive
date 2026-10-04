@@ -387,9 +387,13 @@ void main() {
 
   /// [_Counted] over a database holding its two failed records.
   Future<(_Counted, AppDatabase, BackupState Function())> counted() async {
+    // ignore: invalid_use_of_visible_for_testing_member
+    SharedPreferences.setMockInitialValues({});
+    final shared = await SharedPreferences.getInstance();
     final db = AppDatabase(NativeDatabase.memory());
     final container = ProviderContainer(
       overrides: [
+        sharedPreferencesProvider.overrideWithValue(shared),
         appDatabaseProvider.overrideWithValue(db),
         backupControllerProvider.overrideWith(_Counted.new),
       ],
