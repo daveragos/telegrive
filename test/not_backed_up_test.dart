@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -23,6 +25,9 @@ import 'package:telegrive/infrastructure/network/network_status.dart';
 import 'package:telegrive/infrastructure/storage/preferences.dart';
 
 import 'support/fake_telegram.dart';
+
+/// photo_manager hands out files only on Android and Apple platforms.
+final _readsFiles = Platform.isAndroid || Platform.isIOS || Platform.isMacOS;
 
 /// Backup switched on and about to run its first pass, without the library
 /// watchers, counting the passes it is asked for.
@@ -125,7 +130,12 @@ Map<String, Object> _photo(String id, int daysAgo) => {
   'type': 1,
   'width': 4000,
   'height': 3000,
-  'createDt': DateTime(2026, 9, 25).subtract(Duration(days: daysAgo)).millisecondsSinceEpoch ~/
+  'createDt':
+      DateTime(
+        2026,
+        9,
+        25,
+      ).subtract(Duration(days: daysAgo)).millisecondsSinceEpoch ~/
       1000,
   'relativePath': 'DCIM/Camera/',
   'title': 'IMG_$id.jpg',
@@ -136,7 +146,8 @@ void main() {
 
   const photos = MethodChannel('com.fluttercandies/photo_manager');
   tearDown(() {
-    final messenger = TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
     messenger.setMockMethodCallHandler(photos, null);
   });
 
@@ -150,18 +161,25 @@ void main() {
     // ignore: invalid_use_of_visible_for_testing_member
     SharedPreferences.setMockInitialValues({
       BackupPrefKeys.enabled: true,
-      BackupPrefKeys.mobileData: (wifiOnly ? BackupMobileData.off : BackupMobileData.all).name,
+      BackupPrefKeys.mobileData:
+          (wifiOnly ? BackupMobileData.off : BackupMobileData.all).name,
       'full_sync_$testChatId': DateTime.now().millisecondsSinceEpoch,
     });
     final shared = await SharedPreferences.getInstance();
-    final messenger = TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
     messenger.setMockMethodCallHandler(
       photos,
       (call) async => switch (call.method) {
         'getPermissionState' => PermissionState.authorized.index,
         'getAssetPathList' => {
           'data': [
-            {'id': 'all', 'name': 'Recent', 'isAll': true, 'assetCount': library.length},
+            {
+              'id': 'all',
+              'name': 'Recent',
+              'isAll': true,
+              'assetCount': library.length,
+            },
           ],
         },
         'getAssetCountFromPath' => library.length,
@@ -192,7 +210,11 @@ void main() {
       for (var i = 1; i <= 5; i++) _photo('p$i', i),
     ], wifiOnly: true);
     await db.markAssetBackedUp('p2', 'file-2');
-    await db.markAssetFailed('p4', 3, reason: 'Telegram took too long to answer.');
+    await db.markAssetFailed(
+      'p4',
+      3,
+      reason: 'Telegram took too long to answer.',
+    );
     await db.markAssetFailed('p5', 3);
     await db.markAssetSkipped('p5');
 
@@ -201,45 +223,76 @@ void main() {
     final state = container.read(backupControllerProvider);
     expect(state.phase, BackupPhase.waitingForWifi);
     // The skipped photo is out of scope; the failed one is not waiting.
-    expect((state.total, state.done, state.failed, state.remaining), (4, 1, 1, 2));
+    expect(
+      (state.total, state.done, state.failed, state.remaining),
+      (4, 1, 1, 2),
+    );
     expect(state.failedIds, {'p4'});
     expect(state.waiting.map((a) => a.assetId), ['p1', 'p3']);
     expect(state.waiting.first.folder, 'Camera');
     expect(state.waiting.first.takenAt, DateTime(2026, 9, 24));
   });
 
-  test('a failed photo the scan no longer finds is neither counted nor listed', () async {
-    final (container, db) = await start([
-      for (var i = 1; i <= 3; i++) _photo('p$i', i),
-    ], wifiOnly: true);
-    await db.markAssetFailed('p2', 3, reason: 'Telegram took too long to answer.');
-    // Deleted from the phone after failing.
-    await db.markAssetFailed('gone-1', 3, reason: 'Couldn\'t start the upload.');
-    await db.markAssetFailed('gone-2', 3, reason: 'Couldn\'t start the upload.');
-    final controller = container.read(backupControllerProvider.notifier) as _Starting;
-    BackupState state() => container.read(backupControllerProvider);
-    container.listen(failedBackupAssetsProvider, (_, _) {});
+  test(
+    'a failed photo the scan no longer finds is neither counted nor listed',
+    () async {
+      final (container, db) = await start([
+        for (var i = 1; i <= 3; i++) _photo('p$i', i),
+      ], wifiOnly: true);
+      await db.markAssetFailed(
+        'p2',
+        3,
+        reason: 'Telegram took too long to answer.',
+      );
+      // Deleted from the phone after failing.
+      await db.markAssetFailed(
+        'gone-1',
+        3,
+        reason: 'Couldn\'t start the upload.',
+      );
+      await db.markAssetFailed(
+        'gone-2',
+        3,
+        reason: 'Couldn\'t start the upload.',
+      );
+      final controller =
+          container.read(backupControllerProvider.notifier) as _Starting;
+      BackupState state() => container.read(backupControllerProvider);
+      container.listen(failedBackupAssetsProvider, (_, _) {});
 
-    await controller.run();
-    expect((state().total, state().failed, state().remaining), (3, 1, 2));
-    final listed = await container.read(failedBackupAssetsProvider.future);
-    expect(listed.map((r) => r.assetId), ['p2']);
+      await controller.run();
+      expect((state().total, state().failed, state().remaining), (3, 1, 2));
+      final listed = await container.read(failedBackupAssetsProvider.future);
+      expect(listed.map((r) => r.assetId), ['p2']);
 
-    // Retry and Skip on those records leave the counts alone.
-    await controller.retryOne('gone-1');
-    await controller.skip('gone-2');
-    expect((state().total, state().failed, state().remaining), (3, 1, 2));
-    expect(await db.backupAssetOf('gone-1'), isNull);
-    expect((await db.backupAssetOf('gone-2'))?.state, BackupAssetState.skipped);
-  });
+      // Retry and Skip on those records leave the counts alone.
+      await controller.retryOne('gone-1');
+      await controller.skip('gone-2');
+      expect((state().total, state().failed, state().remaining), (3, 1, 2));
+      expect(await db.backupAssetOf('gone-1'), isNull);
+      expect(
+        (await db.backupAssetOf('gone-2'))?.state,
+        BackupAssetState.skipped,
+      );
+    },
+  );
 
   test('a second tap on Retry or Skip changes nothing', () async {
     final (container, db) = await start([
       for (var i = 1; i <= 3; i++) _photo('p$i', i),
     ], wifiOnly: true);
-    await db.markAssetFailed('p1', 3, reason: 'Telegram took too long to answer.');
-    await db.markAssetFailed('p2', 3, reason: 'Telegram took too long to answer.');
-    final controller = container.read(backupControllerProvider.notifier) as _Starting;
+    await db.markAssetFailed(
+      'p1',
+      3,
+      reason: 'Telegram took too long to answer.',
+    );
+    await db.markAssetFailed(
+      'p2',
+      3,
+      reason: 'Telegram took too long to answer.',
+    );
+    final controller =
+        container.read(backupControllerProvider.notifier) as _Starting;
     BackupState state() => container.read(backupControllerProvider);
     await controller.run();
     expect((state().total, state().failed), (3, 2));
@@ -269,19 +322,28 @@ void main() {
     expect(phases, [BackupPhase.waitingForWifi]);
   });
 
-  test('a request for a photo that went up meanwhile is dropped at the next scan', () async {
-    final (container, db) = await start([_photo('p1', 1)], wifiOnly: true);
-    final controller = container.read(backupControllerProvider.notifier);
-    // Asked for while it was going up, and in the drive since.
-    controller.backUpNow('p1');
-    await db.markAssetBackedUp('p1', 'file-1');
+  test(
+    'a request for a photo that went up meanwhile is dropped at the next scan',
+    () async {
+      final (container, db) = await start([_photo('p1', 1)], wifiOnly: true);
+      final controller = container.read(backupControllerProvider.notifier);
+      // Asked for while it was going up, and in the drive since.
+      controller.backUpNow('p1');
+      await db.markAssetBackedUp('p1', 'file-1');
 
-    await controller.run();
-    expect(container.read(backupControllerProvider).phase, BackupPhase.upToDate);
-  });
+      await controller.run();
+      expect(
+        container.read(backupControllerProvider).phase,
+        BackupPhase.upToDate,
+      );
+    },
+  );
 
   test('the skipped count covers only photos the scan found', () async {
-    final (container, db) = await start([_photo('p1', 1), _photo('p2', 2)], wifiOnly: true);
+    final (container, db) = await start([
+      _photo('p1', 1),
+      _photo('p2', 2),
+    ], wifiOnly: true);
     for (final id in ['p2', 'gone']) {
       await db.markAssetFailed(id, 3);
       await db.markAssetSkipped(id);
@@ -300,21 +362,28 @@ void main() {
     expect(await db.watchSkippedAssetIds().first, isEmpty);
   });
 
-  test('a photo that fails with tries left gets another pass soon after', () async {
-    // Its file can't be read, so the upload fails before it starts.
-    final (container, db) = await start([_photo('p1', 1)], wifiOnly: false);
-    final controller = container.read(backupControllerProvider.notifier) as _Starting;
+  test(
+    'a photo that fails with tries left gets another pass soon after',
+    () async {
+      // Its file can't be read, so the upload fails before it starts.
+      final (container, db) = await start([_photo('p1', 1)], wifiOnly: false);
+      final controller =
+          container.read(backupControllerProvider.notifier) as _Starting;
 
-    await controller.run();
+      await controller.run();
 
-    final record = await db.backupAssetOf('p1');
-    expect(record?.failures, 1);
-    expect(record?.reason, 'This photo is no longer on this phone.');
-    expect(controller.passes, 1);
-    final state = container.read(backupControllerProvider);
-    expect(state.phase, isNot(BackupPhase.upToDate));
-    expect((state.failed, state.remaining), (0, 1));
-  });
+      final record = await db.backupAssetOf('p1');
+      expect(record?.failures, 1);
+      expect(record?.reason, 'This photo is no longer on this phone.');
+      expect(controller.passes, 1);
+      final state = container.read(backupControllerProvider);
+      expect(state.phase, isNot(BackupPhase.upToDate));
+      expect((state.failed, state.remaining), (0, 1));
+    },
+    skip: _readsFiles
+        ? false
+        : 'photo_manager reads files on Android and Apple platforms only',
+  );
 
   /// [_Counted] over a database holding its two failed records.
   Future<(_Counted, AppDatabase, BackupState Function())> counted() async {
@@ -329,48 +398,63 @@ void main() {
       container.dispose();
       await db.close();
     });
-    await db.markAssetFailed('a', 3, reason: 'Telegram took too long to answer.');
-    await db.markAssetFailed('b', 3, reason: 'This photo is no longer on this phone.');
-    final controller = container.read(backupControllerProvider.notifier) as _Counted;
+    await db.markAssetFailed(
+      'a',
+      3,
+      reason: 'Telegram took too long to answer.',
+    );
+    await db.markAssetFailed(
+      'b',
+      3,
+      reason: 'This photo is no longer on this phone.',
+    );
+    final controller =
+        container.read(backupControllerProvider.notifier) as _Counted;
     return (controller, db, () => container.read(backupControllerProvider));
   }
 
-  test('retry, skip and undo keep the counts in step with the records', () async {
-    final (controller, db, state) = await counted();
+  test(
+    'retry, skip and undo keep the counts in step with the records',
+    () async {
+      final (controller, db, state) = await counted();
 
-    await controller.retryOne('a');
-    expect((state().failed, state().remaining), (1, 1));
-    expect((await db.backupAssetMap()).keys, ['b']);
-    expect(controller.passes, 1);
+      await controller.retryOne('a');
+      expect((state().failed, state().remaining), (1, 1));
+      expect((await db.backupAssetMap()).keys, ['b']);
+      expect(controller.passes, 1);
 
-    expect(await controller.skip('b'), isTrue);
-    expect((state().total, state().failed, state().remaining), (9, 0, 1));
-    expect(state().skippedIds, {'b'});
-    expect(await db.watchSkippedAssetIds().first, ['b']);
-    expect(await db.watchFailedAssets(minFailures: 3).first, isEmpty);
+      expect(await controller.skip('b'), isTrue);
+      expect((state().total, state().failed, state().remaining), (9, 0, 1));
+      expect(state().skippedIds, {'b'});
+      expect(await db.watchSkippedAssetIds().first, ['b']);
+      expect(await db.watchFailedAssets(minFailures: 3).first, isEmpty);
 
-    await controller.unskip('b');
-    expect((state().total, state().failed), (10, 1));
-    final back = (await db.watchFailedAssets(minFailures: 3).first).single;
-    expect(back.assetId, 'b');
-    expect(back.reason, 'This photo is no longer on this phone.');
+      await controller.unskip('b');
+      expect((state().total, state().failed), (10, 1));
+      final back = (await db.watchFailedAssets(minFailures: 3).first).single;
+      expect(back.assetId, 'b');
+      expect(back.reason, 'This photo is no longer on this phone.');
 
-    await controller.retryFailed();
-    expect((state().failed, state().remaining), (0, 2));
-    expect(controller.passes, 2);
-  });
+      await controller.retryFailed();
+      expect((state().failed, state().remaining), (0, 2));
+      expect(controller.passes, 2);
+    },
+  );
 
-  test('Undo after Bring back leaves a photo that has moved on as it is', () async {
-    final (controller, db, state) = await counted();
-    expect(await controller.skip('b'), isTrue);
-    await controller.unskipAll();
-    // The next pass sent it up.
-    await db.markAssetBackedUp('b', 'file-b');
+  test(
+    'Undo after Bring back leaves a photo that has moved on as it is',
+    () async {
+      final (controller, db, state) = await counted();
+      expect(await controller.skip('b'), isTrue);
+      await controller.unskipAll();
+      // The next pass sent it up.
+      await db.markAssetBackedUp('b', 'file-b');
 
-    await controller.unskip('b');
-    expect((await db.backupAssetOf('b'))?.state, BackupAssetState.done);
-    expect((state().total, state().failed), (9, 1));
-  });
+      await controller.unskip('b');
+      expect((await db.backupAssetOf('b'))?.state, BackupAssetState.done);
+      expect((state().total, state().failed), (9, 1));
+    },
+  );
 
   Future<_Recording> pump(
     WidgetTester tester, {
@@ -384,20 +468,34 @@ void main() {
       ProviderScope(
         overrides: [
           backupControllerProvider.overrideWith(() => controller),
-          failedBackupAssetsProvider.overrideWith((ref) => Stream.value(failed)),
-          skippedBackupCountProvider.overrideWith((ref) => Stream.value(skipped)),
+          failedBackupAssetsProvider.overrideWith(
+            (ref) => Stream.value(failed),
+          ),
+          skippedBackupCountProvider.overrideWith(
+            (ref) => Stream.value(skipped),
+          ),
         ],
-        child: MaterialApp(theme: AppTheme.light(), home: const NotBackedUpScreen()),
+        child: MaterialApp(
+          theme: AppTheme.light(),
+          home: const NotBackedUpScreen(),
+        ),
       ),
     );
     await tester.pump();
     return controller;
   }
 
-  testWidgets('each photo out of tries shows why, with Retry and Skip', (tester) async {
+  testWidgets('each photo out of tries shows why, with Retry and Skip', (
+    tester,
+  ) async {
     final controller = await pump(
       tester,
-      backup: const BackupState(phase: BackupPhase.upToDate, total: 10, done: 8, failed: 2),
+      backup: const BackupState(
+        phase: BackupPhase.upToDate,
+        total: 10,
+        done: 8,
+        failed: 2,
+      ),
       failed: [
         _failed('a', 'Telegram took too long to answer.'),
         _failed('b', 'This photo is no longer on this phone.'),
@@ -432,7 +530,12 @@ void main() {
   testWidgets('a Skip that sets nothing aside offers no Undo', (tester) async {
     final controller = await pump(
       tester,
-      backup: const BackupState(phase: BackupPhase.upToDate, total: 10, done: 9, failed: 1),
+      backup: const BackupState(
+        phase: BackupPhase.upToDate,
+        total: 10,
+        done: 9,
+        failed: 1,
+      ),
       failed: [_failed('a', 'Telegram took too long to answer.')],
       skips: false,
     );
@@ -445,34 +548,41 @@ void main() {
     expect(find.text('Undo'), findsNothing);
   });
 
-  testWidgets('waiting photos say what they wait for, and Back up now waits for Wi-Fi too', (
-    tester,
-  ) async {
-    final waiting = [
-      for (var i = 0; i < 3; i++)
-        PendingAsset(assetId: 'w$i', takenAt: DateTime(2025, 9, 25), folder: 'Camera'),
-    ];
-    final controller = await pump(
-      tester,
-      backup: BackupState(
-        phase: BackupPhase.waitingForWifi,
-        total: 30,
-        done: 3,
-        waiting: waiting,
-      ),
-    );
+  testWidgets(
+    'waiting photos say what they wait for, and Back up now waits for Wi-Fi too',
+    (tester) async {
+      final waiting = [
+        for (var i = 0; i < 3; i++)
+          PendingAsset(
+            assetId: 'w$i',
+            takenAt: DateTime(2025, 9, 25),
+            folder: 'Camera',
+          ),
+      ];
+      final controller = await pump(
+        tester,
+        backup: BackupState(
+          phase: BackupPhase.waitingForWifi,
+          total: 30,
+          done: 3,
+          waiting: waiting,
+        ),
+      );
 
-    expect(find.text('Waiting · 27'), findsOneWidget);
-    expect(find.text('27 items · waiting for Wi-Fi'), findsOneWidget);
-    expect(find.text('and 24 more, newest first.'), findsOneWidget);
-    expect(find.text('Camera · Sep 25, 2025'), findsNWidgets(3));
-    final retryAll = tester.widget<TextButton>(find.widgetWithText(TextButton, 'Retry all'));
-    expect(retryAll.onPressed, isNull);
+      expect(find.text('Waiting · 27'), findsOneWidget);
+      expect(find.text('27 items · waiting for Wi-Fi'), findsOneWidget);
+      expect(find.text('and 24 more, newest first.'), findsOneWidget);
+      expect(find.text('Camera · Sep 25, 2025'), findsNWidgets(3));
+      final retryAll = tester.widget<TextButton>(
+        find.widgetWithText(TextButton, 'Retry all'),
+      );
+      expect(retryAll.onPressed, isNull);
 
-    await tester.tap(find.widgetWithText(TextButton, 'Back up now').first);
-    await tester.pump();
-    expect(controller.calls, isEmpty);
-  });
+      await tester.tap(find.widgetWithText(TextButton, 'Back up now').first);
+      await tester.pump();
+      expect(controller.calls, isEmpty);
+    },
+  );
 
   testWidgets('Back up now queues the photo and says so', (tester) async {
     final controller = await pump(
@@ -482,8 +592,16 @@ void main() {
         total: 30,
         done: 28,
         waiting: [
-          PendingAsset(assetId: 'w0', takenAt: DateTime(2025, 9, 25), folder: 'Camera'),
-          PendingAsset(assetId: 'w1', takenAt: DateTime(2025, 9, 24), folder: 'Camera'),
+          PendingAsset(
+            assetId: 'w0',
+            takenAt: DateTime(2025, 9, 25),
+            folder: 'Camera',
+          ),
+          PendingAsset(
+            assetId: 'w1',
+            takenAt: DateTime(2025, 9, 24),
+            folder: 'Camera',
+          ),
         ],
       ),
     );
@@ -497,10 +615,16 @@ void main() {
     expect(find.text('Back up now'), findsOneWidget);
   });
 
-  testWidgets('with nothing stuck, it says everything is backed up', (tester) async {
+  testWidgets('with nothing stuck, it says everything is backed up', (
+    tester,
+  ) async {
     await pump(
       tester,
-      backup: const BackupState(phase: BackupPhase.upToDate, total: 10, done: 10),
+      backup: const BackupState(
+        phase: BackupPhase.upToDate,
+        total: 10,
+        done: 10,
+      ),
     );
     expect(find.text('Everything is backed up'), findsOneWidget);
   });
@@ -508,7 +632,11 @@ void main() {
   group('the way in', () {
     /// The screen at [location] with backup in [backup], in a router that
     /// knows the way to Not backed up.
-    Future<void> open(WidgetTester tester, String location, BackupState backup) async {
+    Future<void> open(
+      WidgetTester tester,
+      String location,
+      BackupState backup,
+    ) async {
       // A fresh tree, so each state gets its own overrides.
       await tester.pumpWidget(const SizedBox.shrink());
       // ignore: invalid_use_of_visible_for_testing_member
@@ -522,7 +650,10 @@ void main() {
             path: '/backup',
             builder: (_, _) => const BackupScreen(),
             routes: [
-              GoRoute(path: 'not-backed-up', builder: (_, _) => const NotBackedUpScreen()),
+              GoRoute(
+                path: 'not-backed-up',
+                builder: (_, _) => const NotBackedUpScreen(),
+              ),
             ],
           ),
         ],
@@ -534,13 +665,22 @@ void main() {
             sharedPreferencesProvider.overrideWithValue(shared),
             backupControllerProvider.overrideWith(() => _Recording(backup)),
             transferQueueProvider.overrideWith(_Queue.new),
-            duplicateBackupsProvider.overrideWith((ref) async => DuplicateBackups.none),
+            duplicateBackupsProvider.overrideWith(
+              (ref) async => DuplicateBackups.none,
+            ),
             mediaTimelineProvider.overrideWith((ref) => Stream.value(const [])),
-            hiddenBackupFoldersProvider.overrideWith((ref) => Stream.value(const {})),
-            failedBackupAssetsProvider.overrideWith((ref) => Stream.value(const [])),
+            hiddenBackupFoldersProvider.overrideWith(
+              (ref) => Stream.value(const {}),
+            ),
+            failedBackupAssetsProvider.overrideWith(
+              (ref) => Stream.value(const []),
+            ),
             skippedBackupCountProvider.overrideWith((ref) => Stream.value(0)),
           ],
-          child: MaterialApp.router(theme: AppTheme.light(), routerConfig: router),
+          child: MaterialApp.router(
+            theme: AppTheme.light(),
+            routerConfig: router,
+          ),
         ),
       );
       await tester.pump();
@@ -555,8 +695,16 @@ void main() {
       expect(find.byType(NotBackedUpScreen), findsOneWidget);
     }
 
-    const uploading = BackupState(phase: BackupPhase.uploading, total: 30, done: 3);
-    const onMobileData = BackupState(phase: BackupPhase.waitingForWifi, total: 30, done: 3);
+    const uploading = BackupState(
+      phase: BackupPhase.uploading,
+      total: 30,
+      done: 3,
+    );
+    const onMobileData = BackupState(
+      phase: BackupPhase.waitingForWifi,
+      total: 30,
+      done: 3,
+    );
     const failing = BackupState(
       phase: BackupPhase.uploading,
       total: 30,
@@ -569,10 +717,18 @@ void main() {
       done: 3,
       failed: 2,
     );
-    const allDone = BackupState(phase: BackupPhase.upToDate, total: 30, done: 30);
+    const allDone = BackupState(
+      phase: BackupPhase.upToDate,
+      total: 30,
+      done: 30,
+    );
 
-    testWidgets('Photos points to it only while something is stuck', (tester) async {
-      final pointer = find.textContaining(RegExp(r"^[\d,]+ waiting|didn't back up"));
+    testWidgets('Photos points to it only while something is stuck', (
+      tester,
+    ) async {
+      final pointer = find.textContaining(
+        RegExp(r"^[\d,]+ waiting|didn't back up"),
+      );
       for (final (backup, line) in [
         (uploading, null),
         (allDone, null),
@@ -591,25 +747,28 @@ void main() {
       }
     });
 
-    testWidgets('the Backup screen has a row for it only while something is stuck', (
-      tester,
-    ) async {
-      final row = find.textContaining(RegExp(r"^See (which ones and why|what's left)"));
-      for (final (backup, line) in [
-        (uploading, null),
-        (allDone, null),
-        (onMobileData, '27 items waiting'),
-        (failing, '2 items didn\'t back up'),
-        (stuck, '2 items didn\'t back up'),
-      ]) {
-        await open(tester, '/backup', backup);
-        if (line == null) {
-          expect(row, findsNothing, reason: '${backup.phase}');
-        } else {
-          expect(find.text(line), findsOneWidget);
-          await follow(tester, line);
+    testWidgets(
+      'the Backup screen has a row for it only while something is stuck',
+      (tester) async {
+        final row = find.textContaining(
+          RegExp(r"^See (which ones and why|what's left)"),
+        );
+        for (final (backup, line) in [
+          (uploading, null),
+          (allDone, null),
+          (onMobileData, '27 items waiting'),
+          (failing, '2 items didn\'t back up'),
+          (stuck, '2 items didn\'t back up'),
+        ]) {
+          await open(tester, '/backup', backup);
+          if (line == null) {
+            expect(row, findsNothing, reason: '${backup.phase}');
+          } else {
+            expect(find.text(line), findsOneWidget);
+            await follow(tester, line);
+          }
         }
-      }
-    });
+      },
+    );
   });
 }
