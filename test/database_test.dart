@@ -770,6 +770,77 @@ void main() {
     expect(await safeSizes(), {'asset-1': 4242});
   });
 
+  test('backed-up photos whose file left the drive are found', () async {
+    // Four photos went up: one is still there, one is in the trash, one
+    // lost a part of its split file, and one's file is gone altogether. A
+    // fifth record never pointed at a file.
+    await db.upsertFilePart(file('kept'), part('kept', 0, 1));
+    await db.upsertFilePart(file('binned'), part('binned', 0, 2));
+    await db.updateFile('binned', DriveFilesCompanion(trashedAt: Value(now)));
+    await db.refreshHidden();
+    await db.upsertFilePart(file('split', partCount: 2), part('split', 0, 3));
+    await db.upsertFilePart(file('split', partCount: 2), part('split', 1, 4));
+    await db.removeMessages([4]);
+    await db.markAssetBackedUp('a-kept', 'kept');
+    await db.markAssetBackedUp('a-binned', 'binned');
+    await db.markAssetBackedUp('a-split', 'split');
+    await db.markAssetBackedUp('a-gone', 'gone');
+    await db.markAssetBackedUp('a-none', null);
+
+    expect(await db.backedUpButMissing(), unorderedEquals(['a-split', 'a-gone']));
+    expect(await db.countBackedUpWithFile(), 4);
+
+    await db.markAssetsMissing(['a-split', 'a-gone']);
+    expect(await db.watchMissingCount().first, 2);
+    expect(await db.countBackedUpWithFile(), 2);
+    expect(await db.backedUpButMissing(), isEmpty);
+    expect((await db.backupAssetOf('a-gone'))!.fileId, isNull);
+    expect(await db.watchBackedUpCount().first, 3);
+
+    // Leaving them out keeps the records as removed; backing up again
+    // forgets only the missing ones.
+    await db.markAssetsMissing(['a-kept']);
+    await db.leaveOutMissing();
+    expect(await db.watchMissingCount().first, 0);
+    expect((await db.backupAssetOf('a-gone'))!.state, BackupAssetState.removed);
+    await db.markAssetsMissing(['a-binned']);
+    await db.backUpMissingAgain();
+    expect(await db.backupAssetOf('a-binned'), isNull);
+    expect(
+      (await db.backupAssetMap()).keys,
+      unorderedEquals(['a-kept', 'a-split', 'a-gone', 'a-none']),
+    );
+  });
+
+  test('deleting a file for good marks its backup record removed', () async {
+    await db.upsertFilePart(file('p'), part('p', 0, 1));
+    await db.upsertFilePart(file('q'), part('q', 0, 2));
+    await db.markAssetBackedUp('a-p', 'p');
+    await db.markAssetBackedUp('a-q', 'q');
+
+    await db.markFilesRemoved(['p']);
+    expect((await db.backupAssetOf('a-p'))!.state, BackupAssetState.removed);
+    expect((await db.backupAssetOf('a-q'))!.state, BackupAssetState.done);
+    // Gone from the drive on purpose, so it isn't a gap.
+    await db.removeMessages([1]);
+    expect(await db.backedUpButMissing(), isEmpty);
+  });
+
+  test('split files missing a part are listed by name, trash left out', () async {
+    await db.upsertFilePart(file('b', partCount: 3), part('b', 0, 10));
+    await db.upsertFilePart(file('b', partCount: 3), part('b', 2, 12));
+    await db.upsertFilePart(file('a', partCount: 2), part('a', 0, 20));
+    await db.upsertFilePart(file('whole', partCount: 2), part('whole', 0, 30));
+    await db.upsertFilePart(file('whole', partCount: 2), part('whole', 1, 31));
+    await db.upsertFilePart(file('binned', partCount: 2), part('binned', 0, 40));
+    await db.updateFile('binned', DriveFilesCompanion(trashedAt: Value(now)));
+    await db.refreshHidden();
+    await db.upsertFilePart(file('single'), part('single', 0, 50));
+
+    expect((await db.incompleteFiles()).map((f) => f.id), ['a', 'b']);
+    expect(await db.countSplitFiles(), 3);
+  });
+
   test('the phone copy of a backed-up file is found by file id', () async {
     await db.markAssetBackedUp('asset-1', 'p');
     await db.markAssetFailed('asset-2', 1);

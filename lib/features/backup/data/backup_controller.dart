@@ -58,6 +58,39 @@ enum BackupPhase {
   stopped,
 }
 
+/// What a pass does with one of the phone's photos, from its backup record.
+enum BackupDisposition {
+  /// In the drive.
+  done,
+
+  /// Out of tries, listed under Not backed up until Retry.
+  failed,
+
+  /// Still to go up: never tried, or failed with tries left.
+  pending,
+
+  /// Out of scope: set aside by the person, deleted for good from the
+  /// drive here, or gone from the drive and waiting for the person to say.
+  skip,
+}
+
+/// How matching backed-up photos against the index went.
+enum VerifyOutcome {
+  /// Every backed-up photo is in the drive.
+  ok,
+
+  /// Some are no longer in the drive; they wait for the person's choice.
+  gaps,
+
+  /// So many look gone that the index itself is more likely incomplete;
+  /// nothing was recorded.
+  suspect,
+
+  /// Not checked: backup is off, or the channel hasn't been read in full in
+  /// this run of the app.
+  skipped,
+}
+
 /// A photo still to go up, as the Not backed up screen lists it. Only ids
 /// and plain values, so the state stays cheap to compare and rebuild.
 @immutable
@@ -283,12 +316,22 @@ class BackupController extends Notifier<BackupState> {
     });
 
     // Backup waits for a complete index; carry on once a sync gets there.
+    // A full read that succeeded is also the moment the index holds all the
+    // channel does, so the records are checked against it then.
     ref.listen<SyncState>(driveSyncProvider, (previous, next) {
       if ((previous?.running ?? false) &&
           !next.running &&
           next.error == null &&
           state.phase == BackupPhase.waitingForDrive) {
         schedule(immediate: true);
+      }
+      if (next.lastFull != previous?.lastFull && next.error == null) {
+        unawaited(
+          verify().catchError((Object e) {
+            debugPrint('[Backup] verify: $e');
+            return VerifyOutcome.skipped;
+          }),
+        );
       }
     });
 
@@ -487,6 +530,59 @@ class BackupController extends Notifier<BackupState> {
     schedule(immediate: true);
   }
 
+  /// Matches the photos backed up from this phone against the index, and
+  /// records the ones whose files are no longer in the drive, so the person
+  /// can have them sent up again or leave them out. Nothing is uploaded
+  /// here. It runs only after a full read of the channel that succeeded in
+  /// this run of the app, since against a partial index every photo the
+  /// read hadn't reached would look gone; and when more than fifty, and
+  /// more than a tenth, look gone anyway, the index is the suspect and
+  /// nothing is recorded.
+  Future<VerifyOutcome> verify() async {
+    if (!_prefs.backupEnabled ||
+        !_indexComplete() ||
+        ref.read(driveSyncProvider).lastFull == null) {
+      return VerifyOutcome.skipped;
+    }
+    final missing = await _db.backedUpButMissing();
+    final verified = await _db.countBackedUpWithFile();
+    if (missing.length > suspectAbove && missing.length > verified * suspectShare) {
+      return VerifyOutcome.suspect;
+    }
+    await _db.markAssetsMissing(missing);
+    await _prefs.setBackupVerifiedAt(DateTime.now());
+    return missing.isEmpty ? VerifyOutcome.ok : VerifyOutcome.gaps;
+  }
+
+  /// More missing photos than this, and more than [suspectShare] of the
+  /// backed-up ones, means the index is doubted rather than the drive.
+  static const int suspectAbove = 50;
+  static const double suspectShare = 0.1;
+
+  /// Sends the photos that went missing from the drive up again. Their
+  /// records go, so the next pass judges them afresh; one that has a copy
+  /// elsewhere in the drive is recognised by name and size, as in any pass.
+  Future<void> retryMissing() async {
+    await _db.backUpMissingAgain();
+    schedule(immediate: true);
+  }
+
+  /// Leaves the photos that went missing from the drive out of backup.
+  Future<void> leaveOutMissing() => _db.leaveOutMissing();
+
+  /// What a pass does with a photo that has [record], or none.
+  @visibleForTesting
+  static BackupDisposition classify(BackupAssetRow? record) => switch (record?.state) {
+    null => BackupDisposition.pending,
+    BackupAssetState.done => BackupDisposition.done,
+    BackupAssetState.failed =>
+      record!.failures >= maxFailures ? BackupDisposition.failed : BackupDisposition.pending,
+    BackupAssetState.skipped ||
+    BackupAssetState.missing ||
+    BackupAssetState.removed => BackupDisposition.skip,
+    BackupAssetState.smallCopy => BackupDisposition.pending,
+  };
+
   /// Sends [assetId] up before the rest of what is waiting. A photo the
   /// running pass holds goes up in it as soon as a worker is free; any
   /// other gets another pass.
@@ -659,19 +755,22 @@ class BackupController extends Notifier<BackupState> {
     var done = 0;
     for (final asset in assets) {
       final record = known[asset.id];
-      // Skipped photos are out of scope, like a folder that is switched off.
-      if (record?.state == BackupAssetState.skipped) {
-        skippedIds.add(asset.id);
-        continue;
+      switch (classify(record)) {
+        case BackupDisposition.skip:
+          // Out of scope, like a folder that is switched off. Only the
+          // photos set aside are counted as such; one deleted for good
+          // from the drive, or gone from it and waiting on the person, is
+          // not offered back.
+          if (record?.state == BackupAssetState.skipped) skippedIds.add(asset.id);
+          continue;
+        case BackupDisposition.done:
+          done++;
+        case BackupDisposition.failed:
+          failedIds.add(asset.id);
+        case BackupDisposition.pending:
+          waiting.add(asset);
       }
       inScope[asset.id] = asset;
-      if (record?.state == BackupAssetState.done) {
-        done++;
-      } else if ((record?.failures ?? 0) >= maxFailures) {
-        failedIds.add(asset.id);
-      } else {
-        waiting.add(asset);
-      }
     }
 
     // The list stays newest first while Back up now changes the order the
@@ -1282,6 +1381,12 @@ final failedBackupAssetsProvider =
             ],
           );
     });
+
+/// How many photos backed up from this phone are no longer in the drive
+/// and wait for the person's choice, live.
+final missingCountProvider = StreamProvider.autoDispose<int>(
+  (ref) => ref.watch(appDatabaseProvider).watchMissingCount(),
+);
 
 /// How many photos the person set aside, live. Only the ones in
 /// [BackupState.skippedIds], so the count covers the photos the total

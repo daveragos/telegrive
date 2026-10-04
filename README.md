@@ -46,6 +46,17 @@ phone number.
   safely backed up, keeping the last 30 or 90 days on the phone if you like;
   they stay in the drive. Photo backup's screen offers it, Show them lists
   exactly what goes, and Home says so when the phone runs low on space.
+- **Check my drive.** Settings › Check my drive looks the drive over and
+  says, one sentence per check, whether the channel is private and yours
+  with no auto-delete timer, when the channel was last read in full, which
+  split files are missing a part, whether every photo backed up from this
+  phone is still in the drive, what in the trash goes for good within a
+  week, and whether two-step verification is on and how long the account
+  may sit unused before Telegram deletes it. What needs you comes first,
+  with the fix beside it: Turn off, Make private, Read everything again,
+  Delete parts, Back up again or Leave them out, Open Trash, Open Telegram
+  and Change. Settings › Security names this session as Telegram's Devices
+  list does and sets the inactive-account timer.
 - **See where the space goes.** The storage total on Home, or Stored in
   Telegram in Settings, opens Space: the 50 biggest files, which you can
   select and move or put in the trash, each top-level folder with
@@ -333,6 +344,14 @@ phone number.
   screen lists the newest photos still waiting, with Back up now to send
   one ahead of the rest. Photos points to it while something is stuck,
   and Home's line about what didn't back up opens it.
+- **Notices gaps.** After every full read of the channel, the photos backed
+  up from this phone are matched against the index. Any whose file is gone
+  from the drive are counted on the Backup screen and in Check my drive,
+  and nothing is sent up again until you tap Back up again, or Leave them
+  out to stop asking. A photo you deleted for good in Telegrive on this
+  phone is remembered and never offered back. When so many look gone that
+  the index itself is in doubt, it says the backup can't be checked yet
+  instead.
 - **Keeps going.** A pass runs when the drive opens, when the app comes back
   to the foreground, and whenever the photo library changes while the app is
   alive; a foreground service keeps it running in the background.
@@ -376,6 +395,12 @@ Telegram (source of truth)                 This device
   and on pull-to-refresh, and does a full reconciliation daily, once on the
   first launch after an update that changes how messages are indexed, and
   from Settings → Rebuild index.
+- **The index belongs to one account.** Signing out wipes it along with the
+  sync checkpoints, so signing back in reads the channel again instead of
+  showing an empty drive. A different account signing in wipes the previous
+  one's index before its own drive opens. A session ended from Telegram
+  closes the drive and keeps the index for seven days, so signing back in
+  soon shows it at once; after that it is wiped too.
 - **Forwards are filed by their comment.** A file that arrives without a
   manifest is a forward, or a file sent from another Telegram app, whose
   own caption is read instead. The plain text message sent just before a
@@ -443,7 +468,12 @@ two commands are at the top of that test.
 ## Good to know
 
 - Keep the **Telegrive** channel. Deleting it deletes your drive. Deleting or
-  editing its messages in Telegram changes the drive accordingly.
+  editing its messages in Telegram changes the drive accordingly. An
+  auto-delete timer set on the channel in Telegram deletes your files when
+  it runs out; Check my drive warns about one and can turn it off.
+- Telegram › Settings › Devices lists this phone by its model and Android
+  version. Ending the session there signs Telegrive out here; Welcome says
+  when that happened, and your files stay in the channel.
 - Split files appear in Telegram as numbered parts (`movie.mkv.001`, …). Only
   Telegrive joins them back.
 - A forward whose comment names a folder goes into it; `Wedding` finds the

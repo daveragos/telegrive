@@ -29,6 +29,8 @@ import 'package:telegrive/features/backup/presentation/backup_screen.dart';
 import 'package:telegrive/features/backup/presentation/free_up_preview_screen.dart';
 import 'package:telegrive/features/backup/presentation/not_backed_up_screen.dart';
 import 'package:telegrive/features/capture/data/device_capture.dart';
+import 'package:telegrive/features/checkup/data/drive_checkup.dart';
+import 'package:telegrive/features/checkup/presentation/checkup_screen.dart';
 import 'package:telegrive/features/photos/data/photos_visibility.dart';
 import 'package:telegrive/features/photos/presentation/photos_screen.dart';
 import 'package:telegrive/features/search/presentation/search_screen.dart';
@@ -109,6 +111,69 @@ class _Session extends DriveSessionNotifier {
 class _Sync extends DriveSync {
   @override
   SyncState build() => SyncState(lastSynced: DateTime.now());
+}
+
+/// An inactive-account timer of [_days], without asking Telegram.
+class _AccountTtl extends AccountTtlNotifier {
+  _AccountTtl(this._days);
+
+  final int _days;
+
+  @override
+  Future<int> build() async => _days;
+}
+
+/// A check-up with something to say in most rows: a one-month auto-delete
+/// timer on the channel, a split file missing a part, three backed-up
+/// photos gone from the drive, four items in the trash about to go, no
+/// two-step verification and a six-month inactivity timer.
+class _Checkup extends DriveCheckup {
+  @override
+  Future<CheckupReport> build() async {
+    final now = DateTime.now();
+    return CheckupReport(
+      at: now,
+      findings: [
+        const ChannelFinding.autoDelete(2592000, supergroupId: 7),
+        IndexFinding(
+          lastFull: now.subtract(const Duration(hours: 3)),
+          error: null,
+          running: false,
+          scanned: 0,
+        ),
+        SplitFinding(
+          total: 4,
+          incomplete: [
+            (
+              file: DriveFile(
+                id: 'holiday',
+                folderId: null,
+                name: 'Summer holiday 4K.mp4',
+                mimeType: 'video/mp4',
+                kind: FileKind.video,
+                size: 5600 * _mb,
+                createdAt: DateTime(2026, 7, 14),
+                modifiedAt: DateTime(2026, 7, 14),
+                partCount: 12,
+                starred: false,
+              ),
+              missingParts: [7],
+            ),
+          ],
+        ),
+        BackupFinding(
+          enabled: true,
+          outcome: VerifyOutcome.gaps,
+          verifiedCount: 3120,
+          missingCount: 3,
+          verifiedAt: now,
+        ),
+        const TrashFinding(count: 12, dueSoon: 4),
+        const TwoStepFinding(false),
+        const AccountTtlFinding(180),
+      ],
+    );
+  }
 }
 
 class _Network extends NetworkStatus {
@@ -832,6 +897,7 @@ void main() {
         GoRoute(path: '/albums', builder: (_, _) => const AlbumsScreen()),
         GoRoute(path: '/transfers', builder: (_, _) => const TransfersScreen()),
         GoRoute(path: '/settings', builder: (_, _) => const SettingsScreen()),
+        GoRoute(path: '/checkup', builder: (_, _) => const CheckupScreen()),
         GoRoute(
           path: '/recent',
           builder: (_, _) => const FileListScreen.recent(),
@@ -926,6 +992,13 @@ void main() {
             (ref) async => notificationsEnabled,
           ),
           backupControllerProvider.overrideWith(() => _Backup(backup)),
+          // What Telegram's Devices list calls this phone, and the
+          // inactive-account timer, for Settings and the check-up.
+          currentSessionProvider.overrideWith(
+            (ref) async => 'Telegrive 1.0.0 · Pixel 8 · Android 15',
+          ),
+          accountTtlProvider.overrideWith(() => _AccountTtl(180)),
+          driveCheckupProvider.overrideWith(_Checkup.new),
           bulkEditsProvider.overrideWith(() => _Bulk(bulk)),
           telegramWaitProvider.overrideWith(() => _Wait(telegramWait)),
           networkStatusProvider.overrideWith(() => _Network(network)),
@@ -2264,8 +2337,19 @@ void main() {
 
   testWidgets('settings', (tester) async {
     await prepareData(tester);
-    await pumpApp(tester, location: '/settings', mobileData: _nearLimit);
+    await pumpApp(
+      tester,
+      location: '/settings',
+      mobileData: _nearLimit,
+      prefs: {'checkup_last_run': DateTime(2026, 9, 25, 19, 32).millisecondsSinceEpoch},
+    );
     await snap(tester, 'settings');
+  });
+
+  testWidgets('checkup', (tester) async {
+    await prepareData(tester);
+    await pumpApp(tester, location: '/checkup');
+    await snap(tester, 'checkup');
   });
 
   /// A proxy in use that answered quickly, and a SOCKS5 one that didn't.
@@ -2888,6 +2972,7 @@ void main() {
   Future<void> pumpScreen(
     WidgetTester tester,
     Widget screen, {
+    Map<String, Object> prefs = const {},
     List<Override> overrides = const [],
   }) async {
     debugDisableShadows = false;
@@ -2895,7 +2980,7 @@ void main() {
     tester.view.devicePixelRatio = 2.625;
     addTearDown(tester.view.reset);
     // ignore: invalid_use_of_visible_for_testing_member
-    SharedPreferences.setMockInitialValues({});
+    SharedPreferences.setMockInitialValues(prefs);
     final shared = await SharedPreferences.getInstance();
     await tester.pumpWidget(
       ProviderScope(
@@ -2918,6 +3003,15 @@ void main() {
   testWidgets('welcome', (tester) async {
     await pumpScreen(tester, const WelcomeScreen());
     await snap(tester, 'welcome');
+  });
+
+  testWidgets('welcome after a session ended in Telegram', (tester) async {
+    await pumpScreen(
+      tester,
+      const WelcomeScreen(),
+      prefs: {'session_ended_at': DateTime(2026, 9, 29, 19, 32).millisecondsSinceEpoch},
+    );
+    await snap(tester, 'welcome_session_ended');
   });
 
   testWidgets('phone', (tester) async {

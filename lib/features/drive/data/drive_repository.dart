@@ -1079,6 +1079,10 @@ class DriveRepository {
     ];
     if (messageIds.isEmpty) return 0;
 
+    // A photo deleted for good here was meant to go, so backup never
+    // offers to send it up again; the record is kept before the file is,
+    // so a delete cut short still remembers the choice.
+    await _db.markFilesRemoved(fileIds);
     await _messenger.deleteMessages(_chatId, messageIds);
     await _db.removeMessages(messageIds);
     return fileIds.length;

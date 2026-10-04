@@ -12,6 +12,8 @@ import '../../../infrastructure/storage/device_profile.dart';
 import '../../../infrastructure/storage/preferences.dart';
 import '../../auth/data/auth_controller.dart';
 import '../../backup/data/backup_controller.dart';
+import '../../checkup/data/drive_checkup.dart';
+import '../../checkup/presentation/checkup_screen.dart';
 import '../../drive/data/drive_repository.dart';
 import '../../drive/data/drive_session.dart';
 import '../../drive/data/drive_sync.dart';
@@ -51,6 +53,9 @@ class SettingsScreen extends ConsumerWidget {
     final proxy = ref.watch(enabledProxyProvider);
     final saveMemory = ref.watch(saveMemoryProvider);
     final profile = ref.watch(deviceProfileProvider);
+    final currentSession = ref.watch(currentSessionProvider).value;
+    final accountTtl = ref.watch(accountTtlProvider).value;
+    final checkupLastRun = ref.watch(checkupLastRunProvider);
     // Said only while the phone, not the person, decides.
     final memoryReason =
         prefs.saveMemory == null && profile.suggestSaveMemory && profile.totalRamBytes > 0
@@ -202,6 +207,17 @@ class SettingsScreen extends ConsumerWidget {
                     ? null
                     : () => ref.read(driveSyncProvider.notifier).rebuildIndex(),
               ),
+              ListTile(
+                title: const Text('Check my drive'),
+                subtitle: Text(
+                  checkupLastRun == null
+                      ? 'Channel, index, backup and account'
+                      : 'Last checked ${Formatters.date(checkupLastRun)}',
+                  style: context.text.bodySmall?.copyWith(fontFeatures: tabularFigures),
+                ),
+                trailing: Icon(Icons.chevron_right_rounded, color: colors.text3),
+                onTap: () => context.push('/checkup'),
+              ),
             ],
           ),
           const SectionHeader('Mobile data'),
@@ -322,6 +338,30 @@ class SettingsScreen extends ConsumerWidget {
                     ),
                   ),
                 ),
+              ListTile(
+                title: const Text('This session'),
+                subtitle: Text(
+                  '${currentSession ?? '${AppConfig.appName} ${AppConfig.appVersion}'}. '
+                  'Ending it in Telegram signs you out here; your files stay in the channel.',
+                  style: context.text.bodySmall?.copyWith(fontFeatures: tabularFigures),
+                ),
+              ),
+              ListTile(
+                title: const Text('Delete account if away for'),
+                subtitle: const Text('Your drive goes with it.'),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    trailingValue(
+                      accountTtl == null ? '' : Formatters.period(Duration(days: accountTtl)),
+                    ),
+                    Icon(Icons.arrow_drop_down_rounded, color: colors.text3),
+                  ],
+                ),
+                onTap: accountTtl == null
+                    ? null
+                    : () => showAccountTtlSheet(context, ref, accountTtl),
+              ),
             ],
           ),
           const SectionHeader('Connection'),

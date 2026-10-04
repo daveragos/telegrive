@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:handy_tdlib/api.dart' as td;
@@ -6,6 +8,7 @@ import '../../../infrastructure/database/app_database.dart';
 import '../../../infrastructure/storage/preferences.dart';
 import '../../../infrastructure/telegram/telegram_client.dart';
 import '../../../infrastructure/telegram/telegram_exception.dart';
+import '../../checkup/data/drive_checkup.dart';
 import '../../drive/data/drive_session.dart';
 import '../../offline/data/offline_sync.dart';
 import '../../photos/data/photos_visibility.dart';
@@ -38,9 +41,52 @@ class AuthUiState {
 /// `friendlyMessage` the screen shows as-is.
 class AuthController extends Notifier<AuthUiState> {
   TelegramClient get _client => ref.read(telegramClientProvider);
+  Preferences get _prefs => ref.read(preferencesProvider);
+
+  /// How long an ended session's data stays on the phone, so signing back
+  /// in soon after shows the drive at once.
+  static const Duration keepsEndedSessionFor = Duration(days: 7);
+
+  /// Set while [signOut] runs, so the log-out it asks for is not taken for
+  /// a session ended from Telegram.
+  bool _signingOut = false;
 
   @override
-  AuthUiState build() => const AuthUiState();
+  AuthUiState build() {
+    ref.listen<AsyncValue<td.AuthorizationState>>(
+      authStateProvider,
+      (_, next) => _onAuthState(next.value),
+    );
+    return const AuthUiState();
+  }
+
+  /// A log-out the person didn't ask for here is a session ended from
+  /// Telegram: another device tapped Terminate, or the account's own
+  /// sessions were cleared. Deletes still waiting out their Undo are
+  /// dropped first, so none runs against a drive that has gone and marks
+  /// files removed that are still in the channel. Then the drive closes,
+  /// which stops the transfer queue and backup, and the moment is kept for
+  /// Welcome to explain. The index stays for a week, so signing back in
+  /// soon after opens the drive straight away; after that it is wiped, like
+  /// a sign-out would have.
+  void _onAuthState(td.AuthorizationState? state) {
+    switch (state) {
+      case td.AuthorizationStateLoggingOut() when !_signingOut:
+        unawaited(_prefs.setSessionEndedAt(DateTime.now()));
+        ref.read(pendingDeletesProvider.notifier).discardAll();
+        ref.read(driveSessionProvider.notifier).close();
+      case td.AuthorizationStateReady():
+        unawaited(_prefs.clearSessionEnded());
+      case td.AuthorizationStateWaitPhoneNumber():
+        final endedAt = _prefs.sessionEndedAt;
+        if (endedAt != null &&
+            DateTime.now().difference(endedAt) > keepsEndedSessionFor) {
+          unawaited(wipeDeviceState());
+        }
+      default:
+        break;
+    }
+  }
 
   void startSignIn() => state = state.copyWith(startedSignIn: true);
 
@@ -85,11 +131,16 @@ class AuthController extends Notifier<AuthUiState> {
   /// Signs out of Telegram and removes every local trace of the drive. The
   /// files themselves stay safe in the channel.
   Future<void> signOut() async {
-    // Log out first: once TDLib leaves the ready state the app shows the
-    // splash, so closing the drive afterwards can't bounce it back into
-    // setup for the account that is leaving.
-    await _client.logOut();
-    await wipeDeviceState();
+    _signingOut = true;
+    try {
+      // Log out first: once TDLib leaves the ready state the app shows the
+      // splash, so closing the drive afterwards can't bounce it back into
+      // setup for the account that is leaving.
+      await _client.logOut();
+      await wipeDeviceState();
+    } finally {
+      _signingOut = false;
+    }
   }
 
   /// Forgets everything this phone keeps about the drive, while the files
@@ -101,7 +152,11 @@ class AuthController extends Notifier<AuthUiState> {
   /// The sync checkpoints go with the index. Kept on their own, they would
   /// tell the next sign-in that the channel was already read, and it would
   /// open an empty drive and back every photo up again. They are cleared
-  /// before the index, so a wipe cut short still ends in a full read.
+  /// before the index, so a wipe cut short still ends in a full read. The
+  /// note of a session ended from Telegram goes too, and so does which
+  /// account the index belonged to: what both described is gone. So do
+  /// when the drive was last checked and when its backed-up photos were
+  /// last matched against the index, which were findings about this drive.
   ///
   /// Deletes still waiting out their Undo are dropped before anything
   /// else, so nothing is deleted once the drive has gone, from Telegram or
@@ -138,17 +193,23 @@ class AuthController extends Notifier<AuthUiState> {
     for (final chatId in prefs.syncedChatIds) {
       await prefs.clearSyncState(chatId);
     }
+    await prefs.clearSessionEnded();
+    await prefs.clearLastUserId();
+    await prefs.clearCheckupLastRun();
+    await prefs.clearBackupVerified();
     await prefs.setDeletePhoneCopyToo(false);
     await prefs.setOfflineWifiOnly(false);
     await prefs.forgetRecentSendChats();
     await prefs.forgetCacheSweptAt();
+    ref.invalidate(checkupLastRunProvider);
     ref.invalidate(revealHiddenProvider);
     ref.invalidate(offlineSyncProvider);
     await ref.read(recentDestinationsProvider.notifier).clear();
     await ref.read(appDatabaseProvider).clearAll();
     await _deleteOfflineCopies();
     await deletePdfBlockCache();
-    state = const AuthUiState();
+    // A wipe that outlives the controller has no sign-in screens to reset.
+    if (ref.mounted) state = const AuthUiState();
   }
 
   /// A copy that can't be deleted now stays behind rather than stopping the

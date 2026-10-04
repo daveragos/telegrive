@@ -125,6 +125,32 @@ void main() {
     expect(container.read(driveSyncProvider).error, isNull);
   });
 
+  test('a full read that succeeds is noted in the state; a catch-up is not', () async {
+    final (container, _, _) = await start([]);
+    final sync = container.read(driveSyncProvider.notifier);
+    expect(container.read(driveSyncProvider).lastFull, isNull);
+
+    await sync.refresh();
+    expect(container.read(driveSyncProvider).lastSynced, isNotNull);
+    expect(container.read(driveSyncProvider).lastFull, isNull);
+
+    await sync.fullSync();
+    final full = container.read(driveSyncProvider).lastFull;
+    expect(full, isNotNull);
+
+    // A later catch-up keeps the moment of the full read.
+    await sync.refresh();
+    expect(container.read(driveSyncProvider).lastFull, full);
+  });
+
+  test('a full read that fails leaves no note of one', () async {
+    final (container, _, _) = await start([
+      const TelegramException(400, 'CHANNEL_INVALID'),
+    ]);
+    await container.read(driveSyncProvider.notifier).fullSync();
+    expect(container.read(driveSyncProvider).lastFull, isNull);
+  });
+
   test('an index built by an older indexer is read again in full', () async {
     final readToday = DateTime.now().subtract(const Duration(minutes: 5));
     // A phone updated from a build that didn't record the version: its

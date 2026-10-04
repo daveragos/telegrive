@@ -234,6 +234,122 @@ td.Message documentMessage(
   albumId: albumId,
 );
 
+/// The supergroup id behind [testChatId], as TDLib hands it out.
+const testSupergroupId = 7;
+
+/// The drive channel as TDLib describes it: a private channel of the
+/// account's own, with Telegram's auto-delete timer at [autoDeleteSeconds]
+/// (0 for off).
+td.Chat channelChat({int autoDeleteSeconds = 0}) => td.Chat(
+  id: testChatId,
+  type: const td.ChatTypeSupergroup(supergroupId: testSupergroupId, isChannel: true),
+  title: 'Telegrive',
+  accentColorId: 0,
+  backgroundCustomEmojiId: 0,
+  profileAccentColorId: -1,
+  profileBackgroundCustomEmojiId: 0,
+  permissions: const td.ChatPermissions(
+    canSendBasicMessages: false,
+    canSendAudios: false,
+    canSendDocuments: false,
+    canSendPhotos: false,
+    canSendVideos: false,
+    canSendVideoNotes: false,
+    canSendVoiceNotes: false,
+    canSendPolls: false,
+    canSendOtherMessages: false,
+    canAddLinkPreviews: false,
+    canChangeInfo: false,
+    canInviteUsers: false,
+    canPinMessages: false,
+    canCreateTopics: false,
+  ),
+  positions: const [],
+  chatLists: const [],
+  hasProtectedContent: false,
+  isTranslatable: false,
+  isMarkedAsUnread: false,
+  viewAsTopics: false,
+  hasScheduledMessages: false,
+  canBeDeletedOnlyForSelf: false,
+  canBeDeletedForAllUsers: true,
+  canBeReported: false,
+  defaultDisableNotification: true,
+  unreadCount: 0,
+  lastReadInboxMessageId: 0,
+  lastReadOutboxMessageId: 0,
+  unreadMentionCount: 0,
+  unreadReactionCount: 0,
+  notificationSettings: const td.ChatNotificationSettings(
+    useDefaultMuteFor: true,
+    muteFor: 0,
+    useDefaultSound: true,
+    soundId: 0,
+    useDefaultShowPreview: true,
+    showPreview: true,
+    useDefaultMuteStories: true,
+    muteStories: false,
+    useDefaultStorySound: true,
+    storySoundId: 0,
+    useDefaultShowStorySender: true,
+    showStorySender: true,
+    useDefaultDisablePinnedMessageNotifications: true,
+    disablePinnedMessageNotifications: false,
+    useDefaultDisableMentionNotifications: true,
+    disableMentionNotifications: false,
+  ),
+  availableReactions: const td.ChatAvailableReactionsAll(maxReactionCount: 11),
+  messageAutoDeleteTime: autoDeleteSeconds,
+  themeName: '',
+  videoChat: const td.VideoChat(groupCallId: 0, hasParticipants: false),
+  replyMarkupMessageId: 0,
+  clientData: '',
+);
+
+/// The channel's supergroup record: created by this account, with the
+/// public [usernames] it has, none for a private channel.
+td.Supergroup ownedSupergroup({List<String> usernames = const []}) => td.Supergroup(
+  id: testSupergroupId,
+  usernames: usernames.isEmpty
+      ? null
+      : td.Usernames(
+          activeUsernames: usernames,
+          disabledUsernames: const [],
+          editableUsername: usernames.first,
+        ),
+  date: 1_700_000_000,
+  status: const td.ChatMemberStatusCreator(customTitle: '', isAnonymous: false, isMember: true),
+  memberCount: 1,
+  boostLevel: 0,
+  hasLinkedChat: false,
+  hasLocation: false,
+  signMessages: false,
+  showMessageSender: false,
+  joinToSendMessages: false,
+  joinByRequest: false,
+  isSlowModeEnabled: false,
+  isChannel: true,
+  isBroadcastGroup: false,
+  isForum: false,
+  isVerified: false,
+  hasSensitiveContent: false,
+  restrictionReason: '',
+  isScam: false,
+  isFake: false,
+  hasActiveStories: false,
+  hasUnreadActiveStories: false,
+);
+
+/// The account's two-step verification, on or off.
+td.PasswordState passwordState({required bool hasPassword}) => td.PasswordState(
+  hasPassword: hasPassword,
+  passwordHint: '',
+  hasRecoveryEmailAddress: false,
+  hasPassportData: false,
+  loginEmailAddressPattern: '',
+  pendingResetDate: 0,
+);
+
 /// A text message, the way folders and albums are kept, or a comment typed
 /// when forwarding.
 td.Message textMessage(int id, String text, {int date = 1_700_000_000}) => channelMessage(

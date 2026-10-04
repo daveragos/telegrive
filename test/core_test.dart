@@ -152,6 +152,20 @@ void main() {
       expect(Formatters.length(const Duration(milliseconds: 71900)), '1:11');
     });
 
+    test('period', () {
+      expect(Formatters.period(const Duration(minutes: 30)), '30 minutes');
+      expect(Formatters.period(const Duration(hours: 2)), '2 hours');
+      expect(Formatters.period(const Duration(days: 1)), '1 day');
+      expect(Formatters.period(const Duration(days: 7)), '1 week');
+      expect(Formatters.period(const Duration(days: 10)), '10 days');
+      expect(Formatters.period(const Duration(days: 30)), '1 month');
+      expect(Formatters.period(const Duration(days: 90)), '3 months');
+      expect(Formatters.period(const Duration(days: 180)), '6 months');
+      expect(Formatters.period(const Duration(days: 365)), '1 year');
+      expect(Formatters.period(const Duration(days: 548)), '18 months');
+      expect(Formatters.period(const Duration(days: 730)), '2 years');
+    });
+
     test('latency', () {
       expect(
         Formatters.latency(const Duration(microseconds: 240400)),

@@ -10,6 +10,7 @@ import 'package:path_provider/path_provider.dart';
 import '../../../infrastructure/storage/preferences.dart';
 import '../../../infrastructure/telegram/telegram_client.dart';
 import '../../../infrastructure/telegram/telegram_exception.dart';
+import '../../auth/data/auth_controller.dart';
 import '../../drive/data/drive_session.dart';
 import '../../drive/data/drive_sync.dart';
 
@@ -82,6 +83,14 @@ class DriveSetup extends Notifier<SetupState> {
     state = const SetupState();
     try {
       final me = await _client.send<td.User>(const td.GetMe());
+
+      // Another account's drive on this phone goes before this one's
+      // opens, so its files never show, not even for a moment.
+      final last = _prefs.lastUserId;
+      if (last != null && last != me.id) {
+        await ref.read(authControllerProvider.notifier).wipeDeviceState();
+      }
+      await _prefs.setLastUserId(me.id);
 
       state = state.copyWith(step: SetupStep.channel);
       final (chat, created) = await _locateOrCreate(me.id);

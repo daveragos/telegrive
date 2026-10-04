@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:drift/drift.dart';
 import 'package:drift_flutter/drift_flutter.dart';
@@ -804,6 +805,25 @@ class AppDatabase extends _$AppDatabase {
           ))
           .get();
 
+  /// Files with a part gone from the channel, so they can't be opened, by
+  /// name. Those in the trash are left out: they go with it.
+  Future<List<FileRow>> incompleteFiles() =>
+      (select(driveFiles)
+            ..where((f) => f.partsPresent.isSmallerThan(f.partCount) & f.hidden.equals(false))
+            ..orderBy([(f) => OrderingTerm.asc(f.name.collate(Collate.noCase))]))
+          .get();
+
+  /// How many files the drive shows that are kept in parts, whether or not
+  /// every part is still there.
+  Future<int> countSplitFiles() {
+    final count = driveFiles.id.count();
+    return (selectOnly(driveFiles)
+          ..addColumns([count])
+          ..where(driveFiles.partCount.isBiggerThanValue(1) & driveFiles.hidden.equals(false)))
+        .map((r) => r.read(count) ?? 0)
+        .getSingle();
+  }
+
   /// [ids] that are still shown files (not trashed, not gone).
   Future<List<FileRow>> shownFiles(Iterable<String> ids) =>
       (select(driveFiles)..where((f) => _shown(f) & f.id.isIn(ids))).get();
@@ -1342,6 +1362,94 @@ class AppDatabase extends _$AppDatabase {
             ..where(backupAssets.state.equalsValue(BackupAssetState.skipped)))
           .map((r) => r.read(backupAssets.assetId)!)
           .watch();
+
+  /// Media ids of photos backed up from this phone whose drive file is gone
+  /// or has lost a part. A file in the trash still has its row, so it
+  /// counts as present, and a record with no file to point at is left
+  /// alone: there is nothing to check it against.
+  Future<List<String>> backedUpButMissing() async {
+    final rows = await customSelect(
+      'SELECT a.asset_id FROM backup_assets a '
+      'LEFT JOIN drive_files f ON f.id = a.file_id '
+      "WHERE a.state = 'done' AND a.file_id IS NOT NULL "
+      'AND (f.id IS NULL OR f.parts_present < f.part_count)',
+      readsFrom: {backupAssets, driveFiles},
+    ).get();
+    return [for (final row in rows) row.read<String>('asset_id')];
+  }
+
+  /// How many backed-up photos point at a drive file.
+  Future<int> countBackedUpWithFile() {
+    final count = backupAssets.assetId.count();
+    return (selectOnly(backupAssets)
+          ..addColumns([count])
+          ..where(
+            backupAssets.state.equalsValue(BackupAssetState.done) &
+                backupAssets.fileId.isNotNull(),
+          ))
+        .map((r) => r.read(count) ?? 0)
+        .getSingle();
+  }
+
+  /// Records that [assetIds] were backed up once and their files are no
+  /// longer in the drive, so the person can say whether they go up again.
+  Future<void> markAssetsMissing(List<String> assetIds) => transaction(() async {
+    for (final slice in _slices(assetIds)) {
+      await (update(backupAssets)..where((a) => a.assetId.isIn(slice))).write(
+        BackupAssetsCompanion(
+          state: const Value(BackupAssetState.missing),
+          fileId: const Value(null),
+          updatedAt: Value(DateTime.now()),
+        ),
+      );
+    }
+  });
+
+  /// How many backed-up photos are no longer in the drive and wait for the
+  /// person's choice, live.
+  Stream<int> watchMissingCount() {
+    final count = backupAssets.assetId.count();
+    return (selectOnly(backupAssets)
+          ..addColumns([count])
+          ..where(backupAssets.state.equalsValue(BackupAssetState.missing)))
+        .map((r) => r.read(count) ?? 0)
+        .watchSingle();
+  }
+
+  /// Forgets the missing photos' records, so the next pass judges them
+  /// afresh and sends up what the drive lacks.
+  Future<void> backUpMissingAgain() => (delete(
+    backupAssets,
+  )..where((a) => a.state.equalsValue(BackupAssetState.missing))).go();
+
+  /// Leaves the missing photos out of backup for good.
+  Future<void> leaveOutMissing() =>
+      (update(backupAssets)..where((a) => a.state.equalsValue(BackupAssetState.missing))).write(
+        BackupAssetsCompanion(
+          state: const Value(BackupAssetState.removed),
+          updatedAt: Value(DateTime.now()),
+        ),
+      );
+
+  /// Records that the files [fileIds] were deleted for good here, so the
+  /// photos behind them are never offered for backing up again.
+  Future<void> markFilesRemoved(Iterable<String> fileIds) => transaction(() async {
+    for (final slice in _slices(fileIds.toList())) {
+      await (update(backupAssets)..where((a) => a.fileId.isIn(slice))).write(
+        BackupAssetsCompanion(
+          state: const Value(BackupAssetState.removed),
+          updatedAt: Value(DateTime.now()),
+        ),
+      );
+    }
+  });
+
+  /// [ids] in runs short enough for one SQLite statement.
+  static Iterable<List<String>> _slices(List<String> ids) sync* {
+    for (var i = 0; i < ids.length; i += 500) {
+      yield ids.sublist(i, math.min(i + 500, ids.length));
+    }
+  }
 
   // ---------------------------------------------------------------------------
   // Transfers

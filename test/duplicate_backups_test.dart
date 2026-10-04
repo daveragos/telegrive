@@ -4,7 +4,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:telegrive/core/files/file_kind.dart';
 import 'package:telegrive/features/drive/data/drive_repository.dart';
+import 'package:telegrive/features/drive/data/drive_session.dart';
+import 'package:telegrive/features/drive/domain/drive_models.dart';
 import 'package:telegrive/infrastructure/database/app_database.dart';
+import 'package:telegrive/infrastructure/telegram/telegram_client.dart';
+
+import 'support/fake_telegram.dart';
 
 void main() {
   late AppDatabase db;
@@ -47,7 +52,11 @@ void main() {
   setUp(() async {
     db = AppDatabase(NativeDatabase.memory());
     container = ProviderContainer(
-      overrides: [appDatabaseProvider.overrideWithValue(db)],
+      overrides: [
+        appDatabaseProvider.overrideWithValue(db),
+        telegramClientProvider.overrideWithValue(FakeTelegram()),
+        driveSessionProvider.overrideWith(TestSession.new),
+      ],
     );
     final before = DateTime(2025, 6);
     final after = DateTime(2026, 9);
@@ -91,6 +100,20 @@ void main() {
     await db.markAssetBackedUp('asset-1', 'a2');
     await db.repointBackupAssets({'a2': 'a1'});
     expect(await db.watchLocalAssets().first, {'a1': 'asset-1'});
+  });
+
+  test('deleting for good marks backup rows removed', () async {
+    await db.markAssetBackedUp('asset-1', 'a1');
+    await db.markAssetBackedUp('asset-2', 'b1');
+    final a1 = DriveFile.fromRow((await db.fileById('a1'))!);
+
+    await container.read(driveRepositoryProvider).delete(files: [a1]);
+
+    expect(await db.fileById('a1'), isNull);
+    expect((await db.backupAssetOf('asset-1'))!.state, BackupAssetState.removed);
+    expect((await db.backupAssetOf('asset-2'))!.state, BackupAssetState.done);
+    // What went on purpose is never a gap for backup to fill.
+    expect(await db.backedUpButMissing(), isEmpty);
   });
 
   test('nothing to do when every photo went up once', () async {

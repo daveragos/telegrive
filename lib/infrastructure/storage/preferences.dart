@@ -173,6 +173,41 @@ class Preferences {
   bool get hasSeenWelcome => _prefs.getBool('seen_welcome') ?? false;
   Future<void> setSeenWelcome() => _prefs.setBool('seen_welcome', true);
 
+  /// The account whose drive the local index holds. A different account
+  /// signing in wipes the index before its own drive opens, so nobody ever
+  /// sees another person's files on a shared phone. The wipe clears it with
+  /// the index it names.
+  int? get lastUserId => _prefs.getInt('last_user_id');
+  Future<void> setLastUserId(int userId) => _prefs.setInt('last_user_id', userId);
+  Future<void> clearLastUserId() => _prefs.remove('last_user_id');
+
+  /// When Telegram ended this phone's session without the person signing
+  /// out here, or null. Welcome explains it, and the local data is wiped
+  /// once it is seven days old. Cleared on sign-in and by the wipe.
+  DateTime? get sessionEndedAt => _dateTime('session_ended_at');
+  Future<void> setSessionEndedAt(DateTime at) =>
+      _prefs.setInt('session_ended_at', at.millisecondsSinceEpoch);
+  Future<void> clearSessionEnded() => _prefs.remove('session_ended_at');
+
+  /// When Check my drive last finished, for its row in Settings. The wipe
+  /// clears it with the drive it described.
+  DateTime? get checkupLastRun => _dateTime('checkup_last_run');
+  Future<void> setCheckupLastRun(DateTime at) =>
+      _prefs.setInt('checkup_last_run', at.millisecondsSinceEpoch);
+  Future<void> clearCheckupLastRun() => _prefs.remove('checkup_last_run');
+
+  /// When backed-up photos were last matched against the index. The wipe
+  /// clears it with the index.
+  DateTime? get backupVerifiedAt => _dateTime('backup_verified_at');
+  Future<void> setBackupVerifiedAt(DateTime at) =>
+      _prefs.setInt('backup_verified_at', at.millisecondsSinceEpoch);
+  Future<void> clearBackupVerified() => _prefs.remove('backup_verified_at');
+
+  DateTime? _dateTime(String key) {
+    final millis = _prefs.getInt(key);
+    return millis == null ? null : DateTime.fromMillisecondsSinceEpoch(millis);
+  }
+
   /// The chats this phone last sent files to, newest first, which the chat
   /// picker lists right after Saved Messages. They stay on this phone
   /// rather than in the channel.

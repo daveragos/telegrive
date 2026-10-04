@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
 
 import '../../../app/theme/tokens.dart';
 import '../../../app/theme/file_style.dart';
 import '../../../core/files/file_kind.dart';
 import '../../../core/widgets/brand_mark.dart';
 import '../../../core/widgets/file_visuals.dart';
+import '../../../infrastructure/storage/preferences.dart';
 import '../data/auth_controller.dart';
 
 /// Says plainly what Telegrive is and where the files go, then gets out of
@@ -16,6 +18,7 @@ class WelcomeScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.colors;
+    final endedAt = ref.watch(preferencesProvider).sessionEndedAt;
     return Scaffold(
       body: SafeArea(
         child: Center(
@@ -49,7 +52,21 @@ class WelcomeScreen extends ConsumerWidget {
                       color: colors.text2,
                     ),
                   ),
-                  const SizedBox(height: Space.x4),
+                  if (endedAt == null)
+                    const SizedBox(height: Space.x4)
+                  else ...[
+                    const SizedBox(height: Space.l),
+                    Text(
+                      'Telegram ended your session on '
+                      '${DateFormat.E().add_jm().format(endedAt)}. Your files '
+                      'are safe in your channel. Sign in to continue.',
+                      style: context.text.bodyMedium?.copyWith(
+                        color: colors.text2,
+                        fontFeatures: tabularFigures,
+                      ),
+                    ),
+                    const SizedBox(height: Space.xxl),
+                  ],
                   SizedBox(
                     width: double.infinity,
                     child: FilledButton(

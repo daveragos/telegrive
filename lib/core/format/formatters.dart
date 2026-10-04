@@ -92,6 +92,20 @@ abstract final class Formatters {
     return count((seconds / 3600).round(), 'hour');
   }
 
+  /// `7 days` → `1 week`, `30 days` → `1 month`, `548 days` → `18 months`,
+  /// `730 days` → `2 years`: a span of days the way a timer names it, in
+  /// the largest unit that fits it. Under a day it reads like [inWords],
+  /// `2 hours` or `30 minutes`.
+  static String period(Duration duration) {
+    final days = duration.inDays;
+    if (days == 0) return inWords(duration);
+    if (days < 30) {
+      return days >= 7 && days % 7 == 0 ? count(days ~/ 7, 'week') : count(days, 'day');
+    }
+    final months = (days / 30.4375).round();
+    return months % 12 == 0 ? count(months ~/ 12, 'year') : count(months, 'month');
+  }
+
   /// `0.2404 s` → `240 ms`: how long a network round trip took.
   static String latency(Duration duration) =>
       '${number(duration.inMilliseconds)} ms';

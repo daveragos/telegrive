@@ -30,6 +30,7 @@ class BackupScreen extends ConsumerWidget {
     final prefs = ref.watch(preferencesProvider);
     final mobileData = prefs.backupMobileData;
     final limit = ref.watch(mobileDataProvider.select((d) => d.limit));
+    final missing = ref.watch(missingCountProvider).value ?? 0;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Photo backup')),
@@ -83,6 +84,27 @@ class BackupScreen extends ConsumerWidget {
                     detail: 'See what\'s left.',
                     onTap: () => context.push('/backup/not-backed-up'),
                   ),
+              ],
+            ),
+          ],
+          if (missing > 0) ...[
+            const SizedBox(height: Space.s),
+            ListGroup(
+              children: [
+                StatusLine(
+                  icon: Icons.cloud_off_outlined,
+                  color: colors.danger,
+                  text:
+                      '${Formatters.count(missing, 'photo')} ${missing == 1 ? 'is' : 'are'} '
+                      'no longer in your drive',
+                  detail:
+                      '${missing == 1 ? 'It was' : 'They were'} removed from the channel '
+                      'outside this phone.',
+                  trailing: TextButton(
+                    onPressed: controller.retryMissing,
+                    child: const Text('Back up again'),
+                  ),
+                ),
               ],
             ),
           ],

@@ -10,6 +10,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../../core/config/app_config.dart';
 import '../../core/config/telegram_api.dart';
+import 'device_info.dart';
 import 'secure_store.dart';
 import 'td_receiver.dart';
 import 'telegram_exception.dart';
@@ -230,6 +231,9 @@ class TelegramClient {
       await _secureStore.writeDatabaseKey(key);
     }
 
+    // Telegram's Devices list names the session after these, so the person
+    // can tell this phone from another one signed in with Telegrive.
+    final device = await DeviceInfo.read();
     td.SetTdlibParameters parameters(String key) => td.SetTdlibParameters(
       useTestDc: false,
       databaseDirectory: databaseDir.path,
@@ -242,8 +246,8 @@ class TelegramClient {
       apiId: TelegramApi.apiId,
       apiHash: TelegramApi.apiHash,
       systemLanguageCode: Platform.localeName.split('_').first,
-      deviceModel: AppConfig.appName,
-      systemVersion: Platform.operatingSystem,
+      deviceModel: device.model,
+      systemVersion: device.system,
       applicationVersion: AppConfig.appVersion,
     );
 

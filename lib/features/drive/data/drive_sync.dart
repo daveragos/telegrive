@@ -20,6 +20,7 @@ class SyncState {
     this.scanned = 0,
     this.error,
     this.lastSynced,
+    this.lastFull,
   });
 
   final bool running;
@@ -33,17 +34,25 @@ class SyncState {
   final String? error;
   final DateTime? lastSynced;
 
+  /// When a full read of the channel last succeeded in this run of the
+  /// app, or null before one has. A catch-up leaves it alone. Backup
+  /// matches its records against the index only after one, since only
+  /// then does the index hold everything the channel does.
+  final DateTime? lastFull;
+
   SyncState copyWith({
     bool? running,
     int? scanned,
     String? error,
     bool clearError = false,
     DateTime? lastSynced,
+    DateTime? lastFull,
   }) => SyncState(
     running: running ?? this.running,
     scanned: scanned ?? this.scanned,
     error: clearError ? null : (error ?? this.error),
     lastSynced: lastSynced ?? this.lastSynced,
+    lastFull: lastFull ?? this.lastFull,
   );
 }
 
@@ -205,7 +214,13 @@ class DriveSync extends Notifier<SyncState> {
       }
 
       _failedFullSyncs = 0;
-      state = state.copyWith(running: false, lastSynced: DateTime.now(), clearError: true);
+      final now = DateTime.now();
+      state = state.copyWith(
+        running: false,
+        lastSynced: now,
+        lastFull: full ? now : null,
+        clearError: true,
+      );
     } on TelegramException catch (e) {
       state = state.copyWith(running: false, error: e.friendlyMessage);
       if (full) _retryFullSync();
