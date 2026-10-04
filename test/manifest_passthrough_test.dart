@@ -54,23 +54,23 @@ void main() {
     'a key a newer version wrote survives a rename, star and trash here',
     () async {
       // The length is a key this version knows and keeps in its own column;
-      // the original size (lt) is not, and rides along as an extra.
+      // xv is one no version knows yet, and rides along as an extra.
       await receive(
         documentMessage(
           10,
           'clip.mp4\ntgr1:{"id":"v","n":"clip.mp4","f":"docs","m":"video/mp4",'
-          '"s":9,"ct":1700000000000,"mt":1700000000000,"du":84,"lt":123456}',
+          '"s":9,"ct":1700000000000,"mt":1700000000000,"du":84,"xv":123456}',
         ),
       );
       final row = (await db.fileById('v'))!;
       expect(row.durationSeconds, 84);
-      expect(jsonDecode(row.manifestExtra!), {'lt': 123456});
+      expect(jsonDecode(row.manifestExtra!), {'xv': 123456});
 
       await repository.renameFile(DriveFile.fromRow(row), 'trip.mp4');
       var sent = machineLine(telegram.messages[10]!);
       expect(sent['n'], 'trip.mp4');
       expect(sent['du'], 84);
-      expect(sent['lt'], 123456);
+      expect(sent['xv'], 123456);
 
       var file = (await repository.fileById('v'))!;
       await repository.setStarred([file], starred: true);
@@ -80,12 +80,45 @@ void main() {
       expect(sent['st'], 1);
       expect(sent['tr'], isA<int>());
       expect(sent['du'], 84);
-      expect(sent['lt'], 123456);
+      expect(sent['xv'], 123456);
       final after = (await db.fileById('v'))!;
       expect(after.durationSeconds, 84);
-      expect(jsonDecode(after.manifestExtra!), {'lt': 123456});
+      expect(jsonDecode(after.manifestExtra!), {'xv': 123456});
     },
   );
+
+  test('a small copy stays one through a rename, star and move here', () async {
+    await receive(
+      documentMessage(
+        10,
+        'IMG_1.HEIC (small copy)\ntgr1:{"id":"p","n":"IMG_1.HEIC","m":"image/jpeg",'
+        '"s":300,"ct":1700000000000,"lt":6100000}',
+        fileName: 'IMG_1.HEIC',
+        mimeType: 'image/jpeg',
+        size: 300,
+      ),
+    );
+    var file = (await repository.fileById('p'))!;
+    expect(file.isSmallCopy, isTrue);
+
+    await repository.renameFile(file, 'Lalibela.HEIC');
+    file = (await repository.fileById('p'))!;
+    await repository.setStarred([file], starred: true);
+    file = (await repository.fileById('p'))!;
+    await repository.moveFiles([file], 'trip');
+
+    final caption = (telegram.messages[10]!.content as td.MessageDocument).caption.text;
+    expect(caption.split('\n').first, 'Lalibela.HEIC (small copy)');
+    final sent = machineLine(telegram.messages[10]!);
+    expect(sent['lt'], 6100000);
+    expect(sent['s'], 300);
+    expect(sent['m'], 'image/jpeg');
+    expect(sent['st'], 1);
+    expect(sent['f'], 'trip');
+    file = (await repository.fileById('p'))!;
+    expect(file.originalSize, 6100000);
+    expect((await db.fileById('p'))!.manifestExtra, isNull);
+  });
 
   test('a known key wins over a stale extra of the same name', () async {
     await receive(
@@ -97,7 +130,7 @@ void main() {
     await db.updateFile(
       'v',
       const DriveFilesCompanion(
-        manifestExtra: Value('{"n":"stale.mp4","du":10,"lt":123456}'),
+        manifestExtra: Value('{"n":"stale.mp4","du":10,"xv":123456}'),
       ),
     );
 
@@ -108,9 +141,9 @@ void main() {
     expect(sent['n'], 'clip.mp4');
     expect(sent['st'], 1);
     expect(sent['du'], 84);
-    expect(sent['lt'], 123456);
+    expect(sent['xv'], 123456);
     expect(jsonDecode((await db.fileById('v'))!.manifestExtra!), {
-      'lt': 123456,
+      'xv': 123456,
     });
   });
 
@@ -208,7 +241,7 @@ void main() {
 
   test('an edit without extras clears them from the index', () async {
     await receive(
-      documentMessage(10, 'a.pdf\ntgr1:{"id":"a","n":"a.pdf","s":9,"lt":5}'),
+      documentMessage(10, 'a.pdf\ntgr1:{"id":"a","n":"a.pdf","s":9,"xv":5}'),
     );
     expect((await db.fileById('a'))!.manifestExtra, isNotNull);
     await receive(

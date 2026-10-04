@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../../../core/format/formatters.dart';
@@ -230,10 +232,15 @@ DriveHealth describeDriveHealth({
     );
   }
   if (backup.phase == BackupPhase.uploading) {
+    // Photos that went up as small copies still count among what is left,
+    // so the line counts only those with nothing in the drive yet.
     return DriveHealth(
       icon: Icons.cloud_upload_outlined,
       tone: HealthTone.busy,
-      text: 'Backing up · ${Formatters.number(backup.remaining)} left',
+      text: backup.sendingSmallCopies
+          ? 'Backing up small copies · '
+                '${Formatters.number(math.max(0, backup.remaining - backup.smallCopies))} left'
+          : 'Backing up · ${Formatters.number(backup.remaining)} left',
       detail: backupSpeed > 0 ? Formatters.speed(backupSpeed) : null,
       progress: backup.total == 0 ? -1 : backup.progress,
       target: HealthTarget.backup,
@@ -480,16 +487,21 @@ const _needsPermission = DriveHealth(
 
 /// Before the first scan after launch nothing has been counted, so the line
 /// leaves the number out instead of saying zero. With mobile data for
-/// photos only, the photos are done and the videos are what waits.
+/// photos only, the photos are done and the videos are what waits. With
+/// small copies in, their originals are what waits.
 DriveHealth _waitingForWifi(BackupState backup) => DriveHealth(
-  icon: Icons.wifi_off_rounded,
+  icon: backup.smallCopies > 0 ? Icons.cloud_done_outlined : Icons.wifi_off_rounded,
   tone: HealthTone.neutral,
-  text: backup.heldVideos > 0
+  text: backup.smallCopies > 0
+      ? 'Originals wait for Wi-Fi'
+      : backup.heldVideos > 0
       ? 'Videos wait for Wi-Fi'
       : backup.remaining > 0
       ? 'Waiting for Wi-Fi · ${Formatters.count(backup.remaining, 'item')} left'
       : 'Waiting for Wi-Fi',
-  detail: backup.heldVideos > 0
+  detail: backup.smallCopies > 0
+      ? '${Formatters.number(backup.remaining)} still to send. Small copies are already safe.'
+      : backup.heldVideos > 0
       ? '${Formatters.count(backup.heldVideos, 'video')} left. Photos are backed up.'
       : 'Backup uses Wi-Fi only.',
   action: HealthAction.useData,

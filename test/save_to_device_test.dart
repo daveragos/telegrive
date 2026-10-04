@@ -237,6 +237,7 @@ void main() {
       ),
     );
     expect((await db.fileById('g'))!.adopted, isFalse);
+    expect((await db.fileById('g'))!.originalSize, isNull);
   });
 
   group('DeviceStorage names', () {

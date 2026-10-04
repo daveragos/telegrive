@@ -101,6 +101,40 @@ class ChannelMessenger {
     );
   }
 
+  /// Puts TDLib's file [fileId], uploaded ahead with PreliminaryUploadFile,
+  /// in place of the document in [messageId], with [caption]: the message
+  /// keeps its id and place in the channel, so nothing that points at it
+  /// changes. TDLib answers once the upload and the edit are both done,
+  /// which for a large original can take a long while.
+  Future<td.Message> editDocument(
+    int chatId,
+    int messageId, {
+    required int fileId,
+    String? thumbnailPath,
+    required EncodedText caption,
+  }) {
+    return _client.send<td.Message>(
+      td.EditMessageMedia(
+        chatId: chatId,
+        messageId: messageId,
+        replyMarkup: null,
+        inputMessageContent: td.InputMessageDocument(
+          document: td.InputFileId(id: fileId),
+          thumbnail: thumbnailPath == null
+              ? null
+              : td.InputThumbnail(
+                  thumbnail: td.InputFileLocal(path: thumbnailPath),
+                  width: 0,
+                  height: 0,
+                ),
+          disableContentTypeDetection: true,
+          caption: formatted(caption),
+        ),
+      ),
+      timeout: const Duration(days: 1),
+    );
+  }
+
   /// Has Telegram copy [messageId] of [fromChatId] into [chatId] with
   /// [caption] in place of the original's, in one request: a photo stays a
   /// photo, a document a document, and the copy never sits in the channel

@@ -2,10 +2,13 @@ import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:drift_dev/api/migrations_native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:handy_tdlib/api.dart' as td;
 import 'package:telegrive/core/files/file_kind.dart';
+import 'package:telegrive/features/drive/data/message_indexer.dart';
 import 'package:telegrive/infrastructure/database/app_database.dart';
 
 import 'generated_migrations/schema.dart';
+import 'support/fake_telegram.dart';
 
 void main() {
   late AppDatabase db;
@@ -522,6 +525,111 @@ void main() {
     },
   );
 
+  group('small copies', () {
+    /// What the indexer makes of [message], written into the index.
+    Future<void> index(td.Message message) async {
+      final entry = MessageIndexer.entryFor(message)! as FilePartEntry;
+      await db.upsertFilePart(entry.file, entry.part);
+    }
+
+    /// The small copy of IMG_1.HEIC, a 312 KB JPEG standing for a 6.1 MB
+    /// original, in message 7.
+    final small = documentMessage(
+      7,
+      'IMG_1.HEIC (small copy)\ntgr1:{"id":"p","n":"IMG_1.HEIC","m":"image/jpeg",'
+      '"s":312000,"ct":1700000000000,"lt":6100000}',
+      fileName: 'IMG_1.HEIC',
+      mimeType: 'image/jpeg',
+      size: 312000,
+    );
+
+    test('a small copy is indexed with its original\'s size', () async {
+      await index(small);
+      final row = (await db.fileById('p'))!;
+      expect(row.size, 312000);
+      expect(row.originalSize, 6100000);
+      expect(row.manifestExtra, isNull);
+    });
+
+    test('the original arriving in the same message clears the mark and keeps the file', () async {
+      await index(small);
+      final content = small.content as td.MessageDocument;
+      await index(
+        small.copyWith(
+          content: content.copyWith(
+            document: content.document.copyWith(document: tdFile(9, size: 6100000)),
+            caption: const td.FormattedText(
+              text: 'IMG_1.HEIC\ntgr1:{"id":"p","n":"IMG_1.HEIC","m":"image/heic",'
+                  '"s":6100000,"ct":1700000000000}',
+              entities: [],
+            ),
+          ),
+        ),
+      );
+      final row = (await db.fileById('p'))!;
+      expect(row.originalSize, isNull);
+      expect(row.size, 6100000);
+      expect(row.mimeType, 'image/heic');
+      final part = (await db.partsOf('p')).single;
+      expect(part.messageId, 7);
+      expect(part.tdFileId, 9);
+      expect(part.size, 6100000);
+    });
+
+    test('backup knows a small copy by its original\'s size', () async {
+      await index(small);
+      expect(await db.mediaFingerprints(), {
+        'IMG_1.HEIC|6100000': (fileId: 'p', smallCopy: true),
+      });
+    });
+
+    test('a photo with only a small copy is on the phone but never freeable', () async {
+      await index(small);
+      await db.markAssetSmallCopy('asset-1', 'p');
+      expect((await db.backupAssetMap())['asset-1']!.state, BackupAssetState.smallCopy);
+      expect(await db.safelyBackedUp(), isEmpty);
+      expect(await db.watchLocalAssets().first, {'p': 'asset-1'});
+      expect(await db.localAssetOf('p'), 'asset-1');
+    });
+
+    test('a small copy starts its original with fresh tries', () async {
+      await db.markAssetFailed('asset-1', 2, reason: 'Telegram took too long to answer.');
+      await db.markAssetSmallCopy('asset-1', 'p');
+      final record = (await db.backupAssetMap())['asset-1']!;
+      expect(record.failures, 0);
+      expect(record.reason, isNull);
+      expect(record.fileId, 'p');
+    });
+
+    test('the originals still to send are this phone\'s small copies only', () async {
+      await index(small);
+      await db.markAssetSmallCopy('asset-1', 'p');
+      // Another phone's small copy, which this one has no original of.
+      await index(
+        documentMessage(
+          8,
+          'IMG_2.HEIC (small copy)\ntgr1:{"id":"q","n":"IMG_2.HEIC","m":"image/jpeg",'
+          '"s":290000,"ct":1700000000000,"lt":5000000}',
+          size: 290000,
+        ),
+      );
+      // A small copy of this phone's that is in the trash.
+      await index(
+        documentMessage(
+          9,
+          'IMG_3.HEIC (small copy)\ntgr1:{"id":"r","n":"IMG_3.HEIC","m":"image/jpeg",'
+          '"s":300000,"ct":1700000000000,"tr":1700000000000,"lt":4000000}',
+          size: 300000,
+        ),
+      );
+      await db.markAssetSmallCopy('asset-3', 'r');
+      expect(await db.watchPendingOriginals().first, (count: 1, bytes: 6100000));
+
+      await db.markAssetBackedUp('asset-1', 'p');
+      expect(await db.watchPendingOriginals().first, (count: 0, bytes: 0));
+    });
+  });
+
   test(
     'a length learned on this phone survives a caption without one',
     () async {
@@ -872,7 +980,9 @@ void main() {
       ),
       part('p', 0, 1),
     );
-    expect(await db.mediaFingerprints(), {'IMG_1.jpg|4242': 'p'});
+    expect(await db.mediaFingerprints(), {
+      'IMG_1.jpg|4242': (fileId: 'p', smallCopy: false),
+    });
 
     await db.markAssetBackedUp('asset-1', 'p');
     await db.markAssetFailed('asset-2', 2);

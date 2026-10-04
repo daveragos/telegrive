@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -91,61 +93,81 @@ class BackupStatusPanel extends ConsumerWidget {
     );
     final renewDay = ref.watch(mobileDataProvider.select((d) => d.renewDay));
     final status = describeBackup(backup, speed: speed, renewDay: renewDay);
+    final originals = ref.watch(pendingOriginalsProvider).value;
+    final meta = context.text.bodySmall?.copyWith(fontFeatures: tabularFigures);
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(Space.gutter, Space.s, Space.gutter, Space.l),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(
-                status.icon,
-                size: 22,
-                color: status.done
-                    ? colors.success
-                    : backup.phase == BackupPhase.stopped
-                    ? colors.danger
-                    : (backup.isWorking ? colors.accent : colors.text2),
-              ),
-              const SizedBox(width: Space.m),
-              Expanded(child: Text(status.title, style: context.text.titleMedium)),
-            ],
-          ),
-          if (status.detail != null) ...[
-            const SizedBox(height: Space.xs),
-            Padding(
-              padding: const EdgeInsets.only(left: 34),
-              child: Text(
-                status.detail!,
-                style: context.text.bodyMedium?.copyWith(fontFeatures: tabularFigures),
-              ),
-            ),
-          ],
-          if (status.progress != null) ...[
-            const SizedBox(height: Space.m),
-            Padding(
-              padding: const EdgeInsets.only(left: 34),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(2),
-                child: LinearProgressIndicator(
-                  value: status.progress! < 0 ? null : status.progress,
-                  minHeight: 4,
+      child: AnimatedSize(
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeOut,
+        alignment: Alignment.topCenter,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  status.icon,
+                  size: 22,
+                  color: status.done
+                      ? colors.success
+                      : backup.phase == BackupPhase.stopped
+                      ? colors.danger
+                      : (backup.isWorking ? colors.accent : colors.text2),
                 ),
-              ),
+                const SizedBox(width: Space.m),
+                Expanded(child: Text(status.title, style: context.text.titleMedium)),
+              ],
             ),
-            if (backup.total > 0) ...[
-              const SizedBox(height: Space.s),
+            if (status.detail != null) ...[
+              const SizedBox(height: Space.xs),
               Padding(
                 padding: const EdgeInsets.only(left: 34),
                 child: Text(
-                  '${Formatters.number(backup.done)} of ${Formatters.number(backup.total)}',
-                  style: context.text.bodySmall?.copyWith(fontFeatures: tabularFigures),
+                  status.detail!,
+                  style: context.text.bodyMedium?.copyWith(fontFeatures: tabularFigures),
+                ),
+              ),
+            ],
+            if (status.progress != null) ...[
+              const SizedBox(height: Space.m),
+              Padding(
+                padding: const EdgeInsets.only(left: 34),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(2),
+                  child: LinearProgressIndicator(
+                    value: status.progress! < 0 ? null : status.progress,
+                    minHeight: 4,
+                  ),
+                ),
+              ),
+              if (backup.total > 0) ...[
+                const SizedBox(height: Space.s),
+                Padding(
+                  padding: const EdgeInsets.only(left: 34),
+                  child: Text(
+                    '${Formatters.number(backup.done)} of ${Formatters.number(backup.total)}',
+                    style: meta,
+                  ),
+                ),
+              ],
+            ],
+            // Photos with only a small copy in the drive count as not backed
+            // up above; this says what their originals still come to.
+            if (originals != null && originals.count > 0) ...[
+              const SizedBox(height: Space.xs),
+              Padding(
+                padding: const EdgeInsets.only(left: 34),
+                child: Text(
+                  '${Formatters.count(originals.count, 'original')} still to send · '
+                  '${Formatters.bytes(originals.bytes)}',
+                  style: meta,
                 ),
               ),
             ],
           ],
-        ],
+        ),
       ),
     );
   }
@@ -190,6 +212,15 @@ describeBackup(BackupState backup, {double speed = 0, int renewDay = 1}) {
       progress: null,
       done: false,
     ),
+    // Small copies are in; their originals go on Wi-Fi. Not a done colour,
+    // since the originals aren't.
+    BackupPhase.waitingForWifi when backup.smallCopies > 0 => (
+      icon: Icons.cloud_done_outlined,
+      title: 'Originals wait for Wi-Fi',
+      detail: '${Formatters.number(backup.remaining)} still to send. Small copies are already safe.',
+      progress: null,
+      done: false,
+    ),
     // Mobile data is for photos only, and they are done.
     BackupPhase.waitingForWifi when backup.heldVideos > 0 => (
       icon: Icons.wifi_off_rounded,
@@ -226,6 +257,17 @@ describeBackup(BackupState backup, {double speed = 0, int renewDay = 1}) {
       title: 'Telegram asked us to wait',
       detail: _carriesOn(backup.pausedUntil!, backup.remaining),
       progress: null,
+      done: false,
+    ),
+    // What is left counts the photos with nothing in the drive yet.
+    BackupPhase.uploading when backup.sendingSmallCopies => (
+      icon: Icons.cloud_upload_outlined,
+      title: 'Backing up small copies',
+      detail: [
+        '${Formatters.number(math.max(0, backup.remaining - backup.smallCopies))} left',
+        if (speed > 0) Formatters.speed(speed),
+      ].join(' · '),
+      progress: backup.total == 0 ? -1 : backup.progress,
       done: false,
     ),
     BackupPhase.uploading => (

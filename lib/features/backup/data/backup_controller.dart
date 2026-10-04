@@ -126,6 +126,8 @@ class BackupState {
     this.heldVideos = 0,
     this.heldForBudget = 0,
     this.pausedUntil,
+    this.smallCopies = 0,
+    this.sendingSmallCopies = false,
   });
 
   final BackupPhase phase;
@@ -176,6 +178,14 @@ class BackupState {
   /// as failed.
   final DateTime? pausedUntil;
 
+  /// Photos in scope with only a small copy in the drive so far, whose
+  /// originals are still to go up. They count among [remaining].
+  final int smallCopies;
+
+  /// The pass under way sends small copies, since the originals may not go
+  /// on this network yet.
+  final bool sendingSmallCopies;
+
   bool get enabled => phase != BackupPhase.off;
 
   /// Looking through the library or uploading, and not paused for a wait
@@ -203,6 +213,8 @@ class BackupState {
     int? heldForBudget,
     DateTime? pausedUntil,
     bool clearPaused = false,
+    int? smallCopies,
+    bool? sendingSmallCopies,
   }) => BackupState(
     phase: phase ?? this.phase,
     total: total ?? this.total,
@@ -217,6 +229,8 @@ class BackupState {
     heldVideos: heldVideos ?? this.heldVideos,
     heldForBudget: heldForBudget ?? this.heldForBudget,
     pausedUntil: clearPaused ? null : (pausedUntil ?? this.pausedUntil),
+    smallCopies: smallCopies ?? this.smallCopies,
+    sendingSmallCopies: sendingSmallCopies ?? this.sendingSmallCopies,
   );
 
   /// This state with [ids] as the photos out of tries, and [failed]
@@ -268,6 +282,11 @@ class DeviceFolder {
 /// A photo is uploaded once: the device's media id is remembered, and
 /// anything already in the drive under the same name and size — say, after a
 /// reinstall or from an old phone — is recognised and skipped.
+///
+/// With Small copies first on, a photo whose original may not go up on
+/// this network yet goes up as a small JPEG when the monthly limit has room
+/// for it, so it is safe at once. Its original takes the small copy's place
+/// in the same message once it may go, and only then is the photo backed up.
 class BackupController extends Notifier<BackupState> {
   static const String rootFolder = 'Photo backup';
   static const int _pageSize = 500;
@@ -333,6 +352,10 @@ class BackupController extends Notifier<BackupState> {
 
   /// Photos the running [runInBackground] pass sent up.
   int _uploaded = 0;
+
+  /// Items the running pass left for Wi-Fi while mobile data is off for
+  /// backup and only small copies may use it.
+  int _heldForWifi = 0;
 
   /// Completed by [stop] while [runInBackground] runs: [_halted] when the
   /// pass is to end, [_hurried] when what is under way is to go at once.
@@ -404,9 +427,12 @@ class BackupController extends Notifier<BackupState> {
     }
 
     ref.listen<NetworkState>(networkStatusProvider, (_, next) {
+      // Originals behind small copies go on Wi-Fi too, whatever the pass
+      // says it is doing.
       final waiting =
           state.phase == BackupPhase.waitingForWifi ||
-          state.phase == BackupPhase.waitingForBudget;
+          state.phase == BackupPhase.waitingForBudget ||
+          state.smallCopies > 0;
       if (waiting && next.online && !next.metered) {
         schedule(immediate: true);
       } else if (state.isWorking && _waitsForWifi()) {
@@ -505,6 +531,13 @@ class BackupController extends Notifier<BackupState> {
   Future<void> setMobileData(BackupMobileData mode) async {
     await _prefs.setBackupMobileData(mode);
     await _markQueued();
+    _restart();
+  }
+
+  /// Whether photos whose originals may not go up on mobile data yet go up
+  /// as small copies meanwhile. The next pass looks again by the new choice.
+  Future<void> setSmallCopies(bool on) async {
+    await _prefs.setBackupSmallCopies(on);
     _restart();
   }
 
@@ -662,6 +695,7 @@ class BackupController extends Notifier<BackupState> {
     BackupAssetState.skipped ||
     BackupAssetState.missing ||
     BackupAssetState.removed => BackupDisposition.skip,
+    // Safe as a small copy, but its original is still to go up.
     BackupAssetState.smallCopy => BackupDisposition.pending,
   };
 
@@ -912,12 +946,14 @@ class BackupController extends Notifier<BackupState> {
     // counts what is left. While it waits, the pass doesn't read as
     // working, which would start the transfer service for nothing. The
     // check after the scan is the one that decides.
+    _heldForWifi = 0;
     state = state.copyWith(
       phase: _waitsForWifi()
           ? BackupPhase.waitingForWifi
           : BackupPhase.scanning,
       heldVideos: 0,
       heldForBudget: 0,
+      sendingSmallCopies: false,
       clearCurrent: true,
       clearError: true,
       clearPaused: true,
@@ -1019,15 +1055,33 @@ class BackupController extends Notifier<BackupState> {
     // wait for Wi-Fi without their files being opened. One asked for with
     // Back up now stays, and is held when its turn comes.
     var heldVideos = 0;
-    if (ref.read(networkStatusProvider).metered &&
-        _prefs.backupMobileData == BackupMobileData.photos) {
+    final metered = ref.read(networkStatusProvider).metered;
+    if (metered && _prefs.backupMobileData == BackupMobileData.photos) {
       final kept = [
         for (final asset in pending)
           if (asset.type != AssetType.video || asked.contains(asset.id)) asset,
       ];
       heldVideos = pending.length - kept.length;
       pending = kept;
+    } else if (metered &&
+        _prefs.backupMobileData == BackupMobileData.off &&
+        _prefs.backupSmallCopies) {
+      // Mobile data carries small copies only: photos with none in the
+      // drive yet go, and the rest wait for Wi-Fi without their files
+      // being opened.
+      final kept = [
+        for (final asset in pending)
+          if ((asset.type == AssetType.image &&
+                  known[asset.id]?.state != BackupAssetState.smallCopy) ||
+              asked.contains(asset.id))
+            asset,
+      ];
+      _heldForWifi = pending.length - kept.length;
+      pending = kept;
     }
+    final smallCopies = inScope.keys
+        .where((id) => known[id]?.state == BackupAssetState.smallCopy)
+        .length;
     final hasWork = pending.isNotEmpty || _priority.isNotEmpty;
     _passIds = hasWork ? inScope.keys.toSet() : const {};
 
@@ -1067,9 +1121,10 @@ class BackupController extends Notifier<BackupState> {
           waiting: shown(),
           skippedIds: skippedIds,
           heldVideos: heldVideos,
+          smallCopies: smallCopies,
         );
     if (!hasWork) {
-      if (heldVideos > 0) {
+      if (heldVideos > 0 || _heldForWifi > 0) {
         state = state.copyWith(
           phase: BackupPhase.waitingForWifi,
           clearCurrent: true,
@@ -1118,20 +1173,35 @@ class BackupController extends Notifier<BackupState> {
         // cleared it since, or an earlier request sent the photo up.
         final record = await _db.backupAssetOf(asset.id);
         if (!_due(record)) continue;
+        final wasSmall = record?.state == BackupAssetState.smallCopy;
+        int? fewerSmall() => wasSmall ? math.max(0, state.smallCopies - 1) : null;
         // A held item stays on the list of what is waiting, and the worker
         // moves on, so smaller photos behind a video too big for the limit
-        // still go.
+        // still go. A small copy leaves it only once its original is in.
         switch (await _backUp(asset, fingerprints, record)) {
-          case _Outcome.skipped || _Outcome.held:
+          case _Outcome.held:
             continue;
+          case _Outcome.skipped:
+            // A failed try for the original records the photo as failed,
+            // with tries left, so it stops counting as a small copy.
+            if (wasSmall &&
+                (await _db.backupAssetOf(asset.id))?.state != BackupAssetState.smallCopy) {
+              state = state.copyWith(smallCopies: fewerSmall());
+            }
+          case _Outcome.smallCopy:
+            state = state.copyWith(smallCopies: state.smallCopies + 1);
           case _Outcome.done:
             settled.add(asset.id);
-            state = state.copyWith(done: state.done + 1, waiting: shown());
+            state = state.copyWith(
+              done: state.done + 1,
+              smallCopies: fewerSmall(),
+              waiting: shown(),
+            );
           case _Outcome.failed:
             settled.add(asset.id);
             state = state
                 ._withFailed({...state.failedIds, asset.id})
-                .copyWith(waiting: shown());
+                .copyWith(smallCopies: fewerSmall(), waiting: shown());
         }
       }
     }
@@ -1142,7 +1212,9 @@ class BackupController extends Notifier<BackupState> {
     _passIds = const {};
 
     if (_stopRequested || !_prefs.backupEnabled) return;
-    if (state.heldForBudget > 0 || state.heldVideos > 0) {
+    // Originals behind small copies wait like anything else held.
+    final heldForWifi = state.heldVideos > 0 || _heldForWifi > 0 || state.smallCopies > 0;
+    if (state.heldForBudget > 0 || heldForWifi) {
       // Not up to date: what is held goes on Wi-Fi, or once the limit
       // allows, and a photo that failed with tries left still gets its
       // next try.
@@ -1169,11 +1241,12 @@ class BackupController extends Notifier<BackupState> {
     }
   }
 
-  /// Whether a photo with [record] still needs sending: never tried, or
-  /// failed with tries left. One in the drive, set aside, or out of tries
-  /// (until Retry) is not.
+  /// Whether a photo with [record] still needs sending: never tried,
+  /// failed with tries left, or in the drive only as a small copy. One in
+  /// the drive, set aside, or out of tries (until Retry) is not.
   static bool _due(BackupAssetRow? record) =>
       record == null ||
+      record.state == BackupAssetState.smallCopy ||
       (record.state == BackupAssetState.failed &&
           record.failures < maxFailures);
 
@@ -1201,13 +1274,21 @@ class BackupController extends Notifier<BackupState> {
   }
 
   /// Backs one asset up, and says how it went: [_Outcome.done] once it is
-  /// in the drive, [_Outcome.failed] once it is out of tries,
+  /// in the drive, [_Outcome.smallCopy] once a small copy of it is and its
+  /// original has to wait, [_Outcome.failed] once it is out of tries,
   /// [_Outcome.held] when it may not go up on this network now, and
   /// [_Outcome.skipped] when it stays waiting for another reason (already
   /// in flight, the pass was stopped, or a failure with tries left).
+  ///
+  /// The policy for one photo, in order: an upload an earlier pass left
+  /// waiting is followed; a photo already in the drive is recorded, as a
+  /// small copy when that is all there is; a photo with a small copy has
+  /// its original put in the copy's place once the network and the monthly
+  /// limit let it go; any other goes up whole when they let it, and as a
+  /// small copy when only that fits; and anything else waits.
   Future<_Outcome> _backUp(
     AssetEntity asset,
-    Map<String, String> fingerprints,
+    Map<String, ({String fileId, bool smallCopy})> fingerprints,
     BackupAssetRow? record,
   ) async {
     if (!_activeAssets.add(asset.id)) return _Outcome.skipped;
@@ -1223,10 +1304,10 @@ class BackupController extends Notifier<BackupState> {
             .where((t) => t.id == id)
             .firstOrNull
             ?.row;
+        void uploaded(String fileId) =>
+            fingerprints['${held!.name}|${held.totalBytes}'] = (fileId: fileId, smallCopy: false);
         if (held?.status == TransferStatus.completed) {
-          await _db.markAssetBackedUp(asset.id, held!.fileId);
-          _uploaded++;
-          return _Outcome.done;
+          return await _landed(asset, held!, record, uploaded: uploaded);
         }
         if (held != null && held.status.isPending) {
           if (held.wifiOnly && ref.read(networkStatusProvider).metered) {
@@ -1234,13 +1315,26 @@ class BackupController extends Notifier<BackupState> {
             return _hold(isVideo: isVideo);
           }
           state = state.copyWith(current: held.name);
-          return await _follow(asset, id, record, (fileId) {
-            fingerprints['${held.name}|${held.totalBytes}'] = fileId;
-          });
+          return await _follow(asset, id, record, uploaded: uploaded);
         }
       }
-      // Mobile data it may not use at all: there is no need to open the file.
-      if (_waitsForWifi(isVideo: isVideo)) return _hold(isVideo: isVideo);
+
+      // Only a small copy is in the drive, and the original is what is left
+      // to send. One whose file left the drive on purpose isn't sent again,
+      // and one whose original is in already is done.
+      FileRow? small;
+      if (record?.state == BackupAssetState.smallCopy) {
+        small = record!.fileId == null ? null : await _db.fileById(record.fileId!);
+        if (small == null || small.originalSize == null) {
+          await _db.markAssetBackedUp(asset.id, small?.id);
+          return _Outcome.done;
+        }
+      }
+      // Mobile data it may not use at all: there is no need to open the
+      // file, unless a photo may go up as a small copy meanwhile.
+      if (_waitsForWifi(isVideo: isVideo) && (small != null || !_smallCopyTier(asset))) {
+        return _hold(isVideo: isVideo);
+      }
 
       final file = await asset.originFile;
       if (file == null || !await file.exists()) {
@@ -1253,20 +1347,68 @@ class BackupController extends Notifier<BackupState> {
       final name = await _nameOf(asset, file);
       final size = await file.length();
 
-      // Already up there, from an earlier install or another phone.
-      final existing = fingerprints['$name|$size'];
-      if (existing != null) {
-        await _db.markAssetBackedUp(asset.id, existing);
-        return _Outcome.done;
+      // Already up there, from an earlier install or another phone; as a
+      // small copy, its original still goes up from here. A photo whose
+      // original already failed keeps its tries, so one that keeps failing
+      // ends up under Not backed up rather than starting over each pass.
+      var recognised = false;
+      if (fingerprints['$name|$size'] case final existing? when small == null) {
+        if (!existing.smallCopy) {
+          await _db.markAssetBackedUp(asset.id, existing.fileId);
+          return _Outcome.done;
+        }
+        small = await _db.fileById(existing.fileId);
+        if (small != null && record?.state != BackupAssetState.failed) {
+          await _db.markAssetSmallCopy(asset.id, small.id);
+          record = await _db.backupAssetOf(asset.id);
+          recognised = true;
+        }
       }
 
       // Android 11+ hands back the original; only delete our own copies.
       final temp = (await getTemporaryDirectory()).path;
       final ownsSource = file.path.startsWith(temp);
-      if (await _allowance(isVideo: isVideo, bytes: size) !=
-          BackupAllowance.go) {
+      final allowance = await _allowance(isVideo: isVideo, bytes: size);
+
+      if (small != null) {
+        if (allowance != BackupAllowance.go) {
+          if (ownsSource) await _deleteQuietly(file.path);
+          final held = _hold(isVideo: false);
+          return recognised ? _Outcome.smallCopy : held;
+        }
+        state = state.copyWith(current: name);
+        thumbnail = await _thumbnailFor(asset);
+        final ids = await _queue.enqueueUploads([
+          UploadRequest(
+            name: name,
+            path: file.path,
+            size: size,
+            ownsSource: ownsSource,
+            origin: TransferOrigin.backup,
+            assetId: asset.id,
+            takenAt: asset.createDateTime,
+            thumbnailPath: thumbnail,
+            wifiOnly: !mayUseMobileData(_prefs.backupMobileData, isVideo: false),
+            fileId: small.id,
+            replacesSmallCopy: true,
+          ),
+        ], folderId: small.folderId);
+        if (ids.isEmpty) {
+          return await _fail(asset, record, 'Couldn\'t start the upload.');
+        }
+        thumbnail = null; // The queue owns it now.
+        return await _follow(asset, ids.first, record, uploaded: (fileId) {
+          fingerprints['$name|$size'] = (fileId: fileId, smallCopy: false);
+        });
+      }
+
+      if (allowance != BackupAllowance.go) {
         if (ownsSource) await _deleteQuietly(file.path);
-        return _hold(isVideo: isVideo);
+        // The original may not go now; a photo can still go as a small
+        // copy, as long as the monthly limit has room for it.
+        return _smallCopyTier(asset)
+            ? await _sendSmallCopy(asset, name, size, record, fingerprints)
+            : _hold(isVideo: isVideo);
       }
 
       state = state.copyWith(current: name);
@@ -1300,8 +1442,8 @@ class BackupController extends Notifier<BackupState> {
       }
       thumbnail = null; // The queue owns it now.
 
-      return await _follow(asset, ids.first, record, (fileId) {
-        fingerprints['$name|$size'] = fileId;
+      return await _follow(asset, ids.first, record, uploaded: (fileId) {
+        fingerprints['$name|$size'] = (fileId: fileId, smallCopy: false);
       });
     } catch (e) {
       debugPrint('[Backup] ${asset.id}: $e');
@@ -1313,16 +1455,73 @@ class BackupController extends Notifier<BackupState> {
     }
   }
 
+  /// Sends a small copy of [asset], the photo [name] whose original is
+  /// [size] bytes, when the phone makes one that fits what is left of the
+  /// monthly limit; otherwise the photo waits as it would without.
+  Future<_Outcome> _sendSmallCopy(
+    AssetEntity asset,
+    String name,
+    int size,
+    BackupAssetRow? record,
+    Map<String, ({String fileId, bool smallCopy})> fingerprints,
+  ) async {
+    final copy = await _smallCopyFor(asset);
+    if (copy == null) return _hold(isVideo: false);
+    String? thumbnail;
+    var queued = false;
+    try {
+      final bytes = await File(copy).length();
+      if (!await _fits(bytes)) return _hold(isVideo: false);
+      state = state.copyWith(current: name, sendingSmallCopies: true);
+      final folderId = await _folderFor(asset);
+      thumbnail = await _thumbnailFor(asset);
+      final ids = await _queue.enqueueUploads([
+        UploadRequest(
+          name: name,
+          path: copy,
+          size: bytes,
+          ownsSource: true,
+          origin: TransferOrigin.backup,
+          assetId: asset.id,
+          takenAt: asset.createDateTime,
+          thumbnailPath: thumbnail,
+          smallCopyOf: size,
+        ),
+      ], folderId: folderId);
+      if (ids.isEmpty) {
+        return await _fail(asset, record, 'Couldn\'t start the upload.');
+      }
+      queued = true; // The queue owns the copy and the thumbnail now.
+      return await _follow(asset, ids.first, record, smallCopy: true, uploaded: (fileId) {
+        fingerprints['$name|$size'] = (fileId: fileId, smallCopy: true);
+      });
+    } finally {
+      if (!queued) {
+        await _deleteQuietly(copy);
+        if (thumbnail != null) await _deleteQuietly(thumbnail);
+      }
+    }
+  }
+
+  /// Whether [asset] may go up as a small copy now: the switch is on, it is
+  /// a photo, and the phone is on mobile data. Videos have no small copy.
+  bool _smallCopyTier(AssetEntity asset) =>
+      _prefs.backupSmallCopies &&
+      asset.type == AssetType.image &&
+      ref.read(networkStatusProvider).metered;
+
   /// Waits for [asset]'s upload [id] to end, and calls [uploaded] with the
-  /// new file's id once it is in the drive. An upload that steps back into
-  /// the queue to wait for Wi-Fi is left there for a later pass to follow,
-  /// so the worker can move on to what may still go.
+  /// new file's id once it is in the drive. A [smallCopy] is recorded as
+  /// one. An upload that steps back into the queue to wait for Wi-Fi is
+  /// left there for a later pass to follow, so the worker can move on to
+  /// what may still go.
   Future<_Outcome> _follow(
     AssetEntity asset,
     String id,
-    BackupAssetRow? record,
-    void Function(String fileId) uploaded,
-  ) async {
+    BackupAssetRow? record, {
+    bool smallCopy = false,
+    required void Function(String fileId) uploaded,
+  }) async {
     final row = await untilEndedOrHeld(ref, id);
     if (row == null) {
       _heldUploads[asset.id] = id;
@@ -1330,16 +1529,38 @@ class BackupController extends Notifier<BackupState> {
     }
     switch (row.status) {
       case TransferStatus.completed:
-        await _db.markAssetBackedUp(asset.id, row.fileId);
-        uploaded(row.fileId);
-        _uploaded++;
-        return _Outcome.done;
+        return _landed(asset, row, record, smallCopy: smallCopy, uploaded: uploaded);
       case TransferStatus.cancelled:
         return _Outcome.skipped;
       default:
         if (_pauseFor(null)) return _Outcome.skipped;
         return _fail(asset, record, row.error ?? 'Something went wrong.');
     }
+  }
+
+  /// [asset]'s upload [row] is in the drive. A [smallCopy] is recorded as
+  /// such, so its original still goes up and the phone's copy is kept. An
+  /// original counts as backed up only once the index holds it: one that
+  /// went into a small copy's message must have cleared the small copy's
+  /// mark, or the phone's copy could be deleted with only the small copy
+  /// in the drive.
+  Future<_Outcome> _landed(
+    AssetEntity asset,
+    TransferRow row,
+    BackupAssetRow? record, {
+    bool smallCopy = false,
+    required void Function(String fileId) uploaded,
+  }) async {
+    if (smallCopy) {
+      await _db.markAssetSmallCopy(asset.id, row.fileId);
+    } else if ((await _db.fileById(row.fileId))?.originalSize != null) {
+      return _fail(asset, record, 'The original couldn\'t replace the small copy.');
+    } else {
+      await _db.markAssetBackedUp(asset.id, row.fileId);
+    }
+    uploaded(row.fileId);
+    _uploaded++;
+    return smallCopy ? _Outcome.smallCopy : _Outcome.done;
   }
 
   /// Telegram asked the account to wait, for [error] or for the uploads in
@@ -1384,14 +1605,16 @@ class BackupController extends Notifier<BackupState> {
 
   /// Counts an item that may not go up on this network now, for the line
   /// the pass ends on: the monthly limit when its kind may use mobile data,
-  /// or Wi-Fi for a video when mobile data is for photos only. With mobile
-  /// data off altogether the pass says so itself.
+  /// or Wi-Fi for a video when mobile data is for photos only, or for
+  /// anything but a small copy when mobile data is off for backup.
   _Outcome _hold({required bool isVideo}) {
     final mode = _prefs.backupMobileData;
     if (mayUseMobileData(mode, isVideo: isVideo)) {
       state = state.copyWith(heldForBudget: state.heldForBudget + 1);
     } else if (mode == BackupMobileData.photos) {
       state = state.copyWith(heldVideos: state.heldVideos + 1);
+    } else {
+      _heldForWifi++;
     }
     return _Outcome.held;
   }
@@ -1403,8 +1626,27 @@ class BackupController extends Notifier<BackupState> {
     required bool isVideo,
     required int bytes,
   }) async {
+    final committed = await _committed();
+    return backupAllowance(
+      data: ref.read(mobileDataProvider),
+      mode: _prefs.backupMobileData,
+      isVideo: isVideo,
+      bytes: committed + bytes,
+    );
+  }
+
+  /// Whether a small copy of [bytes] fits what is left of the monthly
+  /// limit, with what the backup uploads already let onto mobile data.
+  Future<bool> _fits(int bytes) async {
+    final committed = await _committed();
+    return ref.read(mobileDataProvider).fits(committed + bytes);
+  }
+
+  /// What the backup uploads let onto mobile data still have to send, with
+  /// the monthly count brought up to date.
+  Future<int> _committed() async {
     await ref.read(mobileDataProvider.notifier).refresh();
-    final committed = ref
+    return ref
         .read(transferQueueProvider)
         .items
         .where(
@@ -1414,12 +1656,6 @@ class BackupController extends Notifier<BackupState> {
               !t.row.wifiOnly,
         )
         .fold<int>(0, (sum, t) => sum + t.row.totalBytes - t.row.doneBytes);
-    return backupAllowance(
-      data: ref.read(mobileDataProvider),
-      mode: _prefs.backupMobileData,
-      isVideo: isVideo,
-      bytes: committed + bytes,
-    );
   }
 
   /// Marks the backup uploads in the queue by the backup rule as it stands,
@@ -1444,6 +1680,12 @@ class BackupController extends Notifier<BackupState> {
         continue;
       }
       final row = item.row;
+      // A small copy was fitted into the limit as it was queued, and goes
+      // on mobile data whatever the choice for originals.
+      if (_queue.sendsSmallCopy(row.id)) {
+        planned += row.totalBytes - row.doneBytes;
+        continue;
+      }
       final isVideo = item.fileKind == FileKind.video;
       final left = row.totalBytes - row.doneBytes;
       final allowed =
@@ -1464,12 +1706,12 @@ class BackupController extends Notifier<BackupState> {
   }
 
   /// The phone is on mobile data, and backup may not use it for anything,
-  /// or, given [isVideo], for this item.
+  /// small copies included, or, given [isVideo], for this item in full.
   bool _waitsForWifi({bool? isVideo}) {
     final mode = _prefs.backupMobileData;
     return ref.read(networkStatusProvider).metered &&
         (isVideo == null
-            ? mode == BackupMobileData.off
+            ? mode == BackupMobileData.off && !_prefs.backupSmallCopies
             : !mayUseMobileData(mode, isVideo: isVideo));
   }
 
@@ -1600,6 +1842,31 @@ class BackupController extends Notifier<BackupState> {
     return p.basename(file.path);
   }
 
+  /// A JPEG of the photo, asked for at 1600 px and quality 80, about 300 KB:
+  /// what goes up first while the original can't. Null when the phone can't
+  /// make one, or it comes out over 1 MB, which isn't worth sending ahead
+  /// of the original; the photo then waits as it would without.
+  static Future<String?> _smallCopyFor(AssetEntity asset) async {
+    try {
+      final bytes = await asset.thumbnailDataWithSize(
+        const ThumbnailSize(1600, 1600),
+        quality: 80,
+      );
+      if (bytes == null || bytes.isEmpty || bytes.length > 1024 * 1024) {
+        return null;
+      }
+      final dir = Directory(
+        p.join((await getTemporaryDirectory()).path, 'telegrive-small'),
+      );
+      await dir.create(recursive: true);
+      final file = File(p.join(dir.path, '${asset.id.hashCode}.jpg'));
+      await file.writeAsBytes(bytes, flush: true);
+      return file.path;
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// A ≤ 320 px JPEG preview, so the drive shows thumbnails for videos too
   /// (Telegram only makes its own for images).
   static Future<String?> _thumbnailFor(AssetEntity asset) async {
@@ -1657,7 +1924,7 @@ class BackupController extends Notifier<BackupState> {
 }
 
 /// How one item's turn in a pass ended.
-enum _Outcome { done, failed, skipped, held }
+enum _Outcome { done, smallCopy, failed, skipped, held }
 
 final backupControllerProvider =
     NotifierProvider<BackupController, BackupState>(BackupController.new);
@@ -1684,6 +1951,13 @@ final failedBackupAssetsProvider =
             ],
           );
     });
+
+/// How many of this phone's photos have only a small copy in the drive,
+/// and how big their originals are, live: what the Backup screen says is
+/// still to send.
+final pendingOriginalsProvider = StreamProvider.autoDispose<({int count, int bytes})>(
+  (ref) => ref.watch(appDatabaseProvider).watchPendingOriginals(),
+);
 
 /// How many photos backed up from this phone are no longer in the drive
 /// and wait for the person's choice, live.

@@ -51,6 +51,9 @@ class UploadRequest {
     this.wifiOnly = false,
     this.replacesFileId,
     this.durationSeconds,
+    this.fileId,
+    this.smallCopyOf,
+    this.replacesSmallCopy = false,
   }) : assert(path != null || openRead != null);
 
   final String name;
@@ -80,6 +83,19 @@ class UploadRequest {
   /// upload starts.
   final int? durationSeconds;
 
+  /// The drive file this upload goes up as, when it is one already in the
+  /// drive; otherwise a new one.
+  final String? fileId;
+
+  /// Makes this upload a small copy of a photo whose original is this many
+  /// bytes: a JPEG that goes up as a drive file of its own, marked as a
+  /// small copy, until the original takes its place.
+  final int? smallCopyOf;
+
+  /// The original of the small copy [fileId], which goes into that file's
+  /// message in its place rather than into a message of its own.
+  final bool replacesSmallCopy;
+
   /// This request under another [name] or [path], or replacing a file.
   UploadRequest copyWith({
     String? name,
@@ -98,6 +114,9 @@ class UploadRequest {
     wifiOnly: wifiOnly,
     replacesFileId: replacesFileId ?? this.replacesFileId,
     durationSeconds: durationSeconds,
+    fileId: fileId,
+    smallCopyOf: smallCopyOf,
+    replacesSmallCopy: replacesSmallCopy,
   );
 }
 
@@ -418,6 +437,19 @@ class TransferQueue extends Notifier<TransfersState> {
   final Map<String, Completer<TransferRow>> _finished = {};
   final Set<String> _preparing = {};
 
+  /// Small copies photo backup sends, to the size of each one's original.
+  /// They live in memory: a send TDLib carries on after a restart takes the
+  /// fact back from its caption, and any other backup row is dropped then
+  /// and queued again by the next pass.
+  final Map<String, int> _smallCopyOf = {};
+
+  /// Originals going into their small copy's message in its place.
+  final Set<String> _replacing = {};
+
+  /// TDLib's file for each original being uploaded ahead of its edit, so
+  /// the upload can be called off.
+  final Map<String, int> _preliminary = {};
+
   /// When queued transfers may start again: downloads Telegram asked to
   /// wait, and transfers to try again after a dropped connection.
   final Map<String, DateTime> _notBefore = {};
@@ -509,6 +541,10 @@ class TransferQueue extends Notifier<TransfersState> {
     return until != null && until.isAfter(DateTime.now()) ? until : null;
   }
 
+  /// Whether upload [id] is a small copy photo backup sends, which goes on
+  /// mobile data whatever backup's Mobile data choice says.
+  bool sendsSmallCopy(String id) => _smallCopyOf.containsKey(id);
+
   /// Queues [requests]; returns the new transfers' ids, in order.
   Future<List<String>> enqueueUploads(
     List<UploadRequest> requests, {
@@ -540,8 +576,10 @@ class TransferQueue extends Notifier<TransfersState> {
         kind: TransferKind.upload,
         status: TransferStatus.queued,
         name: request.name,
-        mimeType: mimeTypeFor(request.name),
-        fileId: _repository.newId(),
+        // A small copy keeps the photo's name, so nothing is renamed when
+        // the original arrives, but holds a JPEG.
+        mimeType: request.smallCopyOf != null ? 'image/jpeg' : mimeTypeFor(request.name),
+        fileId: request.fileId ?? _repository.newId(),
         folderId: folderId,
         sourcePath: sourcePath,
         ownsSource: ownsSource,
@@ -559,6 +597,8 @@ class TransferQueue extends Notifier<TransfersState> {
         replacesFileId: request.replacesFileId,
         durationSeconds: request.durationSeconds,
       );
+      if (request.smallCopyOf case final original?) _smallCopyOf[id] = original;
+      if (request.replacesSmallCopy) _replacing.add(id);
       await _save(row);
       ids.add(id);
     }
@@ -747,16 +787,22 @@ class TransferQueue extends Notifier<TransfersState> {
     return download(file);
   }
 
-  /// A path for [file] that already exists on this device, or null.
+  /// A path for [file] that already exists on this device, or null. A
+  /// saved or kept copy counts only if it has the file's size: a small
+  /// copy's original replaces it under the same id, and what was saved or
+  /// opened of the small copy is not the original.
   Future<String?> localPathIfAvailable(DriveFile file) async {
     final offline = await _db.offlineCopyOf(file.id);
-    if (offline != null && await File(offline.path).exists()) {
+    if (offline != null &&
+        offline.size == file.size &&
+        await File(offline.path).exists()) {
       return offline.path;
     }
     for (final row in _rows.values) {
       if (row.kind == TransferKind.download &&
           row.fileId == file.id &&
           row.status == TransferStatus.completed &&
+          row.totalBytes == file.size &&
           row.resultPath != null &&
           await File(row.resultPath!).exists()) {
         return row.resultPath;
@@ -930,13 +976,19 @@ class TransferQueue extends Notifier<TransfersState> {
   }
 
   /// Stops whatever TDLib is doing for [row]: abandons the message being
-  /// sent, or the file being fetched.
+  /// sent, the original being uploaded ahead of its edit, or the file being
+  /// fetched.
   Future<void> _interrupt(TransferRow row) async {
     if (row.kind == TransferKind.upload) {
       final chatId = ref.read(driveSessionProvider)?.chatId;
       final pending = _pendingMessages.remove(row.id);
       if (pending != null && chatId != null) {
         await _quietly(() => _messenger.cancel(chatId, pending));
+      }
+      if (_preliminary.remove(row.id) case final fileId?) {
+        await _quietly(
+          () => _client.send<td.Ok>(td.CancelPreliminaryUploadFile(fileId: fileId)),
+        );
       }
     } else {
       final fileId = _activeDownloads[row.id];
@@ -1297,6 +1349,7 @@ class TransferQueue extends Notifier<TransfersState> {
     final source = initial.sourcePath == null
         ? null
         : File(initial.sourcePath!);
+    if (_replacing.contains(initial.id)) return _replaceSmallCopy(initial, source);
     final stager = _stagers[initial.id];
     final stage = source != null && stager != null && !await source.exists();
     if (stage) {
@@ -1399,6 +1452,7 @@ class TransferQueue extends Notifier<TransfersState> {
           partIndex: index,
           takenAt: row.takenAt,
           durationSeconds: row.durationSeconds,
+          originalSize: _smallCopyOf[row.id],
         );
         final thumbnail = index == 0 ? row.thumbnailPath : null;
         try {
@@ -1459,6 +1513,70 @@ class TransferQueue extends Notifier<TransfersState> {
         () => _repository.replaceWith(oldFileId: old, newFileId: row.fileId),
       );
     }
+    await _dropOwnedFiles(row);
+  }
+
+  /// Uploads the original photo behind [row] ahead, then has TDLib put it
+  /// in place of the small copy [row] names, in the same message, through
+  /// [DriveRepository.replaceSmallCopy]. Progress comes from TDLib's file
+  /// for the upload, and TDLib answers the edit only once the upload is
+  /// done. Pausing, holding for Wi-Fi or cancelling calls the upload off;
+  /// should TDLib finish the edit regardless, the original is in and the
+  /// row completes. A file Telegram wouldn't edit comes back under a new
+  /// id, which the row takes. Cancelling never takes the small copy out of
+  /// the drive.
+  Future<void> _replaceSmallCopy(TransferRow row, File? source) async {
+    if (_cancelled.contains(row.id)) {
+      await _dropOwnedFiles(row);
+      return;
+    }
+    if (source == null || !await source.exists()) {
+      throw const DriveException('The original file is no longer available.');
+    }
+    if (row.totalBytes > 0 && await source.length() != row.totalBytes) {
+      throw DriveException(_notWhole(row));
+    }
+    _stopIfPausing(row.id);
+    _stopIfUploadsWait();
+    final upload = await _client.send<td.File>(
+      td.PreliminaryUploadFile(
+        file: td.InputFileLocal(path: source.path),
+        fileType: const td.FileTypeDocument(),
+        priority: 1,
+      ),
+    );
+    _tracked[upload.id] = _Tracked(row.id, 0, upload: true);
+    _preliminary[row.id] = upload.id;
+    // Paused, held for Wi-Fi or cancelled in the moment the upload started.
+    if (_stopping(row.id) || _cancelled.contains(row.id)) await _interrupt(row);
+    if (_cancelled.contains(row.id)) return;
+    _stopIfPausing(row.id);
+    final String fileId;
+    try {
+      fileId = await _repository.replaceSmallCopy(
+        row.fileId,
+        tdFileId: upload.id,
+        path: source.path,
+        size: row.totalBytes,
+        thumbnailPath: row.thumbnailPath != null && await File(row.thumbnailPath!).exists()
+            ? row.thumbnailPath
+            : null,
+      );
+    } finally {
+      _preliminary.remove(row.id);
+    }
+    // Cancelled as the original landed: it is in the drive in the small
+    // copy's place, which loses nothing, so it stays; saving now would
+    // bring the row back.
+    if (_cancelled.contains(row.id)) return;
+    await _finish(
+      (_rows[row.id] ?? row).copyWith(
+        fileId: fileId,
+        status: TransferStatus.completed,
+        doneBytes: row.totalBytes,
+        completedParts: 1,
+      ),
+    );
     await _dropOwnedFiles(row);
   }
 
@@ -1774,15 +1892,21 @@ class TransferQueue extends Notifier<TransfersState> {
   }
 
   /// Copies a finished download to where its save transfer keeps it, and
-  /// points the row at the copy.
+  /// points the row at the copy. A JPEG under another extension, a small
+  /// copy of a HEIC photo say, is saved as .jpg, so the gallery and other
+  /// apps read it for what it holds.
   Future<TransferRow> _keep(TransferRow row, String path) async {
     final storage = ref.read(deviceStorageProvider);
+    final extension = p.extension(row.name).toLowerCase();
+    final name = row.mimeType == 'image/jpeg' && extension != '.jpg' && extension != '.jpeg'
+        ? p.setExtension(row.name, '.jpg')
+        : row.name;
     switch (row.saveTo!) {
       case SaveTarget.files:
         final saved = await storage.saveFile(
           path,
           folders: row.saveFolder?.split('/') ?? const [],
-          name: row.name,
+          name: name,
           mimeType: row.mimeType,
         );
         return row.copyWith(resultPath: Value(saved));
@@ -1793,7 +1917,7 @@ class TransferQueue extends Notifier<TransfersState> {
         );
         final assetId = await storage.saveToGallery(
           path,
-          name: row.name,
+          name: name,
           video: kind == FileKind.video,
           album: row.saveFolder,
           takenAt: row.takenAt,
@@ -1807,7 +1931,7 @@ class TransferQueue extends Notifier<TransfersState> {
           p.join((await offlineDirectory()).path, row.fileId),
         );
         await dir.create(recursive: true);
-        final copy = File(p.join(dir.path, DeviceStorage.safeName(row.name)));
+        final copy = File(p.join(dir.path, DeviceStorage.safeName(name)));
         await File(path).copy(copy.path);
         await _db.saveOfflineCopy(row.fileId, copy.path, await copy.length());
         return row.copyWith(resultPath: Value(copy.path));
@@ -1894,7 +2018,10 @@ class TransferQueue extends Notifier<TransfersState> {
   }
 
   /// An upload that was interrupted can still land — TDLib resumes sends
-  /// after a restart. When its file shows up complete, close it out.
+  /// after a restart. When its file shows up complete, close it out. The
+  /// original of a small copy counts only once the file holds it: the
+  /// small copy is in the drive all along, and a star or rename of it is
+  /// indexed too.
   Future<void> _onIngested(String fileId) async {
     final matches = _rows.values.where(
       (r) =>
@@ -1908,6 +2035,10 @@ class TransferQueue extends Notifier<TransfersState> {
     final file = await _repository.fileById(fileId);
     if (file == null) return;
     for (final row in matches.toList()) {
+      if (_replacing.contains(row.id) &&
+          (file.isSmallCopy || file.size != row.totalBytes)) {
+        continue;
+      }
       await _finish(
         row.copyWith(
           status: TransferStatus.completed,
@@ -1990,6 +2121,13 @@ class TransferQueue extends Notifier<TransfersState> {
         // Known before the run takes the send up, so a hold for Wi-Fi in
         // the meantime still stops TDLib sending it.
         _pendingMessages[row.id] = resumable.id;
+        // The caption of a small copy carries its original's size, so one
+        // still going out stays a small copy: exempt from the Wi-Fi rule
+        // for originals, and sent again with its mark if it is held.
+        if (resumable.content case td.MessageDocument(:final caption)) {
+          final original = ManifestCodec.decodeFile(caption.text)?.originalSize;
+          if (original != null) _smallCopyOf[row.id] = original;
+        }
         _start(
           row,
           (running) => copy
@@ -2112,6 +2250,9 @@ class TransferQueue extends Notifier<TransfersState> {
     _tracked.clear();
     _pendingMessages.clear();
     _activeDownloads.clear();
+    _smallCopyOf.clear();
+    _replacing.clear();
+    _preliminary.clear();
     for (final completer in _completions.values) {
       if (!completer.isCompleted) {
         completer.completeError(const DriveException('Signed out.'));
@@ -2129,6 +2270,8 @@ class TransferQueue extends Notifier<TransfersState> {
     _attempts.remove(row.id);
     _retrying.remove(row.id);
     _room.remove(row.id);
+    _smallCopyOf.remove(row.id);
+    _replacing.remove(row.id);
     final finished = row.copyWith(finishedAt: Value(DateTime.now()));
     final keptOffline =
         row.saveTo == SaveTarget.offline &&

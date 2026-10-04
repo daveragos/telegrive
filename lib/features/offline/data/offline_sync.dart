@@ -177,7 +177,7 @@ class OfflineSync extends Notifier<bool> {
       for (final copy in await _db.offlineCopyList()) {
         final exists = await File(copy.path).exists();
         if (!wantedIds.contains(copy.fileId) || !exists) {
-          await _deleteCopy(copy);
+          await _repository.deleteOfflineCopy(copy);
         } else {
           have.add(copy.fileId);
         }
@@ -210,13 +210,6 @@ class OfflineSync extends Notifier<bool> {
     }
   }
 
-  Future<void> _deleteCopy(OfflineCopyRow copy) async {
-    try {
-      final dir = File(copy.path).parent;
-      if (await dir.exists()) await dir.delete(recursive: true);
-    } catch (_) {}
-    await _db.deleteOfflineCopy(copy.fileId);
-  }
 }
 
 /// Whether Only over Wi-Fi is on; reading it keeps the pins and copies in

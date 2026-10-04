@@ -215,6 +215,38 @@ void main() {
       expect(health.action, HealthAction.useData);
     });
 
+    test('small copies going up count only the photos with nothing in the drive yet', () {
+      final health = _top(
+        backup: const BackupState(
+          phase: BackupPhase.uploading,
+          total: 4530,
+          done: 3080,
+          smallCopies: 1410,
+          sendingSmallCopies: true,
+        ),
+        backupSpeed: 1.1 * 1024 * 1024,
+      );
+      expect(health.text, 'Backing up small copies · 40 left');
+      expect(health.detail, '1.1 MB/s');
+      expect(health.tone, HealthTone.busy);
+    });
+
+    test('originals behind small copies wait for Wi-Fi, and offer mobile data', () {
+      final health = _top(
+        backup: const BackupState(
+          phase: BackupPhase.waitingForWifi,
+          total: 4530,
+          done: 3120,
+          smallCopies: 1410,
+        ),
+      );
+      expect(health.text, 'Originals wait for Wi-Fi');
+      expect(health.detail, '1,410 still to send. Small copies are already safe.');
+      expect(health.icon, Icons.cloud_done_outlined);
+      expect(health.tone, HealthTone.neutral);
+      expect(health.action, HealthAction.useData);
+    });
+
     test('the monthly data limit says when backup carries on, and offers to go past it', () {
       final health = _top(
         backup: const BackupState(

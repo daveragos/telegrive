@@ -254,15 +254,20 @@ class _ViewerBar extends ConsumerWidget {
           // full one. With a count beside it the size is left out, since
           // Details has that too, so the date still fits on a narrow phone
           // next to four actions; if it must, the date gives way before the
-          // count does.
+          // count does. A small copy says so in the size's place, since its
+          // size isn't the photo's.
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               Flexible(
                 child: Text(
-                  position == null
-                      ? '${Formatters.bytes(file.size)} · ${Formatters.date(file.momentAt)}'
-                      : Formatters.date(file.momentAt),
+                  [
+                    if (file.isSmallCopy)
+                      'Small copy'
+                    else if (position == null)
+                      Formatters.bytes(file.size),
+                    Formatters.date(file.momentAt),
+                  ].join(' · '),
                   style: meta,
                 ),
               ),

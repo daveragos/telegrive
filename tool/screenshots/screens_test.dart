@@ -2090,6 +2090,35 @@ void main() {
     await snap(tester, 'viewer_details');
   });
 
+  /// The third photo on the timeline is still a small copy: the viewer
+  /// says so, and so does its menu.
+  testWidgets('file sheet small copy', (tester) async {
+    await prepareData(tester);
+    final photo = photos[2];
+    photos[2] = DriveFile(
+      id: photo.id,
+      folderId: photo.folderId,
+      name: 'IMG_2041.HEIC',
+      mimeType: 'image/jpeg',
+      kind: photo.kind,
+      size: 312 * 1024,
+      createdAt: photo.createdAt,
+      modifiedAt: photo.modifiedAt,
+      partCount: 1,
+      starred: false,
+      minithumbnail: photo.minithumbnail,
+      thumbnailFileId: photo.thumbnailFileId,
+      takenAt: photo.takenAt,
+      originalSize: (6.1 * _mb).round(),
+    );
+    await openViewer(tester);
+    await tester.tap(find.byTooltip('More'));
+    for (var i = 0; i < 6; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    await snap(tester, 'file_sheet_small_copy');
+  });
+
   /// The first clip on the timeline, waiting on its poster: nothing comes
   /// down until Play is tapped.
   testWidgets('viewer video', (tester) async {
@@ -3214,6 +3243,29 @@ void main() {
       ),
     );
     await snap(tester, 'photos_waiting');
+  });
+
+  /// Small copies of the photos taken on mobile data are in; their
+  /// originals wait for Wi-Fi.
+  testWidgets('photos originals waiting', (tester) async {
+    await prepareData(tester);
+    await pumpApp(
+      tester,
+      location: '/backup',
+      backup: const BackupState(
+        phase: BackupPhase.waitingForWifi,
+        total: 4530,
+        done: 3120,
+        smallCopies: 1410,
+      ),
+      prefs: {'backup_enabled': true, 'backup_small_copies': true},
+      overrides: [
+        pendingOriginalsProvider.overrideWith(
+          (ref) => Stream.value((count: 1410, bytes: (6.8 * 1024 * _mb).round())),
+        ),
+      ],
+    );
+    await snap(tester, 'photos_originals_waiting');
   });
 
   testWidgets('backup limit reached', (tester) async {

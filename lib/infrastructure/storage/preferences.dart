@@ -263,6 +263,15 @@ class Preferences {
   Future<void> setBackupMobileData(BackupMobileData value) =>
       _prefs.setString(BackupPrefKeys.mobileData, value.name);
 
+  /// Whether a photo that can't go up in full right now, on mobile data
+  /// backup may not use for it or past the monthly limit, goes up as a
+  /// small copy, with the original following once it may. Off until
+  /// switched on.
+  bool get backupSmallCopies => _prefs.getBool(_backupSmallCopies) ?? false;
+  Future<void> setBackupSmallCopies(bool on) => _prefs.setBool(_backupSmallCopies, on);
+
+  static const String _backupSmallCopies = 'backup_small_copies';
+
   /// Device folders ("WhatsApp Images", "Screenshots") left out of backup.
   /// Everything else — including folders that appear later — is included.
   Set<String> get backupExcludedFolders =>

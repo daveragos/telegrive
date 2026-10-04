@@ -39,6 +39,9 @@ class BackupScreen extends ConsumerWidget {
     final prefs = ref.watch(preferencesProvider);
     final mobileData = prefs.backupMobileData;
     final limit = ref.watch(mobileDataProvider.select((d) => d.limit));
+    // Originals use mobile data within the limit only when backup may use
+    // mobile data for photos at all.
+    final withinLimit = limit != null && mobileData != BackupMobileData.off;
     final missing = ref.watch(missingCountProvider).value ?? 0;
     final folders = PhoneFolders.supported;
     final watching =
@@ -80,6 +83,19 @@ class BackupScreen extends ConsumerWidget {
               ),
             ),
           ),
+          if (backup.enabled)
+            SwitchListTile(
+              title: const Text('Small copies first on mobile data'),
+              subtitle: Text(
+                'About 300 KB a photo, so new photos are safe straight away. '
+                'Originals follow on Wi-Fi${withinLimit ? ' or within your monthly limit' : ''}.',
+              ),
+              value: prefs.backupSmallCopies,
+              onChanged: (on) async {
+                await controller.setSmallCopies(on);
+                ref.invalidate(preferencesProvider);
+              },
+            ),
         ],
       ),
     ];

@@ -43,8 +43,12 @@ abstract final class ManifestCodec {
   /// full name either way.
   static const int _displayNameLimit = 96;
 
+  /// A small copy says so on its readable line, so the channel shows which
+  /// photos still wait for their original.
   static EncodedText encodeFile(FileManifest manifest) {
-    final head = _displayName(manifest.name);
+    final head = manifest.originalSize != null
+        ? '${_displayName(manifest.name)} (small copy)'
+        : _displayName(manifest.name);
     return _withMachineLine(head, filePrefix + jsonEncode(manifest.toJson()));
   }
 
@@ -151,6 +155,7 @@ class FileManifest {
     this.albums = const [],
     this.durationSeconds,
     this.replacedBy,
+    this.originalSize,
     this.extra = const {},
   });
 
@@ -159,7 +164,7 @@ class FileManifest {
   /// [extra], and comes back after it is cleared.
   static const Set<String> _keys = {
     'id', 'n', 'f', 'm', 's', 'ct', 'mt', 'pc', 'pi', 'st', 'tk', 'tr', 'al', //
-    'du', 'rb',
+    'du', 'rb', 'lt',
   };
 
   final String id;
@@ -186,6 +191,11 @@ class FileManifest {
   /// file.
   final String? replacedBy;
 
+  /// Byte size of the original photo while this message holds only a small
+  /// copy of it, which backup sent on mobile data; [size] is the copy's
+  /// own. Null once the original replaces it, and for anything else.
+  final int? originalSize;
+
   /// Size of the whole file, not of this part.
   final int size;
   final DateTime createdAt;
@@ -209,6 +219,7 @@ class FileManifest {
     bool restore = false,
     List<String>? albums,
     String? replacedBy,
+    bool clearOriginalSize = false,
   }) => FileManifest(
     id: id,
     name: name ?? this.name,
@@ -225,6 +236,7 @@ class FileManifest {
     albums: albums ?? this.albums,
     durationSeconds: durationSeconds,
     replacedBy: restore ? null : (replacedBy ?? this.replacedBy),
+    originalSize: clearOriginalSize ? null : originalSize,
     extra: extra,
   );
 
@@ -250,6 +262,7 @@ class FileManifest {
     if (albums.isNotEmpty) 'al': albums,
     if (durationSeconds != null) 'du': durationSeconds,
     if (replacedBy != null) 'rb': replacedBy,
+    if (originalSize != null) 'lt': originalSize,
   };
 
   static FileManifest? tryFromJson(Map<String, dynamic> json) {
@@ -283,6 +296,7 @@ class FileManifest {
         _ => null,
       },
       replacedBy: json['rb'] as String?,
+      originalSize: json['lt'] is int ? json['lt'] as int : null,
       extra: Map.unmodifiable(_unknown(json, _keys)),
     );
   }

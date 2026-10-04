@@ -74,6 +74,7 @@ class DriveFile {
     this.durationSeconds,
     this.replacedBy,
     this.adopted = false,
+    this.originalSize,
   }) : hasMinithumbnail = hasMinithumbnail || minithumbnail != null;
 
   /// [hasMinithumbnail] says whether Telegram inlined a preview for a row
@@ -98,6 +99,7 @@ class DriveFile {
     durationSeconds: row.durationSeconds,
     replacedBy: row.replacedBy,
     adopted: row.adopted,
+    originalSize: row.originalSize,
   );
 
   final String id;
@@ -137,6 +139,14 @@ class DriveFile {
   /// Came into the channel without a manifest, forwarded or sent from
   /// another Telegram app, and waits under Forwarded until it is filed.
   final bool adopted;
+
+  /// Size of the original photo while only a small copy of it is in the
+  /// drive; [size] is the copy's own.
+  final int? originalSize;
+
+  /// Backup sent a small copy of a photo on mobile data, and its original
+  /// is still to follow from the phone that took it.
+  bool get isSmallCopy => originalSize != null;
 
   /// When the moment happened, as far as we know — what the Photos
   /// timeline sorts and groups by.
@@ -181,11 +191,14 @@ class DriveFile {
       other.modifiedAt == modifiedAt &&
       other.thumbnailFileId == thumbnailFileId &&
       other.durationSeconds == durationSeconds &&
-      other.adopted == adopted;
+      other.adopted == adopted &&
+      other.size == size &&
+      other.originalSize == originalSize;
 
   @override
   int get hashCode => Object.hash(
     id, name, folderId, starred, modifiedAt, thumbnailFileId, durationSeconds, adopted, //
+    size, originalSize,
   );
 }
 

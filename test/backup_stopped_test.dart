@@ -128,6 +128,7 @@ void main() {
           duplicateBackupsProvider.overrideWith((ref) async => DuplicateBackups.none),
           freeableProvider.overrideWith((ref) async => Freeable.none),
           missingCountProvider.overrideWith((ref) => Stream.value(0)),
+          pendingOriginalsProvider.overrideWith((ref) => Stream.value((count: 0, bytes: 0))),
         ],
         child: MaterialApp(theme: AppTheme.light(), home: const BackupScreen()),
       ),

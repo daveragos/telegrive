@@ -187,12 +187,12 @@ class ChatMedia extends AsyncNotifier<ChatMediaState> {
   static const int selectAllCap = 2000;
 
   /// What the drive holds, as `name|size`, read once when the list opens.
-  Map<String, String> _inDrive = const {};
+  Set<String> _inDrive = const {};
   Future<void>? _loading;
 
   @override
   Future<ChatMediaState> build() async {
-    _inDrive = await ref.read(driveRepositoryProvider).mediaFingerprints();
+    _inDrive = (await ref.read(driveRepositoryProvider).mediaFingerprints()).keys.toSet();
     return _page(const ChatMediaState(), from: 0);
   }
 
@@ -261,7 +261,7 @@ class ChatMedia extends AsyncNotifier<ChatMediaState> {
       if (item == null) continue;
       if (!message.canBeSaved) {
         protected++;
-      } else if (_inDrive.containsKey(item.fingerprint)) {
+      } else if (_inDrive.contains(item.fingerprint)) {
         saved++;
       } else {
         items.add(item);

@@ -25,7 +25,9 @@ phone number.
   with Back up on its own, even with the app closed while the phone
   charges. Choose
   device folders, videos on or off, and whether mobile data carries nothing,
-  photos only, or photos and videos. A Photos tab
+  photos only, or photos and videos; with Small copies first, a new photo
+  that has to wait goes up at once as a small copy, and its original
+  takes its place later. A Photos tab
   shows your photos and videos as a timeline grouped by month, with a
   swipeable full-screen viewer: flick down to close it, or up for Details,
   which says when the photo was taken, which folder and albums it is in and
@@ -47,7 +49,8 @@ phone number.
 - **Free up space.** Delete the phone's copies of photos and videos that are
   safely backed up, keeping the last 30 or 90 days on the phone if you like;
   they stay in the drive. Photo backup's screen offers it, Show them lists
-  exactly what goes, and Home says so when the phone runs low on space.
+  exactly what goes, and Home says so when the phone runs low on space. A
+  photo with only a small copy in the drive is never among them.
 - **Check my drive.** Settings › Check my drive looks the drive over and
   says, one sentence per check, whether the channel is private and yours
   with no auto-delete timer, when the channel was last read in full, which
@@ -360,6 +363,23 @@ phone number.
   once Wi-Fi returns. Files from other folders wait for Wi-Fi unless it is
   Photos and videos. With a monthly limit set, each one is checked against
   what is left of it before it starts.
+- **Small copies first.** With Backup › When › Small copies first on
+  mobile data switched on, a new photo that can't go up in full yet,
+  because mobile data is kept for other things or the monthly limit is
+  spent, goes up as a JPEG of about 300 KB, so it is safe and can be
+  looked at straight away. In Telegram it reads "IMG_2041.HEIC (small
+  copy)". On Wi-Fi, or within the limit, the original takes its place in
+  the same message, keeping its name, folder, star, albums and trash, and
+  a rename or move made meanwhile. Until then the viewer, the file's menu
+  and Details say Small copy (Details says how big the original is), the
+  phone that took it shows its own sharp original, the Backup screen says
+  how many originals are still to send and how big they are, and Free up
+  space leaves the phone's copy alone. Each small copy is checked against
+  the monthly limit before it goes. Videos have no small copy, so they wait
+  for Wi-Fi. A copy of the small copy kept offline, downloaded or opened
+  before is never taken for the original: kept offline, it is fetched
+  again once the original is in. An original that keeps failing counts its
+  tries like any other photo, and ends under Not backed up.
 - **Nothing silently skipped.** A photo that fails is tried again a few
   seconds later. After three tries it is listed under Backup › Not backed
   up with the reason, and can be retried or skipped one by one. The same
@@ -443,7 +463,9 @@ Telegram (source of truth)                 This device
   gallery for a backed-up video, or from Telegram for a forwarded one. A
   length first learned by playing the file is kept on the phone and written
   into the caption the next time that caption is edited anyway, so knowing
-  it never costs an edit of its own.
+  it never costs an edit of its own. A small copy of a photo carries its
+  original's size until the original replaces it in the same message, so
+  one file never has two messages.
 - **Folders** are small text messages carrying their own id, name, parent
   and star, so renames, moves and stars are a single edit and two devices
   never overwrite each other's folder tree.
@@ -617,6 +639,15 @@ two commands are at the top of that test.
   three times waits in Waiting changes for Try again. Creating folders and
   albums, deleting an album, deleting for good and emptying the trash
   still need the connection.
+- A small copy carries no location or camera details; the original that
+  replaces it does, and the time it was taken is in the caption either
+  way. Only the phone that took a photo can send its original, so a small
+  copy from a phone that is lost stays a small copy. A version of
+  Telegrive that doesn't know small copies shows one as an ordinary photo,
+  and renaming or moving it there drops its Small copy label, though the
+  original still replaces it. When Telegram won't edit the message, the
+  original goes up as a new file with the same name, folder, star and
+  albums, and the small copy goes.
 - Where you stopped in a video or recording is kept on this phone only, for
   files of three minutes or longer and for 60 days after you last played
   them. Rebuild index keeps these points; signing out clears them.

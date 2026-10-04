@@ -54,7 +54,7 @@ class _Repository extends DriveRepository {
   Future<String> ensureFolderPath(List<String> names) async => names.join('/');
 
   @override
-  Future<Map<String, String>> mediaFingerprints() async {
+  Future<Map<String, ({String fileId, bool smallCopy})>> mediaFingerprints() async {
     await gate;
     return {};
   }

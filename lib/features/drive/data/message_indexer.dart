@@ -132,6 +132,9 @@ abstract final class MessageIndexer {
           manifest.durationSeconds ?? media.duration,
         ),
         replacedBy: Value(manifest.replacedBy),
+        // Every part says it, so the original arriving in a message's place
+        // clears it.
+        originalSize: Value(manifest.originalSize),
         manifestExtra: Value(ManifestCodec.encodeExtra(manifest.extra)),
         adopted: Value(decoded == null),
         // Previews come from the first part only; later parts of a split

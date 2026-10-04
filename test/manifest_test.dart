@@ -12,6 +12,7 @@ void main() {
     bool starred = false,
     int? durationSeconds,
     String? replacedBy,
+    int? originalSize,
   }) => FileManifest(
     id: 'file-1',
     name: name,
@@ -25,6 +26,7 @@ void main() {
     starred: starred,
     durationSeconds: durationSeconds,
     replacedBy: replacedBy,
+    originalSize: originalSize,
   );
 
   group('file captions', () {
@@ -226,14 +228,14 @@ void main() {
   group('keys from newer versions', () {
     test('an unknown file key survives decode, copyWith and encode', () {
       final decoded = ManifestCodec.decodeFile(
-        'clip.mp4\ntgr1:{"id":"v","n":"clip.mp4","s":9,"lt":123456,"x":{"a":[1,"b"]}}',
+        'clip.mp4\ntgr1:{"id":"v","n":"clip.mp4","s":9,"xv":123456,"x":{"a":[1,"b"]}}',
       )!;
-      expect(decoded.extra, {'lt': 123456, 'x': {'a': [1, 'b']}});
+      expect(decoded.extra, {'xv': 123456, 'x': {'a': [1, 'b']}});
 
       final renamed = decoded.copyWith(name: 'trip.mp4', clearFolder: true);
       final again = ManifestCodec.decodeFile(ManifestCodec.encodeFile(renamed).text)!;
       expect(again.name, 'trip.mp4');
-      expect(again.extra, {'lt': 123456, 'x': {'a': [1, 'b']}});
+      expect(again.extra, {'xv': 123456, 'x': {'a': [1, 'b']}});
     });
 
     test('an unknown folder key survives decode and encode', () {
@@ -254,6 +256,7 @@ void main() {
         starred: true,
         durationSeconds: 84,
         replacedBy: 'new-id',
+        originalSize: 6100000,
       ).copyWith(trashedAt: created, albums: ['a1b2c3']);
       final withTime = FileManifest(
         id: 'p',
@@ -338,11 +341,67 @@ void main() {
 
     test('the index keeps extras as JSON, and none as null', () {
       expect(ManifestCodec.encodeExtra(const {}), isNull);
-      final stored = ManifestCodec.encodeExtra(const {'lt': 123456, 'c': 'blue'});
-      expect(ManifestCodec.decodeExtra(stored), {'lt': 123456, 'c': 'blue'});
+      final stored = ManifestCodec.encodeExtra(const {'xv': 123456, 'c': 'blue'});
+      expect(ManifestCodec.decodeExtra(stored), {'xv': 123456, 'c': 'blue'});
       expect(ManifestCodec.decodeExtra(null), isEmpty);
       expect(ManifestCodec.decodeExtra('not json'), isEmpty);
       expect(ManifestCodec.decodeExtra('[1]'), isEmpty);
+    });
+  });
+
+  group('small copies', () {
+    FileManifest smallCopy() => FileManifest(
+      id: 'p',
+      name: 'IMG_1.HEIC',
+      folderId: 'camera',
+      mimeType: 'image/jpeg',
+      size: 312000,
+      createdAt: created,
+      modifiedAt: created,
+      takenAt: created,
+      originalSize: 6100000,
+    );
+
+    test('the original\'s size round-trips as lt, beside the copy\'s own', () {
+      final encoded = ManifestCodec.encodeFile(smallCopy());
+      expect(encoded.text, contains('"lt":6100000'));
+      final decoded = ManifestCodec.decodeFile(encoded.text)!;
+      expect(decoded.originalSize, 6100000);
+      expect(decoded.size, 312000);
+      expect(decoded.mimeType, 'image/jpeg');
+      expect(decoded.name, 'IMG_1.HEIC');
+      expect(decoded.extra, isEmpty);
+    });
+
+    test('the readable line says small copy, and the spoiler still covers the machine line', () {
+      final encoded = ManifestCodec.encodeFile(smallCopy());
+      expect(encoded.text.split('\n').first, 'IMG_1.HEIC (small copy)');
+      expect(
+        encoded.text.substring(encoded.spoilerOffset),
+        startsWith(ManifestCodec.filePrefix),
+      );
+      expect(encoded.spoilerOffset + encoded.spoilerLength, encoded.text.length);
+    });
+
+    test('copyWith keeps the original\'s size, and clearOriginalSize drops it', () {
+      final starred = smallCopy().copyWith(starred: true, name: 'Lalibela.HEIC');
+      expect(starred.originalSize, 6100000);
+      expect(ManifestCodec.decodeFile(ManifestCodec.encodeFile(starred).text)!.originalSize, 6100000);
+
+      final whole = smallCopy().copyWith(clearOriginalSize: true);
+      expect(whole.originalSize, isNull);
+      final encoded = ManifestCodec.encodeFile(whole);
+      expect(encoded.text.split('\n').first, 'IMG_1.HEIC');
+      expect(encoded.text, isNot(contains('"lt"')));
+    });
+
+    test('a caption without lt is no small copy', () {
+      final decoded = ManifestCodec.decodeFile(ManifestCodec.encodeFile(file()).text)!;
+      expect(decoded.originalSize, isNull);
+      expect(
+        ManifestCodec.decodeFile('a.jpg\ntgr1:{"id":"a","n":"a.jpg","s":9,"lt":"big"}')!.originalSize,
+        isNull,
+      );
     });
   });
 

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:drift/drift.dart' show Value, BooleanExpressionOperators;
 import 'package:flutter/foundation.dart' show debugPrint;
@@ -208,7 +209,10 @@ class DriveRepository {
   /// The least time between two lists of the timeline or an album.
   static const _settle = Duration(milliseconds: 750);
 
-  Future<Map<String, String>> mediaFingerprints() => _db.mediaFingerprints();
+  /// What backup and imports recognise as already in the drive; see
+  /// [AppDatabase.mediaFingerprints].
+  Future<Map<String, ({String fileId, bool smallCopy})>> mediaFingerprints() =>
+      _db.mediaFingerprints();
 
   /// Files of one kind, newest first, read without their inline previews.
   Stream<List<DriveFile>> watchKind(FileKind kind) =>
@@ -767,6 +771,7 @@ class DriveRepository {
     albums: await _db.albumIdsOf(row.id),
     durationSeconds: row.durationSeconds,
     replacedBy: row.replacedBy,
+    originalSize: row.originalSize,
     extra: ManifestCodec.decodeExtra(row.manifestExtra),
   );
 
@@ -850,6 +855,119 @@ class DriveRepository {
     await _messenger.deleteMessages(_chatId, [messageId]);
     await _db.removeMessages([messageId]);
     return copy;
+  }
+
+  /// Puts the original of the small copy [fileId] in its place, in the
+  /// same message, and answers the file's id. The original was uploaded
+  /// ahead as TDLib's file [tdFileId], from [path], and is [size] bytes.
+  /// The caption is built from the index, as for any edit, so the file
+  /// keeps its name, folder, star, albums and trash, and loses only the
+  /// small copy's mark; a change waiting on this phone rides along, and the
+  /// outbox then finds nothing left to send. A change made while the
+  /// original went up reached the small copy's caption, which the edit
+  /// replaces, so it is merged onto the original's caption afterwards,
+  /// field by field, as a waiting change is.
+  ///
+  /// When Telegram won't edit the message, the original goes up as a new
+  /// file carrying all of that, under a new id, and the small copy's
+  /// message goes. One id never has two messages: a full read of the
+  /// channel, newest first, would point the file at whichever it met last.
+  Future<String> replaceSmallCopy(
+    String fileId, {
+    required int tdFileId,
+    required String path,
+    required int size,
+    String? thumbnailPath,
+  }) async {
+    final row = await _db.fileById(fileId);
+    final parts = await _db.partsOf(fileId);
+    if (row == null || parts.length != 1) {
+      throw const DriveException('This file is no longer in your drive.');
+    }
+    final current = await _fileManifest(row);
+    final now = DateTime.now();
+    FileManifest original(String id) => FileManifest(
+      id: id,
+      name: current.name,
+      folderId: current.folderId,
+      mimeType: mimeTypeFor(current.name),
+      size: size,
+      createdAt: current.createdAt,
+      modifiedAt: now,
+      starred: current.starred,
+      takenAt: current.takenAt,
+      trashedAt: current.trashedAt,
+      albums: current.albums,
+      durationSeconds: current.durationSeconds,
+      replacedBy: current.replacedBy,
+      // An index a version without lt wrote keeps it among the extras.
+      extra: {...current.extra}..remove('lt'),
+    );
+    final smallMessageId = parts.single.messageId;
+    final sent = original(fileId);
+    try {
+      final edited = await _messenger.editDocument(
+        _chatId,
+        smallMessageId,
+        fileId: tdFileId,
+        thumbnailPath: thumbnailPath,
+        caption: ManifestCodec.encodeFile(sent),
+      );
+      final meanwhile = await _db.fileById(fileId);
+      final changed = meanwhile == null
+          ? const EditPatch({})
+          : EditPatch.fileDiff(sent, await _fileManifest(meanwhile));
+      await ingest(edited);
+      // A copy kept offline holds the small copy, so it goes, and keeping
+      // the file offline fetches the original in its place.
+      final stale = await _db.offlineCopyOf(fileId);
+      if (stale != null) await deleteOfflineCopy(stale);
+      if (!changed.isEmpty) await _mergeAfterReplacing(fileId, changed);
+      return fileId;
+    } on TelegramException catch (e) {
+      if (!e.isNotEditable) rethrow;
+    }
+    final replacement = original(newId());
+    final delivered = await _messenger.sendDocument(
+      _chatId,
+      path: path,
+      caption: ManifestCodec.encodeFile(replacement),
+      thumbnailPath: thumbnailPath,
+    );
+    await ingest(delivered);
+    await _messenger.deleteMessages(_chatId, [smallMessageId]);
+    await _db.removeMessages([smallMessageId]);
+    await _forgetWaitingChanges([fileId]);
+    return replacement.id;
+  }
+
+  /// Deletes [copy], a file kept on this phone for offline use, with the
+  /// folder it sits in, and forgets it.
+  Future<void> deleteOfflineCopy(OfflineCopyRow copy) async {
+    try {
+      final dir = File(copy.path).parent;
+      if (await dir.exists()) await dir.delete(recursive: true);
+    } catch (_) {}
+    await _db.deleteOfflineCopy(copy.fileId);
+  }
+
+  /// Writes [changed], what was renamed, moved, starred, trashed or put in
+  /// an album while an original went up, onto the caption that came with
+  /// it. The original is in either way, so a change that can't be written
+  /// now is only logged; one Telegram can't be reached for waits as usual.
+  Future<void> _mergeAfterReplacing(String fileId, EditPatch changed) async {
+    final file = await fileById(fileId);
+    if (file == null) return;
+    try {
+      await _rewriteFile(
+        file,
+        (m) => EditPatch.applyToFile(m, {
+          for (final MapEntry(:key, value: field) in changed.fields.entries) key: field.want,
+        }),
+      );
+    } catch (e) {
+      debugPrint('[Drive] A change made while the original went up: $e');
+    }
   }
 
   // ---------------------------------------------------------------------------

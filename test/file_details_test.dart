@@ -110,6 +110,29 @@ void main() {
     },
   );
 
+  test('a small copy says what its original is and where it comes from', () {
+    final small = DriveFile(
+      id: 'p',
+      folderId: 'camera',
+      name: 'IMG_2041.HEIC',
+      mimeType: 'image/jpeg',
+      kind: FileKind.image,
+      size: 312000,
+      createdAt: added,
+      modifiedAt: added,
+      partCount: 1,
+      starred: false,
+      originalSize: 6100000,
+    );
+    final lines = FileActions.detailLines(small);
+    expect(lines.map((line) => line.label).take(3), ['Type', 'Size', 'Original']);
+    expect(
+      asMap(lines)['Original'],
+      '${Formatters.bytes(6100000)}. It goes up from the phone that took it, over Wi-Fi.',
+    );
+    expect(asMap(FileActions.detailLines(photo()))['Original'], isNull);
+  });
+
   test('a split file ends with how it is stored', () {
     final lines = FileActions.detailLines(photo(parts: 3));
     expect(lines.last.label, 'Stored as');

@@ -1901,6 +1901,11 @@ abstract final class FileActions {
       'Size',
       '${Formatters.bytes(file.size)} (${Formatters.count(file.size, 'byte')})',
     ),
+    if (file.originalSize case final original?)
+      DetailLine(
+        'Original',
+        '${Formatters.bytes(original)}. It goes up from the phone that took it, over Wi-Fi.',
+      ),
     if (file.duration case final d?)
       DetailLine('Duration', Formatters.length(d)),
     if (file.takenAt case final taken?)

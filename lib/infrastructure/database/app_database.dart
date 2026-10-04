@@ -488,41 +488,63 @@ class AppDatabase extends _$AppDatabase {
   /// recognises what is already up there after a reinstall or on a new
   /// phone, where device media ids mean nothing. Every kind counts, so a
   /// photo uploaded by hand, or one whose type was guessed differently,
-  /// isn't sent again either.
-  Future<Map<String, String>> mediaFingerprints() async {
-    final rows = await (selectOnly(
-      driveFiles,
-    )..addColumns([driveFiles.id, driveFiles.name, driveFiles.size])).get();
+  /// isn't sent again either. A small copy is keyed by its original's size
+  /// and flagged, so the photo it stands in for is known by the size it
+  /// has on the phone, and its original still goes up.
+  Future<Map<String, ({String fileId, bool smallCopy})>> mediaFingerprints() async {
+    final rows = await (selectOnly(driveFiles)..addColumns([
+          driveFiles.id,
+          driveFiles.name,
+          driveFiles.size,
+          driveFiles.originalSize,
+        ]))
+        .get();
     return {
       for (final row in rows)
-        '${row.read(driveFiles.name)}|${row.read(driveFiles.size)}': row.read(
-          driveFiles.id,
-        )!,
+        '${row.read(driveFiles.name)}|${row.read(driveFiles.originalSize) ?? row.read(driveFiles.size)}':
+            (
+              fileId: row.read(driveFiles.id)!,
+              smallCopy: row.read(driveFiles.originalSize) != null,
+            ),
     };
   }
 
+  /// The backup states whose drive file stands for a photo still on this
+  /// phone: backed up, or so far only as a small copy.
+  static const _onPhone = [BackupAssetState.done, BackupAssetState.smallCopy];
+
   /// Drive file id to the phone's media id, for every backed-up photo this
-  /// phone still knows. Lets the app show the phone's own sharp copy.
+  /// phone still knows, small copies included. Lets the app show the
+  /// phone's own sharp copy.
   Stream<Map<String, String>> watchLocalAssets() {
     return (select(backupAssets)..where(
-          (a) =>
-              a.state.equalsValue(BackupAssetState.done) & a.fileId.isNotNull(),
+          (a) => a.state.isInValues(_onPhone) & a.fileId.isNotNull(),
         ))
         .watch()
         .map((rows) => {for (final row in rows) row.fileId!: row.assetId});
   }
 
-  /// The phone's media id for drive file [fileId], if it has a copy.
+  /// The phone's media id for drive file [fileId], if it has a copy, the
+  /// original of a small copy included.
   Future<String?> localAssetOf(String fileId) =>
       (select(backupAssets)
             ..where(
-              (a) =>
-                  a.fileId.equals(fileId) &
-                  a.state.equalsValue(BackupAssetState.done),
+              (a) => a.fileId.equals(fileId) & a.state.isInValues(_onPhone),
             )
             ..limit(1))
           .map((a) => a.assetId)
           .getSingleOrNull();
+
+  /// How many of this phone's photos have only a small copy in the drive,
+  /// and how big their originals are, live: what backup still has to send
+  /// once it may. Files in the trash or not yet whole are left out.
+  Stream<({int count, int bytes})> watchPendingOriginals() => customSelect(
+    'SELECT COUNT(*) AS n, COALESCE(SUM(f.original_size), 0) AS bytes '
+    'FROM backup_assets a JOIN drive_files f ON f.id = a.file_id '
+    "WHERE a.state = 'smallCopy' AND f.original_size IS NOT NULL "
+    'AND f.parts_present >= f.part_count AND f.hidden = 0',
+    readsFrom: {backupAssets, driveFiles},
+  ).watchSingle().map((row) => (count: row.read<int>('n'), bytes: row.read<int>('bytes')));
 
   /// Drive file id to the phone's media ids, for those of [fileIds] backed
   /// up from this phone. One drive file can stand for several of the
@@ -1107,6 +1129,8 @@ class AppDatabase extends _$AppDatabase {
   /// from this phone whose copy is complete and not in the trash: the ones
   /// safe to delete from the phone. The row carries the copy's size and
   /// when the photo was taken, which Free up space counts and dates by.
+  /// Only finished backups count: a photo with just a small copy in the
+  /// drive is never freeable, since its original exists only on the phone.
   Future<Map<String, FileRow>> safelyBackedUp() async {
     final query =
         select(backupAssets).join([
@@ -1251,6 +1275,21 @@ class AppDatabase extends _$AppDatabase {
           state: BackupAssetState.done,
           fileId: Value(fileId),
           updatedAt: DateTime.now(),
+        ),
+      );
+
+  /// Records that only a small copy of [assetId] is in the drive, as
+  /// [fileId], so its original still goes up and the phone's copy is never
+  /// offered for deleting meanwhile. The original starts with fresh tries.
+  Future<void> markAssetSmallCopy(String assetId, String fileId) =>
+      into(backupAssets).insertOnConflictUpdate(
+        BackupAssetsCompanion.insert(
+          assetId: assetId,
+          state: BackupAssetState.smallCopy,
+          fileId: Value(fileId),
+          failures: const Value(0),
+          updatedAt: DateTime.now(),
+          reason: const Value(null),
         ),
       );
 

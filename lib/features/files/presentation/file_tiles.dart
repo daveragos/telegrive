@@ -21,8 +21,10 @@ String? folderContentsLine(FolderSize? size) => switch (size) {
 };
 
 /// A file's meta line: '1:12:40 · 1.2 GB · 23 Sep' for a video or audio
-/// file whose length is known, '1.2 GB · 23 Sep' for everything else.
+/// file whose length is known, 'Small copy · 312 KB · 23 Sep' for a photo
+/// whose original is still to come, '1.2 GB · 23 Sep' for everything else.
 String fileMetaLine(DriveFile file) => [
+  if (file.isSmallCopy) 'Small copy',
   if (file.duration case final d?) Formatters.length(d),
   Formatters.bytes(file.size),
   Formatters.date(file.modifiedAt),

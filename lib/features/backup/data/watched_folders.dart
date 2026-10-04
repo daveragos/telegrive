@@ -488,7 +488,12 @@ class WatchedFoldersController extends Notifier<WatchState> {
     if (_prefs.lastFullSync(session.chatId) == null || ref.read(driveSyncProvider).error != null) {
       return;
     }
-    final fingerprints = await _repository.mediaFingerprints();
+    // A small copy stands for its original under the original's size, so
+    // the same photo in a watched folder counts as in the drive too.
+    final fingerprints = {
+      for (final MapEntry(:key, :value) in (await _repository.mediaFingerprints()).entries)
+        key: value.fileId,
+    };
     for (final rule in rules) {
       if (_stopRequested) return;
       if (_dropped.contains(rule.id)) continue;
