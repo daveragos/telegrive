@@ -374,6 +374,61 @@ void main() {
     expect(timeline.map((f) => f.id), ['clip', 'new-upload', 'old-photo']);
   });
 
+  test('media thumbnails come newest first, for shown photos and videos', () async {
+    DriveFilesCompanion media(
+      String id,
+      FileKind kind, {
+      int? thumbnail,
+      DateTime? taken,
+      DateTime? added,
+      int partCount = 1,
+    }) => DriveFilesCompanion.insert(
+      id: id,
+      name: '$id.bin',
+      mimeType: 'application/octet-stream',
+      kind: kind,
+      size: 100,
+      createdAt: added ?? now,
+      modifiedAt: now,
+      takenAt: Value(taken),
+      thumbnailFileId: Value(thumbnail),
+      partCount: Value(partCount),
+    );
+
+    await db.upsertFilePart(
+      media('old', FileKind.image, thumbnail: 11, taken: DateTime(2019)),
+      part('old', 0, 1),
+    );
+    await db.upsertFilePart(
+      media('clip', FileKind.video, thumbnail: 12, taken: DateTime(2026, 9, 20)),
+      part('clip', 0, 2),
+    );
+    await db.upsertFilePart(
+      media('upload', FileKind.image, thumbnail: 13, added: DateTime(2026, 8)),
+      part('upload', 0, 3),
+    );
+    // No thumbnail, not a photo or video, in the trash, or still arriving.
+    await db.upsertFilePart(media('bare', FileKind.image), part('bare', 0, 4));
+    await db.upsertFilePart(
+      media('report', FileKind.document, thumbnail: 15),
+      part('report', 0, 5),
+    );
+    await db.upsertFilePart(
+      media('binned', FileKind.image, thumbnail: 16).copyWith(trashedAt: Value(now)),
+      part('binned', 0, 6),
+    );
+    await db.upsertFilePart(
+      media('half', FileKind.video, thumbnail: 17, partCount: 2),
+      part('half', 0, 7),
+    );
+
+    expect(await db.mediaThumbnails(), [
+      (fileId: 'clip', thumbnailFileId: 12),
+      (fileId: 'upload', thumbnailFileId: 13),
+      (fileId: 'old', thumbnailFileId: 11),
+    ]);
+  });
+
   test('media fingerprints and backup records', () async {
     await db.upsertFilePart(
       DriveFilesCompanion.insert(

@@ -127,8 +127,9 @@ enum Preview {
     final ext = p.extension(name).toLowerCase().replaceFirst('.', '');
     if (kind == FileKind.image && !isSplit) return Preview.image;
     if (kind == FileKind.video || kind == FileKind.audio) return Preview.media;
-    if (isSplit) return Preview.none;
+    // Read a range at a time, so a PDF in parts opens like any other.
     if (ext == 'pdf' || mimeType == 'application/pdf') return Preview.pdf;
+    if (isSplit) return Preview.none;
     final texty =
         _textExtensions.contains(ext) ||
         mimeType.startsWith('text/') ||

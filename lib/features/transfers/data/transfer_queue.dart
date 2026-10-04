@@ -698,6 +698,11 @@ class TransferQueue extends Notifier<TransfersState> {
     return null;
   }
 
+  /// Whether a download in this queue is fetching TDLib file [tdFileId]
+  /// right now, so whoever else reads that file leaves TDLib's download of
+  /// it alone.
+  bool isFetching(int tdFileId) => _activeDownloads.containsValue(tdFileId);
+
   Future<void> cancel(String id) async {
     final row = _rows[id];
     if (row == null || !row.status.isPending) return;

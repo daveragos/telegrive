@@ -15,14 +15,16 @@ import 'package:telegrive/infrastructure/telegram/secure_store.dart';
 import 'package:telegrive/infrastructure/telegram/telegram_client.dart';
 
 /// TDLib stand-in: files whose bytes are `i % 251`, which only become
-/// readable a moment after something asks to download them.
+/// readable a moment after something asks to download them. It keeps every
+/// download asked for and every download called off.
 class _FakeTelegram extends TelegramClient {
   _FakeTelegram(this.sizes) : super(SecureStore());
 
   final Map<int, int> sizes;
   final Map<int, int> _available = {};
   final _files = StreamController<td.File>.broadcast();
-  final requestedOffsets = <int>[];
+  final downloads = <({int fileId, int offset, int limit})>[];
+  final cancels = <({int fileId, bool onlyIfPending})>[];
 
   @override
   Stream<td.File> get fileUpdates => _files.stream;
@@ -57,8 +59,8 @@ class _FakeTelegram extends TelegramClient {
   }) async {
     final result = switch (function) {
       td.GetFile(:final fileId) => _file(fileId),
-      td.DownloadFile(:final fileId, :final offset) => () {
-        requestedOffsets.add(offset);
+      td.DownloadFile(:final fileId, :final offset, :final limit) => () {
+        downloads.add((fileId: fileId, offset: offset, limit: limit));
         Timer(const Duration(milliseconds: 30), () {
           _available[fileId] = sizes[fileId]!;
           _files.add(_file(fileId));
@@ -69,6 +71,10 @@ class _FakeTelegram extends TelegramClient {
         td.FileDownloadedPrefixSize(
           size: ((_available[fileId] ?? 0) - offset).clamp(0, 1 << 40),
         ),
+      td.CancelDownloadFile(:final fileId, :final onlyIfPending) => () {
+        cancels.add((fileId: fileId, onlyIfPending: onlyIfPending));
+        return const td.Ok();
+      }(),
       td.ReadFilePart(:final fileId, :final offset, :final count) => td.FilePart(
         data: base64Encode([
           for (var i = offset; i < offset + count && i < (_available[fileId] ?? 0); i++)
@@ -87,16 +93,36 @@ void main() {
   late _FakeTelegram telegram;
   const partOne = 700 * 1024;
   const partTwo = 300 * 1024;
+  const mib = 1024 * 1024;
+  const long = 64 * mib;
+
+  /// A container whose stream server asks [metered] whether the network
+  /// is metered (Wi-Fi when not given), hears from Transfers that it is
+  /// [fetching] whatever is asked, and stops downloads [grace] after their
+  /// last reader.
+  ProviderContainer containerFor({
+    bool Function()? metered,
+    bool fetching = false,
+    Duration grace = const Duration(seconds: 3),
+  }) => ProviderContainer(
+    overrides: [
+      appDatabaseProvider.overrideWithValue(db),
+      telegramClientProvider.overrideWithValue(telegram),
+      streamServerProvider.overrideWith(
+        (ref) => StreamServer(
+          ref,
+          isMetered: metered ?? () => false,
+          fetchingElsewhere: (_) => fetching,
+          cancelGrace: grace,
+        ),
+      ),
+    ],
+  );
 
   setUp(() async {
     db = AppDatabase(NativeDatabase.memory());
-    telegram = _FakeTelegram({101: partOne, 102: partTwo});
-    container = ProviderContainer(
-      overrides: [
-        appDatabaseProvider.overrideWithValue(db),
-        telegramClientProvider.overrideWithValue(telegram),
-      ],
-    );
+    telegram = _FakeTelegram({101: partOne, 102: partTwo, 103: long});
+    container = containerFor();
     final now = DateTime(2026, 9, 26);
     for (final (index, tdFile, size) in [(0, 101, partOne), (1, 102, partTwo)]) {
       await db.upsertFilePart(
@@ -119,6 +145,24 @@ void main() {
         ),
       );
     }
+    await db.upsertFilePart(
+      DriveFilesCompanion.insert(
+        id: 'long',
+        name: 'long.mp4',
+        mimeType: 'video/mp4',
+        kind: FileKind.video,
+        size: long,
+        createdAt: now,
+        modifiedAt: now,
+      ),
+      FilePartsCompanion.insert(
+        fileId: 'long',
+        partIndex: 0,
+        messageId: 20,
+        tdFileId: 103,
+        size: long,
+      ),
+    );
   });
 
   tearDown(() async {
@@ -158,7 +202,7 @@ void main() {
     expect(headers['accept-ranges'], 'bytes');
     expect(body, expected(from, to));
     // Each part was asked for from where the reading started in it.
-    expect(telegram.requestedOffsets, containsAllInOrder([from, 0]));
+    expect(telegram.downloads.map((d) => d.offset), containsAllInOrder([from, 0]));
   });
 
   test('the whole file, and the last bytes', () async {
@@ -186,5 +230,139 @@ void main() {
     expect((await get(wrongToken)).$1, HttpStatus.notFound);
     final (status, _, _) = await get(url, range: 'bytes=${partOne + partTwo}-');
     expect(status, HttpStatus.requestedRangeNotSatisfiable);
+  });
+
+  group('what TDLib is asked for', () {
+    Future<Uri> urlOf(
+      String fileId, {
+      bool Function()? metered,
+      bool fetching = false,
+    }) async {
+      final scoped = containerFor(
+        metered: metered,
+        fetching: fetching,
+        grace: const Duration(milliseconds: 10),
+      );
+      addTearDown(scoped.dispose);
+      final file = (await scoped.read(driveRepositoryProvider).fileById(fileId))!;
+      return scoped.read(streamServerProvider).urlFor(file);
+    }
+
+    /// Reads [url] from the start the way a player does, with no end to
+    /// the range, telling [onChunk] how much has arrived so far, and hangs
+    /// up once [bytes] have arrived.
+    Future<void> readThenHangUp(
+      Uri url,
+      int bytes, {
+      void Function(int received)? onChunk,
+    }) async {
+      final client = HttpClient();
+      final request = await client.getUrl(url);
+      request.headers.set(HttpHeaders.rangeHeader, 'bytes=0-');
+      final response = await request.close();
+      var received = 0;
+      final enough = Completer<void>();
+      final subscription = response.listen((chunk) {
+        received += chunk.length;
+        onChunk?.call(received);
+        if (received >= bytes && !enough.isCompleted) enough.complete();
+      });
+      await enough.future;
+      await subscription.cancel();
+      client.close(force: true);
+    }
+
+    Future<void> until(bool Function() condition) async {
+      for (var i = 0; i < 200 && !condition(); i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      expect(condition(), isTrue);
+    }
+
+    /// Long enough for the server to have noticed a hang-up and for any
+    /// grace period after it to be over.
+    Future<void> settle() => Future<void>.delayed(const Duration(milliseconds: 200));
+
+    test('a range with an end asks for exactly its bytes', () async {
+      final url = await urlOf('movie', metered: () => true);
+      final (status, _, body) = await get(url, range: 'bytes=100-199');
+      expect(status, HttpStatus.partialContent);
+      expect(body, expected(100, 200));
+      expect(telegram.downloads.first, (fileId: 101, offset: 100, limit: 100));
+    });
+
+    test('on mobile data, a player is fetched 16 MiB ahead as it reads', () async {
+      final url = await urlOf('long', metered: () => true);
+      await readThenHangUp(url, 12 * mib);
+
+      expect(telegram.downloads.first, (fileId: 103, offset: 0, limit: 16 * mib));
+      // Once reading passed half the window, the window moved along.
+      final next = telegram.downloads[1];
+      expect(next.offset, greaterThan(8 * mib));
+      expect(next.offset, lessThan(16 * mib));
+      expect(next.limit, 16 * mib);
+      await until(() => telegram.cancels.isNotEmpty);
+    });
+
+    test('on Wi-Fi, a player is fetched to the end', () async {
+      final url = await urlOf('movie');
+      final (_, _, body) = await get(url, range: 'bytes=0-');
+      expect(body.length, partOne + partTwo);
+      expect(telegram.downloads.map((d) => d.limit), [0, 0]);
+    });
+
+    test('a player that moves onto mobile data keeps 16 MiB ahead from there', () async {
+      var metered = false;
+      final url = await urlOf('long', metered: () => metered);
+      // Reading goes on for well over what the sockets between can hold,
+      // so the server reads on after the move.
+      await readThenHangUp(
+        url,
+        16 * mib,
+        onChunk: (received) {
+          if (received >= mib) metered = true;
+        },
+      );
+
+      expect(telegram.downloads.first, (fileId: 103, offset: 0, limit: 0));
+      // From where playing had got to, for a window rather than the rest
+      // of the file.
+      final narrowed = telegram.downloads[1];
+      expect(narrowed.offset, greaterThanOrEqualTo(mib));
+      expect(narrowed.limit, 16 * mib);
+      await until(() => telegram.cancels.isNotEmpty);
+    });
+
+    test('on mobile data, a file Transfers is fetching is asked for to the end', () async {
+      final url = await urlOf('long', metered: () => true, fetching: true);
+      await readThenHangUp(url, 12 * mib);
+      await settle();
+
+      // Only what Transfers asked for too, which TDLib takes as the same
+      // download and leaves running.
+      expect(telegram.downloads, [(fileId: 103, offset: 0, limit: 0)]);
+    });
+
+    test('a range with an end of a file Transfers is fetching is asked for as Transfers asked', () async {
+      final url = await urlOf('movie', metered: () => true, fetching: true);
+      final (status, _, body) = await get(url, range: 'bytes=100-199');
+      expect(status, HttpStatus.partialContent);
+      expect(body, expected(100, 200));
+      expect(telegram.downloads, [(fileId: 101, offset: 0, limit: 0)]);
+    });
+
+    test('hanging up stops the download once the grace period is over', () async {
+      final url = await urlOf('long', metered: () => true);
+      await readThenHangUp(url, mib);
+      await until(() => telegram.cancels.isNotEmpty);
+      expect(telegram.cancels, [(fileId: 103, onlyIfPending: false)]);
+    });
+
+    test('a download Transfers needs is left running', () async {
+      final url = await urlOf('long', metered: () => true, fetching: true);
+      await readThenHangUp(url, mib);
+      await settle();
+      expect(telegram.cancels, isEmpty);
+    });
   });
 }

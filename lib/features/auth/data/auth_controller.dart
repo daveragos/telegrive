@@ -9,6 +9,7 @@ import '../../../infrastructure/telegram/telegram_exception.dart';
 import '../../drive/data/drive_session.dart';
 import '../../offline/data/offline_sync.dart';
 import '../../photos/data/photos_visibility.dart';
+import '../../preview/data/pdf_block_cache.dart';
 import '../../share/data/recent_destinations.dart';
 import '../../transfers/data/transfer_queue.dart';
 import '../../trash/data/pending_deletes.dart';
@@ -107,7 +108,8 @@ class AuthController extends Notifier<AuthUiState> {
   /// from the phone over the Welcome screen. What they would have deleted is
   /// still in the channel for the next sign-in. Files kept available offline
   /// go with the index that knew about them, or nothing would find them
-  /// again.
+  /// again, and so do the pages of PDFs read in the app, which are pieces of
+  /// the drive's documents.
   ///
   /// App settings (theme, app lock, photo backup choices, the folders Photos
   /// keeps out) and the drive channel remembered per account stay, and so do
@@ -142,6 +144,7 @@ class AuthController extends Notifier<AuthUiState> {
     await ref.read(recentDestinationsProvider.notifier).clear();
     await ref.read(appDatabaseProvider).clearAll();
     await _deleteOfflineCopies();
+    await deletePdfBlockCache();
     state = const AuthUiState();
   }
 

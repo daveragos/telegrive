@@ -13,6 +13,7 @@ import '../features/backup/data/backup_controller.dart';
 import '../features/backup/presentation/backup_prompt.dart';
 import '../features/capture/data/device_capture.dart';
 import '../features/drive/data/telegram_wait.dart';
+import '../features/drive/data/thumbnail_prefetch.dart';
 import '../features/files/data/bulk_edits.dart';
 import '../features/offline/data/offline_sync.dart';
 import '../features/search/data/content_indexer.dart';
@@ -132,6 +133,10 @@ class _AppShellState extends ConsumerState<AppShell> {
     // sheet, following the drive while it is open, without rebuilding the
     // shell when they change.
     ref.listen(recentDestinationsProvider, (_, _) {});
+    // Fetches photo thumbnails ahead on Wi-Fi while the drive is open. It
+    // counts what it fetches, which nothing shows, so the shell listens
+    // rather than rebuild with every one.
+    ref.listen(thumbnailPrefetchProvider, (_, _) {});
     // Files shared in from another app, whether it was open or not.
     ref.listen<List<SharedFile>>(shareIntakeProvider, (previous, next) {
       if (next.isNotEmpty && (previous == null || previous.isEmpty)) {

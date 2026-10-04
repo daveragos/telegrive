@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:handy_tdlib/api.dart' as td;
+import 'package:pdfrx/pdfrx.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:telegrive/features/auth/data/auth_controller.dart';
 import 'package:telegrive/features/drive/data/drive_session.dart';
@@ -56,6 +57,7 @@ void main() {
       pathProvider,
       null,
     );
+    Pdfrx.cacheDirectoryPath = null;
     support.deleteSync(recursive: true);
   });
 
@@ -121,6 +123,10 @@ void main() {
     final kept = File('${support.path}/offline/report/report.pdf')
       ..createSync(recursive: true)
       ..writeAsStringSync('kept offline');
+    // A block of a PDF read in the app, where pdfrx keeps them.
+    final block = File('${support.path}/pdfrx.cache/ab/cd/block.pdf')
+      ..createSync(recursive: true)
+      ..writeAsStringSync('page one');
     container.read(revealHiddenProvider.notifier).toggle();
 
     // A delete of phone copies whose window closed while the app was away,
@@ -187,9 +193,11 @@ void main() {
     expect(container.read(pendingDeletesProvider).hiddenIds, isEmpty);
     expect(container.read(pendingDeletesProvider).lastFailure, isNull);
 
-    // Files kept offline go with the index that knew them.
+    // Files kept offline go with the index that knew them, and so do the
+    // pages of PDFs read in the app.
     expect(kept.existsSync(), isFalse);
     expect(Directory('${support.path}/offline').existsSync(), isFalse);
+    expect(block.existsSync(), isFalse);
 
     // App settings and the channel remembered for the account stay.
     expect(prefs.driveChatId(1), _chatId);

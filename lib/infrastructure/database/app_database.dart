@@ -294,6 +294,28 @@ class AppDatabase extends _$AppDatabase {
         .watch();
   }
 
+  /// Telegram's thumbnail of every shown photo and video that has one,
+  /// newest capture first, the order the Photos timeline shows them in.
+  Future<List<({String fileId, int thumbnailFileId})>> mediaThumbnails() async {
+    final when = coalesce([driveFiles.takenAt, driveFiles.createdAt]);
+    final rows = await (selectOnly(driveFiles)
+          ..addColumns([driveFiles.id, driveFiles.thumbnailFileId])
+          ..where(
+            _shown(driveFiles) &
+                driveFiles.kind.isIn([FileKind.image.name, FileKind.video.name]) &
+                driveFiles.thumbnailFileId.isNotNull(),
+          )
+          ..orderBy([OrderingTerm(expression: when, mode: OrderingMode.desc)]))
+        .get();
+    return [
+      for (final row in rows)
+        (
+          fileId: row.read(driveFiles.id)!,
+          thumbnailFileId: row.read(driveFiles.thumbnailFileId)!,
+        ),
+    ];
+  }
+
   /// `name|size` of every file in the drive, to its file id. How backup
   /// recognises what is already up there after a reinstall or on a new
   /// phone, where device media ids mean nothing. Every kind counts, so a

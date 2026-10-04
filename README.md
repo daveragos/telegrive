@@ -59,7 +59,10 @@ phone number.
   and when. Backed-up photos stay in Photos, so a batch of them never
   pushes the rest out. See all splits the list into Opened and Added.
 - **Fast and offline-friendly.** A local index (SQLite) makes browsing and
-  search instant; the channel stays the source of truth.
+  search instant; the channel stays the source of truth. Photos fetches
+  thumbnails only for what stops on screen, not for what scrolls past, and
+  on Wi-Fi it fetches the newest ones ahead, so browsing them later on
+  mobile data costs nothing.
 - **Syncs itself.** New, edited or deleted messages flow in live. Anything you
   **forward into the channel from Telegram** (documents, videos, audio, voice
   messages, photos) shows up in the drive with no re-upload.
@@ -155,8 +158,11 @@ phone number.
   its encrypted database.
 - **Watch and read without downloading.** Videos, music, call recordings
   and audiobooks stream as they play, with seeking, even across a split
-  file's parts. PDFs and text files open in the app. Everything else opens
-  in the right app on your phone.
+  file's parts. On mobile data only a short stretch ahead of what plays is
+  fetched, and nothing more comes down once the player closes. PDFs open
+  page by page without downloading the whole file, split ones included,
+  and text files open in the app too. Everything else opens in the right
+  app on your phone.
 - **Search inside documents.** The words in PDFs and text files are read on
   the phone, so search finds documents by what they say. A document fetched
   only to be read is deleted again once it has been, so reading keeps no

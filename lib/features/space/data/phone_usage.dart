@@ -11,6 +11,7 @@ import '../../../infrastructure/database/app_database.dart';
 import '../../../infrastructure/storage/device_storage.dart';
 import '../../../infrastructure/telegram/telegram_client.dart';
 import '../../drive/data/previews.dart';
+import '../../preview/data/pdf_block_cache.dart';
 import '../../transfers/data/transfer_queue.dart';
 
 /// What Telegrive keeps on this phone, by what it is for, in bytes.
@@ -26,8 +27,9 @@ class PhoneUsage {
     required this.budget,
   });
 
-  /// Telegram's copies of files opened, played or downloaded here, and
-  /// split files joined back together. They download again when needed.
+  /// Telegram's copies of files opened, played or downloaded here, split
+  /// files joined back together, and the pages of PDFs read in the app.
+  /// They download again when needed.
   final int openedFiles;
 
   /// Pictures for rows, grids and chats, fetched again as they are shown.
@@ -101,7 +103,10 @@ final phoneUsageProvider = FutureProvider.autoDispose<PhoneUsage>((ref) async {
   final leftovers = (await queue.leftovers()).fold(0, (sum, leftover) => sum + leftover.bytes);
 
   return PhoneUsage(
-    openedFiles: opened + await _sizeOf(await TransferQueue.downloadsDirectory()),
+    openedFiles:
+        opened +
+        await _sizeOf(await TransferQueue.downloadsDirectory()) +
+        await pdfBlockCacheBytes(),
     thumbnails: thumbnails,
     leftovers: leftovers,
     offline: offline,
@@ -135,17 +140,19 @@ const _openedTypes = <td.FileType>[
   td.FileTypeWallpaper(),
 ];
 
-/// Deletes Telegram's copies of opened files and the split files joined
-/// back together. Thumbnails stay, and so do files kept offline and those
-/// saved to Download, which live elsewhere. A photo's own sizes can stand
-/// in for its thumbnail and go with the rest, so tiles resolve their
-/// pictures again rather than stay blank. Space offers it only while no
-/// transfer runs, since a download writes into both.
+/// Deletes Telegram's copies of opened files, the split files joined back
+/// together and the pages of PDFs read in the app. Thumbnails stay, and so
+/// do files kept offline and those saved to Download, which live elsewhere.
+/// A photo's own sizes can stand in for its thumbnail and go with the rest,
+/// so tiles resolve their pictures again rather than stay blank. Space
+/// offers it only while no transfer runs, since a download writes into
+/// both.
 Future<void> clearOpenedFiles(WidgetRef ref) async {
   await _deleteFromTelegram(ref, _openedTypes);
   ref.invalidate(thumbnailPathProvider);
   final downloads = await TransferQueue.downloadsDirectory();
   if (await downloads.exists()) await downloads.delete(recursive: true);
+  await deletePdfBlockCache();
   await _cleared(ref);
 }
 

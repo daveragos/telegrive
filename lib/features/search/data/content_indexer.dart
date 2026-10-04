@@ -13,6 +13,7 @@ import '../../../infrastructure/network/network_status.dart';
 import '../../../infrastructure/storage/device_storage.dart';
 import '../../../infrastructure/storage/preferences.dart';
 import '../../../infrastructure/telegram/telegram_client.dart';
+import '../../../infrastructure/telegram/telegram_exception.dart';
 import '../../drive/data/drive_repository.dart';
 import '../../drive/data/drive_session.dart';
 import '../../drive/data/drive_sync.dart';
@@ -180,10 +181,18 @@ class ContentIndexer extends Notifier<IndexerState> {
       return null;
     }
     final tdFile = await ref.read(driveRepositoryProvider).resolveTdFile(parts.single);
-    final fetched = await _client.send<td.File>(
-      td.DownloadFile(fileId: tdFile.id, priority: 1, offset: 0, limit: 0, synchronous: true),
-      timeout: const Duration(minutes: 10),
-    );
+    final td.File fetched;
+    try {
+      fetched = await _client.send<td.File>(
+        td.DownloadFile(fileId: tdFile.id, priority: 1, offset: 0, limit: 0, synchronous: true),
+        timeout: const Duration(minutes: 10),
+      );
+    } on TelegramException {
+      // TDLib ends this wait with an error once the same file is asked for
+      // another way or its download is stopped, as the document reader does
+      // with a file it has open. A later pass tries again.
+      return null;
+    }
     return fetched.local.isDownloadingCompleted
         ? (path: fetched.local.path, fetchedId: fetched.id)
         : null;

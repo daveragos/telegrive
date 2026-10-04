@@ -57,6 +57,19 @@ void main() {
         Preview.media,
       );
     });
+
+    test('a PDF in parts opens in the reader; other split files do not', () {
+      Preview split(String name, String mimeType) => Preview.of(
+        name: name,
+        mimeType: mimeType,
+        kind: FileKind.detect(fileName: name, mimeType: mimeType),
+        size: 3 * 1024 * 1024 * 1024,
+        isSplit: true,
+      );
+      expect(split('scan.pdf', 'application/pdf'), Preview.pdf);
+      expect(split('photos.zip', 'application/zip'), Preview.none);
+      expect(split('notes.txt', 'text/plain'), Preview.none);
+    });
   });
 
   group('withExtension', () {
