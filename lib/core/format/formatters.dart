@@ -60,6 +60,16 @@ abstract final class Formatters {
     return hours > 0 ? '$hours:$minutes:$seconds' : '$minutes:$seconds';
   }
 
+  /// `1` → `1×`, `1.25` → `1.25×`, `0.75` → `0.75×`: a playback speed, with
+  /// up to two decimals and no trailing zeros.
+  static String rate(double speed) {
+    var text = speed.toStringAsFixed(2);
+    if (text.contains('.')) {
+      text = text.replaceFirst(RegExp(r'\.?0+$'), '');
+    }
+    return '$text×';
+  }
+
   /// `37 s` → `37 seconds`, `7200 s` → `2 hours`: a length of time rounded
   /// the way a person would say it.
   static String inWords(Duration duration) {

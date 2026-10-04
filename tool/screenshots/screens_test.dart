@@ -35,6 +35,7 @@ import 'package:telegrive/features/search/presentation/search_screen.dart';
 import 'package:telegrive/features/photos/presentation/albums_screen.dart';
 import 'package:telegrive/features/photos/presentation/media_grid.dart';
 import 'package:telegrive/features/photos/presentation/media_grid_layout.dart';
+import 'package:telegrive/features/player/presentation/player_controls.dart';
 import 'package:telegrive/features/send/data/telegram_chats.dart';
 import 'package:telegrive/features/trash/presentation/trash_screen.dart';
 import 'package:telegrive/core/files/file_kind.dart';
@@ -83,6 +84,7 @@ import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:telegrive/infrastructure/storage/preferences.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:video_player/video_player.dart';
 
 const _gb = 1024 * 1024 * 1024;
 const _mb = 1024 * 1024;
@@ -1698,6 +1700,51 @@ void main() {
       await tester.pump(const Duration(milliseconds: 100));
     }
     await snap(tester, 'viewer_video');
+  });
+
+  /// The player's chrome on a lecture, drawn without a player behind it:
+  /// 30 second skips for a long file and the speed button at 1.5×.
+  testWidgets('player controls', (tester) async {
+    tester.view.physicalSize = const Size(1080, 2340);
+    tester.view.devicePixelRatio = 2.625;
+    addTearDown(tester.view.reset);
+    // ignore: invalid_use_of_visible_for_testing_member
+    SharedPreferences.setMockInitialValues({});
+    final shared = await SharedPreferences.getInstance();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [sharedPreferencesProvider.overrideWithValue(shared)],
+        child: MaterialApp(
+          debugShowCheckedModeBanner: false,
+          theme: AppTheme.dark(),
+          home: Scaffold(
+            backgroundColor: Colors.black,
+            body: PlayerControls(
+              file: _file(
+                'Lecture 7 — Thermodynamics.mp4',
+                1200 * _mb,
+                30,
+                durationSeconds: 4360,
+              ),
+              value: const VideoPlayerValue(
+                duration: Duration(hours: 1, minutes: 12, seconds: 40),
+                position: Duration(minutes: 42, seconds: 10),
+                isInitialized: true,
+                isPlaying: true,
+              ),
+              onPlay: () {},
+              onSkip: (_) {},
+              onSeek: (_) {},
+              step: const Duration(seconds: 30),
+              speed: 1.5,
+              onSpeed: () {},
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 300));
+    await snap(tester, 'player_controls');
   });
 
   testWidgets('photos menu', (tester) async {

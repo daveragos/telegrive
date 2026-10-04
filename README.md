@@ -209,7 +209,13 @@ phone number.
   fetched, and nothing more comes down once the player closes. Video and
   audio files say how long they run in their rows and in Details, as
   '1:12:40 · 1.2 GB', so the ten-minute recap stands out from the
-  lectures around it. PDFs open
+  lectures around it. The player has a speed button that cycles from
+  0.75× to 2× with the pitch kept natural, and remembers the last speed
+  for audio and for video separately, so a lecture opens at 1.5× while
+  music stays at 1×. Pressing and holding the picture while something
+  plays runs it at 2× until you let go. The skip buttons and a double tap
+  on either half of the picture jump 10 seconds on a short file and 30
+  seconds on anything ten minutes or longer. PDFs open
   page by page without downloading the whole file, split ones included,
   and text files open in the app too. Everything else opens in the right
   app on your phone.

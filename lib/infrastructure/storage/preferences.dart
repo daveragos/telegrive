@@ -36,8 +36,10 @@ class Preferences {
 
   /// Reading the words in documents for search, or [fallback] until the
   /// person has turned it on or off.
-  bool contentSearchOr(bool fallback) => _prefs.getBool('content_search') ?? fallback;
-  Future<void> setContentSearch(bool on) => _prefs.setBool('content_search', on);
+  bool contentSearchOr(bool fallback) =>
+      _prefs.getBool('content_search') ?? fallback;
+  Future<void> setContentSearch(bool on) =>
+      _prefs.setBool('content_search', on);
 
   /// Save memory as the person set it in Settings, or null while it still
   /// follows what kind of phone this is.
@@ -56,6 +58,17 @@ class Preferences {
   int get photoColumns => _prefs.getInt('photo_columns') ?? 4;
   Future<void> setPhotoColumns(int columns) =>
       _prefs.setInt('photo_columns', columns);
+
+  /// The playback speed the player last used for audio, or for video, so a
+  /// newly opened file of that kind starts at it. The player checks the
+  /// value against the speeds it offers.
+  double playbackSpeed({required bool audio}) =>
+      _prefs.getDouble(audio ? _speedAudio : _speedVideo) ?? 1.0;
+  Future<void> setPlaybackSpeed(double speed, {required bool audio}) =>
+      _prefs.setDouble(audio ? _speedAudio : _speedVideo, speed);
+
+  static const String _speedAudio = 'play_speed_audio';
+  static const String _speedVideo = 'play_speed_video';
 
   String? get sortField => _prefs.getString('sort_field');
   bool get sortDescending => _prefs.getBool('sort_descending') ?? false;
@@ -118,7 +131,8 @@ class Preferences {
   /// Transfers of 200 MB or more that start without anyone being asked wait
   /// for Wi-Fi, so moving onto mobile data mid-way doesn't spend the plan.
   /// On until switched off.
-  bool get bigTransfersWifiOnly => _prefs.getBool('big_transfers_wifi_only') ?? true;
+  bool get bigTransfersWifiOnly =>
+      _prefs.getBool('big_transfers_wifi_only') ?? true;
   Future<void> setBigTransfersWifiOnly(bool on) =>
       _prefs.setBool('big_transfers_wifi_only', on);
 
@@ -126,7 +140,8 @@ class Preferences {
   /// until switched on, on the Offline screen or in the sheet that keeps a
   /// folder.
   bool get offlineWifiOnly => _prefs.getBool('offline_wifi_only') ?? false;
-  Future<void> setOfflineWifiOnly(bool on) => _prefs.setBool('offline_wifi_only', on);
+  Future<void> setOfflineWifiOnly(bool on) =>
+      _prefs.setBool('offline_wifi_only', on);
 
   /// When the daily trim of what Telegrive keeps on the phone last ran.
   DateTime? get cacheSweptAt {
@@ -142,7 +157,8 @@ class Preferences {
   /// They ask once, the first time one starts, and never again; Settings
   /// says when notifications are off.
   bool get notificationsAsked => _prefs.getBool('notifications_asked') ?? false;
-  Future<void> setNotificationsAsked() => _prefs.setBool('notifications_asked', true);
+  Future<void> setNotificationsAsked() =>
+      _prefs.setBool('notifications_asked', true);
 
   bool get hasSeenWelcome => _prefs.getBool('seen_welcome') ?? false;
   Future<void> setSeenWelcome() => _prefs.setBool('seen_welcome', true);
@@ -158,7 +174,10 @@ class Preferences {
   /// Puts [chatIds] at the front of [recentSendChats], which keeps five.
   Future<void> rememberSentTo(Iterable<int> chatIds) => _prefs.setStringList(
     _recentSendChats,
-    [for (final id in {...chatIds, ...recentSendChats}.take(_recentSendLimit)) '$id'],
+    [
+      for (final id in {...chatIds, ...recentSendChats}.take(_recentSendLimit))
+        '$id',
+    ],
   );
 
   Future<void> forgetRecentSendChats() => _prefs.remove(_recentSendChats);
@@ -233,14 +252,16 @@ class Preferences {
 
   /// The last answer to 'Also delete from this phone' when trashing photos
   /// this phone still has; off until someone ticks it.
-  bool get deletePhoneCopyToo => _prefs.getBool('delete_phone_copy_too') ?? false;
+  bool get deletePhoneCopyToo =>
+      _prefs.getBool('delete_phone_copy_too') ?? false;
   Future<void> setDeletePhoneCopyToo(bool on) =>
       _prefs.setBool('delete_phone_copy_too', on);
 
   /// Name of how much of the newest Free up space keeps on the phone, see
   /// `KeepWindow`.
   String? get freeUpKeep => _prefs.getString('free_up_keep');
-  Future<void> setFreeUpKeep(String name) => _prefs.setString('free_up_keep', name);
+  Future<void> setFreeUpKeep(String name) =>
+      _prefs.setString('free_up_keep', name);
 
   /// The drive folders this phone last uploaded into, most recent first,
   /// with '' for the root. Folder ids belong to one drive, so the list goes
@@ -249,7 +270,8 @@ class Preferences {
       _prefs.getStringList('recent_destinations') ?? const [];
   Future<void> setRecentDestinations(List<String> ids) =>
       _prefs.setStringList('recent_destinations', ids);
-  Future<void> clearRecentDestinations() => _prefs.remove('recent_destinations');
+  Future<void> clearRecentDestinations() =>
+      _prefs.remove('recent_destinations');
 
   // ---------------------------------------------------------------------------
   // The monthly mobile data limit and what the current period has used.
@@ -261,7 +283,8 @@ class Preferences {
   int? get dataLimitBytes => _prefs.getInt('data_limit_bytes');
 
   /// The day of the month the data plan renews on, 1 to 28.
-  int get dataRenewDay => (_prefs.getInt('data_limit_renew_day') ?? 1).clamp(1, 28);
+  int get dataRenewDay =>
+      (_prefs.getInt('data_limit_renew_day') ?? 1).clamp(1, 28);
 
   Future<void> setDataLimit(int? bytes, int renewDay) async {
     if (bytes == null) {
@@ -343,7 +366,14 @@ abstract final class _DataKeys {
   static const String mobileCarry = 'data_mobile_carry';
   static const String wifiCarry = 'data_wifi_carry';
   static const String since = 'data_stats_since';
-  static const List<String> all = [start, mobileBase, wifiBase, mobileCarry, wifiCarry, since];
+  static const List<String> all = [
+    start,
+    mobileBase,
+    wifiBase,
+    mobileCarry,
+    wifiCarry,
+    since,
+  ];
 }
 
 /// What photo backup may send over mobile data, a phone's hotspot included.
@@ -384,6 +414,8 @@ abstract final class BackupPrefKeys {
     for (final value in BackupMobileData.values) {
       if (value.name == saved) return value;
     }
-    return (prefs.getBool(_wifiOnly) ?? true) ? BackupMobileData.off : BackupMobileData.all;
+    return (prefs.getBool(_wifiOnly) ?? true)
+        ? BackupMobileData.off
+        : BackupMobileData.all;
   }
 }

@@ -7,15 +7,19 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:video_player/video_player.dart';
 
+import '../../../app/theme/tokens.dart';
 import '../../../core/files/file_kind.dart';
 import '../../../core/format/formatters.dart';
 import '../../../core/widgets/file_visuals.dart';
 import '../../../infrastructure/database/app_database.dart';
+import '../../../infrastructure/storage/preferences.dart';
 import '../../drive/data/drive_repository.dart';
 import '../../drive/domain/drive_models.dart';
 import '../../files/presentation/file_actions.dart';
 import '../../transfers/data/transfer_queue.dart';
+import '../data/playback.dart';
 import '../data/stream_server.dart';
+import 'player_controls.dart';
 
 /// Keeps the length a player found for [file] in the index when the drive
 /// doesn't know it yet, so its rows and tiles can say it from now on. It
@@ -48,6 +52,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   bool _chrome = true;
   Timer? _hideChrome;
 
+  /// The speed the person chose, the one playback returns to after a hold.
+  double _speed = 1;
+
+  /// Whether a press-and-hold on the stage is playing at [Playback.held].
+  bool _holding = false;
+
   @override
   void initState() {
     super.initState();
@@ -78,6 +88,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       await controller.initialize();
       if (!mounted) return;
       unawaited(learnLength(ref, file, controller.value.duration));
+      _speed = Playback.sanitize(
+        ref
+            .read(preferencesProvider)
+            .playbackSpeed(audio: file.kind == FileKind.audio),
+      );
+      await _applySpeed(_speed);
       await controller.play();
       _scheduleHide();
       setState(() {});
@@ -140,11 +156,60 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     _scheduleHide();
   }
 
-  Future<void> _skip(Duration by) async {
+  /// Jumps [Playback.skipStep] forward or back, staying inside the file.
+  Future<void> _skip(bool forward) async {
+    final controller = _controller;
+    if (controller == null || !controller.value.isInitialized) return;
+    final value = controller.value;
+    final step = Playback.skipStep(value.duration);
+    final to = forward ? value.position + step : value.position - step;
+    await controller.seekTo(
+      to < Duration.zero
+          ? Duration.zero
+          : to > value.duration
+          ? value.duration
+          : to,
+    );
+    if (!mounted) return;
+    _scheduleHide();
+  }
+
+  /// Asks the player for [speed]. A device that refuses a speed keeps
+  /// playing at the one it has, so a refusal is nothing to show.
+  Future<void> _applySpeed(double speed) async {
+    try {
+      await _controller?.setPlaybackSpeed(speed);
+    } catch (_) {}
+  }
+
+  /// Moves to the next speed, applies it unless a hold is running at 2×,
+  /// and remembers it for this kind of file.
+  Future<void> _cycleSpeed() async {
+    final file = _file;
+    if (file == null) return;
+    _speed = Playback.next(_speed);
+    if (!_holding) await _applySpeed(_speed);
+    unawaited(
+      ref
+          .read(preferencesProvider)
+          .setPlaybackSpeed(_speed, audio: file.kind == FileKind.audio),
+    );
+    if (!mounted) return;
+    setState(() {});
+    _scheduleHide();
+  }
+
+  /// Starts or ends a press-and-hold at [Playback.held]. Holding does
+  /// nothing while paused or when the chosen speed is already that fast.
+  Future<void> _hold(bool on) async {
     final controller = _controller;
     if (controller == null) return;
-    await controller.seekTo(controller.value.position + by);
-    _scheduleHide();
+    if (on && (!controller.value.isPlaying || _speed == Playback.held)) {
+      return;
+    }
+    if (!on && !_holding) return;
+    setState(() => _holding = on);
+    await _applySpeed(on ? Playback.held : _speed);
   }
 
   @override
@@ -186,11 +251,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           onTap: () => _setChrome(!_chrome),
           onDoubleTapDown: (details) {
             final half = MediaQuery.sizeOf(context).width / 2;
-            _skip(
-              Duration(seconds: details.localPosition.dx < half ? -10 : 10),
-            );
+            _skip(details.localPosition.dx >= half);
           },
           onDoubleTap: () {},
+          onLongPressStart: (_) => _hold(true),
+          onLongPressEnd: (_) => _hold(false),
+          onLongPressCancel: () => _hold(false),
           child: Stack(
             fit: StackFit.expand,
             children: [
@@ -204,7 +270,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                 duration: const Duration(milliseconds: 180),
                 child: IgnorePointer(
                   ignoring: !(_chrome || _isAudio),
-                  child: _Controls(
+                  child: PlayerControls(
                     file: file,
                     value: value,
                     onPlay: _togglePlay,
@@ -213,9 +279,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                       await controller?.seekTo(to);
                       _scheduleHide();
                     },
+                    step: Playback.skipStep(value?.duration ?? Duration.zero),
+                    speed: _speed,
+                    onSpeed: _cycleSpeed,
                   ),
                 ),
               ),
+              _HeldSpeedLabel(visible: _holding),
             ],
           ),
         ),
@@ -224,159 +294,60 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   }
 }
 
-class _Controls extends ConsumerWidget {
-  const _Controls({
-    required this.file,
-    required this.value,
-    required this.onPlay,
-    required this.onSkip,
-    required this.onSeek,
-  });
+/// The '2×' label that sits under the title row while a press-and-hold
+/// plays at double speed. It shows whether or not the chrome is up, and
+/// never takes a touch.
+class _HeldSpeedLabel extends StatelessWidget {
+  const _HeldSpeedLabel({required this.visible});
 
-  final DriveFile? file;
-  final VideoPlayerValue? value;
-  final VoidCallback onPlay;
-  final void Function(Duration by) onSkip;
-  final void Function(Duration to) onSeek;
+  final bool visible;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final ready = value?.isInitialized ?? false;
-    final duration = value?.duration ?? Duration.zero;
-    final position = value?.position ?? Duration.zero;
-    final buffered = value?.buffered.lastOrNull?.end ?? Duration.zero;
-    const white = Colors.white;
-    final dim = Colors.white.withValues(alpha: 0.7);
-    final max = duration.inMilliseconds.toDouble();
-
-    return DecoratedBox(
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            Color(0x99000000),
-            Colors.transparent,
-            Colors.transparent,
-            Color(0x99000000),
-          ],
-          stops: [0, 0.2, 0.75, 1],
-        ),
-      ),
+  Widget build(BuildContext context) {
+    return IgnorePointer(
       child: SafeArea(
-        child: Column(
-          children: [
-            Row(
-              children: [
-                const BackButton(color: white),
-                Expanded(
-                  child: Text(
-                    file?.name ?? '',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: white, fontSize: 16),
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: Padding(
+            padding: const EdgeInsets.only(top: kToolbarHeight + 8),
+            child: AnimatedOpacity(
+              opacity: visible ? 1 : 0,
+              duration: const Duration(milliseconds: 150),
+              curve: Curves.easeOut,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.54),
+                  borderRadius: BorderRadius.circular(Radii.control),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 6,
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.fast_forward_rounded,
+                        color: Colors.white,
+                        size: 18,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        Formatters.rate(Playback.held),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                          fontFeatures: tabularFigures,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                if (file != null)
-                  IconButton(
-                    onPressed: () =>
-                        FileActions.showFileSheet(context, ref, file!),
-                    icon: const Icon(Icons.more_vert_rounded, color: white),
-                    tooltip: 'More',
-                  ),
-              ],
+              ),
             ),
-            const Spacer(),
-            if (ready)
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  IconButton(
-                    onPressed: () => onSkip(const Duration(seconds: -10)),
-                    icon: const Icon(
-                      Icons.replay_10_rounded,
-                      color: white,
-                      size: 34,
-                    ),
-                    tooltip: 'Back 10 seconds',
-                  ),
-                  const SizedBox(width: 24),
-                  Material(
-                    color: Colors.black.withValues(alpha: 0.45),
-                    shape: const CircleBorder(),
-                    child: IconButton(
-                      padding: const EdgeInsets.all(14),
-                      onPressed: onPlay,
-                      icon: Icon(
-                        value!.isPlaying
-                            ? Icons.pause_rounded
-                            : Icons.play_arrow_rounded,
-                        color: white,
-                        size: 44,
-                      ),
-                      tooltip: value!.isPlaying ? 'Pause' : 'Play',
-                    ),
-                  ),
-                  const SizedBox(width: 24),
-                  IconButton(
-                    onPressed: () => onSkip(const Duration(seconds: 10)),
-                    icon: const Icon(
-                      Icons.forward_10_rounded,
-                      color: white,
-                      size: 34,
-                    ),
-                    tooltip: 'Forward 10 seconds',
-                  ),
-                ],
-              ),
-            const Spacer(),
-            if (ready)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                child: Row(
-                  children: [
-                    Text(
-                      Formatters.length(position),
-                      style: TextStyle(
-                        color: dim,
-                        fontFeatures: const [FontFeature.tabularFigures()],
-                      ),
-                    ),
-                    Expanded(
-                      child: SliderTheme(
-                        data: SliderTheme.of(context).copyWith(
-                          activeTrackColor: white,
-                          inactiveTrackColor: Colors.white24,
-                          secondaryActiveTrackColor: Colors.white54,
-                          thumbColor: white,
-                          overlayColor: Colors.white24,
-                        ),
-                        child: Slider(
-                          max: max <= 0 ? 1 : max,
-                          value: position.inMilliseconds
-                              .clamp(0, max <= 0 ? 1 : max)
-                              .toDouble(),
-                          secondaryTrackValue: buffered.inMilliseconds
-                              .clamp(0, max <= 0 ? 1 : max)
-                              .toDouble(),
-                          onChanged: max <= 0
-                              ? null
-                              : (ms) =>
-                                    onSeek(Duration(milliseconds: ms.round())),
-                        ),
-                      ),
-                    ),
-                    Text(
-                      Formatters.length(duration),
-                      style: TextStyle(
-                        color: dim,
-                        fontFeatures: const [FontFeature.tabularFigures()],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-          ],
+          ),
         ),
       ),
     );

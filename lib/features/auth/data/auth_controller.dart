@@ -112,7 +112,8 @@ class AuthController extends Notifier<AuthUiState> {
   /// the drive's documents.
   ///
   /// App settings (theme, app lock, Save memory, photo backup choices, the
-  /// folders Photos keeps out, how much Free up space keeps on the phone)
+  /// folders Photos keeps out, how much Free up space keeps on the phone,
+  /// the player's last speed for audio and for video)
   /// and the drive channel remembered per account
   /// stay, and so do whether Telegrive has asked to post notifications and
   /// when a swiped-away backup reminder may come back, which are about the
