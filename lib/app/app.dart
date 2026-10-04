@@ -52,10 +52,12 @@ class _TelegriveAppState extends ConsumerState<TelegriveApp>
     if (state == AppLifecycleState.resumed) unawaited(pending.appResumed());
     if (state == AppLifecycleState.resumed &&
         ref.read(driveSessionProvider) != null) {
-      // Catch up on anything added from another device while away, and
-      // back up whatever the camera took meanwhile.
+      // Catch up on anything added from another device while away, back up
+      // whatever the camera took meanwhile, and let go transfers waiting for
+      // room that was made in another app.
       ref.read(driveSyncProvider.notifier).refresh();
       ref.read(backupControllerProvider.notifier).schedule(immediate: true);
+      unawaited(ref.read(transferQueueProvider.notifier).recheckRoom());
     }
   }
 

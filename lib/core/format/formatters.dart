@@ -69,6 +69,19 @@ abstract final class Formatters {
   static String fullDate(DateTime value) =>
       DateFormat.yMMMd().add_jm().format(value);
 
+  /// When something will happen: the time today, `tomorrow` and the time
+  /// tomorrow, and the date after that.
+  static String clock(DateTime at, {DateTime? now}) {
+    final reference = now ?? DateTime.now();
+    bool on(DateTime day) =>
+        at.year == day.year && at.month == day.month && at.day == day.day;
+    if (on(reference)) return DateFormat.jm().format(at);
+    if (on(DateTime(reference.year, reference.month, reference.day + 1))) {
+      return 'tomorrow ${DateFormat.jm().format(at)}';
+    }
+    return date(at, now: reference);
+  }
+
   /// `3` → `3rd`, `11` → `11th`, `22` → `22nd`: a day of the month the way
   /// it is said, as in 'renews on the 3rd'.
   static String dayOfMonth(int day) {

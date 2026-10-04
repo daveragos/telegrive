@@ -94,12 +94,14 @@ enum _Menu { removeAll }
 enum _Phase {
   downloading,
   paused,
+  needRoom,
   waiting,
   kept;
 
   static _Phase of(OfflineOverview overview) {
     if (overview.downloading > 0) return downloading;
     if (overview.paused > 0) return paused;
+    if (overview.needRoom > 0) return needRoom;
     if (overview.waiting > 0) return waiting;
     return kept;
   }
@@ -127,6 +129,8 @@ class _Summary extends ConsumerWidget {
         detail: [
           '${Formatters.bytes(o.downloadingLeft)} left',
           if (o.speed >= 1) Formatters.speed(o.speed),
+          if (o.needRoom > 0)
+            '${Formatters.number(o.needRoom)} ${o.needRoom == 1 ? 'waits' : 'wait'} for room',
           if (o.waiting > 0)
             '${Formatters.number(o.waiting)} ${o.waiting == 1 ? 'waits' : 'wait'} for Wi-Fi',
         ].join(' · '),
@@ -145,6 +149,13 @@ class _Summary extends ConsumerWidget {
           onPressed: () => queue.resumeAll(_isOffline),
           child: const Text('Resume'),
         ),
+      ),
+      _Phase.needRoom => StatusLine(
+        icon: Icons.sd_card_alert_outlined,
+        color: colors.text2,
+        text: 'Waiting for room',
+        detail:
+            '${Formatters.count(o.needRoom, 'file')} · ${Formatters.bytes(o.needRoomLeft)} to go',
       ),
       _Phase.waiting => StatusLine(
         icon: Icons.wifi_off_rounded,
@@ -245,6 +256,14 @@ class _PinRow extends ConsumerWidget {
     }
     if (pin.paused > 0) {
       return (text: isFolder ? 'Paused · $of' : 'Paused · $left to go', failed: false);
+    }
+    if (pin.needRoom > 0) {
+      return (
+        text: isFolder
+            ? 'Waiting for room · ${Formatters.count(pin.needRoom, 'file')}'
+            : 'Waiting for room · $left',
+        failed: false,
+      );
     }
     if (pin.waiting > 0) {
       return (

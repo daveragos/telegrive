@@ -80,13 +80,23 @@ phone number.
   machine-readable part sits in a spoiler, so the channel still reads like a
   file list.
 - **Transfers that survive.** A queue with live speed and ETA, cancel and
-  retry. A failed transfer says why in one sentence, and Home and Transfers
-  retry it in place. On Android a foreground service keeps uploads going in
-  the background, and interrupted split uploads resume at the last finished
-  part. When the connection drops, uploads and downloads say "Waiting for
-  network" and carry on by themselves once it is back, and a request that
-  times out is tried again, up to three times in a row, before anything is
-  called failed.
+  retry, and a time when everything in progress should be done. A failed
+  transfer says why in one sentence, and Home and Transfers retry it in
+  place. On Android a foreground service keeps uploads going in the
+  background, and interrupted split uploads resume at the last finished
+  part, saying how many parts are already in your drive. When the
+  connection drops, uploads and downloads say "Waiting for network" and
+  carry on by themselves once it is back, and a request that times out is
+  tried again, up to three times in a row, before anything is called
+  failed.
+- **Fits a full phone.** Before Telegrive writes a big copy, a split part or
+  a download, it checks the phone has room for it. Without room the
+  transfer waits, says how much it needs and how much is free, and starts
+  by itself once there is room: Home says the phone is nearly full and
+  offers Free up space. A copy cut short, by Android stopping the app, say,
+  is never sent; the transfer says to share or pick the file again. Copies
+  made for uploads go when the upload is cancelled or removed, and
+  leftovers are cleared each time the drive opens.
 - **Careful with mobile data.** Starting 50 MB or more on mobile data asks
   first: "Later, on Wi-Fi" holds the uploads or downloads and starts them
   on their own on Wi-Fi, and Use mobile data on Transfers, or Use data on
@@ -129,6 +139,9 @@ phone number.
   the order they were taken. The chats you sent to last come first in the
   list.
 - **Share to Telegrive** from any app on Android, into the folder you pick.
+  A photo or video from the gallery goes up from where it is, with no copy
+  on the phone; anything else is copied first, and a file the phone has no
+  room to copy is named in the sheet with the space it needs.
   Recent folders show up in the share sheet, so a tap sends a file
   straight there, with Undo. The Save to Telegrive sheet starts on the
   last folder you used and offers the others. While app lock is on, the
@@ -147,8 +160,9 @@ phone number.
   follow on their own, those of 20 MB or more over Wi-Fi only; switch on
   Only over Wi-Fi and every kept file waits for Wi-Fi unless you tap
   Download now. Available offline, under Storage on Home and in Settings,
-  lists what is kept and how far along each is, retries what failed, and
-  stops keeping a file or folder, or all of them.
+  lists what is kept and how far along each is, says which copies wait for
+  room on the phone, retries what failed, and stops keeping a file or
+  folder, or all of them.
 - **App lock** with the phone's fingerprint, face or screen lock.
 - **Private by default.** API credentials and the local-database key live in
   the platform keystore. TDLib's cache is encrypted from the first launch.
@@ -316,6 +330,9 @@ two commands are at the top of that test.
 - While the app is closed, the job that notices new photos doesn't know
   about the monthly limit, so it may still say there are photos to back up
   when the limit holds them.
+- Saving a file to the phone needs room for it twice over for a moment,
+  since it is downloaded first and then copied into Download, the gallery
+  or offline; the transfer says exactly how much it needs.
 - Transfers that step back to wait for Wi-Fi keep Telegrive running in the
   background for ten minutes. If Wi-Fi takes longer, they start when it
   returns while the app is still running, or the next time you open it.

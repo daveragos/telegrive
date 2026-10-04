@@ -12,6 +12,7 @@ import '../../../core/widgets/file_visuals.dart';
 import '../../../app/theme/file_style.dart';
 import '../../../infrastructure/network/network_status.dart';
 import '../../../infrastructure/storage/preferences.dart';
+import '../../backup/presentation/free_up_space_sheet.dart';
 import '../../drive/data/drive_repository.dart';
 import '../../drive/domain/drive_models.dart';
 import '../../files/presentation/file_actions.dart';
@@ -22,20 +23,27 @@ import '../../transfers/presentation/mobile_data_prompt.dart';
 import '../data/recent_destinations.dart';
 import '../data/share_intake.dart';
 
+/// How the share sheet was closed.
+enum _Closed { uploaded, cancelled, freeUpSpace }
+
 /// Asks where files shared from another app should go, then uploads them.
 /// Files shared to one of the drive's folders in Android's share sheet go
 /// straight into it with no question, as long as the drive still shows
-/// that folder; otherwise the sheet asks, so nothing is put into Trash.
+/// that folder; otherwise the sheet asks, so nothing is put into Trash. A
+/// file the phone had no room to take always brings the sheet up, which
+/// says so, starting on the folder they were shared to.
 Future<void> showShareSheet(BuildContext context, WidgetRef ref) async {
   final files = ref.read(shareIntakeProvider);
   if (files.isEmpty) return;
   final targets = files.map((f) => f.folderId).toSet();
+  FolderChoice? target;
   if (targets.length == 1 && targets.single != null) {
     final folder = await ref.read(driveRepositoryProvider).shownFolder(targets.single!);
-    if (folder != null && context.mounted) {
+    if (folder != null && context.mounted && !files.any((f) => f.tooBig)) {
       await _uploadStraight(context, ref, files, folder);
       return;
     }
+    if (folder != null) target = FolderChoice(folder.id, folder.name);
   }
   if (!context.mounted) return;
   // A folder trashed on another device can reach the index through a live
@@ -43,14 +51,15 @@ Future<void> showShareSheet(BuildContext context, WidgetRef ref) async {
   // again before the sheet starts on the first of them.
   await ref.read(recentDestinationsProvider.notifier).refresh();
   if (!context.mounted) return;
-  final uploaded = await showModalBottomSheet<bool>(
+  final closed = await showModalBottomSheet<_Closed>(
     context: context,
     useRootNavigator: true,
     isScrollControlled: true,
     isDismissible: false,
-    builder: (_) => _ShareSheet(files: files),
+    builder: (_) => _ShareSheet(files: files, folder: target),
   );
-  if (uploaded != true) await ref.read(shareIntakeProvider.notifier).clear(discard: true);
+  if (closed != _Closed.uploaded) await ref.read(shareIntakeProvider.notifier).clear(discard: true);
+  if (closed == _Closed.freeUpSpace && context.mounted) await showFreeUpSpace(context, ref);
 }
 
 /// Uploads [files] into [folder], which they were shared to, and says so
@@ -74,7 +83,7 @@ Future<void> _uploadStraight(
         // A gallery original stays where it is, under its own name.
         path: names[index] == file.name || !file.owned
             ? file.path
-            : await FileActions.renamedOnDisk(file.path, names[index]),
+            : await FileActions.renamedOnDisk(file.path!, names[index]),
         name: names[index],
         size: file.size,
         owned: file.owned,
@@ -94,11 +103,12 @@ Future<void> _uploadStraight(
   );
 }
 
-/// Queues [files] for upload into [folderId], the root when null, and lets
-/// the intake forget them: the queue owns them now. The folder becomes the
-/// most recent place shared files went. [choice] is the answer to the
-/// question about mobile data when it was asked; without one, a big file
-/// waits for Wi-Fi when the setting says big transfers do.
+/// Queues [files], which all fit on the phone, for upload into [folderId],
+/// the root when null, and lets the intake forget them and any that didn't
+/// fit: the queue owns them now. The folder becomes the most recent place
+/// shared files went. [choice] is the answer to the question about mobile
+/// data when it was asked; without one, a big file waits for Wi-Fi when
+/// the setting says big transfers do.
 Future<List<String>> _enqueue(
   WidgetRef ref,
   List<SharedFile> files,
@@ -112,7 +122,7 @@ Future<List<String>> _enqueue(
     for (final file in files)
       UploadRequest(
         name: file.name,
-        path: file.path,
+        path: file.path!,
         size: file.size,
         ownsSource: file.owned,
         wifiOnly:
@@ -126,21 +136,35 @@ Future<List<String>> _enqueue(
 }
 
 class _ShareSheet extends ConsumerStatefulWidget {
-  const _ShareSheet({required this.files});
+  const _ShareSheet({required this.files, this.folder});
 
   final List<SharedFile> files;
+
+  /// The folder they were shared to, when that is where the sheet starts.
+  final FolderChoice? folder;
 
   @override
   ConsumerState<_ShareSheet> createState() => _ShareSheetState();
 }
 
 class _ShareSheetState extends ConsumerState<_ShareSheet> {
-  /// Where the files go: the last folder used, until the person picks.
-  late FolderChoice _folder = _lastUsed(ref.read(recentDestinationsProvider));
+  /// Where the files go: the folder they were shared to, or the last folder
+  /// used, until the person picks.
+  late FolderChoice _folder = widget.folder ?? _lastUsed(ref.read(recentDestinationsProvider));
 
-  /// Whether the person picked [_folder] here, which the recent folders
-  /// arriving late never overrule.
-  bool _chosen = false;
+  /// Whether [_folder] was picked here or shared to, which the recent
+  /// folders arriving late never overrule.
+  late bool _chosen = widget.folder != null;
+
+  /// The files that can be saved, and those the phone had no room to take.
+  late final List<SharedFile> _fits = [
+    for (final file in widget.files)
+      if (!file.tooBig) file,
+  ];
+  late final List<SharedFile> _tooBig = [
+    for (final file in widget.files)
+      if (file.tooBig) file,
+  ];
 
   static FolderChoice _lastUsed(List<FolderChoice> recent) =>
       recent.firstOrNull ?? const FolderChoice(null, 'Files');
@@ -153,7 +177,7 @@ class _ShareSheetState extends ConsumerState<_ShareSheet> {
   /// Something big on mobile data asks first whether to wait for Wi-Fi;
   /// dismissing that question leaves the sheet as it was.
   Future<void> _upload() async {
-    final files = widget.files;
+    final files = _fits;
     final bytes = files.fold<int>(0, (sum, f) => sum + f.size);
     final what = files.length == 1
         ? files.single.name
@@ -171,7 +195,7 @@ class _ShareSheetState extends ConsumerState<_ShareSheet> {
     }
     await _enqueue(ref, files, _folder.folderId, choice: choice);
     if (!mounted) return;
-    Navigator.pop(context, true);
+    Navigator.pop(context, _Closed.uploaded);
     final router = GoRouter.of(context);
     showSnack(
       context,
@@ -188,12 +212,15 @@ class _ShareSheetState extends ConsumerState<_ShareSheet> {
     ref.listen<List<FolderChoice>>(recentDestinationsProvider, (_, recent) {
       if (!_chosen) setState(() => _folder = _lastUsed(recent));
     });
-    final files = widget.files;
+    final files = _fits;
     final bytes = files.fold<int>(0, (sum, f) => sum + f.size);
     final colors = context.colors;
     // The other recent folders: all but the last one used, which the tile
     // starts on. They stay put as one is picked, so the pick shows.
     final others = ref.watch(recentDestinationsProvider).skip(1).take(3).toList();
+    // Those that didn't fit first, so the sheet always shows why.
+    final listed = [..._tooBig, ...files];
+    final noneFit = files.isEmpty;
 
     return SafeArea(
       child: Padding(
@@ -202,19 +229,28 @@ class _ShareSheetState extends ConsumerState<_ShareSheet> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              files.length == 1
-                  ? 'Save to Telegrive'
-                  : 'Save ${Formatters.count(files.length, 'file')} to Telegrive',
-              style: context.text.titleMedium,
-            ),
-            const SizedBox(height: 2),
-            Text(
-              Formatters.bytes(bytes),
-              style: context.text.bodyMedium?.copyWith(fontFeatures: tabularFigures),
-            ),
+            if (noneFit)
+              Text(
+                _tooBig.length == 1
+                    ? 'Not enough space on this phone to take this file.'
+                    : 'Not enough space on this phone to take these files.',
+                style: context.text.titleMedium,
+              )
+            else ...[
+              Text(
+                files.length == 1
+                    ? 'Save to Telegrive'
+                    : 'Save ${Formatters.count(files.length, 'file')} to Telegrive',
+                style: context.text.titleMedium,
+              ),
+              const SizedBox(height: 2),
+              Text(
+                Formatters.bytes(bytes),
+                style: context.text.bodyMedium?.copyWith(fontFeatures: tabularFigures),
+              ),
+            ],
             const SizedBox(height: Space.m),
-            for (final file in files.take(4))
+            for (final file in listed.take(4))
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: Space.xs),
                 child: Row(
@@ -225,86 +261,112 @@ class _ShareSheetState extends ConsumerState<_ShareSheet> {
                     ),
                     const SizedBox(width: Space.m),
                     Expanded(
-                      child: Text(file.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(file.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+                          if (file.tooBig)
+                            Text(
+                              'Not enough space to take this · needs '
+                              '${Formatters.bytes(file.size)}, '
+                              '${Formatters.bytes(file.free ?? 0)} free',
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: context.text.bodySmall?.copyWith(
+                                color: colors.danger,
+                                fontFeatures: tabularFigures,
+                              ),
+                            ),
+                        ],
+                      ),
                     ),
                   ],
                 ),
               ),
-            if (files.length > 4)
+            if (listed.length > 4)
               Padding(
                 padding: const EdgeInsets.only(top: Space.xs),
                 child: Text(
-                  'and ${Formatters.count(files.length - 4, 'more file')}',
+                  'and ${Formatters.count(listed.length - 4, 'more file')}',
                   style: context.text.bodySmall,
                 ),
               ),
-            const SizedBox(height: Space.m),
-            Material(
-              color: colors.surface2,
-              borderRadius: BorderRadius.circular(Radii.control),
-              child: ListTile(
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(Radii.control)),
-                leading: Icon(Icons.folder_outlined, color: colors.text2),
-                title: AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 150),
-                  switchInCurve: Curves.easeOut,
-                  switchOutCurve: Curves.easeOut,
-                  layoutBuilder: (current, previous) => Stack(
-                    alignment: AlignmentDirectional.centerStart,
-                    children: [...previous, ?current],
-                  ),
-                  child: Text(
-                    _folder.name,
-                    key: ValueKey(_folder.folderId),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                subtitle: const Text('Folder'),
-                trailing: const Text('Change'),
-                onTap: () async {
-                  final choice = await showFolderPicker(
-                    context,
-                    title: 'Save to',
-                    actionLabel: 'Save to',
-                    startIn: _folder.folderId,
-                  );
-                  if (choice != null) _choose(choice);
-                },
-              ),
-            ),
-            if (others.isNotEmpty) ...[
+            if (noneFit)
+              const SizedBox(height: Space.xl)
+            else ...[
               const SizedBox(height: Space.m),
-              Text('Recent', style: context.text.labelMedium),
-              const SizedBox(height: Space.s),
-              Wrap(
-                spacing: Space.s,
-                runSpacing: Space.s,
-                children: [
-                  for (final folder in others)
-                    ChoiceChip(
-                      label: Text(folder.name),
-                      selected: folder.folderId == _folder.folderId,
-                      showCheckmark: false,
-                      onSelected: (selected) => _choose(
-                        selected ? folder : _lastUsed(ref.read(recentDestinationsProvider)),
-                      ),
+              Material(
+                color: colors.surface2,
+                borderRadius: BorderRadius.circular(Radii.control),
+                child: ListTile(
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(Radii.control)),
+                  leading: Icon(Icons.folder_outlined, color: colors.text2),
+                  title: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 150),
+                    switchInCurve: Curves.easeOut,
+                    switchOutCurve: Curves.easeOut,
+                    layoutBuilder: (current, previous) => Stack(
+                      alignment: AlignmentDirectional.centerStart,
+                      children: [...previous, ?current],
                     ),
-                ],
+                    child: Text(
+                      _folder.name,
+                      key: ValueKey(_folder.folderId),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  subtitle: const Text('Folder'),
+                  trailing: const Text('Change'),
+                  onTap: () async {
+                    final choice = await showFolderPicker(
+                      context,
+                      title: 'Save to',
+                      actionLabel: 'Save to',
+                      startIn: _folder.folderId,
+                    );
+                    if (choice != null) _choose(choice);
+                  },
+                ),
               ),
+              if (others.isNotEmpty) ...[
+                const SizedBox(height: Space.m),
+                Text('Recent', style: context.text.labelMedium),
+                const SizedBox(height: Space.s),
+                Wrap(
+                  spacing: Space.s,
+                  runSpacing: Space.s,
+                  children: [
+                    for (final folder in others)
+                      ChoiceChip(
+                        label: Text(folder.name),
+                        selected: folder.folderId == _folder.folderId,
+                        showCheckmark: false,
+                        onSelected: (selected) => _choose(
+                          selected ? folder : _lastUsed(ref.read(recentDestinationsProvider)),
+                        ),
+                      ),
+                  ],
+                ),
+              ],
+              const SizedBox(height: Space.xl),
             ],
-            const SizedBox(height: Space.xl),
             Row(
               children: [
                 Expanded(
                   child: OutlinedButton(
-                    onPressed: () => Navigator.pop(context, false),
+                    onPressed: () => Navigator.pop(context, _Closed.cancelled),
                     child: const Text('Cancel'),
                   ),
                 ),
                 const SizedBox(width: Space.m),
                 Expanded(
-                  child: FilledButton(onPressed: _upload, child: const Text('Upload')),
+                  child: noneFit
+                      ? FilledButton(
+                          onPressed: () => Navigator.pop(context, _Closed.freeUpSpace),
+                          child: const Text('Free up space'),
+                        )
+                      : FilledButton(onPressed: _upload, child: const Text('Upload')),
                 ),
               ],
             ),

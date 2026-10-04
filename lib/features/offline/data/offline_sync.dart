@@ -257,6 +257,7 @@ class OfflinePinStatus {
     required this.keptBytes,
     required this.downloading,
     required this.waiting,
+    required this.needRoom,
     required this.paused,
     required this.leftBytes,
     required this.failedTransferIds,
@@ -275,9 +276,11 @@ class OfflinePinStatus {
   final int kept;
   final int keptBytes;
 
-  /// Of the rest: downloading or about to, held for Wi-Fi, and paused.
+  /// Of the rest: downloading or about to, held for Wi-Fi, held for room on
+  /// the phone, and paused.
   final int downloading;
   final int waiting;
+  final int needRoom;
   final int paused;
 
   /// What is still to come for the files not kept yet, failed ones aside.
@@ -302,6 +305,8 @@ class OfflineOverview {
     required this.speed,
     required this.waitingTransferIds,
     required this.waitingLeft,
+    required this.needRoom,
+    required this.needRoomLeft,
     required this.paused,
     required this.pausedLeft,
     required this.progress,
@@ -323,6 +328,11 @@ class OfflineOverview {
   final List<String> waitingTransferIds;
   final int waitingLeft;
 
+  /// Copies held for room on the phone, and what they have to fetch. They
+  /// move nothing, so they are left out of [downloading] and [speed].
+  final int needRoom;
+  final int needRoomLeft;
+
   /// Copies paused, and what they have to fetch.
   final int paused;
   final int pausedLeft;
@@ -333,7 +343,7 @@ class OfflineOverview {
   int get waiting => waitingTransferIds.length;
 
   /// Copies on this phone or on their way.
-  int get files => keptFiles + downloading + waiting + paused;
+  int get files => keptFiles + downloading + waiting + needRoom + paused;
 
   /// Counts [pins] against what each keeps ([wantedByPin], by pin id), the
   /// [copies] there are (by file id) and the transfers bringing copies
@@ -369,6 +379,7 @@ class OfflineOverview {
       var keptBytes = 0;
       var downloading = 0;
       var waiting = 0;
+      var needRoom = 0;
       var paused = 0;
       var leftBytes = 0;
       final failed = <String>[];
@@ -392,6 +403,9 @@ class OfflineOverview {
         } else if (transfer.wait is WaitingForWifi) {
           waiting++;
           leftBytes += left(transfer);
+        } else if (transfer.wait is WaitingForRoom) {
+          needRoom++;
+          leftBytes += left(transfer);
         } else if (transfer.status.isActive) {
           downloading++;
           leftBytes += left(transfer);
@@ -407,6 +421,7 @@ class OfflineOverview {
           keptBytes: keptBytes,
           downloading: downloading,
           waiting: waiting,
+          needRoom: needRoom,
           paused: paused,
           leftBytes: leftBytes,
           failedTransferIds: failed,
@@ -423,6 +438,8 @@ class OfflineOverview {
     var speed = 0.0;
     final waiting = <String>[];
     var waitingLeft = 0;
+    var needRoom = 0;
+    var needRoomLeft = 0;
     var paused = 0;
     var pausedLeft = 0;
     var total = keptBytes;
@@ -439,6 +456,9 @@ class OfflineOverview {
       } else if (item.wait is WaitingForWifi) {
         waiting.add(item.id);
         waitingLeft += left(item);
+      } else if (item.wait is WaitingForRoom) {
+        needRoom++;
+        needRoomLeft += left(item);
       } else {
         downloading++;
         downloadingLeft += left(item);
@@ -455,6 +475,8 @@ class OfflineOverview {
       speed: speed,
       waitingTransferIds: waiting,
       waitingLeft: waitingLeft,
+      needRoom: needRoom,
+      needRoomLeft: needRoomLeft,
       paused: paused,
       pausedLeft: pausedLeft,
       progress: total == 0 ? 0 : done / total,

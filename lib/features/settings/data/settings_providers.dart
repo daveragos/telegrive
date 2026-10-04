@@ -41,7 +41,8 @@ final cacheSizeProvider = FutureProvider.autoDispose<int>((ref) async {
 });
 
 /// Frees the space counted by [cacheSizeProvider]. Nothing in the drive is
-/// touched — everything can be downloaded again.
+/// touched — everything can be downloaded again. Transfers waiting for room
+/// look again once it is free.
 Future<void> clearLocalCache(WidgetRef ref) async {
   final client = ref.read(telegramClientProvider);
   await client.send<td.StorageStatistics>(
@@ -62,6 +63,7 @@ Future<void> clearLocalCache(WidgetRef ref) async {
     if (await dir.exists()) await dir.delete(recursive: true);
   }
   ref.invalidate(cacheSizeProvider);
+  await ref.read(transferQueueProvider.notifier).recheckRoom();
 }
 
 Future<List<Directory>> _ownCacheDirs() async {

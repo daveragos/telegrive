@@ -13,9 +13,9 @@ import '../../drive/data/drive_repository.dart';
 /// nobody has to read 'errno = 28'.
 String describeTransferError(Object? error) => switch (error) {
   FileSystemException(osError: OSError(errorCode: 28)) => _noSpace,
-  PlatformException(:final message?)
-      when message.contains('No space left') || message.contains('ENOSPC') =>
-    _noSpace,
+  PlatformException(:final message?) when _saysNoSpace(message) => _noSpace,
+  // TDLib writing a download or an upload's copy to a full phone.
+  TelegramException(:final message) when _saysNoSpace(message) => _noSpace,
   PathNotFoundException() || FileSystemException(osError: OSError(errorCode: 2)) =>
     'The original file is no longer available.',
   FileSystemException(osError: OSError(errorCode: 13)) =>
@@ -33,6 +33,11 @@ String describeTransferError(Object? error) => switch (error) {
 };
 
 const _noSpace = 'Not enough space on this phone.';
+
+bool _saysNoSpace(String message) =>
+    message.contains('No space left') ||
+    message.contains('ENOSPC') ||
+    message.contains('errno = 28');
 
 /// How long Telegram asked to be left alone, when [error] is a flood wait.
 /// A wait with no time given counts as half a minute.

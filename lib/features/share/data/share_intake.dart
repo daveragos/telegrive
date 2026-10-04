@@ -5,8 +5,9 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-/// A file another app shared into Telegrive: a copy in the cache, or a
-/// gallery photo or video right where it is.
+/// A file another app shared into Telegrive: a copy in the cache, a
+/// gallery photo or video right where it is, or one the phone had no room
+/// to take.
 @immutable
 class SharedFile {
   const SharedFile({
@@ -14,31 +15,40 @@ class SharedFile {
     required this.name,
     required this.size,
     this.owned = true,
+    this.tooBig = false,
+    this.free,
     this.folderId,
   });
 
   factory SharedFile.fromMap(Map<Object?, Object?> map) => SharedFile(
-    path: map['path']! as String,
+    path: map['path'] as String?,
     name: map['name']! as String,
     size: (map['size']! as num).toInt(),
     owned: map['owned'] as bool? ?? true,
+    tooBig: map['tooBig'] as bool? ?? false,
+    free: (map['free'] as num?)?.toInt(),
     folderId: map['folderId'] as String?,
   );
 
-  /// The files in what the activity hands over that can be uploaded. One
-  /// the phone had no room to copy comes without a path, and is left out.
+  /// What the activity hands over, the files the phone had no room to take
+  /// included, so the share sheet can say so.
   static List<SharedFile> listFrom(Iterable<Map<Object?, Object?>> maps) => [
-    for (final map in maps)
-      if (map['tooBig'] != true) SharedFile.fromMap(map),
+    for (final map in maps) SharedFile.fromMap(map),
   ];
 
-  final String path;
+  /// Where the file is on the phone, or null when it was [tooBig] to take.
+  final String? path;
   final String name;
   final int size;
 
   /// Whether [path] is Telegrive's own copy, which goes once it is uploaded
   /// or the share is cancelled. An original from the gallery never does.
   final bool owned;
+
+  /// The phone had too little room to copy it, so nothing was kept and it
+  /// can't be uploaded; [free] is the space it had.
+  final bool tooBig;
+  final int? free;
 
   /// The drive folder whose target in Android's share sheet it was shared
   /// to, or null when it came through the plain Telegrive target.
@@ -78,9 +88,11 @@ class ShareIntake extends Notifier<List<SharedFile>> {
     final files = state;
     state = const [];
     if (!discard) return;
-    for (final file in files.where((f) => f.owned)) {
+    for (final file in files) {
+      final path = file.path;
+      if (!file.owned || path == null) continue;
       try {
-        await File(file.path).parent.delete(recursive: true);
+        await File(path).parent.delete(recursive: true);
       } catch (_) {}
     }
   }

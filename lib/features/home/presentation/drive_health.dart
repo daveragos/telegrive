@@ -29,6 +29,10 @@ enum HealthAction {
 
   /// Lets backup go past the monthly mobile data limit for now.
   useDataAnyway,
+
+  /// Offers to delete the phone's copies of photos and videos that are
+  /// backed up, for transfers waiting for room.
+  freeUpSpace,
 }
 
 /// Where tapping a line goes: a screen, or another try at syncing.
@@ -39,8 +43,9 @@ enum HealthTarget { backup, notBackedUp, transfers, refresh }
 /// do the same job. Transfers in progress are the exception: saying some
 /// are moving doesn't say that others failed. Lines about Telegram itself,
 /// not reaching it or it asking for a pause, are [sync]; lines about the
-/// phone's own connection, none at all or only mobile data, are [network].
-enum HealthTopic { backup, transfers, sync, network }
+/// phone's own connection, none at all or only mobile data, are [network];
+/// the line about the phone's free space is [storage].
+enum HealthTopic { backup, transfers, sync, network, storage }
 
 /// One line of Home's Activity group, worked out from state alone so the
 /// wording and its priority can be tested without a widget.
@@ -99,6 +104,12 @@ class DriveHealth {
 /// Otherwise they keep the second row, with their Use data. The limit
 /// ranks above them and above backup waiting for Wi-Fi, since it says when
 /// backup carries on without Wi-Fi ([renewDay], the day the limit renews).
+///
+/// Transfers waiting for room on the phone come straight after not
+/// reaching Telegram, unless backup is stopped or can't see the photos,
+/// which keep the line for their own button. Nothing they wait for comes
+/// by itself unless something on the phone is deleted, and waiting for the
+/// network, for Telegram or on work in progress would not change that.
 DriveHealth describeDriveHealth({
   required BackupState backup,
   required SyncState sync,
@@ -114,6 +125,10 @@ DriveHealth describeDriveHealth({
   if (sync.error != null) {
     return _unreachable(_latest([sync.lastSynced, lastFullSync]), at, retrying: sync.running);
   }
+  final backupStuck =
+      backup.phase == BackupPhase.stopped || backup.phase == BackupPhase.needsPermission;
+  final needRoom = transfers.waitingForRoom;
+  if (needRoom.isNotEmpty && !backupStuck) return _nearlyFull(needRoom);
   // Held transfers no longer count as moving, so without this line a long
   // wait would read as all good, or as backup still going.
   final waits = [
@@ -247,9 +262,11 @@ DriveHealth? secondaryHealth(
   final paused = transfers.items
       .where((t) => t.status == TransferStatus.paused && t.origin != TransferOrigin.backup)
       .length;
+  final needRoom = transfers.waitingForRoom;
   final candidates = [
     if (backup.phase == BackupPhase.stopped) _stopped(backup),
     if (backup.phase == BackupPhase.needsPermission) _needsPermission,
+    if (needRoom.isNotEmpty) _nearlyFull(needRoom),
     if (backup.phase == BackupPhase.waitingForBudget) _waitingForBudget(backup, renewDay),
     if (backup.phase == BackupPhase.waitingForWifi) _waitingForWifi(backup),
     if (backup.enabled && backup.failed > 0) _failedItems(backup),
@@ -392,6 +409,25 @@ DriveHealth _waitingForNetwork(List<TransferItem> manual, BackupState backup) {
     waiting: true,
     target: manual.isEmpty ? HealthTarget.backup : HealthTarget.transfers,
     topic: HealthTopic.network,
+  );
+}
+
+/// Transfers that wait for room on the phone, with how much the biggest of
+/// them needs free: room for it is room for each, one at a time.
+DriveHealth _nearlyFull(List<TransferItem> waiting) {
+  final needed = waiting
+      .map((t) => (t.wait! as WaitingForRoom).needed)
+      .reduce((a, b) => a > b ? a : b);
+  return DriveHealth(
+    icon: Icons.sd_card_alert_outlined,
+    tone: HealthTone.neutral,
+    text: 'This phone is nearly full',
+    detail:
+        '${Formatters.count(waiting.length, 'transfer')} '
+        '${waiting.length == 1 ? 'is' : 'are'} waiting for ${Formatters.bytes(needed)} of room.',
+    action: HealthAction.freeUpSpace,
+    target: HealthTarget.transfers,
+    topic: HealthTopic.storage,
   );
 }
 

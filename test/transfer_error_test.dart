@@ -26,6 +26,12 @@ void main() {
         ),
         'Not enough space on this phone.',
       );
+      expect(
+        describeTransferError(
+          TelegramException(400, 'Can\'t write to file: No space left on device : errno = 28'),
+        ),
+        'Not enough space on this phone.',
+      );
     });
 
     test('a file that is gone or can no longer be read', () {

@@ -56,7 +56,8 @@ class _Telegram extends FakeTelegram {
 }
 
 void main() {
-  test('a copy is owned, a gallery original is not, and a file with no room is left out', () {
+  test('a copy is owned, a gallery original is not, and a file with no room '
+      'comes with the space the phone had', () {
     final files = SharedFile.listFrom([
       {'path': '/cache/shared/1/note.txt', 'name': 'note.txt', 'size': 12},
       {'path': '/storage/DCIM/Camera/clip.mp4', 'name': 'clip.mp4', 'size': 900, 'owned': false},
@@ -64,9 +65,13 @@ void main() {
       {'name': 'movie.mkv', 'size': 1200, 'free': 180, 'tooBig': true},
     ]);
 
-    expect([for (final f in files) f.name], ['note.txt', 'clip.mp4', 'scan.pdf']);
-    expect([for (final f in files) f.owned], [true, false, true]);
+    expect([for (final f in files) f.name], ['note.txt', 'clip.mp4', 'scan.pdf', 'movie.mkv']);
+    expect([for (final f in files) f.owned], [true, false, true, true]);
+    expect([for (final f in files) f.tooBig], [false, false, false, true]);
     expect(files[1].size, 900);
+    expect(files[3].path, isNull);
+    expect(files[3].size, 1200);
+    expect(files[3].free, 180);
   });
 
   test('a file shared to a folder\'s own target carries the folder', () {

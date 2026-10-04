@@ -253,9 +253,9 @@ void main() {
     await tapUndo(tester);
     await until(tester, () => shows('Cancelled the upload'));
 
+    // The queue deletes the copy along with the row; see transfer_room_test.
     expect(queue.removed, ['t0']);
     expect(queue.state.items, isEmpty);
-    expect(File(request.path!).existsSync(), isFalse);
     expect((await receiptInDrive(tester)).trashedAt, isNull);
 
     await close(tester);
@@ -398,6 +398,59 @@ void main() {
     expect(find.descendant(of: find.byType(ListTile), matching: find.text('Files')), findsOneWidget);
     expect(find.text('Recent'), findsNothing);
     expect(find.byType(ChoiceChip), findsNothing);
+
+    await close(tester);
+  });
+
+  testWidgets('a file the phone had no room to take says so, and only the '
+      'rest upload, into the folder they were shared to', (tester) async {
+    final copy = copied('Receipt.png');
+    await pumpShare(tester, [
+      SharedFile(path: copy.path, name: 'Receipt.png', size: 5, folderId: 'invoices'),
+      SharedFile(
+        path: null,
+        name: 'Wedding.mp4',
+        size: 1288490189,
+        tooBig: true,
+        free: 180 << 20,
+        folderId: 'invoices',
+      ),
+    ]);
+    await until(tester, () => shows('Save to Telegrive'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Not enough space to take this · needs 1.2 GB, 180 MB free'), findsOneWidget);
+    expect(find.descendant(of: find.byType(ListTile), matching: find.text('Invoices')), findsOneWidget);
+
+    await tester.tap(find.text('Upload'));
+    await until(tester, () => queue.uploads.isNotEmpty);
+    expect([for (final (request, folderId) in queue.uploads) '${request.name} $folderId'], [
+      'Receipt.png invoices',
+    ]);
+
+    await close(tester);
+  });
+
+  testWidgets('when nothing fits, the sheet says so and offers to free up '
+      'space', (tester) async {
+    await pumpShare(tester, [
+      SharedFile(path: null, name: 'Wedding.mp4', size: 1288490189, tooBig: true, free: 180 << 20),
+      SharedFile(path: null, name: 'Party.mp4', size: 900 << 20, tooBig: true, free: 180 << 20),
+    ]);
+    await until(tester, () => shows('Not enough space on this phone to take these files.'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Upload'), findsNothing);
+    expect(find.text('Change'), findsNothing);
+    expect(find.text('Cancel'), findsOneWidget);
+
+    final container = ProviderScope.containerOf(tester.element(find.text('Share')));
+    await tester.tap(find.text('Free up space'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(find.text('Not enough space on this phone to take these files.'), findsNothing);
+    expect(queue.uploads, isEmpty);
+    expect(container.read(shareIntakeProvider), isEmpty);
 
     await close(tester);
   });

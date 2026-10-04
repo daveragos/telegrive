@@ -350,7 +350,8 @@ void main() {
   test('a split upload under way sends no more parts while uploads wait', () async {
     // A wait of a second, long enough to see what happens while it lasts.
     TransferQueue.waitUnit = const Duration(milliseconds: 100);
-    final source = File('${dir.path}/big.pdf')..writeAsStringSync('0123456789');
+    // As long as the row says, three parts of ten bytes.
+    final source = File('${dir.path}/big.pdf')..writeAsStringSync('0123456789' * 3);
     await db.saveTransfers([
       row(
         'big',

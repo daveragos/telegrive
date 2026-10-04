@@ -10,12 +10,14 @@ import 'package:pdfrx/pdfrx.dart';
 import '../../../core/files/file_kind.dart' show Preview;
 import '../../../infrastructure/database/app_database.dart';
 import '../../../infrastructure/network/network_status.dart';
+import '../../../infrastructure/storage/device_storage.dart';
 import '../../../infrastructure/storage/preferences.dart';
 import '../../../infrastructure/telegram/telegram_client.dart';
 import '../../drive/data/drive_repository.dart';
 import '../../drive/data/drive_session.dart';
 import '../../drive/data/drive_sync.dart';
 import '../../drive/domain/drive_models.dart';
+import '../../transfers/data/room.dart';
 import '../../transfers/data/transfer_queue.dart';
 
 @immutable
@@ -40,7 +42,8 @@ class IndexerState {
 ///
 /// It happens on this phone, a file at a time while the app is open;
 /// nothing is sent anywhere. Documents not on the phone yet are fetched only
-/// on an unmetered network, so never over mobile data or a phone's hotspot.
+/// on an unmetered network, so never over mobile data or a phone's hotspot,
+/// and only while the phone keeps [_keepFree] free besides.
 class ContentIndexer extends Notifier<IndexerState> {
   /// 2: documents only; version 1 also read photos.
   static const int version = 2;
@@ -48,6 +51,10 @@ class ContentIndexer extends Notifier<IndexerState> {
   static const int _pdfLimit = 25 * 1024 * 1024;
   static const int _textLimit = 1024 * 1024;
   static const int _pdfPages = 40;
+
+  /// Room a fetched document leaves on the phone, so reading for search
+  /// never fills a phone that is nearly full.
+  static const int _keepFree = 200 << 20;
 
   Timer? _start;
   bool _stop = false;
@@ -150,13 +157,16 @@ class ContentIndexer extends Notifier<IndexerState> {
     }
   }
 
-  /// A document's path, fetching it only on Wi-Fi.
+  /// A document's path, fetching it only on Wi-Fi and with room to spare.
   Future<String?> _documentPath(DriveFile file) async {
     final local = await ref.read(transferQueueProvider.notifier).localPathIfAvailable(file);
     if (local != null) return local;
     if (!_onWifi) return null;
     final parts = await ref.read(driveRepositoryProvider).partsOf(file.id);
     if (parts.length != 1) return '';
+    if (await Room.shortfall(ref.read(deviceStorageProvider), file.size + _keepFree) != null) {
+      return null;
+    }
     final tdFile = await ref.read(driveRepositoryProvider).resolveTdFile(parts.single);
     final fetched = await _client.send<td.File>(
       td.DownloadFile(fileId: tdFile.id, priority: 1, offset: 0, limit: 0, synchronous: true),

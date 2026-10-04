@@ -38,6 +38,19 @@ class TransfersScreen extends ConsumerWidget {
     );
     final anyRunning = inProgress.any((t) => t.status.isActive);
     final anyPaused = inProgress.any((t) => t.status == TransferStatus.paused);
+    // When what is moving should be done, at the speed it moves now; only
+    // worth saying when that is a while away.
+    final now = DateTime.now();
+    var left = 0;
+    var speed = 0.0;
+    for (final item in inProgress.where((t) => t.status == TransferStatus.running)) {
+      left += item.row.totalBytes - item.row.doneBytes;
+      speed += item.bytesPerSecond;
+    }
+    final eta = speed > 0 ? Duration(seconds: (left / speed).ceil()) : null;
+    final doneAround = eta != null && eta > const Duration(minutes: 10)
+        ? ' · done around ${Formatters.clock(now.add(eta), now: now)}'
+        : '';
     final saves = state.saves;
     final copies = state.copies.where((t) => t.status != TransferStatus.cancelled).toList();
     final queue = ref.read(transferQueueProvider.notifier);
@@ -115,7 +128,7 @@ class TransfersScreen extends ConsumerWidget {
                 ],
                 if (inProgress.isNotEmpty) ...[
                   SectionHeader(
-                    'In progress · ${inProgress.length}',
+                    'In progress · ${inProgress.length}$doneAround',
                     trailing: inProgress.length < 2
                         ? null
                         : TextButton(
@@ -162,7 +175,11 @@ class _SaveGroup extends ConsumerWidget {
     final queue = ref.read(transferQueueProvider.notifier);
     final running = saves.where((t) => t.status.isActive).toList();
     final held = running.where((t) => t.wait is WaitingForWifi).toList();
-    final moving = running.length > held.length;
+    final room = [
+      for (final item in running)
+        if (item.wait case final WaitingForRoom wait) wait,
+    ];
+    final moving = running.length > held.length + room.length;
     final paused = saves.where((t) => t.status == TransferStatus.paused).toList();
     final saved = saves.where((t) => t.status == TransferStatus.completed).toList();
     final total = saves.where((t) => t.status != TransferStatus.cancelled).length;
@@ -188,6 +205,20 @@ class _SaveGroup extends ConsumerWidget {
       },
       child: const Text('Stop'),
     );
+
+    if (!moving && room.isNotEmpty) {
+      // The biggest need says how much room lets them all go on.
+      final need = room.reduce((a, b) => a.needed >= b.needed ? a : b);
+      return StatusLine(
+        icon: Icons.sd_card_alert_outlined,
+        color: colors.text2,
+        text:
+            'Waiting for room · ${Formatters.number(saved.length)} of '
+            '${Formatters.count(total, 'file')} saved',
+        detail: need.sentence,
+        trailing: stop,
+      );
+    }
 
     if (!moving && held.isNotEmpty) {
       // Held by Only over Wi-Fi on the Offline screen, which is where it
@@ -245,9 +276,10 @@ class _SaveGroup extends ConsumerWidget {
     var done = 0;
     var speed = 0.0;
     for (final item in [...running, ...paused, ...saved]) {
-      // Saves held for Wi-Fi move nothing now, so they count neither in
-      // what is left nor in when it ends; the line says how many wait.
-      if (item.wait is WaitingForWifi) continue;
+      // Saves held for Wi-Fi or room move nothing now, so they count
+      // neither in what is left nor in when it ends; the line says how
+      // many wait.
+      if (item.wait is WaitingForWifi || item.wait is WaitingForRoom) continue;
       bytes += item.row.totalBytes;
       done += item.status == TransferStatus.completed ? item.row.totalBytes : item.row.doneBytes;
       speed += item.bytesPerSecond;
@@ -267,6 +299,8 @@ class _SaveGroup extends ConsumerWidget {
         ],
         if (held.isNotEmpty)
           '${Formatters.number(held.length)} ${held.length == 1 ? 'waits' : 'wait'} for Wi-Fi',
+        if (room.isNotEmpty)
+          '${Formatters.number(room.length)} ${room.length == 1 ? 'waits' : 'wait'} for room',
       ].join(' · '),
       progress: bytes == 0 ? 0 : done / bytes,
       trailing: Row(
@@ -378,11 +412,19 @@ class _ActiveRow extends ConsumerWidget {
     final detailStyle = context.text.bodySmall?.copyWith(fontFeatures: tabularFigures);
     final soFar = '${Formatters.bytes(item.row.doneBytes)} of ${Formatters.bytes(item.row.totalBytes)}';
     final started = item.row.doneBytes > 0 || item.row.completedParts > 0;
+    // A split upload that stopped part of the way, after a restart say,
+    // carries on from the parts the drive already has.
+    final sent = isUpload && item.row.partCount > 1 && item.row.completedParts > 0
+        ? '${Formatters.number(item.row.completedParts)} of '
+              '${Formatters.number(item.row.partCount)} parts already in your drive'
+        : null;
     final String detail;
     if (item.preparing) {
       detail = 'Preparing the file';
     } else if (paused) {
-      detail = ['Paused', soFar, ?parts].join(' · ');
+      detail = sent == null ? ['Paused', soFar, ?parts].join(' · ') : 'Paused · $sent';
+    } else if (item.wait case final WaitingForRoom room) {
+      detail = room.sentence;
     } else if (item.wait is WaitingForWifi) {
       detail = started
           ? ['Waiting for Wi-Fi', soFar, ?parts].join(' · ')
@@ -391,7 +433,9 @@ class _ActiveRow extends ConsumerWidget {
       // No speed or time left: nothing is moving until the network is back.
       detail = ['Waiting for network', soFar, ?parts].join(' · ');
     } else if (queued) {
-      detail = 'Waiting · ${Formatters.bytes(item.row.totalBytes)}';
+      detail = sent == null
+          ? 'Waiting · ${Formatters.bytes(item.row.totalBytes)}'
+          : 'Continuing · $sent';
     } else {
       detail = [
         soFar,
@@ -455,7 +499,7 @@ class _ActiveRow extends ConsumerWidget {
                       value: item.preparing ? null : value,
                       minHeight: 4,
                       // Grey while it waits rather than moves.
-                      color: paused || item.wait != null ? colors.text3 : null,
+                      color: paused || queued || item.wait != null ? colors.text3 : null,
                     ),
                   ),
                 ),

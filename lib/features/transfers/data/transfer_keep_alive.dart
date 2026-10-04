@@ -113,14 +113,16 @@ class TransferKeepAlive {
   }
 
   /// A backup pass that is moving. One whose upload Telegram has put on a
-  /// long wait sits out that wait without the service, and so without a
-  /// wake lock; the service starts again when the upload does. A backup
-  /// upload waiting for Wi-Fi doesn't stop the pass, which moves on to the
-  /// photos mobile data may carry.
+  /// long wait, or that waits for room on the phone, sits out that wait
+  /// without the service, and so without a wake lock; the service starts
+  /// again when the upload does. A backup upload waiting for Wi-Fi doesn't
+  /// stop the pass, which moves on to the photos mobile data may carry.
   static bool _backingUp(TransfersState state, BackupState backup) =>
       backup.isWorking &&
       !state.held.any(
-        (t) => t.origin == TransferOrigin.backup && t.wait is WaitingForTelegram,
+        (t) =>
+            t.origin == TransferOrigin.backup &&
+            (t.wait is WaitingForTelegram || t.wait is WaitingForRoom),
       );
 
   Future<void> update(TransfersState state, BackupState backup) async {

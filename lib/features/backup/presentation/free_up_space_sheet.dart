@@ -4,10 +4,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../app/theme/tokens.dart';
 import '../../../core/format/formatters.dart';
 import '../../../core/widgets/common.dart';
+import '../../transfers/data/transfer_queue.dart';
 import '../data/free_up_space.dart';
 
 /// Offers to delete this phone's copies of photos and videos that are safely
-/// in the drive.
+/// in the drive. Transfers waiting for room look again once they are gone.
 Future<void> showFreeUpSpace(BuildContext context, WidgetRef ref) async {
   final go = await showModalBottomSheet<Freeable>(
     context: context,
@@ -18,6 +19,7 @@ Future<void> showFreeUpSpace(BuildContext context, WidgetRef ref) async {
   try {
     final deleted = await freeUpSpace(go);
     ref.invalidate(freeableProvider);
+    await ref.read(transferQueueProvider.notifier).recheckRoom();
     if (!context.mounted) return;
     showSnack(
       context,

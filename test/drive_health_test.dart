@@ -77,6 +77,16 @@ TransferItem _onWifi(String name, {TransferOrigin origin = TransferOrigin.manual
     );
 
 const _gb = 1 << 30;
+const _mb = 1 << 20;
+
+/// A transfer queued until the phone has [needed] bytes free; it has 180 MB.
+TransferItem _needsRoom(String name, int needed, {TransferOrigin origin = TransferOrigin.manual}) =>
+    _transfer(
+      name,
+      TransferStatus.queued,
+      origin: origin,
+      wait: WaitingForRoom(needed, 180 * _mb),
+    );
 
 DriveHealth _top({
   BackupState backup = _upToDate,
@@ -357,6 +367,37 @@ void main() {
         ]),
       );
       expect(health.text, isNot('Telegram asked us to wait'));
+    });
+
+    test('a phone too full for a transfer says so, offers to free up space, and opens '
+        'Transfers', () {
+      final health = _top(
+        backup: const BackupState(phase: BackupPhase.uploading, total: 10, done: 2),
+        transfers: TransfersState([
+          _needsRoom('movie.mp4', (1.2 * _gb).round()),
+          _needsRoom('IMG_0001.mov', 400 * _mb, origin: TransferOrigin.backup),
+          _transfer('a.zip', TransferStatus.running),
+          _held('b.zip'),
+        ]),
+      );
+      expect(health.text, 'This phone is nearly full');
+      expect(health.detail, '2 transfers are waiting for 1.2 GB of room.');
+      expect(health.icon, Icons.sd_card_alert_outlined);
+      expect(health.tone, HealthTone.neutral);
+      expect(health.action, HealthAction.freeUpSpace);
+      expect(health.target, HealthTarget.transfers);
+    });
+
+    test('one transfer waiting for room is said in the singular', () {
+      final health = _top(transfers: TransfersState([_needsRoom('movie.mp4', 300 * _mb)]));
+      expect(health.detail, '1 transfer is waiting for 300 MB of room.');
+    });
+
+    test('a stopped backup keeps the line from a full phone', () {
+      final transfers = TransfersState([_needsRoom('movie.mp4', 300 * _mb)]);
+      const stopped = BackupState(phase: BackupPhase.stopped, error: 'Out of space.');
+      expect(_top(backup: stopped, transfers: transfers).text, 'Backup stopped');
+      expect(_top(transfers: transfers).text, 'This phone is nearly full');
     });
 
     test('not reaching Telegram beats everything else', () {
@@ -735,6 +776,29 @@ void main() {
       ]);
       const backup = BackupState(phase: BackupPhase.uploading, total: 10, done: 2);
       expect(second(backup, mixed), isNull);
+    });
+
+    test('a full phone sits under a stopped backup, with Free up space', () {
+      final row = second(
+        const BackupState(phase: BackupPhase.stopped),
+        TransfersState([
+          _needsRoom('movie.mp4', 300 * _mb),
+          _transfer('b.zip', TransferStatus.failed),
+        ]),
+      );
+      expect(row?.text, 'This phone is nearly full');
+      expect(row?.action, HealthAction.freeUpSpace);
+    });
+
+    test('a full phone on the top line leaves the row to failed transfers', () {
+      final row = second(
+        _upToDate,
+        TransfersState([
+          _needsRoom('movie.mp4', 300 * _mb),
+          _transfer('b.zip', TransferStatus.failed),
+        ]),
+      );
+      expect(row?.action, HealthAction.retryTransfers);
     });
 
     test('a backup concern sits under a sync line', () {

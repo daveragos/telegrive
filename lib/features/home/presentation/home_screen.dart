@@ -14,6 +14,7 @@ import '../../../infrastructure/database/app_database.dart'
 import '../../../infrastructure/storage/preferences.dart';
 import '../../backup/data/backup_controller.dart';
 import '../../backup/presentation/backup_card.dart';
+import '../../backup/presentation/free_up_space_sheet.dart';
 import '../../drive/data/drive_repository.dart';
 import '../../drive/data/drive_session.dart';
 import '../../drive/data/drive_sync.dart';
@@ -306,6 +307,10 @@ class _Activity extends ConsumerWidget {
             transfersWaitingForWifi(ref.read(transferQueueProvider)).map((t) => t.id),
           ),
           child: const Text('Use data'),
+        ),
+        HealthAction.freeUpSpace => TextButton(
+          onPressed: () => showFreeUpSpace(context, ref),
+          child: const Text('Free up space'),
         ),
         HealthAction.none => null,
       },

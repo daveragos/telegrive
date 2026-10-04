@@ -195,6 +195,21 @@ class _Intake extends ShareIntake {
   ];
 }
 
+/// A receipt that was shared in, and a video the phone had no room to take.
+class _IntakeTooBig extends ShareIntake {
+  @override
+  List<SharedFile> build() => const [
+    SharedFile(path: '/cache/shared/1/Receipt.png', name: 'Receipt.png', size: 2 * _mb + 310000),
+    SharedFile(
+      path: null,
+      name: 'Wedding.mp4',
+      size: 1288490189,
+      tooBig: true,
+      free: 180 * _mb,
+    ),
+  ];
+}
+
 /// The folders uploads went into lately, Receipts last.
 class _Recent extends RecentDestinations {
   @override
@@ -934,6 +949,31 @@ void main() {
     await snap(tester, 'home_waiting_for_wifi');
   });
 
+  testWidgets('home phone full', (tester) async {
+    await prepareData(tester);
+    transfers = TransfersState([
+      for (final (name, total) in [
+        ('Family trip.mp4', (1.2 * _gb).round()),
+        ('Course notes.pdf', 60 * _mb),
+      ])
+        TransferItem(
+          _transfer(name, TransferKind.download, TransferStatus.queued, total, 0),
+          wait: WaitingForRoom((1.2 * _gb).round() + 64 * _mb, 180 * _mb),
+        ),
+    ]);
+    await pumpApp(
+      tester,
+      location: '/home',
+      backup: BackupState(
+        phase: BackupPhase.upToDate,
+        total: 4847,
+        done: 4847,
+        lastCompleted: DateTime.now().subtract(const Duration(minutes: 3)),
+      ),
+    );
+    await snap(tester, 'home_phone_full');
+  });
+
   /// What Search reads straight from the index: two invoices filed under
   /// Work, and a photo and a video from the same trek.
   Future<void> seedSearch(AppDatabase db) async {
@@ -1463,6 +1503,19 @@ void main() {
     await snap(tester, 'share_sheet');
   });
 
+  testWidgets('share sheet too big', (tester) async {
+    await prepareData(tester);
+    await pumpApp(
+      tester,
+      location: '/home',
+      overrides: [
+        shareIntakeProvider.overrideWith(_IntakeTooBig.new),
+        recentDestinationsProvider.overrideWith(_Recent.new),
+      ],
+    );
+    await snap(tester, 'share_sheet_too_big');
+  });
+
   testWidgets('a phone that can\'t scan or take a photo gets neither row', (tester) async {
     await prepareData(tester);
     await pumpApp(tester, location: '/files', captureSupport: CaptureSupport.none);
@@ -1505,7 +1558,12 @@ void main() {
   testWidgets('transfers', (tester) async {
     await prepareData(tester);
     transfers = TransfersState([
-      ...transfers.items,
+      // Slow enough that what is moving takes a while, so the header says
+      // when it should be done.
+      for (final item in transfers.items)
+        item.status == TransferStatus.running
+            ? TransferItem(item.row, bytesPerSecond: item.bytesPerSecond / 3)
+            : item,
       TransferItem(
         _transfer(
           'Lecture 1.mp4',
@@ -1540,8 +1598,27 @@ void main() {
         ),
         wait: const WaitingForNetwork(),
       ),
+      TransferItem(
+        _transfer(
+          'Conference talk.mkv',
+          TransferKind.upload,
+          TransferStatus.queued,
+          (5.8 * _gb).round(),
+          8 * 512 * _mb,
+          parts: 12,
+          completedParts: 8,
+        ),
+      ),
+      TransferItem(
+        _transfer('Family trip.mp4', TransferKind.upload, TransferStatus.queued, (1.2 * _gb).round(), 0),
+        wait: WaitingForRoom((1.2 * _gb).round() + 64 * _mb, 180 * _mb),
+      ),
     ]);
     await pumpApp(tester, location: '/transfers');
+    // A taller phone, so the rows waiting for room and continuing after a
+    // restart show below the others.
+    tester.view.physicalSize = const Size(1080, 2700);
+    await tester.pump(const Duration(milliseconds: 100));
     await snap(tester, 'transfers');
   });
 
@@ -1588,6 +1665,7 @@ void main() {
           keptBytes: 310 * _mb,
           downloading: 37,
           waiting: 0,
+          needRoom: 0,
           paused: 0,
           leftBytes: (1.1 * _gb).round(),
           failedTransferIds: const [],
@@ -1600,6 +1678,7 @@ void main() {
           keptBytes: tax.size,
           downloading: 0,
           waiting: 0,
+          needRoom: 0,
           paused: 0,
           leftBytes: 0,
           failedTransferIds: const [],
@@ -1612,6 +1691,7 @@ void main() {
           keptBytes: 41 * _mb,
           downloading: 0,
           waiting: 0,
+          needRoom: 0,
           paused: 0,
           leftBytes: 0,
           failedTransferIds: const ['receipt-1', 'receipt-2'],
@@ -1624,6 +1704,8 @@ void main() {
       speed: 2.4 * _mb,
       waitingTransferIds: const [],
       waitingLeft: 0,
+      needRoom: 0,
+      needRoomLeft: 0,
       paused: 0,
       pausedLeft: 0,
       progress: 0.24,
@@ -1665,6 +1747,8 @@ void main() {
               speed: 0,
               waitingTransferIds: [],
               waitingLeft: 0,
+              needRoom: 0,
+              needRoomLeft: 0,
               paused: 0,
               pausedLeft: 0,
               progress: 0,

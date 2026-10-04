@@ -1,5 +1,7 @@
 import 'package:flutter/foundation.dart';
 
+import '../../../core/format/formatters.dart';
+
 /// Why a transfer that will carry on by itself isn't moving yet. Waiting is
 /// not failing: the row stays in progress, says what it is waiting for, and
 /// starts again on its own.
@@ -38,6 +40,23 @@ final class WaitingForNetwork extends TransferWait {
 /// data. It can wait for hours, so it never counts as in flight.
 final class WaitingForWifi extends TransferWait {
   const WaitingForWifi();
+
+  @override
+  bool holdsAt(DateTime now) => true;
+}
+
+/// The phone has [free] bytes and the transfer [needed] bytes free before
+/// it writes anything. It starts by itself once there is room, which may
+/// take until someone deletes something, so it never counts as in flight.
+final class WaitingForRoom extends TransferWait {
+  const WaitingForRoom(this.needed, this.free);
+
+  final int needed;
+  final int free;
+
+  /// 'Needs 1.3 GB free · 180 MB free on this phone'.
+  String get sentence =>
+      'Needs ${Formatters.bytes(needed)} free · ${Formatters.bytes(free)} free on this phone';
 
   @override
   bool holdsAt(DateTime now) => true;

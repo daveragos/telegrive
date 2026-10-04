@@ -154,6 +154,32 @@ void main() {
       expect(trips.failedTransferIds, isEmpty);
     });
 
+    test('a copy waiting for room on the phone moves nothing, and counts apart', () {
+      final overview = compute([
+        running,
+        _transfer(
+          't-c',
+          'c',
+          status: TransferStatus.queued,
+          total: 300,
+          done: 100,
+          speed: 5,
+          wait: const WaitingForRoom(400, 50),
+        ),
+      ]);
+      final trips = overview.pins.last;
+
+      expect(overview.downloading, 1);
+      expect(overview.downloadingLeft, 150);
+      expect(overview.speed, 10);
+      expect(overview.needRoom, 1);
+      expect(overview.needRoomLeft, 200);
+      expect(overview.files, 4);
+      expect(trips.downloading, 1);
+      expect(trips.needRoom, 1);
+      expect(trips.leftBytes, 350);
+    });
+
     test('a transfer on its way speaks for its file over one that failed', () {
       final overview = compute([
         failed,

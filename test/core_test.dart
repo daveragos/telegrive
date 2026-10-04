@@ -120,6 +120,23 @@ void main() {
       expect(Formatters.dayOfMonth(23), '23rd');
       expect(Formatters.dayOfMonth(28), '28th');
     });
+
+    test('clock says the time today, tomorrow and its time, then the date', () {
+      final now = DateTime(2026, 10, 4, 22, 15);
+      // The locale's own space before AM and PM.
+      String time(String text) => text.replaceAll(' ', '\u202f');
+      expect(Formatters.clock(DateTime(2026, 10, 4, 23, 40), now: now), time('11:40 PM'));
+      expect(
+        Formatters.clock(DateTime(2026, 10, 5, 0, 40), now: now),
+        'tomorrow ${time('12:40 AM')}',
+      );
+      expect(Formatters.clock(DateTime(2026, 10, 6, 9, 5), now: now), 'Oct 6');
+      // The last day of a month runs into the first of the next.
+      expect(
+        Formatters.clock(DateTime(2026, 11, 1, 1, 0), now: DateTime(2026, 10, 31, 23, 0)),
+        'tomorrow ${time('1:00 AM')}',
+      );
+    });
   });
 
   group('SortOrder', () {

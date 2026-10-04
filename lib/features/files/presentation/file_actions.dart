@@ -733,14 +733,8 @@ abstract final class FileActions {
           await queue.remove(id);
           continue;
         }
+        // The queue deletes the app's copy along with the row.
         await queue.remove(id);
-        // Nothing will retry it now, so the app's copy has no more use.
-        final source = row.sourcePath;
-        if (row.ownsSource && source != null) {
-          try {
-            await File(source).delete();
-          } on FileSystemException catch (_) {}
-        }
       }
       if (landed.isNotEmpty) await repository.trash(files: landed);
       arrived = landed.length;
@@ -1716,7 +1710,11 @@ class _DownloadDialogState extends ConsumerState<_DownloadDialog> {
       _ => null,
     };
     final offline = item?.wait is WaitingForNetwork;
-    final waiting = waitingUntil != null || offline;
+    final room = switch (item?.wait) {
+      final WaitingForRoom room => room,
+      _ => null,
+    };
+    final waiting = waitingUntil != null || offline || room != null;
     final detailStyle = theme.textTheme.bodySmall?.copyWith(fontFeatures: tabularFigures);
 
     return AlertDialog(
@@ -1760,6 +1758,8 @@ class _DownloadDialogState extends ConsumerState<_DownloadDialog> {
                 style: detailStyle,
               ),
             )
+          else if (room != null)
+            Text(room.sentence, style: detailStyle)
           else
             Text(
               item == null
