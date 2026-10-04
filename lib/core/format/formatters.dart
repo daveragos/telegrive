@@ -47,6 +47,19 @@ abstract final class Formatters {
         : '$minutes:${two(seconds)}';
   }
 
+  /// `42 s` → `0:42`, `760 s` → `12:40`, `4360 s` → `1:12:40`: how long a
+  /// video or audio file runs, or where playback is in it. Hours show only
+  /// from one hour, and the minutes are padded to two digits only then.
+  static String length(Duration duration) {
+    final hours = duration.inHours;
+    final minutes = duration.inMinutes
+        .remainder(60)
+        .toString()
+        .padLeft(hours > 0 ? 2 : 1, '0');
+    final seconds = duration.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return hours > 0 ? '$hours:$minutes:$seconds' : '$minutes:$seconds';
+  }
+
   /// `37 s` → `37 seconds`, `7200 s` → `2 hours`: a length of time rounded
   /// the way a person would say it.
   static String inWords(Duration duration) {

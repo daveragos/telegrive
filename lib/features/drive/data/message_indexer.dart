@@ -35,7 +35,8 @@ class AlbumEntry extends IndexEntry {
 }
 
 /// The media carried by a message, whatever its Telegram type: the file,
-/// its name, type and caption, and its previews. [hasOwnName] is false
+/// its name, type and caption, its previews, and for a video, audio file or
+/// animation the length in seconds Telegram reports. [hasOwnName] is false
 /// when the message gave no file name and one was made up from its id.
 typedef MediaInfo = ({
   td.File file,
@@ -45,6 +46,7 @@ typedef MediaInfo = ({
   String caption,
   td.Minithumbnail? minithumbnail,
   int? thumbnailFileId,
+  int? duration,
 });
 
 /// Turns channel messages into index rows.
@@ -100,7 +102,8 @@ abstract final class MessageIndexer {
     if (media == null) return null;
 
     final manifest =
-        ManifestCodec.decodeFile(media.caption) ?? _adoptedManifest(message, media);
+        ManifestCodec.decodeFile(media.caption) ??
+        _adoptedManifest(message, media);
     final kind = FileKind.detect(
       fileName: manifest.name,
       mimeType: manifest.mimeType,
@@ -121,9 +124,13 @@ abstract final class MessageIndexer {
         starred: Value(manifest.starred),
         takenAt: Value(manifest.takenAt),
         trashedAt: Value(manifest.trashedAt),
-        // A length learned on this phone stays when the caption has none;
-        // a replacement is only what the caption says.
-        durationSeconds: Value.absentIfNull(manifest.durationSeconds),
+        // The caption's length first, then the one Telegram reports for a
+        // forwarded video or audio file. A length learned on this phone
+        // stays when neither has one; a replacement is only what the
+        // caption says.
+        durationSeconds: Value.absentIfNull(
+          manifest.durationSeconds ?? media.duration,
+        ),
         replacedBy: Value(manifest.replacedBy),
         manifestExtra: Value(ManifestCodec.encodeExtra(manifest.extra)),
         // Previews come from the first part only; later parts of a split
@@ -197,6 +204,7 @@ abstract final class MessageIndexer {
           caption: caption.text,
           minithumbnail: video.minithumbnail,
           thumbnailFileId: video.thumbnail?.file.id,
+          duration: video.duration,
         );
       case td.MessageAudio(:final audio, :final caption):
         return _media(
@@ -209,6 +217,7 @@ abstract final class MessageIndexer {
           caption: caption.text,
           minithumbnail: audio.albumCoverMinithumbnail,
           thumbnailFileId: audio.albumCoverThumbnail?.file.id,
+          duration: audio.duration,
         );
       case td.MessageAnimation(:final animation, :final caption):
         return _media(
@@ -221,6 +230,7 @@ abstract final class MessageIndexer {
           caption: caption.text,
           minithumbnail: animation.minithumbnail,
           thumbnailFileId: animation.thumbnail?.file.id,
+          duration: animation.duration,
         );
       // A voice message forwarded from a chat. Round video notes stay out:
       // they have no caption, so they could never carry a manifest.
@@ -235,6 +245,7 @@ abstract final class MessageIndexer {
               ? 'audio/ogg'
               : voiceNote.mimeType,
           caption: caption.text,
+          duration: voiceNote.duration,
         );
       case td.MessagePhoto(:final photo, :final caption):
         if (photo.sizes.isEmpty) return null;
@@ -275,7 +286,7 @@ abstract final class MessageIndexer {
 
   /// The media in [message], named [name] when the message gave one and
   /// otherwise [fallback] with a number taken from the message id and
-  /// [extension].
+  /// [extension]. A [duration] of zero means Telegram doesn't know it.
   static MediaInfo _media(
     td.Message message, {
     required td.File file,
@@ -286,6 +297,7 @@ abstract final class MessageIndexer {
     required String caption,
     td.Minithumbnail? minithumbnail,
     int? thumbnailFileId,
+    int? duration,
   }) {
     final own = name.trim();
     final suffix = extension == null ? '' : '.$extension';
@@ -297,6 +309,7 @@ abstract final class MessageIndexer {
       caption: caption,
       minithumbnail: minithumbnail,
       thumbnailFileId: thumbnailFileId,
+      duration: duration != null && duration > 0 ? duration : null,
     );
   }
 }

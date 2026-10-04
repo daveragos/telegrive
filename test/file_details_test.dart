@@ -81,6 +81,35 @@ void main() {
     );
   });
 
+  test(
+    'a video or audio file with a known length gets a Duration line after Size',
+    () {
+      DriveFile clip({int? durationSeconds}) => DriveFile(
+        id: 'v',
+        folderId: null,
+        name: 'clip.mp4',
+        mimeType: 'video/mp4',
+        kind: FileKind.video,
+        size: 84 * 1024 * 1024,
+        createdAt: added,
+        modifiedAt: added,
+        partCount: 1,
+        starred: false,
+        durationSeconds: durationSeconds,
+      );
+      final lines = FileActions.detailLines(clip(durationSeconds: 4360));
+      expect(lines.map((line) => line.label).take(3), [
+        'Type',
+        'Size',
+        'Duration',
+      ]);
+      expect(asMap(lines)['Duration'], '1:12:40');
+
+      expect(asMap(FileActions.detailLines(clip()))['Duration'], isNull);
+      expect(asMap(FileActions.detailLines(photo()))['Duration'], isNull);
+    },
+  );
+
   test('a split file ends with how it is stored', () {
     final lines = FileActions.detailLines(photo(parts: 3));
     expect(lines.last.label, 'Stored as');

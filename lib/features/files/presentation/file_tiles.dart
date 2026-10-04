@@ -19,7 +19,16 @@ String? folderContentsLine(FolderSize? size) => switch (size) {
     '${Formatters.count(size.count, 'item')} · ${Formatters.bytes(size.bytes)}',
 };
 
-/// A file as a list row: picture slot, name, size and date, and a menu.
+/// A file's meta line: '1:12:40 · 1.2 GB · 23 Sep' for a video or audio
+/// file whose length is known, '1.2 GB · 23 Sep' for everything else.
+String fileMetaLine(DriveFile file) => [
+  if (file.duration case final d?) Formatters.length(d),
+  Formatters.bytes(file.size),
+  Formatters.date(file.modifiedAt),
+].join(' · ');
+
+/// A file as a list row: picture slot, name, length, size and date, and a
+/// menu.
 class FileListTile extends ConsumerWidget {
   const FileListTile({
     super.key,
@@ -71,9 +80,7 @@ class FileListTile extends ConsumerWidget {
         child: FileThumbnail(file: file),
       ),
       title: file.name,
-      meta:
-          subtitle ??
-          '${Formatters.bytes(file.size)} · ${Formatters.date(file.modifiedAt)}',
+      meta: subtitle ?? fileMetaLine(file),
       metaColor: subtitleColor,
       starred: file.starred,
       offline: offline,
@@ -404,6 +411,8 @@ class FileGridCard extends ConsumerWidget {
                           Flexible(
                             child: Text(
                               [
+                                if (file.duration case final d?)
+                                  Formatters.length(d),
                                 Formatters.bytes(file.size),
                                 if (file.starred) 'starred',
                               ].join(' · '),

@@ -134,6 +134,24 @@ void main() {
       expect(Formatters.countdown(Duration.zero), '0:00');
     });
 
+    test('length', () {
+      expect(Formatters.length(const Duration(seconds: 42)), '0:42');
+      expect(
+        Formatters.length(const Duration(minutes: 12, seconds: 40)),
+        '12:40',
+      );
+      expect(
+        Formatters.length(const Duration(hours: 1, minutes: 12, seconds: 40)),
+        '1:12:40',
+      );
+      expect(
+        Formatters.length(const Duration(hours: 10, minutes: 5)),
+        '10:05:00',
+      );
+      // Unlike a countdown, a part-second is dropped rather than counted.
+      expect(Formatters.length(const Duration(milliseconds: 71900)), '1:11');
+    });
+
     test('latency', () {
       expect(
         Formatters.latency(const Duration(microseconds: 240400)),

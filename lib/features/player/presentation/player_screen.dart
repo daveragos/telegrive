@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:drift/drift.dart' show Value;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -9,11 +10,25 @@ import 'package:video_player/video_player.dart';
 import '../../../core/files/file_kind.dart';
 import '../../../core/format/formatters.dart';
 import '../../../core/widgets/file_visuals.dart';
+import '../../../infrastructure/database/app_database.dart';
 import '../../drive/data/drive_repository.dart';
 import '../../drive/domain/drive_models.dart';
 import '../../files/presentation/file_actions.dart';
 import '../../transfers/data/transfer_queue.dart';
 import '../data/stream_server.dart';
+
+/// Keeps the length a player found for [file] in the index when the drive
+/// doesn't know it yet, so its rows and tiles can say it from now on. It
+/// is written to this phone only; the caption picks it up on its next edit.
+Future<void> learnLength(WidgetRef ref, DriveFile file, Duration known) async {
+  if (file.durationSeconds != null || known <= Duration.zero) return;
+  await ref
+      .read(appDatabaseProvider)
+      .updateFile(
+        file.id,
+        DriveFilesCompanion(durationSeconds: Value(known.inSeconds)),
+      );
+}
 
 /// Plays a video or audio file as it streams from Telegram, or from the
 /// phone when a copy is already here.
@@ -41,12 +56,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
   Future<void> _start() async {
     try {
-      final file = await ref.read(driveRepositoryProvider).fileById(widget.fileId);
-      if (file == null) throw const DriveException('This file is no longer in your drive.');
+      final file = await ref
+          .read(driveRepositoryProvider)
+          .fileById(widget.fileId);
+      if (file == null) {
+        throw const DriveException('This file is no longer in your drive.');
+      }
       if (!mounted) return;
       setState(() => _file = file);
 
-      final local = await ref.read(transferQueueProvider.notifier).localPathIfAvailable(file);
+      final local = await ref
+          .read(transferQueueProvider.notifier)
+          .localPathIfAvailable(file);
       final controller = local != null
           ? VideoPlayerController.file(File(local))
           : VideoPlayerController.networkUrl(
@@ -56,6 +77,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       controller.addListener(_onTick);
       await controller.initialize();
       if (!mounted) return;
+      unawaited(learnLength(ref, file, controller.value.duration));
       await controller.play();
       _scheduleHide();
       setState(() {});
@@ -68,7 +90,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     final value = _controller?.value;
     if (value == null) return;
     if (value.hasError && _error == null) {
-      setState(() => _error = value.errorDescription ?? 'This file can\'t be played here.');
+      setState(
+        () => _error =
+            value.errorDescription ?? 'This file can\'t be played here.',
+      );
     } else {
       setState(() {});
     }
@@ -147,7 +172,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         ),
       );
     } else {
-      stage = const Center(child: CircularProgressIndicator(color: Colors.white));
+      stage = const Center(
+        child: CircularProgressIndicator(color: Colors.white),
+      );
     }
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
@@ -159,7 +186,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           onTap: () => _setChrome(!_chrome),
           onDoubleTapDown: (details) {
             final half = MediaQuery.sizeOf(context).width / 2;
-            _skip(Duration(seconds: details.localPosition.dx < half ? -10 : 10));
+            _skip(
+              Duration(seconds: details.localPosition.dx < half ? -10 : 10),
+            );
           },
           onDoubleTap: () {},
           child: Stack(
@@ -167,7 +196,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
             children: [
               stage,
               if (ready && (value!.isBuffering) && _error == null)
-                const Center(child: CircularProgressIndicator(color: Colors.white70)),
+                const Center(
+                  child: CircularProgressIndicator(color: Colors.white70),
+                ),
               AnimatedOpacity(
                 opacity: _chrome || _isAudio ? 1 : 0,
                 duration: const Duration(milliseconds: 180),
@@ -223,7 +254,12 @@ class _Controls extends ConsumerWidget {
         gradient: LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
-          colors: [Color(0x99000000), Colors.transparent, Colors.transparent, Color(0x99000000)],
+          colors: [
+            Color(0x99000000),
+            Colors.transparent,
+            Colors.transparent,
+            Color(0x99000000),
+          ],
           stops: [0, 0.2, 0.75, 1],
         ),
       ),
@@ -243,7 +279,8 @@ class _Controls extends ConsumerWidget {
                 ),
                 if (file != null)
                   IconButton(
-                    onPressed: () => FileActions.showFileSheet(context, ref, file!),
+                    onPressed: () =>
+                        FileActions.showFileSheet(context, ref, file!),
                     icon: const Icon(Icons.more_vert_rounded, color: white),
                     tooltip: 'More',
                   ),
@@ -256,7 +293,11 @@ class _Controls extends ConsumerWidget {
                 children: [
                   IconButton(
                     onPressed: () => onSkip(const Duration(seconds: -10)),
-                    icon: const Icon(Icons.replay_10_rounded, color: white, size: 34),
+                    icon: const Icon(
+                      Icons.replay_10_rounded,
+                      color: white,
+                      size: 34,
+                    ),
                     tooltip: 'Back 10 seconds',
                   ),
                   const SizedBox(width: 24),
@@ -267,7 +308,9 @@ class _Controls extends ConsumerWidget {
                       padding: const EdgeInsets.all(14),
                       onPressed: onPlay,
                       icon: Icon(
-                        value!.isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                        value!.isPlaying
+                            ? Icons.pause_rounded
+                            : Icons.play_arrow_rounded,
                         color: white,
                         size: 44,
                       ),
@@ -277,7 +320,11 @@ class _Controls extends ConsumerWidget {
                   const SizedBox(width: 24),
                   IconButton(
                     onPressed: () => onSkip(const Duration(seconds: 10)),
-                    icon: const Icon(Icons.forward_10_rounded, color: white, size: 34),
+                    icon: const Icon(
+                      Icons.forward_10_rounded,
+                      color: white,
+                      size: 34,
+                    ),
                     tooltip: 'Forward 10 seconds',
                   ),
                 ],
@@ -288,7 +335,13 @@ class _Controls extends ConsumerWidget {
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
                 child: Row(
                   children: [
-                    Text(_clock(position), style: TextStyle(color: dim, fontFeatures: const [FontFeature.tabularFigures()])),
+                    Text(
+                      Formatters.length(position),
+                      style: TextStyle(
+                        color: dim,
+                        fontFeatures: const [FontFeature.tabularFigures()],
+                      ),
+                    ),
                     Expanded(
                       child: SliderTheme(
                         data: SliderTheme.of(context).copyWith(
@@ -300,16 +353,26 @@ class _Controls extends ConsumerWidget {
                         ),
                         child: Slider(
                           max: max <= 0 ? 1 : max,
-                          value: position.inMilliseconds.clamp(0, max <= 0 ? 1 : max).toDouble(),
-                          secondaryTrackValue:
-                              buffered.inMilliseconds.clamp(0, max <= 0 ? 1 : max).toDouble(),
+                          value: position.inMilliseconds
+                              .clamp(0, max <= 0 ? 1 : max)
+                              .toDouble(),
+                          secondaryTrackValue: buffered.inMilliseconds
+                              .clamp(0, max <= 0 ? 1 : max)
+                              .toDouble(),
                           onChanged: max <= 0
                               ? null
-                              : (ms) => onSeek(Duration(milliseconds: ms.round())),
+                              : (ms) =>
+                                    onSeek(Duration(milliseconds: ms.round())),
                         ),
                       ),
                     ),
-                    Text(_clock(duration), style: TextStyle(color: dim, fontFeatures: const [FontFeature.tabularFigures()])),
+                    Text(
+                      Formatters.length(duration),
+                      style: TextStyle(
+                        color: dim,
+                        fontFeatures: const [FontFeature.tabularFigures()],
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -317,13 +380,6 @@ class _Controls extends ConsumerWidget {
         ),
       ),
     );
-  }
-
-  static String _clock(Duration d) {
-    final hours = d.inHours;
-    final minutes = d.inMinutes.remainder(60).toString().padLeft(hours > 0 ? 2 : 1, '0');
-    final seconds = d.inSeconds.remainder(60).toString().padLeft(2, '0');
-    return hours > 0 ? '$hours:$minutes:$seconds' : '$minutes:$seconds';
   }
 }
 
@@ -346,10 +402,19 @@ class _AudioArt extends StatelessWidget {
               child: SizedBox.square(
                 dimension: 220,
                 child: file.hasPreview
-                    ? FileThumbnail(file: file, expand: true, radius: 0, size: 64)
+                    ? FileThumbnail(
+                        file: file,
+                        expand: true,
+                        radius: 0,
+                        size: 64,
+                      )
                     : const ColoredBox(
                         color: Color(0xFF20242A),
-                        child: Icon(Icons.music_note_rounded, color: Colors.white54, size: 96),
+                        child: Icon(
+                          Icons.music_note_rounded,
+                          color: Colors.white54,
+                          size: 96,
+                        ),
                       ),
               ),
             ),
@@ -359,7 +424,11 @@ class _AudioArt extends StatelessWidget {
               textAlign: TextAlign.center,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600),
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+              ),
             ),
             const SizedBox(height: 4),
             Text(
@@ -387,7 +456,11 @@ class _Problem extends ConsumerWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.error_outline_rounded, color: Colors.white70, size: 40),
+            const Icon(
+              Icons.error_outline_rounded,
+              color: Colors.white70,
+              size: 40,
+            ),
             const SizedBox(height: 12),
             Text(
               message,
@@ -397,7 +470,8 @@ class _Problem extends ConsumerWidget {
             if (file != null) ...[
               const SizedBox(height: 20),
               FilledButton.tonal(
-                onPressed: () => FileActions.openExternally(context, ref, file!),
+                onPressed: () =>
+                    FileActions.openExternally(context, ref, file!),
                 child: const Text('Open with another app'),
               ),
             ],

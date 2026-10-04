@@ -11,6 +11,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../../../core/files/file_kind.dart';
 import '../../../infrastructure/database/app_database.dart';
+import '../../../infrastructure/media/media_probe.dart';
 import '../../../infrastructure/network/network_status.dart';
 import '../../../infrastructure/storage/device_profile.dart';
 import '../../../infrastructure/storage/device_storage.dart';
@@ -48,6 +49,7 @@ class UploadRequest {
     this.thumbnailPath,
     this.wifiOnly = false,
     this.replacesFileId,
+    this.durationSeconds,
   }) : assert(path != null || openRead != null);
 
   final String name;
@@ -72,6 +74,11 @@ class UploadRequest {
   /// file goes to the trash marked as replaced by the new one.
   final String? replacesFileId;
 
+  /// How long a video or audio file runs, in seconds, when the caller
+  /// already knows; otherwise the queue reads it from the file before the
+  /// upload starts.
+  final int? durationSeconds;
+
   /// This request under another [name] or [path], or replacing a file.
   UploadRequest copyWith({
     String? name,
@@ -89,6 +96,7 @@ class UploadRequest {
     thumbnailPath: thumbnailPath,
     wifiOnly: wifiOnly,
     replacesFileId: replacesFileId ?? this.replacesFileId,
+    durationSeconds: durationSeconds,
   );
 }
 
@@ -533,6 +541,7 @@ class TransferQueue extends Notifier<TransfersState> {
         takenAt: request.takenAt,
         thumbnailPath: request.thumbnailPath,
         replacesFileId: request.replacesFileId,
+        durationSeconds: request.durationSeconds,
       );
       await _save(row);
       ids.add(id);
@@ -1295,6 +1304,22 @@ class TransferQueue extends Notifier<TransfersState> {
         await source.length() != initial.totalBytes) {
       throw DriveException(_notWhole(initial));
     }
+    // A video or audio file says how long it runs, so the caption can carry
+    // it. Nothing is read for other kinds, and a file that won't say keeps
+    // going without.
+    if (hasSource && initial.durationSeconds == null) {
+      final kind = FileKind.detect(
+        fileName: initial.name,
+        mimeType: initial.mimeType,
+      );
+      if (kind == FileKind.video || kind == FileKind.audio) {
+        final seconds = await MediaProbe.durationSeconds(source.path);
+        if (seconds != null) {
+          initial = initial.copyWith(durationSeconds: Value(seconds));
+          await _save(initial);
+        }
+      }
+    }
 
     final limit = session.isPremium
         ? SplitPolicy.premiumLimit
@@ -1352,6 +1377,7 @@ class TransferQueue extends Notifier<TransfersState> {
           partCount: partCount,
           partIndex: index,
           takenAt: row.takenAt,
+          durationSeconds: row.durationSeconds,
         );
         final thumbnail = index == 0 ? row.thumbnailPath : null;
         try {

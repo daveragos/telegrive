@@ -50,8 +50,9 @@ void main() {
   });
 
   test('a voice message recorded as MP3 is named .mp3', () {
-    final entry =
-        MessageIndexer.entryFor(_voice(mimeType: 'audio/mpeg')) as FilePartEntry;
+    final entry = MessageIndexer.entryFor(
+      _voice(mimeType: 'audio/mpeg'),
+    ) as FilePartEntry;
 
     expect(entry.file.name.value, 'voice_5.mp3');
     expect(entry.file.kind.value, FileKind.audio);
@@ -69,7 +70,8 @@ void main() {
   });
 
   test('a voice message with no type is Ogg', () {
-    final entry = MessageIndexer.entryFor(_voice(mimeType: '')) as FilePartEntry;
+    final entry =
+        MessageIndexer.entryFor(_voice(mimeType: '')) as FilePartEntry;
 
     expect(entry.file.name.value, 'voice_5.ogg');
     expect(entry.file.mimeType.value, 'audio/ogg');
@@ -88,7 +90,8 @@ void main() {
         modifiedAt: at,
       ),
     ).text;
-    final entry = MessageIndexer.entryFor(_voice(caption: caption)) as FilePartEntry;
+    final entry =
+        MessageIndexer.entryFor(_voice(caption: caption)) as FilePartEntry;
 
     expect(entry.file.id.value, 'k3v9');
     expect(entry.file.name.value, 'Selam, Friday.ogg');
@@ -98,23 +101,22 @@ void main() {
 
   test('a length and a replacement in the caption land in their columns', () {
     final at = DateTime(2025, 9, 12);
-    FileManifest manifest({int? durationSeconds, String? replacedBy}) => FileManifest(
-      id: 'k3v9',
-      name: 'clip.mp4',
-      folderId: null,
-      mimeType: 'video/mp4',
-      size: 9,
-      createdAt: at,
-      modifiedAt: at,
-      trashedAt: replacedBy == null ? null : at,
-      durationSeconds: durationSeconds,
-      replacedBy: replacedBy,
-    );
-    FilePartEntry entry(FileManifest m) =>
-        MessageIndexer.entryFor(
-              documentMessage(_id, ManifestCodec.encodeFile(m).text),
-            )
-            as FilePartEntry;
+    FileManifest manifest({int? durationSeconds, String? replacedBy}) =>
+        FileManifest(
+          id: 'k3v9',
+          name: 'clip.mp4',
+          folderId: null,
+          mimeType: 'video/mp4',
+          size: 9,
+          createdAt: at,
+          modifiedAt: at,
+          trashedAt: replacedBy == null ? null : at,
+          durationSeconds: durationSeconds,
+          replacedBy: replacedBy,
+        );
+    FilePartEntry entry(FileManifest m) => MessageIndexer.entryFor(
+      documentMessage(_id, ManifestCodec.encodeFile(m).text),
+    ) as FilePartEntry;
 
     final known = entry(manifest(durationSeconds: 90, replacedBy: 'new')).file;
     expect(known.durationSeconds.value, 90);
@@ -128,12 +130,87 @@ void main() {
     expect(plain.replacedBy.value, isNull);
   });
 
+  test('a forwarded video or audio file takes its length from Telegram', () {
+    td.Message video({int duration = 84, String caption = ''}) =>
+        channelMessage(
+          _id,
+          td.MessageVideo(
+            video: td.Video(
+              duration: duration,
+              width: 1920,
+              height: 1080,
+              fileName: 'clip.mp4',
+              mimeType: 'video/mp4',
+              hasStickers: false,
+              supportsStreaming: true,
+              video: tdFile(9, size: 84 * 1024 * 1024),
+            ),
+            caption: td.FormattedText(text: caption, entities: const []),
+            showCaptionAboveMedia: false,
+            hasSpoiler: false,
+            isSecret: false,
+          ),
+        );
+    final clip = (MessageIndexer.entryFor(video()) as FilePartEntry).file;
+    expect(clip.kind.value, FileKind.video);
+    expect(clip.durationSeconds.value, 84);
+
+    // A length Telegram doesn't know leaves one learned here alone.
+    final unknown =
+        (MessageIndexer.entryFor(video(duration: 0)) as FilePartEntry).file;
+    expect(unknown.durationSeconds.present, isFalse);
+
+    // The app's own caption says how long the file is, whatever Telegram
+    // makes of the container.
+    final at = DateTime(2025, 9, 12);
+    final own = ManifestCodec.encodeFile(
+      FileManifest(
+        id: 'k3v9',
+        name: 'clip.mp4',
+        folderId: null,
+        mimeType: 'video/mp4',
+        size: 9,
+        createdAt: at,
+        modifiedAt: at,
+        durationSeconds: 90,
+      ),
+    ).text;
+    final captioned =
+        (MessageIndexer.entryFor(video(caption: own)) as FilePartEntry).file;
+    expect(captioned.durationSeconds.value, 90);
+
+    final track = channelMessage(
+      _id,
+      td.MessageAudio(
+        audio: td.Audio(
+          duration: 300,
+          title: 'Tizita',
+          performer: '',
+          fileName: 'tizita.mp3',
+          mimeType: 'audio/mpeg',
+          externalAlbumCovers: const [],
+          audio: tdFile(10),
+        ),
+        caption: td.FormattedText(text: '', entities: const []),
+      ),
+    );
+    final audio = (MessageIndexer.entryFor(track) as FilePartEntry).file;
+    expect(audio.kind.value, FileKind.audio);
+    expect(audio.durationSeconds.value, 300);
+
+    final voice = (MessageIndexer.entryFor(_voice()) as FilePartEntry).file;
+    expect(voice.durationSeconds.value, 12);
+  });
+
   test('a starred folder is indexed starred', () {
     FolderEntry entry(String json) =>
         MessageIndexer.entryFor(textMessage(_id, '📁 Invoices\ntgrf1:$json'))
             as FolderEntry;
 
-    expect(entry('{"id":"inv","n":"Invoices","st":1}').folder.starred.value, isTrue);
+    expect(
+      entry('{"id":"inv","n":"Invoices","st":1}').folder.starred.value,
+      isTrue,
+    );
     expect(entry('{"id":"inv","n":"Invoices"}').folder.starred.value, isFalse);
   });
 

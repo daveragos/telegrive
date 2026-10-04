@@ -15,7 +15,8 @@ import 'package:telegrive/infrastructure/database/app_database.dart';
 import 'package:telegrive/infrastructure/storage/preferences.dart';
 
 /// A one-pixel PNG, standing in for Telegram's inline preview.
-const _preview = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGMQUDAAAACkAGE0Zn1yAAAAAElFTkSuQmCC';
+const _preview =
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGMQUDAAAACkAGE0Zn1yAAAAAElFTkSuQmCC';
 
 void main() {
   late AppDatabase db;
@@ -40,7 +41,13 @@ void main() {
         modifiedAt: at,
         minithumbnail: const Value(_preview),
       ),
-      FilePartsCompanion.insert(fileId: 'photo', partIndex: 0, messageId: 1, tdFileId: 2, size: 100),
+      FilePartsCompanion.insert(
+        fileId: 'photo',
+        partIndex: 0,
+        messageId: 1,
+        tdFileId: 2,
+        size: 100,
+      ),
     );
   });
 
@@ -66,10 +73,29 @@ void main() {
     hasMinithumbnail: true,
   );
 
+  /// A clip with the inline preview and, when given, a length.
+  DriveFile clip({int? durationSeconds}) => DriveFile(
+    id: 'clip',
+    folderId: null,
+    name: 'clip.mp4',
+    mimeType: 'video/mp4',
+    kind: FileKind.video,
+    size: 84 * 1024 * 1024,
+    createdAt: DateTime(2026, 10, 4),
+    modifiedAt: DateTime(2026, 10, 4),
+    partCount: 1,
+    starred: false,
+    minithumbnail: bytes,
+    durationSeconds: durationSeconds,
+  );
+
+  /// The tile as a row's 44 px slot, or, with [tileWidth], as a grid tile
+  /// filling a square that wide.
   Future<ProviderContainer> pumpTile(
     WidgetTester tester,
     DriveFile file, {
     Map<String, Object> prefs = const {},
+    double? tileWidth,
   }) async {
     // ignore: invalid_use_of_visible_for_testing_member
     SharedPreferences.setMockInitialValues(prefs);
@@ -85,14 +111,22 @@ void main() {
           home: Scaffold(
             body: ValueListenableBuilder(
               valueListenable: onScreen,
-              builder: (_, shown, _) =>
-                  shown ? FileThumbnail(file: file, size: 44) : const SizedBox(),
+              builder: (_, shown, _) => !shown
+                  ? const SizedBox()
+                  : tileWidth == null
+                  ? FileThumbnail(file: file, size: 44)
+                  : SizedBox.square(
+                      dimension: tileWidth,
+                      child: FileThumbnail(file: file, expand: true),
+                    ),
             ),
           ),
         ),
       ),
     );
-    final container = ProviderScope.containerOf(tester.element(find.byType(FileThumbnail)));
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(FileThumbnail)),
+    );
     // The database answers outside the test's fake clock.
     await tester.runAsync(() => pumpEventQueue());
     await tester.pump();
@@ -105,43 +139,94 @@ void main() {
     return images.isEmpty ? null : images.single;
   }
 
-  testWidgets('a tile read without its preview reads it for itself, blurred', (tester) async {
+  testWidgets('a tile read without its preview reads it for itself, blurred', (
+    tester,
+  ) async {
     await pumpTile(tester, photo());
 
     final image = drawn(tester)!;
-    expect(image.image, isA<MemoryImage>().having((m) => m.bytes, 'bytes', bytes));
+    expect(
+      image.image,
+      isA<MemoryImage>().having((m) => m.bytes, 'bytes', bytes),
+    );
     expect(find.byType(ImageFiltered), findsOneWidget);
   });
 
-  testWidgets('while saving memory that preview is drawn plain', (tester) async {
+  testWidgets('while saving memory that preview is drawn plain', (
+    tester,
+  ) async {
     await pumpTile(tester, photo(), prefs: {'save_memory': true});
 
     final image = drawn(tester)!;
-    expect(image.image, isA<MemoryImage>().having((m) => m.bytes, 'bytes', bytes));
+    expect(
+      image.image,
+      isA<MemoryImage>().having((m) => m.bytes, 'bytes', bytes),
+    );
     expect(image.filterQuality, FilterQuality.low);
     expect(find.byType(ImageFiltered), findsNothing);
   });
 
-  testWidgets('a tile that came with its preview reads nothing', (tester) async {
+  testWidgets('a tile that came with its preview reads nothing', (
+    tester,
+  ) async {
     final container = await pumpTile(tester, photo(withPreview: true));
 
     expect(drawn(tester), isNotNull);
     expect(container.exists(minithumbnailProvider('photo')), isFalse);
   });
 
-  testWidgets('a preview read for a tile is kept for 30 seconds after the tile goes', (
+  testWidgets('a video tile in a grid shows the band with its length', (
     tester,
   ) async {
-    final container = await pumpTile(tester, photo());
-    expect(container.exists(minithumbnailProvider('photo')), isTrue);
+    await pumpTile(tester, clip(durationSeconds: 84), tileWidth: 120);
 
-    onScreen.value = false;
-    await tester.pump();
-    await tester.pump(const Duration(seconds: 29));
-    expect(container.exists(minithumbnailProvider('photo')), isTrue);
-
-    await tester.pump(const Duration(seconds: 2));
-    await tester.pump();
-    expect(container.exists(minithumbnailProvider('photo')), isFalse);
+    expect(find.byIcon(Icons.play_arrow_rounded), findsOneWidget);
+    expect(find.text('1:24'), findsOneWidget);
+    expect(find.byIcon(Icons.play_circle_filled_rounded), findsNothing);
   });
+
+  testWidgets('a narrow video tile keeps the glyph and drops the length', (
+    tester,
+  ) async {
+    await pumpTile(tester, clip(durationSeconds: 84), tileWidth: 60);
+
+    expect(find.byIcon(Icons.play_arrow_rounded), findsOneWidget);
+    expect(find.text('1:24'), findsNothing);
+  });
+
+  testWidgets('a video with no known length shows the band without a time', (
+    tester,
+  ) async {
+    await pumpTile(tester, clip(), tileWidth: 120);
+
+    expect(find.byIcon(Icons.play_arrow_rounded), findsOneWidget);
+    expect(find.byType(Text), findsNothing);
+  });
+
+  testWidgets('a row slot keeps the small play icon and no text', (
+    tester,
+  ) async {
+    await pumpTile(tester, clip(durationSeconds: 84));
+
+    expect(find.byIcon(Icons.play_circle_filled_rounded), findsOneWidget);
+    expect(find.byIcon(Icons.play_arrow_rounded), findsNothing);
+    expect(find.byType(Text), findsNothing);
+  });
+
+  testWidgets(
+    'a preview read for a tile is kept for 30 seconds after the tile goes',
+    (tester) async {
+      final container = await pumpTile(tester, photo());
+      expect(container.exists(minithumbnailProvider('photo')), isTrue);
+
+      onScreen.value = false;
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 29));
+      expect(container.exists(minithumbnailProvider('photo')), isTrue);
+
+      await tester.pump(const Duration(seconds: 2));
+      await tester.pump();
+      expect(container.exists(minithumbnailProvider('photo')), isFalse);
+    },
+  );
 }

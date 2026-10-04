@@ -44,6 +44,7 @@ import '../../transfers/domain/transfer_wait.dart';
 import '../../transfers/presentation/mobile_data_prompt.dart';
 import '../../trash/data/pending_deletes.dart';
 import '../data/bulk_edits.dart';
+import 'file_tiles.dart';
 import 'folder_picker.dart';
 import 'trash_sheet.dart';
 
@@ -1600,8 +1601,7 @@ abstract final class FileActions {
                 _SheetHeader(
                   leading: FileThumbnail(file: file, size: 52),
                   title: file.name,
-                  subtitle:
-                      '${Formatters.bytes(file.size)} · ${Formatters.date(file.modifiedAt)}',
+                  subtitle: fileMetaLine(file),
                 ),
                 const Divider(height: 16),
                 _SheetAction(
@@ -1869,6 +1869,8 @@ abstract final class FileActions {
       'Size',
       '${Formatters.bytes(file.size)} (${Formatters.count(file.size, 'byte')})',
     ),
+    if (file.duration case final d?)
+      DetailLine('Duration', Formatters.length(d)),
     if (file.takenAt case final taken?)
       DetailLine('Taken', Formatters.fullDate(taken)),
     DetailLine('Location', ['Files', ...path].join(' › '), onTap: showFolder),

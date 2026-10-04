@@ -468,8 +468,7 @@ class _Files extends ConsumerWidget {
               return FileListTile(
                 file: file,
                 subtitle: [
-                  subtitles?[index] ??
-                      '${Formatters.bytes(file.size)} · ${Formatters.date(file.modifiedAt)}',
+                  subtitles?[index] ?? fileMetaLine(file),
                   if (byId != null) locationOf(byId, file.folderId),
                 ].join(' · '),
                 selected: selected.contains(file.id),

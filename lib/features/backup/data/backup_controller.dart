@@ -223,14 +223,15 @@ class BackupController extends Notifier<BackupState> {
   /// How many of the photos still to go up the state lists by name.
   static const int _waitingShown = 20;
 
-  static const PermissionRequestOption permissionOption = PermissionRequestOption(
-    androidPermission: AndroidPermission(
-      type: RequestType.common,
-      // Keeps GPS in the EXIF of backed-up originals; Android strips it
-      // from apps without this permission.
-      mediaLocation: true,
-    ),
-  );
+  static const PermissionRequestOption permissionOption =
+      PermissionRequestOption(
+        androidPermission: AndroidPermission(
+          type: RequestType.common,
+          // Keeps GPS in the EXIF of backed-up originals; Android strips it
+          // from apps without this permission.
+          mediaLocation: true,
+        ),
+      );
 
   bool _running = false;
   bool _rerun = false;
@@ -292,7 +293,8 @@ class BackupController extends Notifier<BackupState> {
     });
 
     ref.listen<NetworkState>(networkStatusProvider, (_, next) {
-      final waiting = state.phase == BackupPhase.waitingForWifi ||
+      final waiting =
+          state.phase == BackupPhase.waitingForWifi ||
           state.phase == BackupPhase.waitingForBudget;
       if (waiting && next.online && !next.metered) {
         schedule(immediate: true);
@@ -378,7 +380,10 @@ class BackupController extends Notifier<BackupState> {
       unawaited(_queue.cancel(item.id));
     }
     _heldUploads.clear();
-    state = BackupState(phase: BackupPhase.off, lastCompleted: state.lastCompleted);
+    state = BackupState(
+      phase: BackupPhase.off,
+      lastCompleted: state.lastCompleted,
+    );
   }
 
   Future<void> setIncludeVideos(bool value) async {
@@ -456,7 +461,10 @@ class BackupController extends Notifier<BackupState> {
     if (await _db.markAssetSkipped(assetId) == 0) return false;
     if (state.failedIds.contains(assetId)) {
       state = state
-          ._withFailed({...state.failedIds}..remove(assetId), total: math.max(0, state.total - 1))
+          ._withFailed(
+            {...state.failedIds}..remove(assetId),
+            total: math.max(0, state.total - 1),
+          )
           .copyWith(skippedIds: {...state.skippedIds, assetId});
     }
     return true;
@@ -623,7 +631,9 @@ class BackupController extends Notifier<BackupState> {
     // working, which would start the transfer service for nothing. The
     // check after the scan is the one that decides.
     state = state.copyWith(
-      phase: _waitsForWifi() ? BackupPhase.waitingForWifi : BackupPhase.scanning,
+      phase: _waitsForWifi()
+          ? BackupPhase.waitingForWifi
+          : BackupPhase.scanning,
       heldVideos: 0,
       heldForBudget: 0,
       clearCurrent: true,
@@ -634,7 +644,10 @@ class BackupController extends Notifier<BackupState> {
     // the whole channel. After a reinstall, a first read that stopped short
     // would make older photos look new and send them up a second time.
     if (!_indexComplete()) {
-      state = state.copyWith(phase: BackupPhase.waitingForDrive, clearCurrent: true);
+      state = state.copyWith(
+        phase: BackupPhase.waitingForDrive,
+        clearCurrent: true,
+      );
       return;
     }
     final assets = await _scan();
@@ -671,10 +684,11 @@ class BackupController extends Notifier<BackupState> {
         from++;
       }
       return [
-        for (final asset in waiting
-            .skip(from)
-            .where((a) => !settled.contains(a.id))
-            .take(_waitingShown))
+        for (final asset
+            in waiting
+                .skip(from)
+                .where((a) => !settled.contains(a.id))
+                .take(_waitingShown))
           PendingAsset(
             assetId: asset.id,
             takenAt: asset.createDateTime,
@@ -690,7 +704,8 @@ class BackupController extends Notifier<BackupState> {
     // photo that is in the drive, such as one asked for while it was going
     // up. A failed photo the person retried stays asked for.
     _priority.removeWhere(
-      (id) => !inScope.containsKey(id) || known[id]?.state == BackupAssetState.done,
+      (id) =>
+          !inScope.containsKey(id) || known[id]?.state == BackupAssetState.done,
     );
     // Read after the scan, so a phone that moved onto mobile data while the
     // library was read is caught. With mobile data for photos only, videos
@@ -721,7 +736,10 @@ class BackupController extends Notifier<BackupState> {
         );
     if (!hasWork) {
       if (heldVideos > 0) {
-        state = state.copyWith(phase: BackupPhase.waitingForWifi, clearCurrent: true);
+        state = state.copyWith(
+          phase: BackupPhase.waitingForWifi,
+          clearCurrent: true,
+        );
       } else {
         await _finishPass(startedAt);
       }
@@ -777,7 +795,9 @@ class BackupController extends Notifier<BackupState> {
             state = state.copyWith(done: state.done + 1, waiting: shown());
           case _Outcome.failed:
             settled.add(asset.id);
-            state = state._withFailed({...state.failedIds, asset.id}).copyWith(waiting: shown());
+            state = state
+                ._withFailed({...state.failedIds, asset.id})
+                .copyWith(waiting: shown());
         }
       }
     }
@@ -820,7 +840,8 @@ class BackupController extends Notifier<BackupState> {
   /// (until Retry) is not.
   static bool _due(BackupAssetRow? record) =>
       record == null ||
-      (record.state == BackupAssetState.failed && record.failures < maxFailures);
+      (record.state == BackupAssetState.failed &&
+          record.failures < maxFailures);
 
   /// The channel has been read in full at least once on this phone, and
   /// the latest sync didn't fail.
@@ -884,7 +905,11 @@ class BackupController extends Notifier<BackupState> {
 
       final file = await asset.originFile;
       if (file == null || !await file.exists()) {
-        return await _fail(asset, record, 'This photo is no longer on this phone.');
+        return await _fail(
+          asset,
+          record,
+          'This photo is no longer on this phone.',
+        );
       }
       final name = await _nameOf(asset, file);
       final size = await file.length();
@@ -899,7 +924,8 @@ class BackupController extends Notifier<BackupState> {
       // Android 11+ hands back the original; only delete our own copies.
       final temp = (await getTemporaryDirectory()).path;
       final ownsSource = file.path.startsWith(temp);
-      if (await _allowance(isVideo: isVideo, bytes: size) != BackupAllowance.go) {
+      if (await _allowance(isVideo: isVideo, bytes: size) !=
+          BackupAllowance.go) {
         if (ownsSource) await _deleteQuietly(file.path);
         return _hold(isVideo: isVideo);
       }
@@ -920,10 +946,19 @@ class BackupController extends Notifier<BackupState> {
           thumbnailPath: thumbnail,
           // An upload under way when the phone moves onto mobile data it
           // may not use (a hotspot included) steps back to wait for Wi-Fi.
-          wifiOnly: !mayUseMobileData(_prefs.backupMobileData, isVideo: isVideo),
+          wifiOnly: !mayUseMobileData(
+            _prefs.backupMobileData,
+            isVideo: isVideo,
+          ),
+          // The gallery already knows a video's length, in whole seconds.
+          durationSeconds: isVideo && asset.duration > 0
+              ? asset.duration
+              : null,
         ),
       ], folderId: folderId);
-      if (ids.isEmpty) return await _fail(asset, record, 'Couldn\'t start the upload.');
+      if (ids.isEmpty) {
+        return await _fail(asset, record, 'Couldn\'t start the upload.');
+      }
       thumbnail = null; // The queue owns it now.
 
       return await _follow(asset, ids.first, record, (fileId) {
@@ -969,7 +1004,10 @@ class BackupController extends Notifier<BackupState> {
   /// for Wi-Fi while the phone is on mobile data.
   Future<TransferRow?> _untilEndedOrHeld(String id) async {
     final ended = Completer<TransferRow?>();
-    final queue = ref.listen<TransfersState>(transferQueueProvider, (_, transfers) {
+    final queue = ref.listen<TransfersState>(transferQueueProvider, (
+      _,
+      transfers,
+    ) {
       final row = transfers.items.where((t) => t.id == id).firstOrNull?.row;
       if (row != null &&
           row.status == TransferStatus.queued &&
@@ -994,7 +1032,11 @@ class BackupController extends Notifier<BackupState> {
   /// Records a failed try with [reason]. [_Outcome.failed] once the photo
   /// is out of tries; while it has tries left it stays waiting, and the
   /// pass asks for another soon after it ends.
-  Future<_Outcome> _fail(AssetEntity asset, BackupAssetRow? record, String reason) async {
+  Future<_Outcome> _fail(
+    AssetEntity asset,
+    BackupAssetRow? record,
+    String reason,
+  ) async {
     final failures = (record?.failures ?? 0) + 1;
     await _db.markAssetFailed(asset.id, failures, reason: reason);
     if (failures >= maxFailures) return _Outcome.failed;
@@ -1019,12 +1061,20 @@ class BackupController extends Notifier<BackupState> {
   /// The backup rule for an item of [bytes], against the monthly limit as
   /// TDLib counts it now, with what the backup uploads already let onto
   /// mobile data still have to send.
-  Future<BackupAllowance> _allowance({required bool isVideo, required int bytes}) async {
+  Future<BackupAllowance> _allowance({
+    required bool isVideo,
+    required int bytes,
+  }) async {
     await ref.read(mobileDataProvider.notifier).refresh();
     final committed = ref
         .read(transferQueueProvider)
         .items
-        .where((t) => t.origin == TransferOrigin.backup && t.status.isPending && !t.row.wifiOnly)
+        .where(
+          (t) =>
+              t.origin == TransferOrigin.backup &&
+              t.status.isPending &&
+              !t.row.wifiOnly,
+        )
         .fold<int>(0, (sum, t) => sum + t.row.totalBytes - t.row.doneBytes);
     return backupAllowance(
       data: ref.read(mobileDataProvider),
@@ -1039,7 +1089,10 @@ class BackupController extends Notifier<BackupState> {
   /// Wi-Fi only, so the queue keeps them and steps back any under way on
   /// mobile data; those it lets go are released.
   Future<void> _markQueued() async {
-    if (!ref.read(transferQueueProvider).items.any((t) => t.origin == TransferOrigin.backup)) {
+    if (!ref
+        .read(transferQueueProvider)
+        .items
+        .any((t) => t.origin == TransferOrigin.backup)) {
       return;
     }
     await ref.read(mobileDataProvider.notifier).refresh();
@@ -1049,13 +1102,20 @@ class BackupController extends Notifier<BackupState> {
     final release = <String>[];
     var planned = 0;
     for (final item in ref.read(transferQueueProvider).items.reversed) {
-      if (item.origin != TransferOrigin.backup || !item.status.isPending) continue;
+      if (item.origin != TransferOrigin.backup || !item.status.isPending) {
+        continue;
+      }
       final row = item.row;
       final isVideo = item.fileKind == FileKind.video;
       final left = row.totalBytes - row.doneBytes;
       final allowed =
           mayUseMobileData(mode, isVideo: isVideo) &&
-          backupAllowance(data: data, mode: mode, isVideo: isVideo, bytes: planned + left) ==
+          backupAllowance(
+                data: data,
+                mode: mode,
+                isVideo: isVideo,
+                bytes: planned + left,
+              ) ==
               BackupAllowance.go;
       if (allowed) planned += left;
       if (allowed && row.wifiOnly) release.add(row.id);
@@ -1076,8 +1136,11 @@ class BackupController extends Notifier<BackupState> {
   }
 
   /// Backup as a whole waits for Wi-Fi, so no count of held videos applies.
-  void _pauseForWifi() =>
-      state = state.copyWith(phase: BackupPhase.waitingForWifi, heldVideos: 0, clearCurrent: true);
+  void _pauseForWifi() => state = state.copyWith(
+    phase: BackupPhase.waitingForWifi,
+    heldVideos: 0,
+    clearCurrent: true,
+  );
 
   static Future<void> _deleteQuietly(String path) async {
     try {
@@ -1091,7 +1154,9 @@ class BackupController extends Notifier<BackupState> {
       type: _prefs.backupVideos ? RequestType.common : RequestType.image,
       onlyAll: true,
       filterOption: FilterOptionGroup(
-        orders: [const OrderOption(type: OrderOptionType.createDate, asc: false)],
+        orders: [
+          const OrderOption(type: OrderOptionType.createDate, asc: false),
+        ],
       ),
     );
     if (paths.isEmpty) return const [];
@@ -1192,9 +1257,8 @@ class BackupController extends Notifier<BackupState> {
 /// How one item's turn in a pass ended.
 enum _Outcome { done, failed, skipped, held }
 
-final backupControllerProvider = NotifierProvider<BackupController, BackupState>(
-  BackupController.new,
-);
+final backupControllerProvider =
+    NotifierProvider<BackupController, BackupState>(BackupController.new);
 
 /// How many photos and videos the drive holds from backup, live.
 final backedUpCountProvider = StreamProvider.autoDispose<int>(
@@ -1203,19 +1267,29 @@ final backedUpCountProvider = StreamProvider.autoDispose<int>(
 
 /// Photos that are out of tries, most recently failed first, live. Only
 /// the ones in [BackupState.failedIds], so the list matches the count.
-final failedBackupAssetsProvider = StreamProvider.autoDispose<List<BackupAssetRow>>((ref) {
-  final counted = ref.watch(backupControllerProvider.select((s) => s.failedIds));
-  return ref
-      .watch(appDatabaseProvider)
-      .watchFailedAssets(minFailures: BackupController.maxFailures)
-      .map((rows) => [for (final row in rows) if (counted.contains(row.assetId)) row]);
-});
+final failedBackupAssetsProvider =
+    StreamProvider.autoDispose<List<BackupAssetRow>>((ref) {
+      final counted = ref.watch(
+        backupControllerProvider.select((s) => s.failedIds),
+      );
+      return ref
+          .watch(appDatabaseProvider)
+          .watchFailedAssets(minFailures: BackupController.maxFailures)
+          .map(
+            (rows) => [
+              for (final row in rows)
+                if (counted.contains(row.assetId)) row,
+            ],
+          );
+    });
 
 /// How many photos the person set aside, live. Only the ones in
 /// [BackupState.skippedIds], so the count covers the photos the total
 /// leaves out.
 final skippedBackupCountProvider = StreamProvider.autoDispose<int>((ref) {
-  final counted = ref.watch(backupControllerProvider.select((s) => s.skippedIds));
+  final counted = ref.watch(
+    backupControllerProvider.select((s) => s.skippedIds),
+  );
   return ref
       .watch(appDatabaseProvider)
       .watchSkippedAssetIds()

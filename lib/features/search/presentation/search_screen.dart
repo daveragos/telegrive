@@ -8,7 +8,6 @@ import '../../../app/theme/tokens.dart';
 import '../../../core/async/combine.dart';
 import '../../../core/files/file_kind.dart';
 import '../../../core/format/date_query.dart';
-import '../../../core/format/formatters.dart';
 import '../../../core/widgets/common.dart';
 import '../../drive/data/drive_repository.dart';
 import '../../drive/domain/drive_models.dart';
@@ -301,8 +300,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                                 onMore: () =>
                                     FileActions.showFileSheet(context, ref, file),
                                 subtitle: [
-                                  Formatters.bytes(file.size),
-                                  Formatters.date(file.modifiedAt),
+                                  fileMetaLine(file),
                                   // Inside the scoped folder itself the
                                   // place goes without saying.
                                   if (byId != null &&

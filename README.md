@@ -29,8 +29,11 @@ phone number.
   which says when the photo was taken, which folder and albums it is in and
   whether it came from this phone, and opens it in Telegram. The viewer's
   bar says which photo of how many you are on and moves it to the trash,
-  with Undo. Screenshots and chat folders back up too,
-  but the timeline leaves them out until you tap Show. Long-press and drag
+  with Undo. Video tiles carry a play glyph on a band along the bottom with
+  the clip's length, and a video in the viewer waits on its poster until
+  you tap Play, then plays in place with sound; tap to pause, scrub along
+  the bottom, or open the full player. Screenshots and chat folders back up
+  too, but the timeline leaves them out until you tap Show. Long-press and drag
   to select a run of photos, pinch to change the grid, and keep albums (a
   photo can be in several without being copied), plus Favorites and Videos.
   On a long timeline a thin handle shows at the right edge while you
@@ -203,7 +206,10 @@ phone number.
 - **Watch and read without downloading.** Videos, music, call recordings
   and audiobooks stream as they play, with seeking, even across a split
   file's parts. On mobile data only a short stretch ahead of what plays is
-  fetched, and nothing more comes down once the player closes. PDFs open
+  fetched, and nothing more comes down once the player closes. Video and
+  audio files say how long they run in their rows and in Details, as
+  '1:12:40 · 1.2 GB', so the ten-minute recap stands out from the
+  lectures around it. PDFs open
   page by page without downloading the whole file, split ones included,
   and text files open in the app too. Everything else opens in the right
   app on your phone.
@@ -291,7 +297,7 @@ phone number.
   device folders you switch off. Folders that appear later are included.
 - **Where it goes.** `My Drive › Photo backup › <device folder>`, originals
   in full quality with their capture date and GPS data intact, plus a
-  preview thumbnail so videos have posters too.
+  preview thumbnail so videos have posters too, and each video's length.
 - **Out of the way.** Screenshots and chat folders back up too but stay out
   of the Photos view unless you show them; change this per folder in Backup
   settings.
@@ -334,7 +340,12 @@ Telegram (source of truth)                 This device
 - **Files** carry a manifest in their caption: id, name, folder, MIME type,
   size, dates, star, and `partIndex`/`partCount` for split files. A file
   that Replace sent to the trash also names the file that replaced it;
-  restoring it clears that again.
+  restoring it clears that again. A video or audio file carries its length
+  in seconds when it is known: read from the file as it goes up, from the
+  gallery for a backed-up video, or from Telegram for a forwarded one. A
+  length first learned by playing the file is kept on the phone and written
+  into the caption the next time that caption is edited anyway, so knowing
+  it never costs an edit of its own.
 - **Folders** are small text messages carrying their own id, name, parent
   and star, so renames, moves and stars are a single edit and two devices
   never overwrite each other's folder tree.
@@ -409,6 +420,8 @@ two commands are at the top of that test.
 - Split files appear in Telegram as numbered parts (`movie.mkv.001`, …). Only
   Telegrive joins them back.
 - Forwarded files land at the root; move them into folders from the app.
+- A video the phone's player can't decode in the viewer, such as some MKV
+  files, keeps its poster and offers Open with another app instead.
 - Replace moves the old file to Trash only once the new upload has landed,
   so a cancelled or failed upload leaves the old file as it was. Photo
   backup never asks about name clashes; it recognises its own photos by

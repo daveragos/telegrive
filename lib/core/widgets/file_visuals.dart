@@ -14,11 +14,17 @@ import '../../features/drive/data/previews.dart';
 import '../../features/drive/domain/drive_models.dart';
 import '../../infrastructure/storage/device_profile.dart';
 import '../files/file_kind.dart';
+import '../format/formatters.dart';
 
 /// A neutral slot with the kind glyph in it — the stand-in for a file that
 /// has no picture of its own. Every row has one, so names line up.
 class FileIconTile extends StatelessWidget {
-  const FileIconTile({super.key, required this.style, this.size = 44, this.radius});
+  const FileIconTile({
+    super.key,
+    required this.style,
+    this.size = 44,
+    this.radius,
+  });
 
   final FileStyle style;
   final double size;
@@ -86,7 +92,12 @@ class FileThumbnail extends StatelessWidget {
   static ImageProvider telegramImage(String path, int px) {
     final image = FileImage(File(path));
     return px < 160
-        ? ResizeImage(image, width: 2 * px, height: 2 * px, policy: ResizeImagePolicy.fit)
+        ? ResizeImage(
+            image,
+            width: 2 * px,
+            height: 2 * px,
+            policy: ResizeImagePolicy.fit,
+          )
         : image;
   }
 
@@ -138,13 +149,20 @@ class _ThumbnailBody extends ConsumerWidget {
         expand ? child : SizedBox.square(dimension: size, child: child);
 
     final local = isMedia
-        ? ref.watch(localThumbnailProvider((fileId: file.id, px: thumbBucket(px)))).value
+        ? ref
+              .watch(
+                localThumbnailProvider((fileId: file.id, px: thumbBucket(px))),
+              )
+              .value
         : null;
 
     if (!file.hasPreview && local == null) {
       return framed(
         DecoratedBox(
-          decoration: BoxDecoration(color: colors.surface2, borderRadius: corner),
+          decoration: BoxDecoration(
+            color: colors.surface2,
+            borderRadius: corner,
+          ),
           child: Center(
             child: Icon(
               style.icon,
@@ -168,7 +186,8 @@ class _ThumbnailBody extends ConsumerWidget {
 
     // A row read without its inline preview reads it on its own, unless the
     // phone's copy is already here.
-    final mini = file.minithumbnail ??
+    final mini =
+        file.minithumbnail ??
         (file.hasMinithumbnail && local == null
             ? ref.watch(minithumbnailProvider(file.id)).value
             : null);
@@ -198,16 +217,24 @@ class _ThumbnailBody extends ConsumerWidget {
             else
               ?placeholder,
             if (file.kind == FileKind.video)
-              Positioned(
-                right: expand ? 6 : 3,
-                bottom: expand ? 6 : 3,
-                child: Icon(
-                  Icons.play_circle_filled_rounded,
-                  color: Colors.white,
-                  size: expand ? 22 : 16,
-                  shadows: const [Shadow(color: Color(0x66000000), blurRadius: 6)],
+              if (expand)
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  child: _VideoBand(duration: file.duration),
+                )
+              else
+                const Positioned(
+                  right: 3,
+                  bottom: 3,
+                  child: Icon(
+                    Icons.play_circle_filled_rounded,
+                    color: Colors.white,
+                    size: 16,
+                    shadows: [Shadow(color: Color(0x66000000), blurRadius: 6)],
+                  ),
                 ),
-              ),
           ],
         ),
       ),
@@ -222,13 +249,51 @@ class _ThumbnailBody extends ConsumerWidget {
   /// fling.
   static String? _thumbPath(BuildContext context, WidgetRef ref, int id) {
     final provider = thumbnailPathProvider(id);
-    if (!ref.exists(provider) && Scrollable.recommendDeferredLoadingForContext(context)) {
+    if (!ref.exists(provider) &&
+        Scrollable.recommendDeferredLoadingForContext(context)) {
       SchedulerBinding.instance.scheduleFrameCallback((_) {
         if (context.mounted) (context as Element).markNeedsBuild();
       });
       return null;
     }
     return ref.watch(provider).value;
+  }
+}
+
+/// The band along the bottom of a video tile: a play glyph at the left and,
+/// when the length is known and the tile is wide enough to hold it, the
+/// length at the right. A tile under 72 px, as in a dense grid on a small
+/// phone, shows the glyph alone.
+class _VideoBand extends StatelessWidget {
+  const _VideoBand({required this.duration});
+
+  final Duration? duration;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) => Container(
+        height: 22,
+        color: Colors.black.withValues(alpha: 0.4),
+        padding: const EdgeInsets.symmetric(horizontal: 6),
+        child: Row(
+          children: [
+            const Icon(Icons.play_arrow_rounded, size: 16, color: Colors.white),
+            const Spacer(),
+            if (duration case final d? when constraints.maxWidth >= 72)
+              Text(
+                Formatters.length(d),
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  fontFeatures: tabularFigures,
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -247,7 +312,11 @@ class _Blurred extends StatelessWidget {
     return Transform.scale(
       scale: 1.2,
       child: ImageFiltered(
-        imageFilter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma, tileMode: TileMode.clamp),
+        imageFilter: ImageFilter.blur(
+          sigmaX: sigma,
+          sigmaY: sigma,
+          tileMode: TileMode.clamp,
+        ),
         child: Image.memory(
           bytes,
           fit: BoxFit.cover,

@@ -58,7 +58,10 @@ class ChatItem {
     final media = MessageIndexer.describe(message);
     if (media == null) return null;
     final date = DateTime.fromMillisecondsSinceEpoch(message.date * 1000);
-    final guessed = FileKind.detect(fileName: media.fileName, mimeType: media.mimeType);
+    final guessed = FileKind.detect(
+      fileName: media.fileName,
+      mimeType: media.mimeType,
+    );
     final name = ImportNaming.nameFor(
       fileName: media.fileName,
       hasOwnName: media.hasOwnName,
@@ -66,8 +69,12 @@ class ChatItem {
       mimeType: media.mimeType,
       date: date,
     );
-    final mimeType = media.mimeType.isEmpty ? mimeTypeFor(name) : media.mimeType;
-    final size = media.file.size != 0 ? media.file.size : media.file.expectedSize;
+    final mimeType = media.mimeType.isEmpty
+        ? mimeTypeFor(name)
+        : media.mimeType;
+    final size = media.file.size != 0
+        ? media.file.size
+        : media.file.expectedSize;
     return ChatItem(
       messageId: message.id,
       size: size,
@@ -86,6 +93,7 @@ class ChatItem {
         minithumbnail: _bytes(media.minithumbnail?.data),
         thumbnailFileId: media.thumbnailFileId,
         takenAt: date,
+        durationSeconds: media.duration,
       ),
     );
   }
@@ -155,15 +163,16 @@ class ChatMediaState {
 
   /// This state with [loadingMore] when given, and [pageError] in place of
   /// the current one.
-  ChatMediaState copyWith({bool? loadingMore, String? pageError}) => ChatMediaState(
-    items: items,
-    totalCount: totalCount,
-    hiddenSaved: hiddenSaved,
-    hiddenProtected: hiddenProtected,
-    nextFrom: nextFrom,
-    loadingMore: loadingMore ?? this.loadingMore,
-    pageError: pageError,
-  );
+  ChatMediaState copyWith({bool? loadingMore, String? pageError}) =>
+      ChatMediaState(
+        items: items,
+        totalCount: totalCount,
+        hiddenSaved: hiddenSaved,
+        hiddenProtected: hiddenProtected,
+        nextFrom: nextFrom,
+        loadingMore: loadingMore ?? this.loadingMore,
+        pageError: pageError,
+      );
 }
 
 /// Pages through one chat's documents, photos and videos, or audio, a
@@ -190,14 +199,17 @@ class ChatMedia extends AsyncNotifier<ChatMediaState> {
   /// Reads the next page, unless every page is in or one is on its way.
   /// A page that fails leaves what was read and says why in
   /// [ChatMediaState.pageError].
-  Future<void> loadMore() => _loading ??= _next().whenComplete(() => _loading = null);
+  Future<void> loadMore() =>
+      _loading ??= _next().whenComplete(() => _loading = null);
 
   /// Reads pages until every one is in or [cap] files are listed, and
   /// returns where that left the list.
   Future<ChatMediaState?> loadAll({int cap = selectAllCap}) async {
     while (ref.mounted) {
       final current = state.value;
-      if (current == null || current.complete || current.items.length >= cap) break;
+      if (current == null || current.complete || current.items.length >= cap) {
+        break;
+      }
       await loadMore();
       if (state.value?.pageError != null) break;
     }
@@ -214,13 +226,18 @@ class ChatMedia extends AsyncNotifier<ChatMediaState> {
     } catch (e) {
       debugPrint('[Import] ${source.chatId}: $e');
       if (ref.mounted) {
-        state = AsyncData(current.copyWith(pageError: describeTransferError(e)));
+        state = AsyncData(
+          current.copyWith(pageError: describeTransferError(e)),
+        );
       }
     }
   }
 
   /// The page of messages from [from] added to [current].
-  Future<ChatMediaState> _page(ChatMediaState current, {required int from}) async {
+  Future<ChatMediaState> _page(
+    ChatMediaState current, {
+    required int from,
+  }) async {
     final found = await ref
         .read(telegramClientProvider)
         .send<td.FoundChatMessages>(

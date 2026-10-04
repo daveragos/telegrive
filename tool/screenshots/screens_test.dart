@@ -365,6 +365,7 @@ DriveFile _file(
   int parts = 1,
   int? takenDaysAgo,
   String? folderId,
+  int? durationSeconds,
 }) {
   final at = DateTime.now().subtract(Duration(hours: hoursAgo));
   return DriveFile(
@@ -383,6 +384,7 @@ DriveFile _file(
     takenAt: takenDaysAgo == null
         ? null
         : DateTime.now().subtract(Duration(days: takenDaysAgo)),
+    durationSeconds: durationSeconds,
   );
 }
 
@@ -500,6 +502,8 @@ void main() {
             starred: i == 4,
             // A third came from the phone's Screenshots folder.
             folderId: i % 3 == 2 ? 'scr' : null,
+            // The clips know how long they run, the first one 1:24.
+            durationSeconds: i % 7 == 3 ? 84 + (i - 3) * 11 : null,
           ),
         // A trip from over a year ago, so the timeline runs long enough for
         // the date scrubber and has a month that carries its year.
@@ -586,12 +590,13 @@ void main() {
           5,
           thumb: city,
           parts: 12,
+          durationSeconds: 4360,
         ),
         _file('Tax return 2025.pdf', 2 * _mb + 420000, 26, starred: true),
         _file('Simien trek.png', 11 * _mb, 30, thumb: forest),
         _file('Project backup.zip', 780 * _mb, 50),
         _file('Budget 2026.xlsx', 88000, 70),
-        _file('Tizita — live.mp3', 9 * _mb, 90),
+        _file('Tizita — live.mp3', 9 * _mb, 90, durationSeconds: 251),
         _file('gramx-release.apk', 62 * _mb, 120),
       ];
     });
@@ -1680,6 +1685,19 @@ void main() {
       await tester.pump(const Duration(milliseconds: 100));
     }
     await snap(tester, 'viewer_details');
+  });
+
+  /// The first clip on the timeline, waiting on its poster: nothing comes
+  /// down until Play is tapped.
+  testWidgets('viewer video', (tester) async {
+    await prepareData(tester);
+    await pumpApp(tester, location: '/photos', seed: seedViewer);
+    GoRouter.of(tester.element(find.byType(PhotosScreen)))
+        .push('/viewer/${Uri.encodeComponent(photos[3].id)}?from=photos');
+    for (var i = 0; i < 6; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    await snap(tester, 'viewer_video');
   });
 
   testWidgets('photos menu', (tester) async {
