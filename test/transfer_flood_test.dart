@@ -145,10 +145,12 @@ void main() {
 
   late Directory dir;
   late AppDatabase db;
+  late List<(int, int)> held;
   final now = DateTime(2026, 9, 26);
 
   setUp(() async {
     dir = await Directory.systemTemp.createTemp('telegrive_flood');
+    held = [];
     db = AppDatabase(NativeDatabase.memory());
     TransferQueue.waitUnit = const Duration(milliseconds: 1);
     // Where finished downloads and stitched split files go.
@@ -168,7 +170,12 @@ void main() {
     await dir.delete(recursive: true);
   });
 
+  /// A container for [telegram], whose channel holds the message behind each
+  /// part [addFile] stored.
   ProviderContainer open(FakeTelegram telegram) {
+    for (final (messageId, size) in held) {
+      telegram.holdsFile(messageId, 7, size: size);
+    }
     final container = ProviderContainer(
       overrides: [
         appDatabaseProvider.overrideWithValue(db),
@@ -190,6 +197,7 @@ void main() {
 
   Future<void> addFile(String id, {int parts = 1, int messageId = 1}) async {
     for (var index = 0; index < parts; index++) {
+      held.add((messageId + index, 10));
       await db.upsertFilePart(
         DriveFilesCompanion.insert(
           id: id,

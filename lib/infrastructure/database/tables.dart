@@ -190,7 +190,8 @@ class FileParts extends Table {
   IntColumn get partIndex => integer()();
   IntColumn get messageId => integer().unique()();
 
-  /// TDLib's id for the document. Stable for as long as TDLib's database is.
+  /// TDLib's id for the document in the run that indexed it. TDLib's file
+  /// ids last one run, so the file is read from [messageId] instead.
   IntColumn get tdFileId => integer()();
   IntColumn get size => integer()();
 

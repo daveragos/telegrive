@@ -47,6 +47,31 @@ class FakeTelegram extends TelegramClient {
   /// Ids the fake gives the messages it makes, counting up from 1000.
   int nextId = 1000;
 
+  /// Puts message [messageId] in the channel holding TDLib file [fileId],
+  /// with Telegram's thumbnail [thumbnailId] when given: the message behind
+  /// a part the index stored. The app reads a file's id for this run from
+  /// its message, so a test that answers for [fileId] seeds the message too.
+  void holdsFile(int messageId, int fileId, {int size = 10, int? thumbnailId}) =>
+      messages[messageId] = channelMessage(
+        messageId,
+        td.MessageDocument(
+          document: td.Document(
+            fileName: 'file.bin',
+            mimeType: 'application/octet-stream',
+            thumbnail: thumbnailId == null
+                ? null
+                : td.Thumbnail(
+                    format: const td.ThumbnailFormatJpeg(),
+                    width: 320,
+                    height: 320,
+                    file: tdFile(thumbnailId),
+                  ),
+            document: tdFile(fileId, size: size),
+          ),
+          caption: const td.FormattedText(text: '', entities: []),
+        ),
+      );
+
   /// Answers [function] when a test cares about it; null leaves it to the
   /// channel.
   Future<td.TdObject?> answer(td.TdFunction function) async => null;

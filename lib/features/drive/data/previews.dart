@@ -63,6 +63,24 @@ final thumbnailPathProvider = FutureProvider.autoDispose.family<String?, int>((
   }
 });
 
+/// Local path of the thumbnail of drive file [key.fileId], whose id the index
+/// stored as [key.stored]. The id TDLib knows it by in this run is read from
+/// the file's message first (see [DriveRepository.thumbnailTdId]), and the
+/// fetch is [thumbnailPathProvider]'s.
+final driveThumbnailPathProvider = FutureProvider.autoDispose
+    .family<String?, ({String fileId, int stored})>((ref, key) async {
+      final repository = ref.watch(driveRepositoryProvider);
+      final int? id;
+      try {
+        id = await repository.thumbnailTdId(key.fileId, stored: key.stored);
+      } catch (e) {
+        debugPrint('[Thumbnail] ${key.fileId}: $e');
+        return null;
+      }
+      if (id == null || !ref.mounted) return null;
+      return ref.watch(thumbnailPathProvider(id).future);
+    });
+
 /// Telegram's inline preview of file [id], for a tile whose row was read
 /// without it. One primary-key read, kept for 30 seconds after its last
 /// tile goes, so scrolling back past it reads nothing again.

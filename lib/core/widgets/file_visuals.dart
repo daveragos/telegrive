@@ -177,7 +177,7 @@ class _ThumbnailBody extends ConsumerWidget {
     // No need to fetch Telegram's copy when the phone has a better one.
     final thumbPath = local != null || file.thumbnailFileId == null
         ? null
-        : _thumbPath(context, ref, file.thumbnailFileId!);
+        : _thumbPath(context, ref, file.id, file.thumbnailFileId!);
     final ImageProvider? sharp = local != null
         ? MemoryImage(local)
         : thumbPath != null
@@ -241,14 +241,15 @@ class _ThumbnailBody extends ConsumerWidget {
     );
   }
 
-  /// Telegram's thumbnail [id], once it is on the phone. While the list is
+  /// Telegram's thumbnail of [fileId], stored as [id], once it is on the
+  /// phone. While the list is
   /// being flung, a tile that hasn't asked for its thumbnail yet waits and
   /// looks again next frame, so tiles that only fly past fetch nothing and
   /// keep the blurred preview; one already fetched or on its way shows at
   /// once. The frame-by-frame look is how Flutter's own images wait out a
   /// fling.
-  static String? _thumbPath(BuildContext context, WidgetRef ref, int id) {
-    final provider = thumbnailPathProvider(id);
+  static String? _thumbPath(BuildContext context, WidgetRef ref, String fileId, int id) {
+    final provider = driveThumbnailPathProvider((fileId: fileId, stored: id));
     if (!ref.exists(provider) &&
         Scrollable.recommendDeferredLoadingForContext(context)) {
       SchedulerBinding.instance.scheduleFrameCallback((_) {

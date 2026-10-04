@@ -199,7 +199,9 @@ void main() {
         _row(fileId: 'held', wifiOnly: true),
       ]);
 
-      final telegram = _FakeTelegram(fetched.path);
+      final telegram = _FakeTelegram(fetched.path)
+        ..holdsFile(7, 7)
+        ..holdsFile(8, 8);
       final container = ProviderContainer(
         overrides: [
           appDatabaseProvider.overrideWithValue(db),

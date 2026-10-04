@@ -71,6 +71,16 @@ class _IdleSync extends DriveSync {
   SyncState build() => const SyncState();
 }
 
+/// The photos and videos the drive holds, in the order their messages were
+/// posted: each one's message is its index plus one, its TDLib file its index
+/// plus 100, and Telegram's thumbnail of it the id in the fourth place.
+final _media = [
+  (0, 'new', FileKind.image, 11, DateTime(2026, 9, 20)),
+  (1, 'clip', FileKind.video, 12, DateTime(2026, 6)),
+  (2, 'old', FileKind.image, 13, DateTime(2019)),
+  (3, 'mine', FileKind.image, 14, DateTime(2026, 9, 25)),
+];
+
 void main() {
   late AppDatabase db;
 
@@ -79,12 +89,7 @@ void main() {
     ThumbnailPrefetch.unit = const Duration(milliseconds: 1);
     db = AppDatabase(NativeDatabase.memory());
     final now = DateTime(2026, 9, 30);
-    for (final (index, id, kind, thumbnail, taken) in [
-      (0, 'new', FileKind.image, 11, DateTime(2026, 9, 20)),
-      (1, 'clip', FileKind.video, 12, DateTime(2026, 6)),
-      (2, 'old', FileKind.image, 13, DateTime(2019)),
-      (3, 'mine', FileKind.image, 14, DateTime(2026, 9, 25)),
-    ]) {
+    for (final (index, id, kind, thumbnail, taken) in _media) {
       await db.upsertFilePart(
         DriveFilesCompanion.insert(
           id: id,
@@ -116,11 +121,23 @@ void main() {
     await db.close();
   });
 
+  /// A container whose Telegram holds each file's message with the thumbnail
+  /// the index stored, or the one [thumbnails] gives for the file at that
+  /// index.
   ProviderContainer containerFor(
     _Telegram telegram, {
     NetworkState network = _wifi,
     int free = 20 * _gb,
+    Map<int, int> thumbnails = const {},
   }) {
+    for (final (index, _, _, thumbnail, _) in _media) {
+      telegram.holdsFile(
+        index + 1,
+        index + 100,
+        size: 100,
+        thumbnailId: thumbnails[index] ?? thumbnail,
+      );
+    }
     final container = ProviderContainer(
       overrides: [
         appDatabaseProvider.overrideWithValue(db),
@@ -158,6 +175,25 @@ void main() {
 
     await settle();
     expect(telegram.downloads, [12, 13]);
+  });
+
+  test('a thumbnail whose message is gone is passed over', () async {
+    final telegram = _Telegram();
+    containerFor(telegram);
+    telegram.messages.remove(1);
+
+    await settle();
+    expect(telegram.asked, [12, 13]);
+    expect(telegram.downloads, [12, 13]);
+  });
+
+  test('the thumbnail fetched is the one the message holds, not the stored id', () async {
+    final telegram = _Telegram();
+    containerFor(telegram, thumbnails: {0: 211, 2: 213});
+
+    await settle();
+    expect(telegram.asked, [211, 12, 213]);
+    expect(telegram.downloads, [211, 12, 213]);
   });
 
   test('when Telegram asks to slow down the run ends', () async {

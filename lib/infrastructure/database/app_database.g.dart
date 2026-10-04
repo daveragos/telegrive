@@ -2005,7 +2005,8 @@ class PartRow extends DataClass implements Insertable<PartRow> {
   final int partIndex;
   final int messageId;
 
-  /// TDLib's id for the document. Stable for as long as TDLib's database is.
+  /// TDLib's id for the document in the run that indexed it. TDLib's file
+  /// ids last one run, so the file is read from [messageId] instead.
   final int tdFileId;
   final int size;
   const PartRow({

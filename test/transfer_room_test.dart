@@ -173,7 +173,9 @@ void main() {
       'there is room', () async {
     // Two parts of 600 MB, each fetched here as a few bytes.
     final fetched = File(p.join(dir.path, 'part.bin'))..writeAsStringSync('0123456789');
+    final telegram = _Telegram(fetched.path);
     for (var index = 0; index < 2; index++) {
+      telegram.holdsFile(1 + index, 7, size: 600 * _mb);
       await db.upsertFilePart(
         DriveFilesCompanion.insert(
           id: 'movie',
@@ -195,7 +197,6 @@ void main() {
       );
     }
     storage.free = 100 * _mb;
-    final telegram = _Telegram(fetched.path);
     final (container, queue) = await openQueue(telegram);
     TransfersState state() => container.read(transferQueueProvider);
 

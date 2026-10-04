@@ -18,7 +18,8 @@ import 'support/fake_telegram.dart';
 
 /// Telegram before any account has signed in, which keeps what it was asked
 /// and answers a file lookup, a download, the account timer and the list of
-/// devices (with none listed).
+/// devices (with none listed). Messages it is asked for come from the
+/// channel.
 class _Telegram extends FakeTelegram {
   _Telegram() : super(signedIn: false);
 
@@ -66,7 +67,7 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     final shared = await SharedPreferences.getInstance();
     final db = AppDatabase(NativeDatabase.memory());
-    telegram = _Telegram();
+    telegram = _Telegram()..holdsFile(_part.messageId, _part.tdFileId);
     container = ProviderContainer(
       overrides: [
         sharedPreferencesProvider.overrideWithValue(shared),
@@ -138,13 +139,15 @@ void main() {
     setUp(() async => start());
 
     test('a file is looked up once an account has signed in', () async {
+      // The drive's channel is where the file's message is read.
+      container.read(driveSessionProvider.notifier).open(testSession);
       final lookup = container.read(driveRepositoryProvider).resolveTdFile(_part);
       await pumpEventQueue();
-      expect(telegram.asked<td.GetFile>(), isEmpty);
+      expect(telegram.asked<td.GetMessage>(), isEmpty);
 
       telegram.signal(const td.AuthorizationStateReady());
       expect((await lookup).id, 7);
-      expect(telegram.asked<td.GetFile>(), hasLength(1));
+      expect(telegram.asked<td.GetMessage>(), hasLength(1));
     });
 
     test('a file still waiting after a minute fails instead of hanging', () {
@@ -159,7 +162,7 @@ void main() {
         expect(failure, isNull);
         async.elapse(const Duration(seconds: 1));
         expect(failure, isA<TimeoutException>());
-        expect(telegram.asked<td.GetFile>(), isEmpty);
+        expect(telegram.asked<td.GetMessage>(), isEmpty);
       });
     });
 

@@ -9,26 +9,25 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:handy_tdlib/api.dart' as td;
 import 'package:telegrive/core/files/file_kind.dart';
 import 'package:telegrive/features/drive/data/drive_repository.dart';
+import 'package:telegrive/features/drive/data/drive_session.dart';
 import 'package:telegrive/features/player/data/stream_server.dart';
 import 'package:telegrive/infrastructure/database/app_database.dart';
-import 'package:telegrive/infrastructure/telegram/secure_store.dart';
 import 'package:telegrive/infrastructure/telegram/telegram_client.dart';
+
+import 'support/fake_telegram.dart';
 
 /// TDLib stand-in: files whose bytes are `i % 251`, which only become
 /// readable a moment after something asks to download them. It keeps every
-/// download asked for and every download called off.
-class _FakeTelegram extends TelegramClient {
-  _FakeTelegram(this.sizes) : super(SecureStore());
+/// download asked for and every download called off. The messages the drive
+/// parts sit in come from the channel.
+class _FakeTelegram extends FakeTelegram {
+  _FakeTelegram(this.sizes);
 
   final Map<int, int> sizes;
   final Map<int, int> _available = {};
   final _files = StreamController<td.File>.broadcast();
   final downloads = <({int fileId, int offset, int limit})>[];
   final cancels = <({int fileId, bool onlyIfPending})>[];
-
-  /// Signed in from the start, so streaming finds its files at once.
-  @override
-  Future<void> get ready => Future<void>.value();
 
   @override
   Stream<td.File> get fileUpdates => _files.stream;
@@ -57,38 +56,31 @@ class _FakeTelegram extends TelegramClient {
   );
 
   @override
-  Future<T> send<T extends td.TdObject>(
-    td.TdFunction function, {
-    Duration timeout = const Duration(seconds: 30),
-  }) async {
-    final result = switch (function) {
-      td.GetFile(:final fileId) => _file(fileId),
-      td.DownloadFile(:final fileId, :final offset, :final limit) => () {
-        downloads.add((fileId: fileId, offset: offset, limit: limit));
-        Timer(const Duration(milliseconds: 30), () {
-          _available[fileId] = sizes[fileId]!;
-          _files.add(_file(fileId));
-        });
-        return _file(fileId);
-      }(),
-      td.GetFileDownloadedPrefixSize(:final fileId, :final offset) =>
-        td.FileDownloadedPrefixSize(
-          size: ((_available[fileId] ?? 0) - offset).clamp(0, 1 << 40),
-        ),
-      td.CancelDownloadFile(:final fileId, :final onlyIfPending) => () {
-        cancels.add((fileId: fileId, onlyIfPending: onlyIfPending));
-        return const td.Ok();
-      }(),
-      td.ReadFilePart(:final fileId, :final offset, :final count) => td.FilePart(
-        data: base64Encode([
-          for (var i = offset; i < offset + count && i < (_available[fileId] ?? 0); i++)
-            i % 251,
-        ]),
+  Future<td.TdObject?> answer(td.TdFunction function) async => switch (function) {
+    td.GetFile(:final fileId) => _file(fileId),
+    td.DownloadFile(:final fileId, :final offset, :final limit) => () {
+      downloads.add((fileId: fileId, offset: offset, limit: limit));
+      Timer(const Duration(milliseconds: 30), () {
+        _available[fileId] = sizes[fileId]!;
+        _files.add(_file(fileId));
+      });
+      return _file(fileId);
+    }(),
+    td.GetFileDownloadedPrefixSize(:final fileId, :final offset) =>
+      td.FileDownloadedPrefixSize(
+        size: ((_available[fileId] ?? 0) - offset).clamp(0, 1 << 40),
       ),
-      _ => throw UnsupportedError('$function'),
-    };
-    return result as T;
-  }
+    td.CancelDownloadFile(:final fileId, :final onlyIfPending) => () {
+      cancels.add((fileId: fileId, onlyIfPending: onlyIfPending));
+      return const td.Ok();
+    }(),
+    td.ReadFilePart(:final fileId, :final offset, :final count) => td.FilePart(
+      data: base64Encode([
+        for (var i = offset; i < offset + count && i < (_available[fileId] ?? 0); i++) i % 251,
+      ]),
+    ),
+    _ => null,
+  };
 }
 
 void main() {
@@ -112,6 +104,7 @@ void main() {
     overrides: [
       appDatabaseProvider.overrideWithValue(db),
       telegramClientProvider.overrideWithValue(telegram),
+      driveSessionProvider.overrideWith(TestSession.new),
       streamServerProvider.overrideWith(
         (ref) => StreamServer(
           ref,
@@ -148,6 +141,7 @@ void main() {
           size: size,
         ),
       );
+      telegram.holdsFile(10 + index, tdFile, size: size);
     }
     await db.upsertFilePart(
       DriveFilesCompanion.insert(
@@ -167,6 +161,7 @@ void main() {
         size: long,
       ),
     );
+    telegram.holdsFile(20, 103, size: long);
   });
 
   tearDown(() async {

@@ -59,6 +59,13 @@ class _Telegram extends FakeTelegram {
       // The original, once it is the message's file.
       case td.GetFile(fileId: 9):
         return tdFile(9, size: _original, path: fetchedPath, downloaded: true);
+      // Fetching either lands the file at [fetchedPath] at once.
+      case td.DownloadFile(fileId: 7):
+        return tdFile(7, size: _small, path: fetchedPath, downloaded: true);
+      case td.DownloadFile(fileId: 9):
+        return tdFile(9, size: _original, path: fetchedPath, downloaded: true);
+      case td.DeleteFile():
+        return const td.Ok();
       case td.GetChatHistory(fromMessageId: 0, onlyLocal: true):
         final message = pending;
         return td.Messages(totalCount: message == null ? 0 : 1, messages: [?message]);

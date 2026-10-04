@@ -56,8 +56,10 @@ class _FakeTelegram extends FakeTelegram {
   }
 }
 
-/// A file of ten bytes in one part, on TDLib's file 7.
-Future<void> _seed(AppDatabase db) async {
+/// A file of ten bytes in one part, on TDLib's file 7, which its message in
+/// [telegram]'s channel holds.
+Future<void> _seed(AppDatabase db, FakeTelegram telegram) async {
+  telegram.holdsFile(1, 7);
   final now = DateTime(2026, 9, 26);
   await db.upsertFilePart(
     DriveFilesCompanion.insert(
@@ -101,7 +103,7 @@ void main() {
       container.dispose();
       await db.close();
     });
-    await _seed(db);
+    await _seed(db, telegram);
 
     container.listen(transferQueueProvider, (_, _) {});
     final queue = container.read(transferQueueProvider.notifier);
@@ -145,7 +147,7 @@ void main() {
       await db.close();
     });
 
-    await _seed(db);
+    await _seed(db, telegram);
 
     container.listen(transferQueueProvider, (_, _) {});
     final queue = container.read(transferQueueProvider.notifier);

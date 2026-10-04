@@ -11,6 +11,7 @@ import '../../../infrastructure/storage/device_storage.dart';
 import '../../../infrastructure/telegram/telegram_client.dart';
 import '../../../infrastructure/telegram/telegram_exception.dart';
 import '../../transfers/data/room.dart';
+import 'drive_repository.dart';
 import 'drive_session.dart';
 import 'drive_sync.dart';
 
@@ -90,9 +91,9 @@ class ThumbnailPrefetch extends Notifier<int> {
       final onPhone = (await _db.watchLocalAssets().first).keys.toSet();
       final targets = [
         for (final media in await _db.mediaThumbnails())
-          if (!onPhone.contains(media.fileId)) media.thumbnailFileId,
+          if (!onPhone.contains(media.fileId)) media,
       ];
-      for (final (index, id) in targets.indexed) {
+      for (final (index, media) in targets.indexed) {
         if (_stop || state >= _cap) break;
         if (index % 50 == 0 && !_unmetered(ref.read(networkStatusProvider))) break;
         if (index % 200 == 0 &&
@@ -100,6 +101,10 @@ class ThumbnailPrefetch extends Notifier<int> {
           break;
         }
         try {
+          final id = await ref
+              .read(driveRepositoryProvider)
+              .thumbnailTdId(media.fileId, stored: media.thumbnailFileId);
+          if (id == null) continue;
           final file = await _client.send<td.File>(td.GetFile(fileId: id));
           if (file.local.isDownloadingCompleted) continue;
           final fetched = await _client.send<td.File>(
@@ -111,8 +116,7 @@ class ThumbnailPrefetch extends Notifier<int> {
           if (fetched.local.isDownloadingCompleted) state++;
         } on TelegramException catch (e) {
           // TDLib answers 400 about the one thumbnail it was asked for, such
-          // as an id it forgot when its files were reset, and the rest can
-          // still come down. Anything else holds for every thumbnail
+          // as one whose message is gone, and the rest can still come down. Anything else holds for every thumbnail
           // (Telegram asking the account to slow down, not answering, or not
           // running), so the run ends and the next one starts over.
           if (e.code != 400) break;

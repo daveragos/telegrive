@@ -872,7 +872,9 @@ class _Placeholder extends ConsumerWidget {
     }
     final thumb = file.thumbnailFileId == null
         ? null
-        : ref.watch(thumbnailPathProvider(file.thumbnailFileId!)).value;
+        : ref
+              .watch(driveThumbnailPathProvider((fileId: file.id, stored: file.thumbnailFileId!)))
+              .value;
     if (thumb != null) {
       return Image.file(
         File(thumb),

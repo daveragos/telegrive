@@ -75,6 +75,7 @@ void main() {
           size: 10,
         ),
       );
+      telegram.holdsFile(i, 10 + i);
     }
 
     container.listen(transferQueueProvider, (_, _) {});

@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:drift/drift.dart' show Value, BooleanExpressionOperators;
+import 'package:drift/drift.dart' show Value;
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:handy_tdlib/api.dart' as td;
@@ -74,6 +74,14 @@ class DriveRepository {
   int get _chatId {
     final session = _ref.read(driveSessionProvider);
     if (session == null) throw driveNotOpen(_ref.read(driveSnapshotProvider));
+    return session.chatId;
+  }
+
+  /// The channel messages are read from: the open drive's, or while it is
+  /// still opening, the one Home shows from the index.
+  int get _readChatId {
+    final session = _ref.read(driveSessionProvider) ?? _ref.read(driveSnapshotProvider);
+    if (session == null) throw driveNotOpen(null);
     return session.chatId;
   }
 
@@ -382,34 +390,73 @@ class DriveRepository {
 
   Future<List<PartRow>> partsOf(String fileId) => _db.partsOf(fileId);
 
-  Future<void> rememberTdFileId(String fileId, int partIndex, int tdFileId) =>
-      (_db.update(_db.fileParts)..where(
-            (p) => p.fileId.equals(fileId) & p.partIndex.equals(partIndex),
-          ))
-          .write(FilePartsCompanion(tdFileId: Value(tdFileId)));
+  /// TDLib's ids for drive files and thumbnails, as read from their
+  /// messages in this run of TDLib. Its file ids last one run and are handed
+  /// out again from the start in the next, so an id the index stored in an
+  /// earlier run may name nothing, or another file. They are only ever sent
+  /// to the client that gave them.
+  final Map<String, int?> _runIds = {};
+  TelegramClient? _runClient;
 
-  /// TDLib's file for [part]. The stored id is tried first; if TDLib no
-  /// longer knows it (its database was reset), it is looked up again from
-  /// the message and remembered. Downloads, previews, streaming and reading
-  /// documents for search all come through here, so each waits a minute at
-  /// most for Telegram to finish starting, as it may not have when Home
-  /// opens.
+  Map<String, int?> _idsFor(TelegramClient client) {
+    if (!identical(client, _runClient)) {
+      _runClient = client;
+      _runIds.clear();
+    }
+    return _runIds;
+  }
+
+  /// TDLib's file for [part], read from its message the first time this run
+  /// needs it. Downloads, previews, streaming and reading documents for
+  /// search all come through here, so each waits a minute at most for
+  /// Telegram to finish starting, as it may not have when Home opens.
   Future<td.File> resolveTdFile(PartRow part) async {
     final client = _ref.read(telegramClientProvider);
     await client.ready.timeout(const Duration(minutes: 1));
-    try {
-      return await client.send<td.File>(td.GetFile(fileId: part.tdFileId));
-    } on TelegramException {
-      final message = await client.send<td.Message>(
-        td.GetMessage(chatId: _chatId, messageId: part.messageId),
-      );
-      final file = MessageIndexer.mediaFile(message);
-      if (file == null) {
-        throw const DriveException('This file is no longer in your drive.');
+    final ids = _idsFor(client);
+    final key = '${part.fileId}/${part.partIndex}';
+    final known = ids[key];
+    if (known != null) {
+      try {
+        return await client.send<td.File>(td.GetFile(fileId: known));
+      } on TelegramException {
+        // TDLib dropped it after all; the message has it again.
       }
-      await rememberTdFileId(part.fileId, part.partIndex, file.id);
-      return file;
     }
+    final message = await client.send<td.Message>(
+      td.GetMessage(chatId: _readChatId, messageId: part.messageId),
+    );
+    final file = MessageIndexer.mediaFile(message);
+    if (file == null) {
+      throw const DriveException('This file is no longer in your drive.');
+    }
+    ids[key] = file.id;
+    return file;
+  }
+
+  /// TDLib's id for the thumbnail of drive file [fileId] in this run, read
+  /// from the file's first message the first time a tile asks. A file the
+  /// index doesn't hold, such as a chat's media offered for import, was read
+  /// from Telegram in this run, so its own id, [stored], is used as it is.
+  /// Null when the message is gone or carries no thumbnail.
+  Future<int?> thumbnailTdId(String fileId, {required int stored}) async {
+    final client = _ref.read(telegramClientProvider);
+    await client.ready;
+    final ids = _idsFor(client);
+    final key = 'thumbnail/$fileId';
+    if (ids.containsKey(key)) return ids[key];
+    final parts = await _db.partsOf(fileId);
+    if (parts.isEmpty) return stored;
+    int? id;
+    try {
+      final message = await client.send<td.Message>(
+        td.GetMessage(chatId: _readChatId, messageId: parts.first.messageId),
+      );
+      id = MessageIndexer.describe(message)?.thumbnailFileId;
+    } on TelegramException {
+      id = null;
+    }
+    return ids[key] = id;
   }
 
   static List<DriveFile> _files(List<FileRow> rows) =>

@@ -213,6 +213,11 @@ void main() {
     NetworkState network, {
     bool onlyOverWifi = false,
   }) async {
+    // The message behind each stored part, which the app reads TDLib's file
+    // from.
+    for (final part in await db.select(db.fileParts).get()) {
+      telegram.holdsFile(part.messageId, part.tdFileId, size: part.size);
+    }
     // ignore: invalid_use_of_visible_for_testing_member
     SharedPreferences.setMockInitialValues({'offline_wifi_only': onlyOverWifi});
     final shared = await SharedPreferences.getInstance();
