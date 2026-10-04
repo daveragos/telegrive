@@ -10,6 +10,7 @@ import 'app/app.dart';
 import 'app/launch_action.dart';
 import 'features/backup/data/backup_worker.dart';
 import 'infrastructure/notifications/app_notifications.dart';
+import 'infrastructure/storage/device_profile.dart';
 import 'infrastructure/storage/preferences.dart';
 import 'infrastructure/telegram/telegram_client.dart';
 
@@ -17,9 +18,12 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
 
-  final prefs = await SharedPreferences.getInstance();
+  final (prefs, profile) = await (SharedPreferences.getInstance(), DeviceProfile.read()).wait;
   final container = ProviderContainer(
-    overrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
+    overrides: [
+      sharedPreferencesProvider.overrideWithValue(prefs),
+      deviceProfileProvider.overrideWithValue(profile),
+    ],
   );
 
   // The transfer notification launches the app with its route as Android's

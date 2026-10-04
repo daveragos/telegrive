@@ -71,6 +71,7 @@ import 'package:telegrive/features/transfers/presentation/mobile_data_prompt.dar
 import 'package:telegrive/features/transfers/presentation/transfers_screen.dart';
 import 'package:telegrive/infrastructure/database/app_database.dart';
 import 'package:telegrive/infrastructure/network/network_status.dart';
+import 'package:telegrive/infrastructure/storage/device_profile.dart';
 import 'package:telegrive/infrastructure/storage/device_storage.dart';
 import 'package:telegrive/infrastructure/telegram/telegram_client.dart';
 import 'package:drift/drift.dart' show Value;
@@ -749,6 +750,10 @@ void main() {
           sharedPreferencesProvider.overrideWithValue(shared),
           appDatabaseProvider.overrideWithValue(db),
           deviceStorageProvider.overrideWithValue(_Storage()),
+          // A phone with plenty of memory, so Save memory starts off.
+          deviceProfileProvider.overrideWithValue(
+            const DeviceProfile(lowRam: false, memoryClassMb: 256, totalRamBytes: 8 << 30),
+          ),
           driveSessionProvider.overrideWith(_Session.new),
           driveSyncProvider.overrideWith(_Sync.new),
           transferQueueProvider.overrideWith(() => _Queue(transfers)),
@@ -870,6 +875,11 @@ void main() {
       }
       for (final path in _thumbPaths.values) {
         await precacheImage(FileImage(File(path)), context);
+        // Rows and small covers decode them at their own size.
+        for (final side in const [40.0, 44.0, 52.0]) {
+          final px = (side * MediaQuery.devicePixelRatioOf(context)).ceil();
+          await precacheImage(FileThumbnail.telegramImage(path, px), context);
+        }
       }
     });
     for (var i = 0; i < 5; i++) {
@@ -2266,5 +2276,18 @@ void main() {
     _thumbPaths.clear();
     await pumpApp(tester, location: '/photos', backup: uploading);
     await snap(tester, 'photos_loading');
+  });
+
+  testWidgets('photos save memory', (tester) async {
+    await prepareData(tester);
+    // The same moment on a phone saving memory: the previews drawn plain.
+    _thumbPaths.clear();
+    await pumpApp(
+      tester,
+      location: '/photos',
+      backup: uploading,
+      prefs: {'save_memory': true},
+    );
+    await snap(tester, 'photos_save_memory');
   });
 }

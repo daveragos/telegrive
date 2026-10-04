@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' show ImageFilter;
 
@@ -11,6 +12,7 @@ import '../../app/theme/tokens.dart';
 import '../../features/backup/data/local_media.dart';
 import '../../features/drive/data/previews.dart';
 import '../../features/drive/domain/drive_models.dart';
+import '../../infrastructure/storage/device_profile.dart';
 import '../files/file_kind.dart';
 
 /// A neutral slot with the kind glyph in it — the stand-in for a file that
@@ -53,9 +55,10 @@ class FolderIconTile extends StatelessWidget {
 
 /// The best picture available for [file]: the phone's own copy when the
 /// file was backed up from here, otherwise Telegram's thumbnail once fetched,
-/// with Telegram's tiny inline preview softly blurred underneath until then,
-/// and the kind glyph for files with no picture at all.
-class FileThumbnail extends ConsumerWidget {
+/// with Telegram's tiny inline preview softly blurred in its place until
+/// then, and the kind glyph for files with no picture at all. Pictures are
+/// decoded at about the size they are drawn at, not at the size they come.
+class FileThumbnail extends StatelessWidget {
   const FileThumbnail({
     super.key,
     required this.file,
@@ -65,11 +68,64 @@ class FileThumbnail extends ConsumerWidget {
   });
 
   final DriveFile file;
+
+  /// The square's side. With [expand], the least side the picture is
+  /// decoded for: a grid tile drawn smaller for a moment, as a selected one
+  /// is, passes its whole side and keeps the picture it has.
   final double size;
   final double? radius;
 
   /// Fill the parent instead of a fixed square (grids).
   final bool expand;
+
+  /// Telegram's thumbnail at [path] for a slot [px] physical pixels across.
+  /// A slot under 160 px decodes it into a box twice its side, which keeps
+  /// the short side sharp for pictures up to twice as wide as they are tall
+  /// and never enlarges it; a bigger one takes it at its own size, which is
+  /// 320 px at most.
+  static ImageProvider telegramImage(String path, int px) {
+    final image = FileImage(File(path));
+    return px < 160
+        ? ResizeImage(image, width: 2 * px, height: 2 * px, policy: ResizeImagePolicy.fit)
+        : image;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ratio = MediaQuery.devicePixelRatioOf(context);
+    _ThumbnailBody body(double side) => _ThumbnailBody(
+      file: file,
+      size: size,
+      radius: radius,
+      expand: expand,
+      px: (side * ratio).ceil(),
+    );
+    if (!expand) return body(size);
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final fills = constraints.biggest.shortestSide;
+        return body(fills.isFinite ? math.max(fills, size) : size);
+      },
+    );
+  }
+}
+
+class _ThumbnailBody extends ConsumerWidget {
+  const _ThumbnailBody({
+    required this.file,
+    required this.size,
+    required this.radius,
+    required this.expand,
+    required this.px,
+  });
+
+  final DriveFile file;
+  final double size;
+  final double? radius;
+  final bool expand;
+
+  /// The side the picture is drawn at, in physical pixels.
+  final int px;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -81,7 +137,9 @@ class FileThumbnail extends ConsumerWidget {
     Widget framed(Widget child) =>
         expand ? child : SizedBox.square(dimension: size, child: child);
 
-    final local = isMedia ? ref.watch(localThumbnailProvider(file.id)).value : null;
+    final local = isMedia
+        ? ref.watch(localThumbnailProvider((fileId: file.id, px: thumbBucket(px)))).value
+        : null;
 
     if (!file.hasPreview && local == null) {
       return framed(
@@ -102,6 +160,30 @@ class FileThumbnail extends ConsumerWidget {
     final thumbPath = local != null || file.thumbnailFileId == null
         ? null
         : _thumbPath(context, ref, file.thumbnailFileId!);
+    final ImageProvider? sharp = local != null
+        ? MemoryImage(local)
+        : thumbPath != null
+        ? FileThumbnail.telegramImage(thumbPath, px)
+        : null;
+
+    // A row read without its inline preview reads it on its own, unless the
+    // phone's copy is already here.
+    final mini = file.minithumbnail ??
+        (file.hasMinithumbnail && local == null
+            ? ref.watch(minithumbnailProvider(file.id)).value
+            : null);
+    // Drawn plain while saving memory, since a blur is one more layer to
+    // paint and keep.
+    final Widget? placeholder = mini == null
+        ? null
+        : ref.watch(saveMemoryProvider)
+        ? Image.memory(
+            mini,
+            fit: BoxFit.cover,
+            gaplessPlayback: true,
+            filterQuality: FilterQuality.low,
+          )
+        : _Blurred(bytes: mini, sigma: expand ? 10 : 3);
 
     return framed(
       ClipRRect(
@@ -111,30 +193,10 @@ class FileThumbnail extends ConsumerWidget {
           children: [
             // The slot colour first, so nothing flashes blank while decoding.
             ColoredBox(color: colors.surface2),
-            if (file.minithumbnail != null && local == null)
-              _Blurred(bytes: file.minithumbnail!, sigma: expand ? 10 : 3),
-            if (local != null)
-              _Fading(
-                Image.memory(
-                  local,
-                  fit: BoxFit.cover,
-                  gaplessPlayback: true,
-                  filterQuality: FilterQuality.medium,
-                ),
-              )
-            else if (thumbPath != null)
-              _Fading(
-                Image.file(
-                  File(thumbPath),
-                  fit: BoxFit.cover,
-                  gaplessPlayback: true,
-                  // Decoded at its own size (Telegram's are 320 px at most):
-                  // shrinking a cache width below that is fine, forcing it
-                  // above only blurs.
-                  filterQuality: FilterQuality.medium,
-                  errorBuilder: (_, _, _) => const SizedBox.shrink(),
-                ),
-              ),
+            if (sharp != null)
+              _Fading(image: sharp, placeholder: placeholder)
+            else
+              ?placeholder,
             if (file.kind == FileKind.video)
               Positioned(
                 right: expand ? 6 : 3,
@@ -197,25 +259,46 @@ class _Blurred extends StatelessWidget {
   }
 }
 
-/// Fades an image in once its first frame is ready.
+/// Shows [placeholder] until [image] has its first frame, then fades the
+/// image in over it, after which the placeholder leaves the tree. A picture
+/// already decoded shows at once, with no fade.
 class _Fading extends StatelessWidget {
-  const _Fading(this.image);
+  const _Fading({required this.image, this.placeholder});
 
-  final Image image;
+  final ImageProvider image;
+  final Widget? placeholder;
+
+  static const _shown = ValueKey(true);
 
   @override
   Widget build(BuildContext context) {
+    final waiting = placeholder ?? const SizedBox.shrink();
     return Image(
-      image: image.image,
-      fit: image.fit,
+      image: image,
+      fit: BoxFit.cover,
       gaplessPlayback: true,
-      filterQuality: image.filterQuality,
-      errorBuilder: image.errorBuilder,
-      frameBuilder: (context, child, frame, sync) => AnimatedOpacity(
-        opacity: frame == null && !sync ? 0 : 1,
-        duration: const Duration(milliseconds: 180),
-        child: child,
-      ),
+      // Decoded at about the size it is drawn, so shrinking it a little
+      // more is all the filter does.
+      filterQuality: FilterQuality.medium,
+      errorBuilder: (_, _, _) => waiting,
+      frameBuilder: (context, child, frame, sync) => sync
+          ? child
+          : AnimatedSwitcher(
+              duration: const Duration(milliseconds: 180),
+              switchInCurve: Curves.easeOut,
+              // Only the picture fades; the placeholder stays whole beneath
+              // it until the fade ends, so the slot never shows through.
+              transitionBuilder: (entry, animation) => entry.key == _shown
+                  ? FadeTransition(opacity: animation, child: entry)
+                  : entry,
+              layoutBuilder: (current, previous) => Stack(
+                fit: StackFit.expand,
+                children: [...previous, ?current],
+              ),
+              child: frame == null
+                  ? KeyedSubtree(key: const ValueKey(false), child: waiting)
+                  : KeyedSubtree(key: _shown, child: child),
+            ),
     );
   }
 }

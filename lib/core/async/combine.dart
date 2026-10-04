@@ -42,3 +42,59 @@ Stream<R> combineLatest2<A, B, R>(
   );
   return controller.stream;
 }
+
+/// [source] at most once per [interval]: the first event at once, then,
+/// at the end of each interval that saw events, the latest of them. Events
+/// in between are dropped, since each one replaces the last. One still
+/// waiting when [source] closes is delivered before the close.
+Stream<T> throttleLatest<T>(Stream<T> source, Duration interval) {
+  late final StreamController<T> controller;
+  StreamSubscription<T>? subscription;
+  Timer? window;
+  late T latest;
+  var waiting = false;
+
+  void open() {
+    window = Timer(interval, () {
+      window = null;
+      if (!waiting) return;
+      waiting = false;
+      controller.add(latest);
+      open();
+    });
+  }
+
+  controller = StreamController<T>(
+    onListen: () {
+      subscription = source.listen(
+        (value) {
+          if (window == null) {
+            controller.add(value);
+            open();
+          } else {
+            latest = value;
+            waiting = true;
+          }
+        },
+        onError: controller.addError,
+        onDone: () {
+          subscription = null;
+          window?.cancel();
+          window = null;
+          if (waiting) {
+            waiting = false;
+            controller.add(latest);
+          }
+          controller.close();
+        },
+      );
+    },
+    onPause: () => subscription?.pause(),
+    onResume: () => subscription?.resume(),
+    onCancel: () {
+      window?.cancel();
+      return subscription?.cancel();
+    },
+  );
+  return controller.stream;
+}

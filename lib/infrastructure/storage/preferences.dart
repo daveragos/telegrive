@@ -34,9 +34,15 @@ class Preferences {
   Future<void> setViewMode(ViewMode mode) =>
       _prefs.setString('view_mode', mode.name);
 
-  /// Reading text and objects in photos and documents for search.
-  bool get contentSearch => _prefs.getBool('content_search') ?? true;
+  /// Reading the words in documents for search, or [fallback] until the
+  /// person has turned it on or off.
+  bool contentSearchOr(bool fallback) => _prefs.getBool('content_search') ?? fallback;
   Future<void> setContentSearch(bool on) => _prefs.setBool('content_search', on);
+
+  /// Save memory as the person set it in Settings, or null while it still
+  /// follows what kind of phone this is.
+  bool? get saveMemory => _prefs.getBool('save_memory');
+  Future<void> setSaveMemory(bool on) => _prefs.setBool('save_memory', on);
 
   bool get appLock => _prefs.getBool('app_lock') ?? false;
   Future<void> setAppLock(bool on) => _prefs.setBool('app_lock', on);

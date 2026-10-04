@@ -10,6 +10,7 @@ import 'package:pdfrx/pdfrx.dart';
 import '../../../core/files/file_kind.dart' show Preview;
 import '../../../infrastructure/database/app_database.dart';
 import '../../../infrastructure/network/network_status.dart';
+import '../../../infrastructure/storage/device_profile.dart';
 import '../../../infrastructure/storage/device_storage.dart';
 import '../../../infrastructure/storage/preferences.dart';
 import '../../../infrastructure/telegram/telegram_client.dart';
@@ -74,7 +75,8 @@ class ContentIndexer extends Notifier<IndexerState> {
 
   @override
   IndexerState build() {
-    final enabled = ref.watch(preferencesProvider).contentSearch;
+    // A phone saving memory starts with it off, though it can be turned on.
+    final enabled = ref.watch(preferencesProvider).contentSearchOr(!ref.read(saveMemoryProvider));
     ref.onDispose(() {
       _stop = true;
       _start?.cancel();

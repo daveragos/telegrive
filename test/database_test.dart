@@ -249,7 +249,7 @@ void main() {
   test('a length learned on this phone survives a caption without one', () async {
     await db.upsertFilePart(file('clip'), part('clip', 0, 10));
     await db.updateFile('clip', const DriveFilesCompanion(durationSeconds: Value(84)));
-    expect((await db.watchMedia().first), isEmpty, reason: 'not a media kind');
+    expect((await db.watchMediaLite().first), isEmpty, reason: 'not a media kind');
     expect((await db.fileById('clip'))!.durationSeconds, 84);
 
     // The indexer leaves the column alone when the caption carries no du.
@@ -344,20 +344,28 @@ void main() {
   });
 
   test('the photo timeline orders by capture time, falling back to upload', () async {
-    DriveFilesCompanion media(String id, FileKind kind, {DateTime? taken, required DateTime added}) =>
-        DriveFilesCompanion.insert(
-          id: id,
-          name: '$id.jpg',
-          mimeType: 'image/jpeg',
-          kind: kind,
-          size: 100,
-          createdAt: added,
-          modifiedAt: added,
-          takenAt: Value(taken),
-        );
+    DriveFilesCompanion media(
+      String id,
+      FileKind kind, {
+      DateTime? taken,
+      required DateTime added,
+      String? mini,
+    }) => DriveFilesCompanion.insert(
+      id: id,
+      name: '$id.jpg',
+      mimeType: 'image/jpeg',
+      kind: kind,
+      size: 100,
+      createdAt: added,
+      modifiedAt: added,
+      takenAt: Value(taken),
+      minithumbnail: Value(mini),
+      thumbnailFileId: const Value(9),
+      durationSeconds: Value(kind == FileKind.video ? 12 : null),
+    );
 
     await db.upsertFilePart(
-      media('old-photo', FileKind.image, taken: DateTime(2019), added: DateTime(2026, 9)),
+      media('old-photo', FileKind.image, taken: DateTime(2019), added: DateTime(2026, 9), mini: 'AQID'),
       part('old-photo', 0, 1),
     );
     await db.upsertFilePart(
@@ -370,8 +378,71 @@ void main() {
     );
     await db.upsertFilePart(file('report'), part('report', 0, 4));
 
-    final timeline = await db.watchMedia().first;
-    expect(timeline.map((f) => f.id), ['clip', 'new-upload', 'old-photo']);
+    final timeline = await db.watchMediaLite().first;
+    expect(timeline.map((f) => f.row.id), ['clip', 'new-upload', 'old-photo']);
+    // Every column but the preview comes back as stored.
+    for (final lite in timeline) {
+      final full = (await db.fileById(lite.row.id))!;
+      expect(lite.row, full.copyWith(minithumbnail: const Value(null)));
+      expect(lite.hasMinithumbnail, full.minithumbnail != null);
+    }
+    expect(timeline.last.hasMinithumbnail, isTrue);
+    expect(await db.minithumbnailOf('old-photo'), 'AQID');
+    expect(await db.minithumbnailOf('new-upload'), isNull);
+  });
+
+  test('lite album and kind lists hold the files the album and kind hold', () async {
+    await db.upsertAlbum(
+      AlbumsCompanion.insert(id: 'al', name: 'Trip', messageId: 50, createdAt: now, modifiedAt: now),
+    );
+    DriveFilesCompanion photo(String id, {required DateTime added, DateTime? taken}) =>
+        file(id).copyWith(
+          kind: const Value(FileKind.image),
+          createdAt: Value(added),
+          takenAt: Value(taken),
+          minithumbnail: const Value('AQID'),
+        );
+    await db.upsertFilePart(photo('old', added: DateTime(2026, 9), taken: DateTime(2020)), part('old', 0, 10));
+    await db.upsertFilePart(photo('new', added: DateTime(2026, 8)), part('new', 0, 11));
+    await db.upsertFilePart(
+      photo('gone', added: DateTime(2026, 7)).copyWith(trashedAt: Value(now)),
+      part('gone', 0, 12),
+    );
+    // Half of a split photo isn't shown until its other part arrives.
+    await db.upsertFilePart(
+      photo('half', added: DateTime(2026, 6)).copyWith(partCount: const Value(2)),
+      part('half', 0, 13),
+    );
+    await db.upsertFilePart(photo('outside', added: DateTime(2026, 5)), part('outside', 0, 14));
+    await db.upsertFilePart(file('notes'), part('notes', 0, 15));
+    for (final id in ['old', 'new', 'gone', 'half', 'notes']) {
+      await db.setFileAlbums(id, ['al']);
+    }
+
+    final album = await db.watchAlbumFilesLite('al').first;
+    expect(album.map((f) => f.row.id), ['notes', 'new', 'old']);
+    expect(
+      album.map((f) => f.row.id),
+      (await db.watchAlbumFiles('al').first).map((f) => f.id),
+    );
+    expect(album.map((f) => f.hasMinithumbnail), [false, true, true]);
+    expect(album.every((f) => f.row.minithumbnail == null), isTrue);
+
+    final images = await db.watchKindLite(FileKind.image).first;
+    expect(images.map((f) => f.row.id), ['old', 'new', 'outside']);
+
+    // Membership is read too, so leaving the album updates the list.
+    final counts = <int>[];
+    final subscription = db.watchAlbumFilesLite('al').listen((rows) => counts.add(rows.length));
+    addTearDown(subscription.cancel);
+    while (counts.isEmpty) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+    await db.setFileAlbums('old', []);
+    while (counts.length < 2) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+    expect(counts, [3, 2]);
   });
 
   test('media thumbnails come newest first, for shown photos and videos', () async {

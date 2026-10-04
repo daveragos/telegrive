@@ -370,7 +370,7 @@ class _Placeholder extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final local = ref.watch(localThumbnailProvider(file.id)).value;
+    final local = ref.watch(localThumbnailProvider((fileId: file.id, px: 512))).value;
     if (local != null) {
       return Image.memory(
         local,
@@ -390,12 +390,16 @@ class _Placeholder extends ConsumerWidget {
         filterQuality: FilterQuality.medium,
       );
     }
-    if (file.minithumbnail != null) {
+    // A file from the timeline or an album comes without its inline
+    // preview, which is read on its own.
+    final mini = file.minithumbnail ??
+        (file.hasMinithumbnail ? ref.watch(minithumbnailProvider(file.id)).value : null);
+    if (mini != null) {
       // Only ever a stand-in; blurred so it doesn't read as a broken photo.
       return ImageFiltered(
         imageFilter: ImageFilter.blur(sigmaX: 16, sigmaY: 16, tileMode: TileMode.clamp),
         child: Image.memory(
-          file.minithumbnail!,
+          mini,
           fit: BoxFit.contain,
           gaplessPlayback: true,
           filterQuality: FilterQuality.medium,

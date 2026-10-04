@@ -19,6 +19,9 @@ class MonthSection {
   bool allSelected(Set<String> selected) => files.every((f) => selected.contains(f.id));
 }
 
+final _monthName = DateFormat.MMMM();
+final _monthAndYear = DateFormat.yMMMM();
+
 /// [files], newest first, cut into months by [DriveFile.momentAt]. The
 /// current month is 'This month', others this year go by their name, and
 /// earlier ones carry the year.
@@ -30,8 +33,8 @@ List<MonthSection> monthSections(List<DriveFile> files, {DateTime? now}) {
     final title = moment.year == today.year && moment.month == today.month
         ? 'This month'
         : moment.year == today.year
-        ? DateFormat.MMMM().format(moment)
-        : DateFormat.yMMMM().format(moment);
+        ? _monthName.format(moment)
+        : _monthAndYear.format(moment);
     if (sections.isEmpty || sections.last.title != title) {
       sections.add(MonthSection(title: title, files: [], start: index));
     }

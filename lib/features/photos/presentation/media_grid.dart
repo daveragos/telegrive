@@ -120,6 +120,12 @@ class MediaGrid extends ConsumerStatefulWidget {
 class _MediaGridState extends ConsumerState<MediaGrid> {
   final _scroll = ScrollController();
 
+  /// The months and each photo's place within its month, worked out again
+  /// only when the grid is handed a new list of files, so selecting, and
+  /// dragging to select, never cuts 20,000 photos into months again.
+  late List<MonthSection> _sections;
+  late Map<String, int> _indexInSection;
+
   /// How far the slivers above the first month reach, as laid out.
   double _leading = 0;
 
@@ -138,6 +144,7 @@ class _MediaGridState extends ConsumerState<MediaGrid> {
   @override
   void initState() {
     super.initState();
+    _layOutMonths();
     widget.selection.addListener(_changed);
     _scroll.addListener(_checkNearEnd);
   }
@@ -145,10 +152,29 @@ class _MediaGridState extends ConsumerState<MediaGrid> {
   @override
   void didUpdateWidget(MediaGrid old) {
     super.didUpdateWidget(old);
+    if (!identical(old.files, widget.files)) _layOutMonths();
     if (old.selection != widget.selection) {
       old.selection.removeListener(_changed);
       widget.selection.addListener(_changed);
     }
+  }
+
+  void _layOutMonths() {
+    _sections = monthSections(widget.files);
+    _indexInSection = {
+      for (final section in _sections)
+        for (final (index, file) in section.files.indexed) file.id: index,
+    };
+  }
+
+  /// Where the tile keyed [key] sits in [section] of the latest list, so a
+  /// tile keeps its element, and the picture it has loaded, when photos
+  /// arrive ahead of it. Null for one that isn't in this month.
+  int? _tileIndex(MonthSection section, Key key) {
+    if (key is! ValueKey<String>) return null;
+    final index = _indexInSection[key.value];
+    if (index == null || index >= section.files.length) return null;
+    return section.files[index].id == key.value ? index : null;
   }
 
   @override
@@ -316,17 +342,19 @@ class _MediaGridState extends ConsumerState<MediaGrid> {
         Space.xxl +
         MediaQuery.textScalerOf(context).scale(titleStyle.fontSize!) * titleStyle.height! +
         Space.s;
-    final sections = monthSections(widget.files);
+    final sections = _sections;
     final selected = _selecting ? widget.selection.ids : const <String>{};
-    final slivers = <Widget>[...widget.header];
     // A page that doesn't fill the screen leaves nothing to scroll.
     if (widget.onNearEnd != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _checkNearEnd());
     }
 
-    if (widget.files.isEmpty && widget.empty != null) {
-      slivers.add(SliverFillRemaining(hasScrollBody: false, child: widget.empty));
-    } else {
+    /// The scrolling grid, its tiles [tileSize] across.
+    Widget scrollView(double tileSize) {
+      final slivers = <Widget>[...widget.header];
+      if (widget.files.isEmpty && widget.empty != null) {
+        slivers.add(SliverFillRemaining(hasScrollBody: false, child: widget.empty));
+      }
       for (final (index, section) in sections.indexed) {
         final header = SliverToBoxAdapter(
           child: _MonthHeader(
@@ -356,13 +384,16 @@ class _MediaGridState extends ConsumerState<MediaGrid> {
                 crossAxisSpacing: GridLayout.spacing,
               ),
               itemCount: section.files.length,
+              findChildIndexCallback: (key) => _tileIndex(section, key),
               itemBuilder: (context, i) {
                 final file = section.files[i];
                 return MetaData(
+                  key: ValueKey(file.id),
                   metaData: _TileIndex(section.start + i),
                   behavior: HitTestBehavior.opaque,
                   child: _MediaTile(
                     file: file,
+                    side: tileSize,
                     selecting: _selecting,
                     selected: widget.selection.contains(file.id),
                     onTap: () => _selecting
@@ -374,21 +405,23 @@ class _MediaGridState extends ConsumerState<MediaGrid> {
             ),
           );
       }
-    }
-    slivers
-      ..addAll(widget.footer)
-      ..add(const SliverToBoxAdapter(child: SizedBox(height: Space.x3)));
+      slivers
+        ..addAll(widget.footer)
+        ..add(const SliverToBoxAdapter(child: SizedBox(height: Space.x3)));
 
-    Widget scroll = CustomScrollView(
-      controller: _scroll,
-      physics: _pinchFrom != null
-          ? const NeverScrollableScrollPhysics()
-          : const AlwaysScrollableScrollPhysics(),
-      slivers: slivers,
-    );
-    if (widget.onRefresh case final refresh?) {
-      scroll = RefreshIndicator(onRefresh: refresh, child: scroll);
+      Widget scroll = CustomScrollView(
+        controller: _scroll,
+        physics: _pinchFrom != null
+            ? const NeverScrollableScrollPhysics()
+            : const AlwaysScrollableScrollPhysics(),
+        slivers: slivers,
+      );
+      if (widget.onRefresh case final refresh?) {
+        scroll = RefreshIndicator(onRefresh: refresh, child: scroll);
+      }
+      return scroll;
     }
+
     return Listener(
       onPointerDown: _touchDown,
       onPointerMove: _touchMove,
@@ -410,7 +443,7 @@ class _MediaGridState extends ConsumerState<MediaGrid> {
             );
             return Stack(
               children: [
-                scroll,
+                scrollView(layout.tileSize),
                 // Worth a handle only when the grid runs past two screens.
                 if (sections.isNotEmpty && layout.total > constraints.maxHeight * 2)
                   _DateScrubber(controller: _scroll, layout: layout, height: constraints.maxHeight),
@@ -704,12 +737,17 @@ class _DateScrubberState extends State<_DateScrubber> {
 class _MediaTile extends StatelessWidget {
   const _MediaTile({
     required this.file,
+    required this.side,
     required this.selecting,
     required this.selected,
     required this.onTap,
   });
 
   final DriveFile file;
+
+  /// The tile's side, which the picture is decoded for even while a
+  /// selected tile draws it smaller.
+  final double side;
   final bool selecting;
   final bool selected;
   final VoidCallback onTap;
@@ -731,7 +769,7 @@ class _MediaTile extends StatelessWidget {
               padding: EdgeInsets.all(selected ? 10 : 0),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(selected ? Radii.thumb : 0),
-                child: FileThumbnail(file: file, expand: true, radius: 0, size: 40),
+                child: FileThumbnail(file: file, expand: true, radius: 0, size: side),
               ),
             ),
             if (file.starred && !selecting)

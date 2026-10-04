@@ -67,6 +67,16 @@ phone number.
   thumbnails only for what stops on screen, not for what scrolls past, and
   on Wi-Fi it fetches the newest ones ahead, so browsing them later on
   mobile data costs nothing.
+- **Light on small phones.** Thumbnails are decoded at the size they are
+  shown, and the Photos timeline, albums and category lists leave out the
+  tiny inline previews, which each tile reads for itself. While backup
+  sends photos up, the timeline takes in the new ones at most every
+  three-quarters of a second rather than once per photo. Phones with
+  little memory start in Save memory: one upload and two downloads at a
+  time, one photo backing up at a time, a smaller image cache, previews
+  drawn without blur, and Search inside documents off until you turn it
+  on. Settings › This phone › Save memory turns it on or off, and says
+  when it was the phone's memory that turned it on.
 - **Syncs itself.** New, edited or deleted messages flow in live. Anything you
   **forward into the channel from Telegram** (documents, videos, audio, voice
   messages, photos) shows up in the drive with no re-upload.

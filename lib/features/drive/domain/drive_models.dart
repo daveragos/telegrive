@@ -67,14 +67,18 @@ class DriveFile {
     required this.partCount,
     required this.starred,
     this.minithumbnail,
+    bool hasMinithumbnail = false,
     this.thumbnailFileId,
     this.takenAt,
     this.trashedAt,
     this.durationSeconds,
     this.replacedBy,
-  });
+  }) : hasMinithumbnail = hasMinithumbnail || minithumbnail != null;
 
-  factory DriveFile.fromRow(FileRow row) => DriveFile(
+  /// [hasMinithumbnail] says whether Telegram inlined a preview for a row
+  /// read without it, as the Photos timeline, albums and kind lists read
+  /// theirs.
+  factory DriveFile.fromRow(FileRow row, {bool hasMinithumbnail = false}) => DriveFile(
     id: row.id,
     folderId: row.folderId,
     name: row.name,
@@ -85,7 +89,8 @@ class DriveFile {
     modifiedAt: row.modifiedAt,
     partCount: row.partCount,
     starred: row.starred,
-    minithumbnail: _decodeThumb(row.minithumbnail),
+    minithumbnail: decodeMinithumbnail(row.minithumbnail),
+    hasMinithumbnail: row.minithumbnail != null || hasMinithumbnail,
     thumbnailFileId: row.thumbnailFileId,
     takenAt: row.takenAt,
     trashedAt: row.trashedAt,
@@ -105,7 +110,12 @@ class DriveFile {
   final bool starred;
 
   /// Tiny blurred JPEG Telegram inlines with the message; free to show.
+  /// Null in lists read without it, where [hasMinithumbnail] still says
+  /// whether there is one to read.
   final Uint8List? minithumbnail;
+
+  /// Telegram inlined a preview, whether or not [minithumbnail] holds it.
+  final bool hasMinithumbnail;
 
   /// TDLib id of the real thumbnail, fetched lazily.
   final int? thumbnailFileId;
@@ -142,9 +152,11 @@ class DriveFile {
     'mp4', 'mov', 'm4v', '3gp',
   };
 
-  bool get hasPreview => minithumbnail != null || thumbnailFileId != null;
+  bool get hasPreview => hasMinithumbnail || thumbnailFileId != null;
 
-  static Uint8List? _decodeThumb(String? data) {
+  /// The bytes of a minithumbnail as the index stores it (base64), or null
+  /// when there is none or it doesn't decode.
+  static Uint8List? decodeMinithumbnail(String? data) {
     if (data == null || data.isEmpty) return null;
     try {
       return base64Decode(data);

@@ -114,8 +114,10 @@ class DriveRepository {
     ],
   );
 
+  /// An album's files, newest moment first, read and throttled as the
+  /// timeline is.
   Stream<List<DriveFile>> watchAlbumFiles(String albumId) =>
-      _db.watchAlbumFiles(albumId).map(_files);
+      throttleLatest(_db.watchAlbumFilesLite(albumId).map(_liteFiles), _settle);
 
   Stream<DriveFolder?> watchFolderInfo(String id) =>
       _db.watchFolder(id).map((r) => r == null ? null : DriveFolder.fromRow(r));
@@ -154,12 +156,22 @@ class DriveRepository {
 
   Stream<List<DriveFile>> watchStarred() => _db.watchStarred().map(_files);
 
-  Stream<List<DriveFile>> watchMedia() => _db.watchMedia().map(_files);
+  /// Every photo and video, newest moment first, read without their
+  /// inline previews, which tiles fetch for themselves. While backup adds
+  /// photos one after another the list comes at most once every [_settle],
+  /// the newest each time, rather than once per photo; the first comes at
+  /// once.
+  Stream<List<DriveFile>> watchMedia() =>
+      throttleLatest(_db.watchMediaLite().map(_liteFiles), _settle);
+
+  /// The least time between two lists of the timeline or an album.
+  static const _settle = Duration(milliseconds: 750);
 
   Future<Map<String, String>> mediaFingerprints() => _db.mediaFingerprints();
 
+  /// Files of one kind, newest first, read without their inline previews.
   Stream<List<DriveFile>> watchKind(FileKind kind) =>
-      _db.watchKind(kind).map(_files);
+      _db.watchKindLite(kind).map(_liteFiles);
 
   /// The most files one search returns; a list this long was cut off.
   static const int searchLimit = AppDatabase.searchLimit;
@@ -346,6 +358,11 @@ class DriveRepository {
 
   static List<DriveFile> _files(List<FileRow> rows) =>
       rows.map(DriveFile.fromRow).toList();
+
+  static List<DriveFile> _liteFiles(List<LiteFileRow> rows) => [
+    for (final lite in rows)
+      DriveFile.fromRow(lite.row, hasMinithumbnail: lite.hasMinithumbnail),
+  ];
 
   // ---------------------------------------------------------------------------
   // Folders

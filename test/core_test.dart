@@ -1,14 +1,22 @@
+import 'dart:async';
+
+import 'package:fake_async/fake_async.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:telegrive/core/async/combine.dart';
 import 'package:telegrive/core/files/file_kind.dart';
 import 'package:telegrive/core/format/formatters.dart';
 import 'package:telegrive/features/backup/data/backup_controller.dart';
+import 'package:telegrive/features/backup/data/local_media.dart';
 import 'package:telegrive/features/drive/domain/drive_models.dart';
 import 'package:telegrive/features/files/presentation/file_location.dart';
+import 'package:telegrive/features/search/data/content_indexer.dart';
 import 'package:telegrive/features/transfers/data/transfer_keep_alive.dart';
 import 'package:telegrive/features/transfers/data/transfer_queue.dart';
 import 'package:telegrive/features/transfers/domain/transfer_wait.dart';
 import 'package:telegrive/infrastructure/database/app_database.dart';
+import 'package:telegrive/infrastructure/storage/device_profile.dart';
 import 'package:telegrive/infrastructure/storage/preferences.dart';
 import 'package:telegrive/infrastructure/telegram/telegram_exception.dart';
 
@@ -482,6 +490,170 @@ void main() {
 
       await prefs.forgetRecentSendChats();
       expect(prefs.recentSendChats, isEmpty);
+    });
+  });
+
+  group('throttleLatest', () {
+    const interval = Duration(milliseconds: 750);
+
+    test('the first value comes through at once', () {
+      fakeAsync((async) {
+        final source = StreamController<int>();
+        final seen = <int>[];
+        throttleLatest(source.stream, interval).listen(seen.add);
+        source.add(1);
+        async.flushMicrotasks();
+        expect(seen, [1]);
+        source.close();
+        async.flushTimers();
+      });
+    });
+
+    test('a burst collapses to its latest value, delivered as the interval ends', () {
+      fakeAsync((async) {
+        final source = StreamController<int>();
+        final seen = <int>[];
+        throttleLatest(source.stream, interval).listen(seen.add);
+        source.add(1);
+        async.flushMicrotasks();
+        for (var i = 2; i <= 5; i++) {
+          async.elapse(const Duration(milliseconds: 100));
+          source.add(i);
+        }
+        async.flushMicrotasks();
+        expect(seen, [1], reason: 'still inside the first interval');
+        async.elapse(const Duration(milliseconds: 350));
+        expect(seen, [1, 5]);
+
+        // Quiet for a whole interval, so the next value comes at once.
+        async.elapse(interval);
+        source.add(6);
+        async.flushMicrotasks();
+        expect(seen, [1, 5, 6]);
+        source.close();
+        async.flushTimers();
+      });
+    });
+
+    test('a value still waiting when the source closes is delivered', () {
+      fakeAsync((async) {
+        final source = StreamController<int>();
+        final seen = <int>[];
+        var closed = false;
+        throttleLatest(source.stream, interval).listen(seen.add, onDone: () => closed = true);
+        source
+          ..add(1)
+          ..add(2)
+          ..add(3)
+          ..close();
+        async.flushMicrotasks();
+        expect(seen, [1, 3]);
+        expect(closed, isTrue);
+      });
+    });
+  });
+
+  test('thumbBucket picks the smallest size that is big enough to within 5%, up to 512', () {
+    expect(thumbBucket(115), 128);
+    expect(thumbBucket(128), 128);
+    expect(thumbBucket(250), 256);
+    // A tile of a four-column grid on a 1080 px phone.
+    expect(thumbBucket(266), 256);
+    expect(thumbBucket(267), 256);
+    expect(thumbBucket(300), 384);
+    expect(thumbBucket(700), 512);
+  });
+
+  test('a phone with little memory is offered Save memory', () {
+    const gb = 1 << 30;
+    DeviceProfile profile({bool lowRam = false, int totalRam = 0}) =>
+        DeviceProfile(lowRam: lowRam, memoryClassMb: 128, totalRamBytes: totalRam);
+
+    expect(profile(lowRam: true, totalRam: 4 * gb).suggestSaveMemory, isTrue);
+    expect(profile(totalRam: (1.9 * gb).round()).suggestSaveMemory, isTrue);
+    expect(profile(totalRam: (3.6 * gb).round()).suggestSaveMemory, isFalse);
+    expect(DeviceProfile.unknown.suggestSaveMemory, isFalse);
+  });
+
+  group('Save memory', () {
+    const gb = 1 << 30;
+    final small = DeviceProfile(
+      lowRam: false,
+      memoryClassMb: 128,
+      totalRamBytes: (1.9 * gb).round(),
+    );
+    const roomy = DeviceProfile(lowRam: false, memoryClassMb: 256, totalRamBytes: 6 * gb);
+
+    Future<ProviderContainer> phone(
+      DeviceProfile profile, [
+      Map<String, Object> stored = const {},
+    ]) async {
+      // ignore: invalid_use_of_visible_for_testing_member
+      SharedPreferences.setMockInitialValues(stored);
+      final container = ProviderContainer(
+        overrides: [
+          sharedPreferencesProvider.overrideWithValue(await SharedPreferences.getInstance()),
+          deviceProfileProvider.overrideWithValue(profile),
+        ],
+      );
+      addTearDown(container.dispose);
+      return container;
+    }
+
+    test('follows the phone until the person chooses', () async {
+      expect((await phone(small)).read(saveMemoryProvider), isTrue);
+      expect((await phone(roomy)).read(saveMemoryProvider), isFalse);
+    });
+
+    test('a stored choice wins over what the phone suggests', () async {
+      expect((await phone(small, {'save_memory': false})).read(saveMemoryProvider), isFalse);
+      expect((await phone(roomy, {'save_memory': true})).read(saveMemoryProvider), isTrue);
+    });
+
+    test('turning it on or off applies at once and is stored', () async {
+      final container = await phone(small);
+      final prefs = container.read(preferencesProvider);
+      expect(prefs.saveMemory, isNull);
+
+      container.read(saveMemoryProvider.notifier).set(false);
+      expect(container.read(saveMemoryProvider), isFalse);
+      expect(prefs.saveMemory, isFalse);
+
+      container.read(saveMemoryProvider.notifier).set(true);
+      expect(container.read(saveMemoryProvider), isTrue);
+      expect(prefs.saveMemory, isTrue);
+    });
+
+    test('Search inside documents starts off while saving memory, and can be turned on', () async {
+      final saving = await phone(small);
+      expect(saving.read(contentIndexerProvider).enabled, isFalse);
+      await saving.read(contentIndexerProvider.notifier).setEnabled(true);
+      expect(saving.read(contentIndexerProvider).enabled, isTrue);
+      expect(saving.read(preferencesProvider).contentSearchOr(false), isTrue);
+
+      expect((await phone(roomy)).read(contentIndexerProvider).enabled, isTrue);
+    });
+
+    test('a stored Search inside documents choice outlasts the phone\'s default', () async {
+      expect(
+        (await phone(small, {'content_search': true})).read(contentIndexerProvider).enabled,
+        isTrue,
+      );
+      expect(
+        (await phone(roomy, {'content_search': false})).read(contentIndexerProvider).enabled,
+        isFalse,
+      );
+    });
+
+    test('contentSearchOr gives the fallback until a choice is stored', () async {
+      final fresh = (await phone(roomy)).read(preferencesProvider);
+      expect(fresh.contentSearchOr(false), isFalse);
+      expect(fresh.contentSearchOr(true), isTrue);
+
+      final off = (await phone(roomy, {'content_search': false})).read(preferencesProvider);
+      expect(off.contentSearchOr(true), isFalse);
+      final on = (await phone(roomy, {'content_search': true})).read(preferencesProvider);
+      expect(on.contentSearchOr(false), isTrue);
     });
   });
 }

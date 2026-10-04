@@ -13,6 +13,7 @@ import 'package:photo_manager/photo_manager.dart';
 import '../../../core/files/file_kind.dart';
 import '../../../infrastructure/database/app_database.dart';
 import '../../../infrastructure/network/network_status.dart';
+import '../../../infrastructure/storage/device_profile.dart';
 import '../../../infrastructure/storage/preferences.dart';
 import '../../drive/data/drive_repository.dart';
 import '../../drive/data/drive_session.dart';
@@ -213,7 +214,6 @@ class DeviceFolder {
 /// reinstall or from an old phone — is recognised and skipped.
 class BackupController extends Notifier<BackupState> {
   static const String rootFolder = 'Photo backup';
-  static const int _parallel = 3;
   static const int _pageSize = 500;
 
   /// Failed attempts after which a photo stops being tried by itself and is
@@ -261,6 +261,10 @@ class BackupController extends Notifier<BackupState> {
   AppDatabase get _db => ref.read(appDatabaseProvider);
   DriveRepository get _repository => ref.read(driveRepositoryProvider);
   TransferQueue get _queue => ref.read(transferQueueProvider.notifier);
+
+  /// How many photos a pass works on at once: one while the phone saves
+  /// memory, so a pass holds one photo's copy and upload at a time.
+  int get _parallel => ref.read(saveMemoryProvider) ? 1 : 3;
 
   @override
   BackupState build() {

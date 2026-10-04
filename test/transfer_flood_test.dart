@@ -15,6 +15,7 @@ import 'package:telegrive/features/drive/data/drive_session.dart';
 import 'package:telegrive/features/transfers/data/transfer_queue.dart';
 import 'package:telegrive/features/transfers/domain/transfer_wait.dart';
 import 'package:telegrive/infrastructure/database/app_database.dart';
+import 'package:telegrive/infrastructure/storage/device_profile.dart';
 import 'package:telegrive/infrastructure/telegram/telegram_client.dart';
 import 'package:telegrive/infrastructure/telegram/telegram_exception.dart';
 
@@ -173,6 +174,7 @@ void main() {
         appDatabaseProvider.overrideWithValue(db),
         telegramClientProvider.overrideWithValue(telegram),
         driveSessionProvider.overrideWith(TestSession.new),
+        saveMemoryProvider.overrideWithBuild((ref, notifier) => false),
       ],
     );
     addTearDown(container.dispose);

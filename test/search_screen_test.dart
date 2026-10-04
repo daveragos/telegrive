@@ -143,7 +143,8 @@ void main() {
           offlineCopiesProvider.overrideWith((ref) => Stream.value(const {})),
           offlinePinsProvider.overrideWith((ref) => Stream.value(const {})),
           for (final f in files)
-            localThumbnailProvider(f.id).overrideWith((ref) async => null),
+            for (final px in thumbBuckets)
+              localThumbnailProvider((fileId: f.id, px: px)).overrideWith((ref) async => null),
         ],
         child: MaterialApp(theme: AppTheme.light(), home: screen),
       ),

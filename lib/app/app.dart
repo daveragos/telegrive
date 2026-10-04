@@ -18,6 +18,7 @@ import '../features/transfers/data/transfer_keep_alive.dart';
 import '../features/transfers/data/transfer_queue.dart';
 import '../features/trash/data/pending_deletes.dart';
 import '../infrastructure/network/network_status.dart';
+import '../infrastructure/storage/device_profile.dart';
 import 'app_phase.dart';
 import 'app_shell.dart';
 import 'router.dart';
@@ -37,6 +38,20 @@ class _TelegriveAppState extends ConsumerState<TelegriveApp>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    ref.listenManual<bool>(
+      saveMemoryProvider,
+      (_, on) => _sizeImageCache(on),
+      fireImmediately: true,
+    );
+  }
+
+  /// Decoded pictures Flutter keeps in memory: 32 MB and 300 of them while
+  /// saving memory, otherwise Flutter's own 100 MB and 1,000. A smaller
+  /// limit takes effect at once, dropping the pictures used longest ago.
+  static void _sizeImageCache(bool saveMemory) {
+    PaintingBinding.instance.imageCache
+      ..maximumSizeBytes = saveMemory ? 32 << 20 : 100 << 20
+      ..maximumSize = saveMemory ? 300 : 1000;
   }
 
   @override

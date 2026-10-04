@@ -8,6 +8,7 @@ import '../../../core/config/app_config.dart';
 import '../../../core/format/formatters.dart';
 import '../../../core/widgets/common.dart';
 import '../../../infrastructure/notifications/app_notifications.dart';
+import '../../../infrastructure/storage/device_profile.dart';
 import '../../../infrastructure/storage/preferences.dart';
 import '../../auth/data/auth_controller.dart';
 import '../../backup/data/backup_controller.dart';
@@ -48,6 +49,13 @@ class SettingsScreen extends ConsumerWidget {
     final prefs = ref.watch(preferencesProvider);
     final mobileData = ref.watch(mobileDataProvider);
     final proxy = ref.watch(enabledProxyProvider);
+    final saveMemory = ref.watch(saveMemoryProvider);
+    final profile = ref.watch(deviceProfileProvider);
+    // Said only while the phone, not the person, decides.
+    final memoryReason =
+        prefs.saveMemory == null && profile.suggestSaveMemory && profile.totalRamBytes > 0
+        ? ' Turned on because this phone has ${Formatters.bytes(profile.totalRamBytes)} of memory.'
+        : '';
 
     Text trailingValue(String value) => Text(
       value,
@@ -335,6 +343,15 @@ class SettingsScreen extends ConsumerWidget {
           const SectionHeader('This phone'),
           ListGroup(
             children: [
+              SwitchListTile(
+                title: const Text('Save memory'),
+                subtitle: Text(
+                  'Fewer transfers at once, a smaller image cache and plain previews.$memoryReason',
+                  style: context.text.bodySmall?.copyWith(fontFeatures: tabularFigures),
+                ),
+                value: saveMemory,
+                onChanged: ref.read(saveMemoryProvider.notifier).set,
+              ),
               ListTile(
                 title: const Text('Available offline'),
                 subtitle: Text(switch (offline) {

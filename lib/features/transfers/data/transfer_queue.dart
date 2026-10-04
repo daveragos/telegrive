@@ -12,6 +12,7 @@ import 'package:path_provider/path_provider.dart';
 import '../../../core/files/file_kind.dart';
 import '../../../infrastructure/database/app_database.dart';
 import '../../../infrastructure/network/network_status.dart';
+import '../../../infrastructure/storage/device_profile.dart';
 import '../../../infrastructure/storage/device_storage.dart';
 import '../../../infrastructure/telegram/telegram_client.dart';
 import '../../../infrastructure/telegram/telegram_exception.dart';
@@ -315,17 +316,22 @@ class _Tracked {
 /// sent from the phone. They go one at a time, a moment apart, and leave
 /// the upload slots free.
 class TransferQueue extends Notifier<TransfersState> {
-  static const int _maxUploads = 2;
-  static const int _maxDownloads = 3;
   static const int _maxCopies = 1;
 
   /// The pause after each copy, so a long run of them keeps under the rate
   /// at which Telegram starts asking for waits.
   static const Duration _copyGap = Duration(milliseconds: 400);
 
+  /// A phone saving memory runs fewer transfers at once. Read each time the
+  /// queue starts work, so turning it on or off applies from the next start
+  /// and lets the transfers already running finish.
+  bool get _saveMemory => ref.read(saveMemoryProvider);
+  int get _maxUploads => _saveMemory ? 1 : 2;
+  int get _maxDownloads => _saveMemory ? 2 : 3;
+
   /// Saves to the phone leave a download slot free, so opening a file never
   /// waits behind a whole drive being downloaded.
-  static const int _maxSaves = 2;
+  int get _maxSaves => _saveMemory ? 1 : 2;
   static const Duration _emitInterval = Duration(milliseconds: 300);
 
   /// How long one second of waiting lasts, for Telegram's pauses and for

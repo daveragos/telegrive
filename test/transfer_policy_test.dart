@@ -11,6 +11,7 @@ import 'package:telegrive/features/transfers/data/transfer_policy.dart';
 import 'package:telegrive/features/transfers/data/transfer_queue.dart';
 import 'package:telegrive/infrastructure/database/app_database.dart';
 import 'package:telegrive/infrastructure/network/network_status.dart';
+import 'package:telegrive/infrastructure/storage/device_profile.dart';
 import 'package:telegrive/infrastructure/telegram/telegram_client.dart';
 
 import 'support/fake_telegram.dart';
@@ -205,6 +206,7 @@ void main() {
           telegramClientProvider.overrideWithValue(telegram),
           driveSessionProvider.overrideWith(TestSession.new),
           networkStatusProvider.overrideWith(_TestNetwork.new),
+          saveMemoryProvider.overrideWithBuild((ref, notifier) => false),
         ],
       );
       addTearDown(container.dispose);

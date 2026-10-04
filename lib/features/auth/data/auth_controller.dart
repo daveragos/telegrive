@@ -111,10 +111,11 @@ class AuthController extends Notifier<AuthUiState> {
   /// again, and so do the pages of PDFs read in the app, which are pieces of
   /// the drive's documents.
   ///
-  /// App settings (theme, app lock, photo backup choices, the folders Photos
-  /// keeps out) and the drive channel remembered per account stay, and so do
-  /// whether Telegrive has asked to post notifications and when a swiped-away
-  /// backup reminder may come back, which are about the phone. So do the
+  /// App settings (theme, app lock, Save memory, photo backup choices, the
+  /// folders Photos keeps out) and the drive channel remembered per account
+  /// stay, and so do whether Telegrive has asked to post notifications and
+  /// when a swiped-away backup reminder may come back, which are about the
+  /// phone. So do the
   /// monthly mobile data limit and what this period has used of it: they
   /// belong to the phone's data plan, and TDLib starts its counters over
   /// after a sign-out, so the use counted so far has to carry on. The 'Also

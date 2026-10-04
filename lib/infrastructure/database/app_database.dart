@@ -34,6 +34,18 @@ class FolderSize {
   final int bytes;
 }
 
+/// A file's row read without its inline preview, which weighs more than
+/// the rest of the row, and whether it has one, so a list of thousands of
+/// photos doesn't carry every preview along. Tiles read the preview on
+/// their own with [AppDatabase.minithumbnailOf].
+class LiteFileRow {
+  const LiteFileRow(this.row, this.hasMinithumbnail);
+
+  /// Every column but minithumbnail, which is null here.
+  final FileRow row;
+  final bool hasMinithumbnail;
+}
+
 /// A photo album with how many files it holds and the newest one, for its
 /// cover.
 class AlbumSummary {
@@ -281,17 +293,55 @@ class AppDatabase extends _$AppDatabase {
             ..orderBy([(f) => OrderingTerm.desc(f.modifiedAt)]))
           .watch();
 
+  /// [_shown] as SQL, for the lite queries.
+  static const _shownSql = 'parts_present >= part_count AND hidden = 0';
+
+  /// Shown files matching [where], in [orderBy] order, as [LiteFileRow]s.
+  /// The column list is taken from the table, so a column added later is
+  /// read here too rather than coming back null. [readsFrom] names any
+  /// other table [where] looks at, so a change there updates the list.
+  Stream<List<LiteFileRow>> _liteSelect(
+    String where,
+    String orderBy, {
+    List<Variable> variables = const [],
+    Set<ResultSetImplementation> readsFrom = const {},
+  }) {
+    final columns = [
+      for (final column in driveFiles.$columns)
+        if (column.name != driveFiles.minithumbnail.name)
+          column.escapedNameFor(SqlDialect.sqlite),
+    ].join(', ');
+    return customSelect(
+      'SELECT $columns, NULL AS minithumbnail, '
+      'minithumbnail IS NOT NULL AS has_mini '
+      'FROM drive_files WHERE $_shownSql AND $where ORDER BY $orderBy',
+      variables: variables,
+      readsFrom: {driveFiles, ...readsFrom},
+    ).watch().map(
+      (rows) => [
+        for (final row in rows)
+          LiteFileRow(driveFiles.map(row.data), row.read<bool>('has_mini')),
+      ],
+    );
+  }
+
   /// Photos and videos, newest capture first — the Photos timeline.
-  Stream<List<FileRow>> watchMedia() {
-    final when = coalesce([driveFiles.takenAt, driveFiles.createdAt]);
-    return (select(driveFiles)
-          ..where(
-            (f) =>
-                _shown(f) &
-                f.kind.isIn([FileKind.image.name, FileKind.video.name]),
-          )
-          ..orderBy([(_) => OrderingTerm(expression: when, mode: OrderingMode.desc)]))
-        .watch();
+  Stream<List<LiteFileRow>> watchMediaLite() => _liteSelect(
+    'kind IN (?1, ?2)',
+    'COALESCE(taken_at, created_at) DESC',
+    variables: [
+      Variable.withString(FileKind.image.name),
+      Variable.withString(FileKind.video.name),
+    ],
+  );
+
+  /// Telegram's inline preview of file [id], base64 as stored, or null.
+  Future<String?> minithumbnailOf(String id) async {
+    final row = await (selectOnly(driveFiles)
+          ..addColumns([driveFiles.minithumbnail])
+          ..where(driveFiles.id.equals(id)))
+        .getSingleOrNull();
+    return row?.read(driveFiles.minithumbnail);
   }
 
   /// Telegram's thumbnail of every shown photo and video that has one,
@@ -381,11 +431,12 @@ class AppDatabase extends _$AppDatabase {
     return found;
   }
 
-  Stream<List<FileRow>> watchKind(FileKind kind) =>
-      (select(driveFiles)
-            ..where((f) => _shown(f) & f.kind.equalsValue(kind))
-            ..orderBy([(f) => OrderingTerm.desc(f.createdAt)]))
-          .watch();
+  /// Files of one kind, newest addition first.
+  Stream<List<LiteFileRow>> watchKindLite(FileKind kind) => _liteSelect(
+    'kind = ?1',
+    'created_at DESC',
+    variables: [Variable.withString(kind.name)],
+  );
 
   /// The most files one search returns.
   static const searchLimit = 500;
@@ -726,6 +777,14 @@ class AppDatabase extends _$AppDatabase {
   }
 
   /// An album's files, newest moment first.
+  Stream<List<LiteFileRow>> watchAlbumFilesLite(String albumId) => _liteSelect(
+    'id IN (SELECT file_id FROM album_files WHERE album_id = ?1)',
+    'COALESCE(taken_at, created_at) DESC',
+    variables: [Variable.withString(albumId)],
+    readsFrom: {albumFiles},
+  );
+
+  /// An album's files, newest moment first, previews and all.
   Stream<List<FileRow>> watchAlbumFiles(String albumId) {
     final when = coalesce([driveFiles.takenAt, driveFiles.createdAt]);
     return (select(driveFiles)

@@ -5,7 +5,9 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:handy_tdlib/api.dart' as td;
 
+import '../../../infrastructure/database/app_database.dart';
 import '../../../infrastructure/telegram/telegram_client.dart';
+import '../domain/drive_models.dart';
 import 'drive_repository.dart';
 
 /// Local path of a server-made thumbnail, fetched at low priority the first
@@ -50,6 +52,23 @@ final thumbnailPathProvider = FutureProvider.autoDispose.family<String?, int>((
     debugPrint('[Thumbnail] $tdFileId: $e');
     return null;
   }
+});
+
+/// Telegram's inline preview of file [id], for a tile whose row was read
+/// without it. One primary-key read, kept for 30 seconds after its last
+/// tile goes, so scrolling back past it reads nothing again.
+final minithumbnailProvider = FutureProvider.autoDispose.family<Uint8List?, String>((
+  ref,
+  id,
+) async {
+  final link = ref.keepAlive();
+  Timer? release;
+  ref.onCancel(() => release = Timer(const Duration(seconds: 30), link.close));
+  ref.onResume(() => release?.cancel());
+  ref.onDispose(() => release?.cancel());
+  return DriveFile.decodeMinithumbnail(
+    await ref.watch(appDatabaseProvider).minithumbnailOf(id),
+  );
 });
 
 /// Progress of fetching a file for in-app preview.

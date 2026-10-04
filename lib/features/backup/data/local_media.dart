@@ -50,14 +50,29 @@ Future<Uint8List?> _thumbnail(String? assetId, {required int size, required int 
   }
 }
 
-/// A sharp ~480 px thumbnail from the phone's library, or null.
-final localThumbnailProvider = FutureProvider.autoDispose.family<Uint8List?, String>((
-  ref,
-  fileId,
-) async {
-  if (!_supported) return null;
-  return _thumbnail(await _assetIdFor(ref, fileId, wait: false), size: 480, quality: 88);
-});
+/// The sizes, in physical pixels, phone thumbnails are asked for, so tiles
+/// of about the same size share one.
+const thumbBuckets = [128, 256, 384, 512];
+
+/// The smallest of [thumbBuckets] that is [physicalPx] across or bigger,
+/// give or take 5%, or the largest for anything bigger still: a picture
+/// decoded no larger than its tile needs and at most a few percent softer,
+/// which is invisible, where holding out for a bucket that is strictly big
+/// enough would ask for more than twice the pixels on a four-column grid.
+int thumbBucket(num physicalPx) =>
+    thumbBuckets.firstWhere((px) => px * 1.05 >= physicalPx, orElse: () => thumbBuckets.last);
+
+/// A sharp thumbnail of drive file `fileId` from the phone's library,
+/// `px` square, or null. `px` is one of [thumbBuckets].
+final localThumbnailProvider = FutureProvider.autoDispose
+    .family<Uint8List?, ({String fileId, int px})>((ref, key) async {
+      if (!_supported) return null;
+      return _thumbnail(
+        await _assetIdFor(ref, key.fileId, wait: false),
+        size: key.px,
+        quality: 85,
+      );
+    });
 
 /// A row-sized thumbnail of a photo backup knows by its media id, for one
 /// that has no drive file yet.
