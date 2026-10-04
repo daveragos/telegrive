@@ -34,7 +34,10 @@ void main() {
 
     test('falls back to the extension for octet-stream', () {
       expect(kind('holiday.JPG', 'application/octet-stream'), FileKind.image);
-      expect(kind('backup.tar.gz', 'application/octet-stream'), FileKind.archive);
+      expect(
+        kind('backup.tar.gz', 'application/octet-stream'),
+        FileKind.archive,
+      );
       expect(kind('app-release.apk', 'application/octet-stream'), FileKind.app);
       expect(kind('notes.md'), FileKind.document);
       expect(kind('mystery.bin'), FileKind.other);
@@ -42,7 +45,11 @@ void main() {
 
     test('call recordings and audiobooks are audio', () {
       for (final name in ['call.amr', 'wide.awb', 'rec.3ga', 'book.m4b']) {
-        expect(kind(name, 'application/octet-stream'), FileKind.audio, reason: name);
+        expect(
+          kind(name, 'application/octet-stream'),
+          FileKind.audio,
+          reason: name,
+        );
         expect(kind(name), FileKind.audio, reason: name);
       }
       expect(kind('x', 'application/ogg'), FileKind.audio);
@@ -113,8 +120,14 @@ void main() {
     test('countdown', () {
       expect(Formatters.countdown(const Duration(seconds: 7)), '0:07');
       expect(Formatters.countdown(const Duration(seconds: 72)), '1:12');
-      expect(Formatters.countdown(const Duration(minutes: 58, seconds: 12)), '58:12');
-      expect(Formatters.countdown(const Duration(hours: 1, minutes: 2, seconds: 3)), '1:02:03');
+      expect(
+        Formatters.countdown(const Duration(minutes: 58, seconds: 12)),
+        '58:12',
+      );
+      expect(
+        Formatters.countdown(const Duration(hours: 1, minutes: 2, seconds: 3)),
+        '1:02:03',
+      );
       // Part of a second still to go reads as a whole one, never 0:00.
       expect(Formatters.countdown(const Duration(milliseconds: 71200)), '1:12');
       expect(Formatters.countdown(const Duration(milliseconds: 300)), '0:01');
@@ -122,8 +135,14 @@ void main() {
     });
 
     test('latency', () {
-      expect(Formatters.latency(const Duration(microseconds: 240400)), '240 ms');
-      expect(Formatters.latency(const Duration(milliseconds: 1240)), '1,240 ms');
+      expect(
+        Formatters.latency(const Duration(microseconds: 240400)),
+        '240 ms',
+      );
+      expect(
+        Formatters.latency(const Duration(milliseconds: 1240)),
+        '1,240 ms',
+      );
     });
 
     test('inWords', () {
@@ -131,6 +150,32 @@ void main() {
       expect(Formatters.inWords(const Duration(seconds: 37)), '37 seconds');
       expect(Formatters.inWords(const Duration(minutes: 5)), '5 minutes');
       expect(Formatters.inWords(const Duration(hours: 2)), '2 hours');
+    });
+
+    test('daysLeft', () {
+      final now = DateTime(2026, 10, 4, 12);
+      expect(
+        Formatters.daysLeft(DateTime(2026, 10, 31, 12), now: now),
+        'goes for good in 27 days',
+      );
+      expect(
+        Formatters.daysLeft(DateTime(2026, 10, 5, 13), now: now),
+        'goes for good in 1 day',
+      );
+      // Less than a day left, and already past, both read as today.
+      expect(
+        Formatters.daysLeft(DateTime(2026, 10, 5, 11), now: now),
+        'goes for good today',
+      );
+      expect(
+        Formatters.daysLeft(DateTime(2026, 10, 1), now: now),
+        'goes for good today',
+      );
+      expect(
+        Formatters.capitalised('goes for good today'),
+        'Goes for good today',
+      );
+      expect(Formatters.capitalised(''), '');
     });
 
     test('dayOfMonth', () {
@@ -151,7 +196,10 @@ void main() {
       final now = DateTime(2026, 10, 4, 22, 15);
       // The locale's own space before AM and PM.
       String time(String text) => text.replaceAll(' ', '\u202f');
-      expect(Formatters.clock(DateTime(2026, 10, 4, 23, 40), now: now), time('11:40 PM'));
+      expect(
+        Formatters.clock(DateTime(2026, 10, 4, 23, 40), now: now),
+        time('11:40 PM'),
+      );
       expect(
         Formatters.clock(DateTime(2026, 10, 5, 0, 40), now: now),
         'tomorrow ${time('12:40 AM')}',
@@ -159,7 +207,10 @@ void main() {
       expect(Formatters.clock(DateTime(2026, 10, 6, 9, 5), now: now), 'Oct 6');
       // The last day of a month runs into the first of the next.
       expect(
-        Formatters.clock(DateTime(2026, 11, 1, 1, 0), now: DateTime(2026, 10, 31, 23, 0)),
+        Formatters.clock(
+          DateTime(2026, 11, 1, 1, 0),
+          now: DateTime(2026, 10, 31, 23, 0),
+        ),
         'tomorrow ${time('1:00 AM')}',
       );
     });
@@ -179,10 +230,15 @@ void main() {
       starred: false,
     );
 
-    final files = [file('b.txt', 10, 3), file('A.txt', 30, 1), file('c.txt', 20, 2)];
+    final files = [
+      file('b.txt', 10, 3),
+      file('A.txt', 30, 1),
+      file('c.txt', 20, 2),
+    ];
 
     test('by name ignores case', () {
-      final sorted = [...files]..sort(const SortOrder(SortField.name).compareFiles);
+      final sorted = [...files]
+        ..sort(const SortOrder(SortField.name).compareFiles);
       expect(sorted.map((f) => f.name), ['A.txt', 'b.txt', 'c.txt']);
     });
 
@@ -193,7 +249,8 @@ void main() {
     });
 
     test('by date', () {
-      final sorted = [...files]..sort(const SortOrder(SortField.modified).compareFiles);
+      final sorted = [...files]
+        ..sort(const SortOrder(SortField.modified).compareFiles);
       expect(sorted.map((f) => f.name), ['A.txt', 'c.txt', 'b.txt']);
     });
   });
@@ -253,20 +310,35 @@ void main() {
     test('keeps to the limit, and orders ties by name', () {
       final entries = RecentEntry.merge(
         opened: [
-          for (final name in ['c.pdf', 'a.pdf', 'b.pdf']) (file(name, yesterday), today),
+          for (final name in ['c.pdf', 'a.pdf', 'b.pdf'])
+            (file(name, yesterday), today),
         ],
-        added: [for (var i = 1; i <= 5; i++) file('added $i.pdf', DateTime(2026, 9, i))],
+        added: [
+          for (var i = 1; i <= 5; i++)
+            file('added $i.pdf', DateTime(2026, 9, i)),
+        ],
         limit: 4,
       );
-      expect(entries.map((e) => e.file.name), ['a.pdf', 'b.pdf', 'c.pdf', 'added 5.pdf']);
+      expect(entries.map((e) => e.file.name), [
+        'a.pdf',
+        'b.pdf',
+        'c.pdf',
+        'added 5.pdf',
+      ]);
     });
   });
 
   group('TelegramException', () {
     test('reads flood waits in both spellings', () {
-      expect(const TelegramException(420, 'FLOOD_WAIT_37').retryAfterSeconds, 37);
       expect(
-        const TelegramException(429, 'Too Many Requests: retry after 12').retryAfterSeconds,
+        const TelegramException(420, 'FLOOD_WAIT_37').retryAfterSeconds,
+        37,
+      );
+      expect(
+        const TelegramException(
+          429,
+          'Too Many Requests: retry after 12',
+        ).retryAfterSeconds,
         12,
       );
       expect(const TelegramException(420, 'FLOOD_WAIT_37').isFloodWait, isTrue);
@@ -301,12 +373,16 @@ void main() {
       modifiedAt: DateTime(2026),
     );
     final byId = {
-      for (final f in [folder('Work', null), folder('Invoices', 'Work')]) f.id: f,
+      for (final f in [folder('Work', null), folder('Invoices', 'Work')])
+        f.id: f,
     };
 
     test('names the folders from the top down', () {
       expect(locationOf(byId, 'Invoices'), 'Work › Invoices');
-      expect(locationOf(byId, 'Invoices', fromRoot: true), 'Files › Work › Invoices');
+      expect(
+        locationOf(byId, 'Invoices', fromRoot: true),
+        'Files › Work › Invoices',
+      );
     });
 
     test('a file at the root, or in a folder that is gone, is in Files', () {
@@ -350,11 +426,21 @@ void main() {
         item(id, TransferKind.upload, TransferOrigin.fromChat, status);
 
     final state = TransfersState([
-      item('upload', TransferKind.upload, TransferOrigin.manual, TransferStatus.running),
+      item(
+        'upload',
+        TransferKind.upload,
+        TransferOrigin.manual,
+        TransferStatus.running,
+      ),
       copy('copy 1', TransferStatus.running),
       copy('copy 2', TransferStatus.queued),
       copy('copy 3', TransferStatus.completed),
-      item('download', TransferKind.download, TransferOrigin.manual, TransferStatus.running),
+      item(
+        'download',
+        TransferKind.download,
+        TransferOrigin.manual,
+        TransferStatus.running,
+      ),
     ]);
     const idle = BackupState(phase: BackupPhase.off);
 
@@ -424,73 +510,92 @@ void main() {
     });
   });
 
-  test('a backup pass with a video waiting for Wi-Fi still says it is backing up', () {
-    TransferItem backupUpload(String name, TransferStatus status, {TransferWait? wait}) =>
-        TransferItem(
-          TransferRow(
-            id: name,
-            kind: TransferKind.upload,
-            status: status,
-            name: name,
-            mimeType: mimeTypeFor(name),
-            fileId: name,
-            ownsSource: false,
-            wifiOnly: wait is WaitingForWifi,
-            totalBytes: 10,
-            doneBytes: 0,
-            partCount: 1,
-            completedParts: 0,
-            createdAt: DateTime(2026, 10, 1),
-            origin: TransferOrigin.backup,
-          ),
-          wait: wait,
-        );
-    const uploading = BackupState(phase: BackupPhase.uploading, total: 10, done: 4);
-
-    final (title, text) = TransferKeepAlive.describe(
-      TransfersState([
-        backupUpload('VID_1.mp4', TransferStatus.queued, wait: const WaitingForWifi()),
-        backupUpload('IMG_2.jpg', TransferStatus.running),
-      ]),
-      uploading,
-    );
-    expect(title, 'Backing up photos');
-    expect(text, '6 items left');
-
-    final (paused, _) = TransferKeepAlive.describe(
-      TransfersState([
-        backupUpload(
-          'IMG_3.jpg',
-          TransferStatus.queued,
-          wait: WaitingForTelegram(DateTime.now().add(const Duration(hours: 1))),
+  test(
+    'a backup pass with a video waiting for Wi-Fi still says it is backing up',
+    () {
+      TransferItem backupUpload(
+        String name,
+        TransferStatus status, {
+        TransferWait? wait,
+      }) => TransferItem(
+        TransferRow(
+          id: name,
+          kind: TransferKind.upload,
+          status: status,
+          name: name,
+          mimeType: mimeTypeFor(name),
+          fileId: name,
+          ownsSource: false,
+          wifiOnly: wait is WaitingForWifi,
+          totalBytes: 10,
+          doneBytes: 0,
+          partCount: 1,
+          completedParts: 0,
+          createdAt: DateTime(2026, 10, 1),
+          origin: TransferOrigin.backup,
         ),
-      ]),
-      uploading,
-    );
-    expect(paused, 'Telegrive');
-  });
+        wait: wait,
+      );
+      const uploading = BackupState(
+        phase: BackupPhase.uploading,
+        total: 10,
+        done: 4,
+      );
+
+      final (title, text) = TransferKeepAlive.describe(
+        TransfersState([
+          backupUpload(
+            'VID_1.mp4',
+            TransferStatus.queued,
+            wait: const WaitingForWifi(),
+          ),
+          backupUpload('IMG_2.jpg', TransferStatus.running),
+        ]),
+        uploading,
+      );
+      expect(title, 'Backing up photos');
+      expect(text, '6 items left');
+
+      final (paused, _) = TransferKeepAlive.describe(
+        TransfersState([
+          backupUpload(
+            'IMG_3.jpg',
+            TransferStatus.queued,
+            wait: WaitingForTelegram(
+              DateTime.now().add(const Duration(hours: 1)),
+            ),
+          ),
+        ]),
+        uploading,
+      );
+      expect(paused, 'Telegrive');
+    },
+  );
 
   group('Preferences', () {
-    test('rememberSentTo keeps the newest first, once each, and five at most', () async {
-      // ignore: invalid_use_of_visible_for_testing_member
-      SharedPreferences.setMockInitialValues({
-        'recent_send_chats': ['3', 'not a chat', '2', '1'],
-      });
-      final prefs = Preferences(await SharedPreferences.getInstance());
-      expect(prefs.recentSendChats, [3, 2, 1]);
+    test(
+      'rememberSentTo keeps the newest first, once each, and five at most',
+      () async {
+        // ignore: invalid_use_of_visible_for_testing_member
+        SharedPreferences.setMockInitialValues({
+          'recent_send_chats': ['3', 'not a chat', '2', '1'],
+        });
+        final prefs = Preferences(await SharedPreferences.getInstance());
+        expect(prefs.recentSendChats, [3, 2, 1]);
 
-      await prefs.rememberSentTo([2]);
-      expect(prefs.recentSendChats, [2, 3, 1]);
+        await prefs.rememberSentTo([2]);
+        expect(prefs.recentSendChats, [2, 3, 1]);
 
-      await prefs.rememberSentTo([7, 6, 5]);
-      expect(prefs.recentSendChats, [7, 6, 5, 2, 3]);
+        await prefs.rememberSentTo([7, 6, 5]);
+        expect(prefs.recentSendChats, [7, 6, 5, 2, 3]);
 
-      await prefs.rememberSentTo([9, 9]);
-      expect(prefs.recentSendChats, [9, 7, 6, 5, 2]);
+        await prefs.rememberSentTo([9, 9]);
+        expect(prefs.recentSendChats, [9, 7, 6, 5, 2]);
 
-      await prefs.forgetRecentSendChats();
-      expect(prefs.recentSendChats, isEmpty);
-    });
+        await prefs.forgetRecentSendChats();
+        expect(prefs.recentSendChats, isEmpty);
+      },
+    );
   });
 
   group('throttleLatest', () {
@@ -509,38 +614,44 @@ void main() {
       });
     });
 
-    test('a burst collapses to its latest value, delivered as the interval ends', () {
-      fakeAsync((async) {
-        final source = StreamController<int>();
-        final seen = <int>[];
-        throttleLatest(source.stream, interval).listen(seen.add);
-        source.add(1);
-        async.flushMicrotasks();
-        for (var i = 2; i <= 5; i++) {
-          async.elapse(const Duration(milliseconds: 100));
-          source.add(i);
-        }
-        async.flushMicrotasks();
-        expect(seen, [1], reason: 'still inside the first interval');
-        async.elapse(const Duration(milliseconds: 350));
-        expect(seen, [1, 5]);
+    test(
+      'a burst collapses to its latest value, delivered as the interval ends',
+      () {
+        fakeAsync((async) {
+          final source = StreamController<int>();
+          final seen = <int>[];
+          throttleLatest(source.stream, interval).listen(seen.add);
+          source.add(1);
+          async.flushMicrotasks();
+          for (var i = 2; i <= 5; i++) {
+            async.elapse(const Duration(milliseconds: 100));
+            source.add(i);
+          }
+          async.flushMicrotasks();
+          expect(seen, [1], reason: 'still inside the first interval');
+          async.elapse(const Duration(milliseconds: 350));
+          expect(seen, [1, 5]);
 
-        // Quiet for a whole interval, so the next value comes at once.
-        async.elapse(interval);
-        source.add(6);
-        async.flushMicrotasks();
-        expect(seen, [1, 5, 6]);
-        source.close();
-        async.flushTimers();
-      });
-    });
+          // Quiet for a whole interval, so the next value comes at once.
+          async.elapse(interval);
+          source.add(6);
+          async.flushMicrotasks();
+          expect(seen, [1, 5, 6]);
+          source.close();
+          async.flushTimers();
+        });
+      },
+    );
 
     test('a value still waiting when the source closes is delivered', () {
       fakeAsync((async) {
         final source = StreamController<int>();
         final seen = <int>[];
         var closed = false;
-        throttleLatest(source.stream, interval).listen(seen.add, onDone: () => closed = true);
+        throttleLatest(
+          source.stream,
+          interval,
+        ).listen(seen.add, onDone: () => closed = true);
         source
           ..add(1)
           ..add(2)
@@ -567,7 +678,11 @@ void main() {
   test('a phone with little memory is offered Save memory', () {
     const gb = 1 << 30;
     DeviceProfile profile({bool lowRam = false, int totalRam = 0}) =>
-        DeviceProfile(lowRam: lowRam, memoryClassMb: 128, totalRamBytes: totalRam);
+        DeviceProfile(
+          lowRam: lowRam,
+          memoryClassMb: 128,
+          totalRamBytes: totalRam,
+        );
 
     expect(profile(lowRam: true, totalRam: 4 * gb).suggestSaveMemory, isTrue);
     expect(profile(totalRam: (1.9 * gb).round()).suggestSaveMemory, isTrue);
@@ -582,7 +697,11 @@ void main() {
       memoryClassMb: 128,
       totalRamBytes: (1.9 * gb).round(),
     );
-    const roomy = DeviceProfile(lowRam: false, memoryClassMb: 256, totalRamBytes: 6 * gb);
+    const roomy = DeviceProfile(
+      lowRam: false,
+      memoryClassMb: 256,
+      totalRamBytes: 6 * gb,
+    );
 
     Future<ProviderContainer> phone(
       DeviceProfile profile, [
@@ -592,7 +711,9 @@ void main() {
       SharedPreferences.setMockInitialValues(stored);
       final container = ProviderContainer(
         overrides: [
-          sharedPreferencesProvider.overrideWithValue(await SharedPreferences.getInstance()),
+          sharedPreferencesProvider.overrideWithValue(
+            await SharedPreferences.getInstance(),
+          ),
           deviceProfileProvider.overrideWithValue(profile),
         ],
       );
@@ -606,8 +727,14 @@ void main() {
     });
 
     test('a stored choice wins over what the phone suggests', () async {
-      expect((await phone(small, {'save_memory': false})).read(saveMemoryProvider), isFalse);
-      expect((await phone(roomy, {'save_memory': true})).read(saveMemoryProvider), isTrue);
+      expect(
+        (await phone(small, {'save_memory': false})).read(saveMemoryProvider),
+        isFalse,
+      );
+      expect(
+        (await phone(roomy, {'save_memory': true})).read(saveMemoryProvider),
+        isTrue,
+      );
     });
 
     test('turning it on or off applies at once and is stored', () async {
@@ -634,26 +761,40 @@ void main() {
       expect((await phone(roomy)).read(contentIndexerProvider).enabled, isTrue);
     });
 
-    test('a stored Search inside documents choice outlasts the phone\'s default', () async {
-      expect(
-        (await phone(small, {'content_search': true})).read(contentIndexerProvider).enabled,
-        isTrue,
-      );
-      expect(
-        (await phone(roomy, {'content_search': false})).read(contentIndexerProvider).enabled,
-        isFalse,
-      );
-    });
+    test(
+      'a stored Search inside documents choice outlasts the phone\'s default',
+      () async {
+        expect(
+          (await phone(small, {
+            'content_search': true,
+          })).read(contentIndexerProvider).enabled,
+          isTrue,
+        );
+        expect(
+          (await phone(roomy, {
+            'content_search': false,
+          })).read(contentIndexerProvider).enabled,
+          isFalse,
+        );
+      },
+    );
 
-    test('contentSearchOr gives the fallback until a choice is stored', () async {
-      final fresh = (await phone(roomy)).read(preferencesProvider);
-      expect(fresh.contentSearchOr(false), isFalse);
-      expect(fresh.contentSearchOr(true), isTrue);
+    test(
+      'contentSearchOr gives the fallback until a choice is stored',
+      () async {
+        final fresh = (await phone(roomy)).read(preferencesProvider);
+        expect(fresh.contentSearchOr(false), isFalse);
+        expect(fresh.contentSearchOr(true), isTrue);
 
-      final off = (await phone(roomy, {'content_search': false})).read(preferencesProvider);
-      expect(off.contentSearchOr(true), isFalse);
-      final on = (await phone(roomy, {'content_search': true})).read(preferencesProvider);
-      expect(on.contentSearchOr(false), isTrue);
-    });
+        final off = (await phone(roomy, {
+          'content_search': false,
+        })).read(preferencesProvider);
+        expect(off.contentSearchOr(true), isFalse);
+        final on = (await phone(roomy, {
+          'content_search': true,
+        })).read(preferencesProvider);
+        expect(on.contentSearchOr(false), isTrue);
+      },
+    );
   });
 }

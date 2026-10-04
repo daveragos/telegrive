@@ -42,7 +42,9 @@ abstract final class Formatters {
     final hours = total ~/ 3600;
     final minutes = total % 3600 ~/ 60;
     final seconds = total % 60;
-    return hours > 0 ? '$hours:${two(minutes)}:${two(seconds)}' : '$minutes:${two(seconds)}';
+    return hours > 0
+        ? '$hours:${two(minutes)}:${two(seconds)}'
+        : '$minutes:${two(seconds)}';
   }
 
   /// `37 s` → `37 seconds`, `7200 s` → `2 hours`: a length of time rounded
@@ -55,7 +57,8 @@ abstract final class Formatters {
   }
 
   /// `0.2404 s` → `240 ms`: how long a network round trip took.
-  static String latency(Duration duration) => '${number(duration.inMilliseconds)} ms';
+  static String latency(Duration duration) =>
+      '${number(duration.inMilliseconds)} ms';
 
   /// Today → time, this year → day and month, otherwise the full date.
   static String date(DateTime value, {DateTime? now}) {
@@ -85,6 +88,20 @@ abstract final class Formatters {
     return date(at, now: reference);
   }
 
+  /// When something in the trash leaves for good at [gone]: `goes for good
+  /// in 27 days`, or `goes for good today` once less than a day is left.
+  static String daysLeft(DateTime gone, {DateTime? now}) {
+    final days = gone.difference(now ?? DateTime.now()).inDays;
+    return days <= 0
+        ? 'goes for good today'
+        : 'goes for good in ${count(days, 'day')}';
+  }
+
+  /// [text] with its first letter in upper case, for a fragment that opens
+  /// a line.
+  static String capitalised(String text) =>
+      text.isEmpty ? text : text[0].toUpperCase() + text.substring(1);
+
   /// `3` → `3rd`, `11` → `11th`, `22` → `22nd`: a day of the month the way
   /// it is said, as in 'renews on the 3rd'.
   static String dayOfMonth(int day) {
@@ -100,7 +117,8 @@ abstract final class Formatters {
   }
 
   /// `12345` → `12,345`.
-  static String number(int value) => NumberFormat.decimalPattern().format(value);
+  static String number(int value) =>
+      NumberFormat.decimalPattern().format(value);
 
   static String count(int value, String singular, [String? plural]) {
     final word = value == 1 ? singular : (plural ?? '${singular}s');

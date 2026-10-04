@@ -38,7 +38,9 @@ Future<void> showShareSheet(BuildContext context, WidgetRef ref) async {
   final targets = files.map((f) => f.folderId).toSet();
   FolderChoice? target;
   if (targets.length == 1 && targets.single != null) {
-    final folder = await ref.read(driveRepositoryProvider).shownFolder(targets.single!);
+    final folder = await ref
+        .read(driveRepositoryProvider)
+        .shownFolder(targets.single!);
     if (folder != null && context.mounted && !files.any((f) => f.tooBig)) {
       await _uploadStraight(context, ref, files, folder);
       return;
@@ -58,8 +60,12 @@ Future<void> showShareSheet(BuildContext context, WidgetRef ref) async {
     isDismissible: false,
     builder: (_) => _ShareSheet(files: files, folder: target),
   );
-  if (closed != _Closed.uploaded) await ref.read(shareIntakeProvider.notifier).clear(discard: true);
-  if (closed == _Closed.freeUpSpace && context.mounted) await showFreeUpSpace(context, ref);
+  if (closed != _Closed.uploaded) {
+    await ref.read(shareIntakeProvider.notifier).clear(discard: true);
+  }
+  if (closed == _Closed.freeUpSpace && context.mounted) {
+    await showFreeUpSpace(context, ref);
+  }
 }
 
 /// Uploads [files] into [folder], which they were shared to, and says so
@@ -90,7 +96,7 @@ Future<void> _uploadStraight(
         folderId: file.folderId,
       ),
   ];
-  final ids = await _enqueue(ref, named, folder.id);
+  final ids = await _enqueue(ref, _requests(ref, named), folder.id);
   if (!context.mounted) return;
   showUndoSnack(
     context,
@@ -103,22 +109,16 @@ Future<void> _uploadStraight(
   );
 }
 
-/// Queues [files], which all fit on the phone, for upload into [folderId],
-/// the root when null, and lets the intake forget them and any that didn't
-/// fit: the queue owns them now. The folder becomes the most recent place
-/// shared files went. [choice] is the answer to the question about mobile
-/// data when it was asked; without one, a big file waits for Wi-Fi when
-/// the setting says big transfers do.
-Future<List<String>> _enqueue(
+/// The uploads of [files], which all fit on the phone. [choice] is the
+/// answer to the question about mobile data when it was asked; without one,
+/// a big file waits for Wi-Fi when the setting says big transfers do.
+List<UploadRequest> _requests(
   WidgetRef ref,
-  List<SharedFile> files,
-  String? folderId, {
+  List<SharedFile> files, {
   DataChoice? choice,
-}) async {
-  final intake = ref.read(shareIntakeProvider.notifier);
-  final recent = ref.read(recentDestinationsProvider.notifier);
+}) {
   final bigWait = ref.read(preferencesProvider).bigTransfersWifiOnly;
-  final ids = await ref.read(transferQueueProvider.notifier).enqueueUploads([
+  return [
     for (final file in files)
       UploadRequest(
         name: file.name,
@@ -129,7 +129,23 @@ Future<List<String>> _enqueue(
             wifiOnlyFrom(choice) ??
             TransferPolicy.wifiOnlyFor(file.size, bigWaitForWifi: bigWait),
       ),
-  ], folderId: folderId);
+  ];
+}
+
+/// Queues [requests] for upload into [folderId], the root when null, and
+/// lets the intake forget the shared files, those that didn't fit and
+/// those skipped included: the queue owns the rest now. The folder becomes
+/// the most recent place shared files went.
+Future<List<String>> _enqueue(
+  WidgetRef ref,
+  List<UploadRequest> requests,
+  String? folderId,
+) async {
+  final intake = ref.read(shareIntakeProvider.notifier);
+  final recent = ref.read(recentDestinationsProvider.notifier);
+  final ids = await ref
+      .read(transferQueueProvider.notifier)
+      .enqueueUploads(requests, folderId: folderId);
   await intake.clear();
   unawaited(recent.note(folderId));
   return ids;
@@ -150,7 +166,8 @@ class _ShareSheet extends ConsumerStatefulWidget {
 class _ShareSheetState extends ConsumerState<_ShareSheet> {
   /// Where the files go: the folder they were shared to, or the last folder
   /// used, until the person picks.
-  late FolderChoice _folder = widget.folder ?? _lastUsed(ref.read(recentDestinationsProvider));
+  late FolderChoice _folder =
+      widget.folder ?? _lastUsed(ref.read(recentDestinationsProvider));
 
   /// Whether [_folder] was picked here or shared to, which the recent
   /// folders arriving late never overrule.
@@ -175,7 +192,9 @@ class _ShareSheetState extends ConsumerState<_ShareSheet> {
   });
 
   /// Something big on mobile data asks first whether to wait for Wi-Fi;
-  /// dismissing that question leaves the sheet as it was.
+  /// dismissing that question leaves the sheet as it was. A file named like
+  /// one already in the folder then asks Replace, Keep both or Skip; when
+  /// every file is skipped nothing goes up and the sheet closes.
   Future<void> _upload() async {
     final files = _fits;
     final bytes = files.fold<int>(0, (sum, f) => sum + f.size);
@@ -183,7 +202,10 @@ class _ShareSheetState extends ConsumerState<_ShareSheet> {
         ? files.single.name
         : Formatters.count(files.length, 'file');
     DataChoice? choice;
-    if (TransferPolicy.shouldAsk(network: ref.read(networkStatusProvider), bytes: bytes)) {
+    if (TransferPolicy.shouldAsk(
+      network: ref.read(networkStatusProvider),
+      bytes: bytes,
+    )) {
       choice = await askAboutMobileData(
         context,
         bytes: bytes,
@@ -193,13 +215,33 @@ class _ShareSheetState extends ConsumerState<_ShareSheet> {
       );
       if (choice == null || !mounted) return;
     }
-    await _enqueue(ref, files, _folder.folderId, choice: choice);
+    final folderId = _folder.folderId;
+    final resolved = await FileActions.resolveUploadClashes(
+      context,
+      ref,
+      _requests(ref, files, choice: choice),
+      folderId: folderId,
+    );
+    if (!mounted) return;
+    if (resolved.isEmpty) {
+      await ref.read(shareIntakeProvider.notifier).clear(discard: true);
+      if (!mounted) return;
+      Navigator.pop(context, _Closed.uploaded);
+      showSnack(context, 'Nothing to upload');
+      return;
+    }
+    await _enqueue(ref, resolved, folderId);
     if (!mounted) return;
     Navigator.pop(context, _Closed.uploaded);
+    final going = resolved.length == 1
+        ? resolved.single.name
+        : Formatters.count(resolved.length, 'file');
     final router = GoRouter.of(context);
     showSnack(
       context,
-      choice == DataChoice.later ? 'Waiting for Wi-Fi to upload $what' : 'Uploading $what',
+      choice == DataChoice.later
+          ? 'Waiting for Wi-Fi to upload $going'
+          : 'Uploading $going',
       actionLabel: 'View',
       onAction: () => router.push('/transfers'),
     );
@@ -217,14 +259,23 @@ class _ShareSheetState extends ConsumerState<_ShareSheet> {
     final colors = context.colors;
     // The other recent folders: all but the last one used, which the tile
     // starts on. They stay put as one is picked, so the pick shows.
-    final others = ref.watch(recentDestinationsProvider).skip(1).take(3).toList();
+    final others = ref
+        .watch(recentDestinationsProvider)
+        .skip(1)
+        .take(3)
+        .toList();
     // Those that didn't fit first, so the sheet always shows why.
     final listed = [..._tooBig, ...files];
     final noneFit = files.isEmpty;
 
     return SafeArea(
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(Space.gutter, 0, Space.gutter, Space.l),
+        padding: const EdgeInsets.fromLTRB(
+          Space.gutter,
+          0,
+          Space.gutter,
+          Space.l,
+        ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -246,7 +297,9 @@ class _ShareSheetState extends ConsumerState<_ShareSheet> {
               const SizedBox(height: 2),
               Text(
                 Formatters.bytes(bytes),
-                style: context.text.bodyMedium?.copyWith(fontFeatures: tabularFigures),
+                style: context.text.bodyMedium?.copyWith(
+                  fontFeatures: tabularFigures,
+                ),
               ),
             ],
             const SizedBox(height: Space.m),
@@ -256,7 +309,10 @@ class _ShareSheetState extends ConsumerState<_ShareSheet> {
                 child: Row(
                   children: [
                     FileIconTile(
-                      style: FileStyle.forFile(file.name, FileKind.detect(fileName: file.name)),
+                      style: FileStyle.forFile(
+                        file.name,
+                        FileKind.detect(fileName: file.name),
+                      ),
                       size: 32,
                     ),
                     const SizedBox(width: Space.m),
@@ -264,7 +320,11 @@ class _ShareSheetState extends ConsumerState<_ShareSheet> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(file.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+                          Text(
+                            file.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                           if (file.tooBig)
                             Text(
                               'Not enough space to take this · needs '
@@ -299,7 +359,9 @@ class _ShareSheetState extends ConsumerState<_ShareSheet> {
                 color: colors.surface2,
                 borderRadius: BorderRadius.circular(Radii.control),
                 child: ListTile(
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(Radii.control)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(Radii.control),
+                  ),
                   leading: Icon(Icons.folder_outlined, color: colors.text2),
                   title: AnimatedSwitcher(
                     duration: const Duration(milliseconds: 150),
@@ -343,7 +405,9 @@ class _ShareSheetState extends ConsumerState<_ShareSheet> {
                         selected: folder.folderId == _folder.folderId,
                         showCheckmark: false,
                         onSelected: (selected) => _choose(
-                          selected ? folder : _lastUsed(ref.read(recentDestinationsProvider)),
+                          selected
+                              ? folder
+                              : _lastUsed(ref.read(recentDestinationsProvider)),
                         ),
                       ),
                   ],
@@ -363,10 +427,14 @@ class _ShareSheetState extends ConsumerState<_ShareSheet> {
                 Expanded(
                   child: noneFit
                       ? FilledButton(
-                          onPressed: () => Navigator.pop(context, _Closed.freeUpSpace),
+                          onPressed: () =>
+                              Navigator.pop(context, _Closed.freeUpSpace),
                           child: const Text('Free up space'),
                         )
-                      : FilledButton(onPressed: _upload, child: const Text('Upload')),
+                      : FilledButton(
+                          onPressed: _upload,
+                          child: const Text('Upload'),
+                        ),
                 ),
               ],
             ),

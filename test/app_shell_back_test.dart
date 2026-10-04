@@ -1,3 +1,5 @@
+import 'package:drift/drift.dart' show driftRuntimeOptions;
+import 'package:drift/native.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -15,6 +17,7 @@ import 'package:telegrive/features/backup/data/backup_controller.dart';
 import 'package:telegrive/features/files/presentation/file_actions.dart';
 import 'package:telegrive/features/transfers/data/transfer_queue.dart';
 import 'package:telegrive/features/trash/data/pending_deletes.dart';
+import 'package:telegrive/infrastructure/database/app_database.dart';
 import 'package:telegrive/infrastructure/storage/preferences.dart';
 
 class _Backup extends BackupController {
@@ -22,7 +25,7 @@ class _Backup extends BackupController {
   BackupState build() => const BackupState(phase: BackupPhase.off);
 }
 
-/// Takes uploads without a database or Telegram behind it.
+/// Takes uploads without Telegram behind it.
 class _Queue extends TransferQueue {
   @override
   TransfersState build() => TransfersState.empty;
@@ -92,6 +95,12 @@ class _Paths extends PathProviderPlatform {
 }
 
 void main() {
+  // Each test opens an empty index of its own, which an upload checks
+  // names against, and leaves it open: it closes on a timer that would
+  // fire after the test's clock has stopped.
+  setUpAll(() => driftRuntimeOptions.dontWarnAboutMultipleDatabases = true);
+  tearDownAll(() => driftRuntimeOptions.dontWarnAboutMultipleDatabases = false);
+
   late GoRouter router;
   late List<String> platformCalls;
 
@@ -160,13 +169,21 @@ void main() {
                   path: '/files',
                   builder: (_, _) => page('Files page'),
                   routes: [
-                    GoRoute(path: 'sub', builder: (_, _) => page('Subfolder page')),
+                    GoRoute(
+                      path: 'sub',
+                      builder: (_, _) => page('Subfolder page'),
+                    ),
                   ],
                 ),
               ],
             ),
             StatefulShellBranch(
-              routes: [GoRoute(path: '/photos', builder: (_, _) => page('Photos page'))],
+              routes: [
+                GoRoute(
+                  path: '/photos',
+                  builder: (_, _) => page('Photos page'),
+                ),
+              ],
             ),
           ],
         ),
@@ -179,12 +196,20 @@ void main() {
       ProviderScope(
         overrides: [
           sharedPreferencesProvider.overrideWithValue(prefs),
+          appDatabaseProvider.overrideWithValue(
+            AppDatabase(NativeDatabase.memory()),
+          ),
           backupControllerProvider.overrideWith(_Backup.new),
           transferQueueProvider.overrideWith(_Queue.new),
           if (launchedInto != null)
-            pendingLaunchActionProvider.overrideWith(() => _Launched(launchedInto)),
+            pendingLaunchActionProvider.overrideWith(
+              () => _Launched(launchedInto),
+            ),
         ],
-        child: MaterialApp.router(theme: AppTheme.light(), routerConfig: router),
+        child: MaterialApp.router(
+          theme: AppTheme.light(),
+          routerConfig: router,
+        ),
       ),
     );
     await tester.pumpAndSettle();
@@ -201,7 +226,9 @@ void main() {
     tester.element(find.byType(AppShell, skipOffstage: false)),
   );
 
-  testWidgets('back inside a branch goes up, then home, then asks twice', (tester) async {
+  testWidgets('back inside a branch goes up, then home, then asks twice', (
+    tester,
+  ) async {
     await pumpShell(tester);
 
     router.go('/files');
@@ -245,21 +272,22 @@ void main() {
     expect(platformCalls, isNot(contains('SystemNavigator.pop')));
   });
 
-  testWidgets('back from a page over the shell returns to the tab it came from', (
-    tester,
-  ) async {
-    await pumpShell(tester);
-    router.go('/files');
-    await tester.pumpAndSettle();
-    router.push('/transfers');
-    await tester.pumpAndSettle();
-    expect(find.text('Transfers page'), findsOneWidget);
+  testWidgets(
+    'back from a page over the shell returns to the tab it came from',
+    (tester) async {
+      await pumpShell(tester);
+      router.go('/files');
+      await tester.pumpAndSettle();
+      router.push('/transfers');
+      await tester.pumpAndSettle();
+      expect(find.text('Transfers page'), findsOneWidget);
 
-    await back(tester);
-    expect(find.text('Transfers page'), findsNothing);
-    expect(find.text('Files page'), findsOneWidget);
-    expect(platformCalls, isNot(contains('SystemNavigator.pop')));
-  });
+      await back(tester);
+      expect(find.text('Transfers page'), findsNothing);
+      expect(find.text('Files page'), findsOneWidget);
+      expect(platformCalls, isNot(contains('SystemNavigator.pop')));
+    },
+  );
 
   testWidgets('View on an upload opens Transfers over Home', (tester) async {
     final picker = FilePickerPlatform.instance;
@@ -285,8 +313,13 @@ void main() {
     expect(platformCalls, isNot(contains('SystemNavigator.pop')));
   });
 
-  testWidgets('opened to show transfers, Transfers sits over Home', (tester) async {
-    await pumpShell(tester, launchedInto: const LaunchRequest(LaunchAction.transfers));
+  testWidgets('opened to show transfers, Transfers sits over Home', (
+    tester,
+  ) async {
+    await pumpShell(
+      tester,
+      launchedInto: const LaunchRequest(LaunchAction.transfers),
+    );
     expect(find.text('Transfers page'), findsOneWidget);
     expect(container(tester).read(pendingLaunchActionProvider), isNull);
 
@@ -296,29 +329,32 @@ void main() {
     expect(platformCalls, isNot(contains('SystemNavigator.pop')));
   });
 
-  testWidgets('once the splash has given way to Home, back never shows it again', (
-    tester,
-  ) async {
-    final phase = ValueNotifier(AppPhase.starting);
-    addTearDown(phase.dispose);
-    await pumpShell(tester, phase: phase);
-    expect(find.text('Splash page'), findsOneWidget);
+  testWidgets(
+    'once the splash has given way to Home, back never shows it again',
+    (tester) async {
+      final phase = ValueNotifier(AppPhase.starting);
+      addTearDown(phase.dispose);
+      await pumpShell(tester, phase: phase);
+      expect(find.text('Splash page'), findsOneWidget);
 
-    phase.value = AppPhase.ready;
-    await tester.pumpAndSettle();
-    expect(find.text('Home page'), findsOneWidget);
+      phase.value = AppPhase.ready;
+      await tester.pumpAndSettle();
+      expect(find.text('Home page'), findsOneWidget);
 
-    await back(tester);
-    expect(find.text('Splash page'), findsNothing);
-    expect(find.text('Press back again to exit'), findsOneWidget);
-    expect(platformCalls, isNot(contains('SystemNavigator.pop')));
-  });
+      await back(tester);
+      expect(find.text('Splash page'), findsNothing);
+      expect(find.text('Press back again to exit'), findsOneWidget);
+      expect(platformCalls, isNot(contains('SystemNavigator.pop')));
+    },
+  );
 
   testWidgets('a late delete failure is said in the shell', (tester) async {
     await pumpShell(tester);
     const failure =
         'Couldn\'t delete 3 items for good: Telegram took too long to answer.';
-    container(tester).read(pendingDeletesProvider.notifier).reportFailure(failure);
+    container(tester)
+        .read(pendingDeletesProvider.notifier)
+        .reportFailure(failure);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
     expect(find.text(failure), findsOneWidget);
@@ -342,7 +378,9 @@ void main() {
     expect(find.text(failure), findsOneWidget);
   });
 
-  testWidgets('the navigation bar hides while a branch selects', (tester) async {
+  testWidgets('the navigation bar hides while a branch selects', (
+    tester,
+  ) async {
     await pumpShell(tester);
     router.go('/files');
     await tester.pumpAndSettle();
@@ -364,46 +402,49 @@ void main() {
     expect(find.byType(NavigationBar), findsOneWidget);
   });
 
-  testWidgets('a branch that selects gets the phone\'s bottom inset for its own bar', (
-    tester,
-  ) async {
-    tester.view.physicalSize = const Size(400, 800);
-    tester.view.devicePixelRatio = 1;
-    tester.view.padding = const FakeViewPadding(bottom: 48);
-    tester.view.viewPadding = const FakeViewPadding(bottom: 48);
-    addTearDown(tester.view.reset);
-    await pumpShell(tester);
-    router.go('/files');
-    await tester.pumpAndSettle();
-    double inset() => MediaQuery.paddingOf(tester.element(find.text('Files page'))).bottom;
-    expect(inset(), 0);
+  testWidgets(
+    'a branch that selects gets the phone\'s bottom inset for its own bar',
+    (tester) async {
+      tester.view.physicalSize = const Size(400, 800);
+      tester.view.devicePixelRatio = 1;
+      tester.view.padding = const FakeViewPadding(bottom: 48);
+      tester.view.viewPadding = const FakeViewPadding(bottom: 48);
+      addTearDown(tester.view.reset);
+      await pumpShell(tester);
+      router.go('/files');
+      await tester.pumpAndSettle();
+      double inset() =>
+          MediaQuery.paddingOf(tester.element(find.text('Files page'))).bottom;
+      expect(inset(), 0);
 
-    container(tester).read(selectionActiveProvider.notifier).set(true);
-    await tester.pump(const Duration(milliseconds: 250));
-    expect(inset(), 48);
+      container(tester).read(selectionActiveProvider.notifier).set(true);
+      await tester.pump(const Duration(milliseconds: 250));
+      expect(inset(), 48);
 
-    container(tester).read(selectionActiveProvider.notifier).set(false);
-    await tester.pumpAndSettle();
-    expect(inset(), 0);
-  });
+      container(tester).read(selectionActiveProvider.notifier).set(false);
+      await tester.pumpAndSettle();
+      expect(inset(), 0);
+    },
+  );
 
-  testWidgets('on a wide window the rail stays while selecting, and a tab switch ends it', (
-    tester,
-  ) async {
-    tester.view.physicalSize = const Size(900, 700);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.reset);
-    await pumpShell(tester);
-    router.go('/files');
-    await tester.pumpAndSettle();
+  testWidgets(
+    'on a wide window the rail stays while selecting, and a tab switch ends it',
+    (tester) async {
+      tester.view.physicalSize = const Size(900, 700);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await pumpShell(tester);
+      router.go('/files');
+      await tester.pumpAndSettle();
 
-    container(tester).read(selectionActiveProvider.notifier).set(true);
-    await tester.pumpAndSettle();
-    expect(find.byType(NavigationRail), findsOneWidget);
+      container(tester).read(selectionActiveProvider.notifier).set(true);
+      await tester.pumpAndSettle();
+      expect(find.byType(NavigationRail), findsOneWidget);
 
-    await tester.tap(find.text('Photos'));
-    await tester.pumpAndSettle();
-    expect(find.text('Photos page'), findsOneWidget);
-    expect(container(tester).read(selectionActiveProvider), isFalse);
-  });
+      await tester.tap(find.text('Photos'));
+      await tester.pumpAndSettle();
+      expect(find.text('Photos page'), findsOneWidget);
+      expect(container(tester).read(selectionActiveProvider), isFalse);
+    },
+  );
 }

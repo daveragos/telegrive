@@ -85,6 +85,42 @@ void main() {
     expect((await db.watchFilesIn(null).first).single.id, 'uuid-1');
   });
 
+  test('a one-off read of a folder shows what watching it does', () async {
+    await db.upsertFolder(folder('docs', 1));
+    await db.upsertFilePart(file('a', folderId: 'docs'), part('a', 0, 10));
+    await db.upsertFilePart(file('b'), part('b', 0, 11));
+    await db.upsertFilePart(
+      file('lost', folderId: 'gone'),
+      part('lost', 0, 12),
+    );
+    await db.upsertFilePart(
+      file('half', partCount: 2, folderId: 'docs'),
+      part('half', 0, 13),
+    );
+    await db.upsertFilePart(
+      file('binned', folderId: 'docs').copyWith(trashedAt: Value(now)),
+      part('binned', 0, 14),
+    );
+    await db.upsertFolder(folder('bin', 2).copyWith(trashedAt: Value(now)));
+    await db.upsertFilePart(
+      file('inside', folderId: 'bin'),
+      part('inside', 0, 15),
+    );
+
+    for (final folderId in ['docs', 'bin', null]) {
+      expect(
+        (await db.filesIn(folderId)).map((f) => f.id),
+        (await db.watchFilesIn(folderId).first).map((f) => f.id),
+      );
+    }
+    expect((await db.filesIn('docs')).map((f) => f.id), ['a']);
+    expect(await db.filesIn('bin'), isEmpty);
+    expect(
+      (await db.filesIn(null)).map((f) => f.id),
+      unorderedEquals(['b', 'lost']),
+    );
+  });
+
   test('items whose folder is gone surface at the root', () async {
     await db.upsertFolder(folder('docs', 1));
     await db.upsertFolder(folder('inner', 2, parentId: 'docs'));
@@ -1531,4 +1567,32 @@ void main() {
       expect(await db.offlineCopyList(), isEmpty);
     },
   );
+
+  test('replaced files are found from their replacement', () async {
+    await db.upsertFilePart(file('v2'), part('v2', 0, 10));
+    await db.upsertFilePart(
+      file('v1').copyWith(replacedBy: const Value('v2'), trashedAt: Value(now)),
+      part('v1', 0, 11),
+    );
+    await db.upsertFilePart(
+      file('v1b').copyWith(
+        replacedBy: const Value('v2'),
+        trashedAt: Value(now.add(const Duration(days: 1))),
+      ),
+      part('v1b', 0, 12),
+    );
+    // Marked but not in the trash, as a restore on a phone that doesn't
+    // know the key leaves a file: not a previous version.
+    await db.upsertFilePart(
+      file('v0').copyWith(replacedBy: const Value('v2')),
+      part('v0', 0, 13),
+    );
+
+    expect((await db.trashedReplacementsOf('v2')).map((f) => f.id), [
+      'v1b',
+      'v1',
+    ]);
+    expect(await db.trashedReplacementsOf('v1'), isEmpty);
+    expect((await db.fileById('v1'))!.replacedBy, 'v2');
+  });
 }

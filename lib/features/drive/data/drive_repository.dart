@@ -535,23 +535,90 @@ class DriveRepository {
     }
   }
 
+  /// The shown files in [folderId] (the root when null) whose name is one
+  /// of [names] regardless of case, by their lower-cased name.
+  Future<Map<String, DriveFile>> nameClashes(
+    Iterable<String> names,
+    String? folderId,
+  ) async {
+    final wanted = {for (final name in names) name.toLowerCase()};
+    if (wanted.isEmpty) return const {};
+    final rows = await _db.filesIn(folderId);
+    return {
+      for (final row in rows)
+        if (wanted.contains(row.name.toLowerCase()))
+          row.name.toLowerCase(): DriveFile.fromRow(row),
+    };
+  }
+
+  /// The names of the shown files in [folderId], lower-cased, so a name can
+  /// be checked against them regardless of case.
+  Future<Set<String>> takenNamesIn(String? folderId) async => {
+    for (final row in await _db.filesIn(folderId)) row.name.toLowerCase(),
+  };
+
+  /// Renames [file] to [name]. A name a sibling already has, in any case,
+  /// is refused, so two files in one folder never read the same. The
+  /// siblings of a file whose folder is gone are the root's files, where
+  /// it shows.
   Future<void> renameFile(DriveFile file, String name) async {
     final clean = name.trim();
     if (clean.isEmpty) throw const DriveException('Give the file a name.');
     if (clean == file.name) return;
+    final folderId = file.folderId;
+    final shownIn = folderId != null && await _db.folderById(folderId) != null
+        ? folderId
+        : null;
+    final sibling = (await nameClashes([clean], shownIn))[clean.toLowerCase()];
+    if (sibling != null && sibling.id != file.id) {
+      throw DriveException('"$clean" already exists here.');
+    }
     await _rewriteFile(file, (m) => m.copyWith(name: clean));
   }
 
-  Future<void> moveFiles(List<DriveFile> files, String? folderId) async {
+  /// Moves [files] into [folderId], the root when null. A file named in
+  /// [renames] takes that name as it goes, which is how Keep both settles
+  /// a clash with a file already there; one already in the folder and
+  /// keeping its name is passed over.
+  Future<void> moveFiles(
+    List<DriveFile> files,
+    String? folderId, {
+    Map<String, String> renames = const {},
+  }) async {
     for (final file in files) {
-      if (file.folderId == folderId) continue;
+      final newName = renames[file.id];
+      if (file.folderId == folderId && newName == null) continue;
       await _rewriteFile(
         file,
-        (m) => folderId == null
-            ? m.copyWith(clearFolder: true)
-            : m.copyWith(folderId: folderId),
+        (m) =>
+            (folderId == null
+                    ? m.copyWith(clearFolder: true)
+                    : m.copyWith(folderId: folderId))
+                .copyWith(name: newName),
       );
     }
+  }
+
+  /// Moves the file [oldFileId] to the trash, marked as replaced by
+  /// [newFileId], once that file has landed in its place. A file already
+  /// gone or in the trash is left as it is.
+  Future<void> replaceWith({
+    required String oldFileId,
+    required String newFileId,
+  }) async {
+    final old = await fileById(oldFileId);
+    if (old == null || old.trashedAt != null) return;
+    await _rewriteFile(
+      old,
+      (m) => m.copyWith(trashedAt: DateTime.now(), replacedBy: newFileId),
+    );
+  }
+
+  /// The file [fileId] replaced, while it is still in the trash; the one
+  /// trashed last when there are several.
+  Future<DriveFile?> previousVersionOf(String fileId) async {
+    final row = (await _db.trashedReplacementsOf(fileId)).firstOrNull;
+    return row == null ? null : DriveFile.fromRow(row);
   }
 
   Future<void> setStarred(

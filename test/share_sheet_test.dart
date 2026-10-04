@@ -82,7 +82,10 @@ class _Queue extends TransferQueue {
         ),
     ];
     uploads.addAll([for (final request in requests) (request, folderId)]);
-    state = TransfersState([...state.items, for (final row in rows) TransferItem(row)]);
+    state = TransfersState([
+      ...state.items,
+      for (final row in rows) TransferItem(row),
+    ]);
     return [for (final row in rows) row.id];
   }
 
@@ -176,8 +179,14 @@ void main() {
     await tester.runAsync(() async {
       shared = await SharedPreferences.getInstance();
       for (final message in [
-        textMessage(1, '📁 Receipts\ntgrf1:{"id":"receipts","n":"Receipts","ct":1700000000000}'),
-        textMessage(2, '📁 Invoices\ntgrf1:{"id":"invoices","n":"Invoices","ct":1700000000000}'),
+        textMessage(
+          1,
+          '📁 Receipts\ntgrf1:{"id":"receipts","n":"Receipts","ct":1700000000000}',
+        ),
+        textMessage(
+          2,
+          '📁 Invoices\ntgrf1:{"id":"invoices","n":"Invoices","ct":1700000000000}',
+        ),
         textMessage(
           3,
           '📁 Old\ntgrf1:{"id":"old","n":"Old","ct":1700000000000,"tr":1700000000000}',
@@ -222,7 +231,10 @@ void main() {
           transferQueueProvider.overrideWith(() => queue),
           shareIntakeProvider.overrideWith(() => _Intake(files)),
         ],
-        child: MaterialApp.router(theme: AppTheme.light(), routerConfig: router),
+        child: MaterialApp.router(
+          theme: AppTheme.light(),
+          routerConfig: router,
+        ),
       ),
     );
     // The recent folders are looked up as the drive opens.
@@ -237,7 +249,12 @@ void main() {
       'name of its own, and Undo cancels it', (tester) async {
     final copy = copied('Receipt.png');
     await pumpShare(tester, [
-      SharedFile(path: copy.path, name: 'Receipt.png', size: 5, folderId: 'receipts'),
+      SharedFile(
+        path: copy.path,
+        name: 'Receipt.png',
+        size: 5,
+        folderId: 'receipts',
+      ),
     ]);
     await until(tester, () => shows('Uploading Receipt (2).png to Receipts'));
 
@@ -261,11 +278,18 @@ void main() {
     await close(tester);
   });
 
-  testWidgets('Undo once the file has arrived puts it in Trash', (tester) async {
+  testWidgets('Undo once the file has arrived puts it in Trash', (
+    tester,
+  ) async {
     queue = _Queue(status: TransferStatus.completed, fileId: 'a');
     final copy = copied('Lunch.png');
     await pumpShare(tester, [
-      SharedFile(path: copy.path, name: 'Lunch.png', size: 5, folderId: 'receipts'),
+      SharedFile(
+        path: copy.path,
+        name: 'Lunch.png',
+        size: 5,
+        folderId: 'receipts',
+      ),
     ]);
     await until(tester, () => shows('Uploading Lunch.png to Receipts'));
 
@@ -294,17 +318,27 @@ void main() {
     await until(tester, () => shows('Uploading 3 files to Invoices'));
 
     expect(
-      [for (final (request, folderId) in queue.uploads) '${request.name} $folderId'],
+      [
+        for (final (request, folderId) in queue.uploads)
+          '${request.name} $folderId',
+      ],
       ['One.png invoices', 'Two.png invoices', 'Note.txt invoices'],
     );
 
     await close(tester);
   });
 
-  testWidgets('a target whose folder is in the trash asks instead', (tester) async {
+  testWidgets('a target whose folder is in the trash asks instead', (
+    tester,
+  ) async {
     final copy = copied('Receipt.png');
     await pumpShare(tester, [
-      SharedFile(path: copy.path, name: 'Receipt.png', size: 5, folderId: 'old'),
+      SharedFile(
+        path: copy.path,
+        name: 'Receipt.png',
+        size: 5,
+        folderId: 'old',
+      ),
     ]);
     await until(tester, () => shows('Save to Telegrive'));
 
@@ -319,13 +353,25 @@ void main() {
     final copy = copied('Receipt.png');
     await pumpShare(
       tester,
-      [SharedFile(path: copy.path, name: 'Receipt.png', size: 5, folderId: 'receipts')],
+      [
+        SharedFile(
+          path: copy.path,
+          name: 'Receipt.png',
+          size: 5,
+          folderId: 'receipts',
+        ),
+      ],
       recent: ['receipts'],
       share: false,
     );
-    final container = ProviderScope.containerOf(tester.element(find.text('Share')));
+    final container = ProviderScope.containerOf(
+      tester.element(find.text('Share')),
+    );
     container.listen(recentDestinationsProvider, (_, _) {});
-    await until(tester, () => container.read(recentDestinationsProvider).isNotEmpty);
+    await until(
+      tester,
+      () => container.read(recentDestinationsProvider).isNotEmpty,
+    );
     // Trashed on another device: the index hears of it, and no sync runs.
     await tester.runAsync(
       () => repository.ingest(
@@ -341,7 +387,10 @@ void main() {
     await until(tester, () => shows('Save to Telegrive'));
     await tester.pumpAndSettle();
 
-    expect(find.descendant(of: find.byType(ListTile), matching: find.text('Files')), findsOneWidget);
+    expect(
+      find.descendant(of: find.byType(ListTile), matching: find.text('Files')),
+      findsOneWidget,
+    );
     expect(find.widgetWithText(ChoiceChip, 'Receipts'), findsNothing);
 
     await tester.tap(find.text('Upload'));
@@ -353,10 +402,10 @@ void main() {
 
   testWidgets('the sheet starts on the last folder used and offers the '
       'others', (tester) async {
-    final copy = copied('Receipt.png');
+    final copy = copied('Lunch.png');
     await pumpShare(
       tester,
-      [SharedFile(path: copy.path, name: 'Receipt.png', size: 5)],
+      [SharedFile(path: copy.path, name: 'Lunch.png', size: 5)],
       recent: ['invoices', 'receipts', ''],
     );
     await until(tester, () => shows('Save to Telegrive') && shows('Invoices'));
@@ -365,14 +414,25 @@ void main() {
     expect(find.text('Recent'), findsOneWidget);
     final chips = find.byType(ChoiceChip);
     expect(
-      [for (final chip in tester.widgetList<ChoiceChip>(chips)) (chip.label as Text).data],
+      [
+        for (final chip in tester.widgetList<ChoiceChip>(chips))
+          (chip.label as Text).data,
+      ],
       ['Receipts', 'Files'],
     );
 
     await tester.tap(find.widgetWithText(ChoiceChip, 'Files'));
     await tester.pumpAndSettle();
-    expect(tester.widget<ChoiceChip>(find.widgetWithText(ChoiceChip, 'Files')).selected, isTrue);
-    expect(find.descendant(of: find.byType(ListTile), matching: find.text('Files')), findsOneWidget);
+    expect(
+      tester
+          .widget<ChoiceChip>(find.widgetWithText(ChoiceChip, 'Files'))
+          .selected,
+      isTrue,
+    );
+    expect(
+      find.descendant(of: find.byType(ListTile), matching: find.text('Files')),
+      findsOneWidget,
+    );
 
     await tester.tap(find.widgetWithText(ChoiceChip, 'Receipts'));
     await tester.pumpAndSettle();
@@ -391,11 +451,16 @@ void main() {
   testWidgets('with no folder used yet the sheet starts on Files, with no '
       'chips', (tester) async {
     final copy = copied('Receipt.png');
-    await pumpShare(tester, [SharedFile(path: copy.path, name: 'Receipt.png', size: 5)]);
+    await pumpShare(tester, [
+      SharedFile(path: copy.path, name: 'Receipt.png', size: 5),
+    ]);
     await until(tester, () => shows('Save to Telegrive'));
     await tester.pumpAndSettle();
 
-    expect(find.descendant(of: find.byType(ListTile), matching: find.text('Files')), findsOneWidget);
+    expect(
+      find.descendant(of: find.byType(ListTile), matching: find.text('Files')),
+      findsOneWidget,
+    );
     expect(find.text('Recent'), findsNothing);
     expect(find.byType(ChoiceChip), findsNothing);
 
@@ -406,7 +471,12 @@ void main() {
       'rest upload, into the folder they were shared to', (tester) async {
     final copy = copied('Receipt.png');
     await pumpShare(tester, [
-      SharedFile(path: copy.path, name: 'Receipt.png', size: 5, folderId: 'invoices'),
+      SharedFile(
+        path: copy.path,
+        name: 'Receipt.png',
+        size: 5,
+        folderId: 'invoices',
+      ),
       SharedFile(
         path: null,
         name: 'Wedding.mp4',
@@ -419,14 +489,27 @@ void main() {
     await until(tester, () => shows('Save to Telegrive'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Not enough space to take this · needs 1.2 GB, 180 MB free'), findsOneWidget);
-    expect(find.descendant(of: find.byType(ListTile), matching: find.text('Invoices')), findsOneWidget);
+    expect(
+      find.text('Not enough space to take this · needs 1.2 GB, 180 MB free'),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byType(ListTile),
+        matching: find.text('Invoices'),
+      ),
+      findsOneWidget,
+    );
 
     await tester.tap(find.text('Upload'));
     await until(tester, () => queue.uploads.isNotEmpty);
-    expect([for (final (request, folderId) in queue.uploads) '${request.name} $folderId'], [
-      'Receipt.png invoices',
-    ]);
+    expect(
+      [
+        for (final (request, folderId) in queue.uploads)
+          '${request.name} $folderId',
+      ],
+      ['Receipt.png invoices'],
+    );
 
     await close(tester);
   });
@@ -434,28 +517,158 @@ void main() {
   testWidgets('when nothing fits, the sheet says so and offers to free up '
       'space', (tester) async {
     await pumpShare(tester, [
-      SharedFile(path: null, name: 'Wedding.mp4', size: 1288490189, tooBig: true, free: 180 << 20),
-      SharedFile(path: null, name: 'Party.mp4', size: 900 << 20, tooBig: true, free: 180 << 20),
+      SharedFile(
+        path: null,
+        name: 'Wedding.mp4',
+        size: 1288490189,
+        tooBig: true,
+        free: 180 << 20,
+      ),
+      SharedFile(
+        path: null,
+        name: 'Party.mp4',
+        size: 900 << 20,
+        tooBig: true,
+        free: 180 << 20,
+      ),
     ]);
-    await until(tester, () => shows('Not enough space on this phone to take these files.'));
+    await until(
+      tester,
+      () => shows('Not enough space on this phone to take these files.'),
+    );
     await tester.pumpAndSettle();
 
     expect(find.text('Upload'), findsNothing);
     expect(find.text('Change'), findsNothing);
     expect(find.text('Cancel'), findsOneWidget);
 
-    final container = ProviderScope.containerOf(tester.element(find.text('Share')));
+    final container = ProviderScope.containerOf(
+      tester.element(find.text('Share')),
+    );
     await tester.tap(find.text('Free up space'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
-    expect(find.text('Not enough space on this phone to take these files.'), findsNothing);
+    expect(
+      find.text('Not enough space on this phone to take these files.'),
+      findsNothing,
+    );
     expect(queue.uploads, isEmpty);
     expect(container.read(shareIntakeProvider), isEmpty);
 
     await close(tester);
   });
 
-  testWidgets('Change asks where to save, and Move still says Move to', (tester) async {
+  testWidgets('a name the folder already has asks, and Keep both numbers it', (
+    tester,
+  ) async {
+    final copy = copied('Receipt.png');
+    await pumpShare(
+      tester,
+      [SharedFile(path: copy.path, name: 'Receipt.png', size: 5, owned: true)],
+      recent: ['receipts'],
+    );
+    await until(tester, () => shows('Save to Telegrive') && shows('Receipts'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Upload'));
+    await until(tester, () => shows('"Receipt.png" is already in Receipts'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('In the drive · 9 B · Nov 1'), findsOneWidget);
+    expect(find.text('New · 5 B'), findsOneWidget);
+    expect(find.text('Saved as Receipt (2).png'), findsOneWidget);
+    expect(find.textContaining('Do this for all'), findsNothing);
+
+    await tester.tap(find.text('Keep both'));
+    await until(tester, () => shows('Uploading Receipt (2).png'));
+
+    final (request, folderId) = queue.uploads.single;
+    expect(folderId, 'receipts');
+    expect(request.name, 'Receipt (2).png');
+    expect(request.replacesFileId, isNull);
+    expect(p.basename(request.path!), 'Receipt (2).png');
+
+    await close(tester);
+  });
+
+  testWidgets('one answer covers both clashes, and Replace marks the uploads', (
+    tester,
+  ) async {
+    await pumpShare(
+      tester,
+      [
+        for (final (n, name) in [
+          'Receipt.png',
+          'Note.txt',
+          'receipt.PNG',
+        ].indexed)
+          SharedFile(
+            path: copied(name, n: n).path,
+            name: name,
+            size: 5,
+          ),
+      ],
+      recent: ['receipts'],
+    );
+    await until(
+      tester,
+      () => shows('Save 3 files to Telegrive') && shows('Receipts'),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Upload'));
+    await until(tester, () => shows('"Receipt.png" is already in Receipts'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Do this for all 2 name clashes'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Replace'));
+    await until(tester, () => shows('Uploading 3 files'));
+
+    expect(
+      [
+        for (final (request, _) in queue.uploads)
+          '${request.name} ${request.replacesFileId}',
+      ],
+      // The second file of that name finds the first already replacing it,
+      // so it is numbered rather than asked about.
+      ['Receipt.png a', 'Note.txt null', 'receipt (2).PNG null'],
+    );
+
+    await close(tester);
+  });
+
+  testWidgets('skipping the only file uploads nothing and closes the sheet', (
+    tester,
+  ) async {
+    final copy = copied('Receipt.png');
+    await pumpShare(
+      tester,
+      [SharedFile(path: copy.path, name: 'Receipt.png', size: 5, owned: true)],
+      recent: ['receipts'],
+    );
+    await until(tester, () => shows('Save to Telegrive') && shows('Receipts'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Upload'));
+    await until(tester, () => shows('"Receipt.png" is already in Receipts'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Skip'));
+    await until(tester, () => shows('Nothing to upload'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Save to Telegrive'), findsNothing);
+    expect(queue.uploads, isEmpty);
+    expect(copy.existsSync(), isFalse);
+    final container = ProviderScope.containerOf(
+      tester.element(find.text('Share')),
+    );
+    expect(container.read(shareIntakeProvider), isEmpty);
+
+    await close(tester);
+  });
+
+  testWidgets('Change asks where to save, and Move still says Move to', (
+    tester,
+  ) async {
     final copy = copied('Receipt.png');
     await pumpShare(
       tester,

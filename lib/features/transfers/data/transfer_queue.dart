@@ -47,6 +47,7 @@ class UploadRequest {
     this.takenAt,
     this.thumbnailPath,
     this.wifiOnly = false,
+    this.replacesFileId,
   }) : assert(path != null || openRead != null);
 
   final String name;
@@ -66,6 +67,29 @@ class UploadRequest {
   /// Waits for an unmetered network, and steps back to wait again if the
   /// phone moves onto mobile data while it runs.
   final bool wifiOnly;
+
+  /// The drive file this upload replaces: once the upload has landed, that
+  /// file goes to the trash marked as replaced by the new one.
+  final String? replacesFileId;
+
+  /// This request under another [name] or [path], or replacing a file.
+  UploadRequest copyWith({
+    String? name,
+    String? path,
+    String? replacesFileId,
+  }) => UploadRequest(
+    name: name ?? this.name,
+    path: path ?? this.path,
+    openRead: openRead,
+    size: size,
+    ownsSource: ownsSource,
+    origin: origin,
+    assetId: assetId,
+    takenAt: takenAt,
+    thumbnailPath: thumbnailPath,
+    wifiOnly: wifiOnly,
+    replacesFileId: replacesFileId ?? this.replacesFileId,
+  );
 }
 
 /// A drive file to download and keep on this phone.
@@ -179,9 +203,8 @@ class TransfersState {
       items.where((t) => t.inFlightAt(now)).toList();
 
   /// Photo-backup uploads in flight, shown as one group in the UI.
-  List<TransferItem> get backupActive => active
-      .where((t) => t.origin == TransferOrigin.backup)
-      .toList();
+  List<TransferItem> get backupActive =>
+      active.where((t) => t.origin == TransferOrigin.backup).toList();
 
   /// Queued, but on a wait long enough that they don't count as in flight.
   List<TransferItem> get held => heldAt(DateTime.now());
@@ -191,12 +214,18 @@ class TransfersState {
       items.where((t) => t.heldAt(now)).toList();
 
   /// Queued until the phone is on Wi-Fi again.
-  List<TransferItem> get waitingForWifi =>
-      items.where((t) => t.status == TransferStatus.queued && t.wait is WaitingForWifi).toList();
+  List<TransferItem> get waitingForWifi => items
+      .where(
+        (t) => t.status == TransferStatus.queued && t.wait is WaitingForWifi,
+      )
+      .toList();
 
   /// Queued until the phone has room for what they write.
-  List<TransferItem> get waitingForRoom =>
-      items.where((t) => t.status == TransferStatus.queued && t.wait is WaitingForRoom).toList();
+  List<TransferItem> get waitingForRoom => items
+      .where(
+        (t) => t.status == TransferStatus.queued && t.wait is WaitingForRoom,
+      )
+      .toList();
 
   /// Downloads to this phone, which the UI also shows as one group.
   List<TransferItem> get saves =>
@@ -230,14 +259,19 @@ class TransfersState {
   List<TransferItem> get pending =>
       items.where((t) => t.status.isPending).toList();
 
-  int get pausedCount => items.where((t) => t.status == TransferStatus.paused).length;
+  int get pausedCount =>
+      items.where((t) => t.status == TransferStatus.paused).length;
 
   int get activeCount => active.length;
 
   /// Failed uploads and downloads the person can retry; backup retries its
   /// own.
   int get failedCount => items
-      .where((t) => t.status == TransferStatus.failed && t.origin != TransferOrigin.backup)
+      .where(
+        (t) =>
+            t.status == TransferStatus.failed &&
+            t.origin != TransferOrigin.backup,
+      )
       .length;
 
   /// Combined progress of everything in flight, for the global indicator.
@@ -419,7 +453,10 @@ class TransferQueue extends Notifier<TransfersState> {
     _ingestSubscription = _repository.ingestedFileIds.listen(_onIngested);
     _connectionSubscription = _client.connectionStates.listen(_onConnection);
     _network = ref.read(networkStatusProvider);
-    ref.listen<NetworkState>(networkStatusProvider, (_, next) => _onNetwork(next));
+    ref.listen<NetworkState>(
+      networkStatusProvider,
+      (_, next) => _onNetwork(next),
+    );
     ref.listen<DriveSession?>(driveSessionProvider, (previous, next) {
       if (next == null) {
         _reset();
@@ -495,6 +532,7 @@ class TransferQueue extends Notifier<TransfersState> {
         assetId: request.assetId,
         takenAt: request.takenAt,
         thumbnailPath: request.thumbnailPath,
+        replacesFileId: request.replacesFileId,
       );
       await _save(row);
       ids.add(id);
@@ -602,7 +640,10 @@ class TransferQueue extends Notifier<TransfersState> {
   /// Queues copies of [requests] into [folderId], made by Telegram from the
   /// chats they are in. Files already on their way into the drive are left
   /// alone. Returns how many were queued.
-  Future<int> enqueueCopies(List<CopyRequest> requests, {String? folderId}) async {
+  Future<int> enqueueCopies(
+    List<CopyRequest> requests, {
+    String? folderId,
+  }) async {
     final inFlight = {
       for (final r in _rows.values)
         if (r.origin == TransferOrigin.fromChat && r.status.isPending)
@@ -618,7 +659,9 @@ class TransferQueue extends Notifier<TransfersState> {
           kind: TransferKind.upload,
           status: TransferStatus.queued,
           name: request.name,
-          mimeType: request.mimeType.isEmpty ? mimeTypeFor(request.name) : request.mimeType,
+          mimeType: request.mimeType.isEmpty
+              ? mimeTypeFor(request.name)
+              : request.mimeType,
           fileId: _repository.newId(),
           folderId: folderId,
           ownsSource: false,
@@ -682,7 +725,9 @@ class TransferQueue extends Notifier<TransfersState> {
   /// A path for [file] that already exists on this device, or null.
   Future<String?> localPathIfAvailable(DriveFile file) async {
     final offline = await _db.offlineCopyOf(file.id);
-    if (offline != null && await File(offline.path).exists()) return offline.path;
+    if (offline != null && await File(offline.path).exists()) {
+      return offline.path;
+    }
     for (final row in _rows.values) {
       if (row.kind == TransferKind.download &&
           row.fileId == file.id &&
@@ -730,7 +775,9 @@ class TransferQueue extends Notifier<TransfersState> {
     if (row.kind == TransferKind.download &&
         row.partCount > 1 &&
         !_running.contains(id)) {
-      await _deleteQuietly(Directory(p.join((await downloadsDirectory()).path, row.fileId)));
+      await _deleteQuietly(
+        Directory(p.join((await downloadsDirectory()).path, row.fileId)),
+      );
     }
 
     await _finish(
@@ -776,7 +823,8 @@ class TransferQueue extends Notifier<TransfersState> {
 
   /// Pauses, or resumes, every transfer [which] picks out.
   Future<void> pauseAll(bool Function(TransferRow row) which) async {
-    for (final row in _rows.values.where((r) => r.status.isActive && which(r)).toList()) {
+    for (final row
+        in _rows.values.where((r) => r.status.isActive && which(r)).toList()) {
       await pause(row.id);
     }
   }
@@ -948,7 +996,9 @@ class TransferQueue extends Notifier<TransfersState> {
       final free = await ref.read(deviceStorageProvider).freeBytes();
       // A phone that can't say how much it has never holds anything back.
       _room.removeWhere((_, wait) => free == null || wait.needed <= free);
-      if (free != null) _room.updateAll((_, wait) => WaitingForRoom(wait.needed, free));
+      if (free != null) {
+        _room.updateAll((_, wait) => WaitingForRoom(wait.needed, free));
+      }
       _emit();
       _pump();
     }
@@ -966,31 +1016,33 @@ class TransferQueue extends Notifier<TransfersState> {
     // Saves to the phone can be thousands deep; anything else goes first.
     int rank(TransferRow r) => r.origin == TransferOrigin.save ? 1 : 0;
     final now = DateTime.now();
-    final queued = _rows.values
-        .where(
-          (r) =>
-              r.status == TransferStatus.queued &&
-              !_running.contains(r.id) &&
-              TransferPolicy.mayRun(
-                r,
-                now: now,
-                network: _network,
-                notBefore: _notBeforeOf(r),
-                waitsForNetwork: _offline && _retrying.contains(r.id),
-                hasRoom: !_room.containsKey(r.id),
-              ),
-        )
-        .toList()
-      ..sort((a, b) {
-        final byRank = rank(a).compareTo(rank(b));
-        return byRank != 0 ? byRank : a.createdAt.compareTo(b.createdAt);
-      });
+    final queued =
+        _rows.values
+            .where(
+              (r) =>
+                  r.status == TransferStatus.queued &&
+                  !_running.contains(r.id) &&
+                  TransferPolicy.mayRun(
+                    r,
+                    now: now,
+                    network: _network,
+                    notBefore: _notBeforeOf(r),
+                    waitsForNetwork: _offline && _retrying.contains(r.id),
+                    hasRoom: !_room.containsKey(r.id),
+                  ),
+            )
+            .toList()
+          ..sort((a, b) {
+            final byRank = rank(a).compareTo(rank(b));
+            return byRank != 0 ? byRank : a.createdAt.compareTo(b.createdAt);
+          });
 
     var copies = _running
         .where((id) => _rows[id]?.origin == TransferOrigin.fromChat)
         .length;
     var uploads =
-        _running.where((id) => _rows[id]?.kind == TransferKind.upload).length - copies;
+        _running.where((id) => _rows[id]?.kind == TransferKind.upload).length -
+        copies;
     var downloads = _running.length - uploads - copies;
     var saves = _running
         .where((id) => _rows[id]?.origin == TransferOrigin.save)
@@ -1031,12 +1083,16 @@ class TransferQueue extends Notifier<TransfersState> {
         final wait = telegramWaitOf(e);
         final attempt = _attempts[row.id] ?? 0;
         if (_pausing.contains(row.id)) {
-          await _save((_rows[row.id] ?? row).copyWith(status: TransferStatus.paused));
+          await _save(
+            (_rows[row.id] ?? row).copyWith(status: TransferStatus.paused),
+          );
           _emit();
         } else if (_holding.contains(row.id)) {
           // On mobile data now: back in the queue with the parts and bytes
           // it has, until Wi-Fi.
-          await _save((_rows[row.id] ?? row).copyWith(status: TransferStatus.queued));
+          await _save(
+            (_rows[row.id] ?? row).copyWith(status: TransferStatus.queued),
+          );
           _emit();
         } else if (e is _NeedsRoom && !_cancelled.contains(row.id)) {
           await _waitForRoom(row, e);
@@ -1078,7 +1134,9 @@ class TransferQueue extends Notifier<TransfersState> {
     // reached the channel, so deleting it only drops that local copy.
     final chatId = ref.read(driveSessionProvider)?.chatId;
     if (error is SendFailed && chatId != null) {
-      await _quietly(() => _messenger.deleteMessages(chatId, [error.failedMessageId]));
+      await _quietly(
+        () => _messenger.deleteMessages(chatId, [error.failedMessageId]),
+      );
     }
     // Cancelled meanwhile: there is nothing left to wait for.
     if (_cancelled.contains(row.id)) return;
@@ -1102,7 +1160,10 @@ class TransferQueue extends Notifier<TransfersState> {
   Future<void> _waitForRoom(TransferRow row, _NeedsRoom need) async {
     await _save((_rows[row.id] ?? row).copyWith(status: TransferStatus.queued));
     _room[row.id] = WaitingForRoom(need.needed, need.free);
-    _roomTimer ??= Timer.periodic(_roomRecheck, (_) => unawaited(recheckRoom()));
+    _roomTimer ??= Timer.periodic(
+      _roomRecheck,
+      (_) => unawaited(recheckRoom()),
+    );
     _emit();
   }
 
@@ -1120,7 +1181,9 @@ class TransferQueue extends Notifier<TransfersState> {
   Future<void> _retryLater(TransferRow row, Object error, int attempt) async {
     final chatId = ref.read(driveSessionProvider)?.chatId;
     if (error is SendFailed && chatId != null) {
-      await _quietly(() => _messenger.deleteMessages(chatId, [error.failedMessageId]));
+      await _quietly(
+        () => _messenger.deleteMessages(chatId, [error.failedMessageId]),
+      );
     }
     if (_cancelled.contains(row.id)) return;
     debugPrint('[Transfers] ${row.name} will be tried again: $error');
@@ -1156,10 +1219,15 @@ class TransferQueue extends Notifier<TransfersState> {
         final telegram = row.kind == TransferKind.upload
             ? _uploadsNotBefore
             : (retrying ? null : _notBefore[row.id]);
-        if (telegram != null && telegram.isAfter(now)) return WaitingForTelegram(telegram);
+        if (telegram != null && telegram.isAfter(now)) {
+          return WaitingForTelegram(telegram);
+        }
         if (_room[row.id] case final room?) return room;
-        if (TransferPolicy.waitsForWifi(row, _network)) return const WaitingForWifi();
-        if (retrying && (_offline || (_notBefore[row.id]?.isAfter(now) ?? false))) {
+        if (TransferPolicy.waitsForWifi(row, _network)) {
+          return const WaitingForWifi();
+        }
+        if (retrying &&
+            (_offline || (_notBefore[row.id]?.isAfter(now) ?? false))) {
           return const WaitingForNetwork();
         }
         return null;
@@ -1196,7 +1264,9 @@ class TransferQueue extends Notifier<TransfersState> {
     final session = ref.read(driveSessionProvider);
     if (session == null) throw const DriveException('Your drive is not open.');
 
-    final source = initial.sourcePath == null ? null : File(initial.sourcePath!);
+    final source = initial.sourcePath == null
+        ? null
+        : File(initial.sourcePath!);
     final stager = _stagers[initial.id];
     final stage = source != null && stager != null && !await source.exists();
     if (stage) {
@@ -1245,7 +1315,8 @@ class TransferQueue extends Notifier<TransfersState> {
       if (_cancelled.contains(row.id)) return;
       _stopIfPausing(row.id);
       final base = partCount == 1 ? 0 : SplitPolicy.offsetOf(index);
-      if (landed.contains(index) && !(resume != null && index == row.completedParts)) {
+      if (landed.contains(index) &&
+          !(resume != null && index == row.completedParts)) {
         final partEnd = partCount == 1
             ? row.totalBytes
             : base + SplitPolicy.sizeOf(index, row.totalBytes);
@@ -1265,7 +1336,9 @@ class TransferQueue extends Notifier<TransfersState> {
         if (partCount == 1) {
           path = source!.path;
         } else {
-          await _ensureRoom(Room.forPart(SplitPolicy.sizeOf(index, row.totalBytes)));
+          await _ensureRoom(
+            Room.forPart(SplitPolicy.sizeOf(index, row.totalBytes)),
+          );
           path = await _writePart(row, source!, index);
         }
         final manifest = FileManifest(
@@ -1330,6 +1403,15 @@ class TransferQueue extends Notifier<TransfersState> {
 
     if (_cancelled.contains(row.id)) return;
     await _finish(row.copyWith(status: TransferStatus.completed));
+    // The file this one replaces goes to the trash only now that the new
+    // one is in the drive, so a failed or cancelled upload leaves it be. One
+    // already gone or trashed needs nothing more, and any other failure is
+    // the drive's to report: the upload itself is through.
+    if (row.replacesFileId case final old?) {
+      await _quietly(
+        () => _repository.replaceWith(oldFileId: old, newFileId: row.fileId),
+      );
+    }
     await _dropOwnedFiles(row);
   }
 
@@ -1350,7 +1432,10 @@ class TransferQueue extends Notifier<TransfersState> {
         _pendingMessages[row.id] = resume.id;
         delivered = await _messenger.awaitDelivery(resume.id);
       } else {
-        final kind = FileKind.detect(fileName: row.name, mimeType: row.mimeType);
+        final kind = FileKind.detect(
+          fileName: row.name,
+          mimeType: row.mimeType,
+        );
         final manifest = FileManifest(
           id: row.fileId,
           name: row.name,
@@ -1359,7 +1444,9 @@ class TransferQueue extends Notifier<TransfersState> {
           size: row.totalBytes,
           createdAt: row.takenAt ?? row.createdAt,
           modifiedAt: DateTime.now(),
-          takenAt: kind == FileKind.image || kind == FileKind.video ? row.takenAt : null,
+          takenAt: kind == FileKind.image || kind == FileKind.video
+              ? row.takenAt
+              : null,
         );
         delivered = await _messenger.sendCopy(
           session.chatId,
@@ -1454,7 +1541,9 @@ class TransferQueue extends Notifier<TransfersState> {
         await _deleteQuietly(File(source));
         final folder = File(source).parent;
         final temp = (await getTemporaryDirectory()).path;
-        if (leftoverDirs.any((dir) => p.isWithin(p.join(temp, dir), folder.path))) {
+        if (leftoverDirs.any(
+          (dir) => p.isWithin(p.join(temp, dir), folder.path),
+        )) {
           try {
             // Not recursive: the file picker can put two picks in one folder.
             await folder.delete();
@@ -1463,7 +1552,9 @@ class TransferQueue extends Notifier<TransfersState> {
           }
         }
       }
-      if (row.thumbnailPath != null) await _deleteQuietly(File(row.thumbnailPath!));
+      if (row.thumbnailPath != null) {
+        await _deleteQuietly(File(row.thumbnailPath!));
+      }
       if (row.kind == TransferKind.upload && row.partCount > 1) {
         await _deleteQuietly(await _partsDir(row.id));
       }
@@ -1586,7 +1677,9 @@ class TransferQueue extends Notifier<TransfersState> {
         keepsCopy: initial.saveTo != null,
       ),
     );
-    final sink = out.openWrite(mode: done > 0 ? FileMode.append : FileMode.write);
+    final sink = out.openWrite(
+      mode: done > 0 ? FileMode.append : FileMode.write,
+    );
     try {
       for (final (index, part) in parts.indexed) {
         if (index < done) continue;
@@ -1647,7 +1740,10 @@ class TransferQueue extends Notifier<TransfersState> {
         );
         return row.copyWith(resultPath: Value(saved));
       case SaveTarget.gallery:
-        final kind = FileKind.detect(fileName: row.name, mimeType: row.mimeType);
+        final kind = FileKind.detect(
+          fileName: row.name,
+          mimeType: row.mimeType,
+        );
         final assetId = await storage.saveToGallery(
           path,
           name: row.name,
@@ -1660,7 +1756,9 @@ class TransferQueue extends Notifier<TransfersState> {
         await _db.markAssetBackedUp(assetId, row.fileId);
         return row.copyWith(resultPath: const Value(null));
       case SaveTarget.offline:
-        final dir = Directory(p.join((await offlineDirectory()).path, row.fileId));
+        final dir = Directory(
+          p.join((await offlineDirectory()).path, row.fileId),
+        );
         await dir.create(recursive: true);
         final copy = File(p.join(dir.path, DeviceStorage.safeName(row.name)));
         await File(path).copy(copy.path);
@@ -1807,10 +1905,15 @@ class TransferQueue extends Notifier<TransfersState> {
       // the file is on the phone, under the copy's temporary name.
       final source = row.sourcePath;
       final partial = source == null ? null : File('$source.part');
-      if (partial != null && !await File(source!).exists() && await partial.exists()) {
+      if (partial != null &&
+          !await File(source!).exists() &&
+          await partial.exists()) {
         await _deleteQuietly(partial);
         await _finish(
-          row.copyWith(status: TransferStatus.failed, error: Value(_notWhole(row))),
+          row.copyWith(
+            status: TransferStatus.failed,
+            error: Value(_notWhole(row)),
+          ),
         );
         continue;
       }
@@ -1865,7 +1968,9 @@ class TransferQueue extends Notifier<TransfersState> {
   Future<void> _sweepOnOpen() async {
     try {
       final freed = await clearLeftovers();
-      if (freed > 0) debugPrint('[Transfers] Deleted $freed bytes of leftover copies');
+      if (freed > 0) {
+        debugPrint('[Transfers] Deleted $freed bytes of leftover copies');
+      }
     } catch (e) {
       debugPrint('[Transfers] Could not sweep leftover copies: $e');
     }
@@ -1882,7 +1987,8 @@ class TransferQueue extends Notifier<TransfersState> {
     // A snapshot, since transfers can be added while the parts folders are
     // looked up.
     for (final row in _rows.values.toList()) {
-      if (row.status == TransferStatus.completed || row.status == TransferStatus.cancelled) {
+      if (row.status == TransferStatus.completed ||
+          row.status == TransferStatus.cancelled) {
         continue;
       }
       keep.add((await _partsDir(row.id)).path);
@@ -1910,7 +2016,10 @@ class TransferQueue extends Notifier<TransfersState> {
   /// download is waiting for, those joined more than [olderThan] before
   /// [now], and returns the bytes it freed. Opening one again leaves it as
   /// it was, so its age is how long it has been on the phone.
-  Future<int> clearOldDownloads({required Duration olderThan, DateTime? now}) async {
+  Future<int> clearOldDownloads({
+    required Duration olderThan,
+    DateTime? now,
+  }) async {
     final downloads = await downloadsDirectory();
     return sweepLeftovers(
       roots: [downloads],
@@ -1971,7 +2080,8 @@ class TransferQueue extends Notifier<TransfersState> {
     _room.remove(row.id);
     final finished = row.copyWith(finishedAt: Value(DateTime.now()));
     final keptOffline =
-        row.saveTo == SaveTarget.offline && row.status == TransferStatus.completed;
+        row.saveTo == SaveTarget.offline &&
+        row.status == TransferStatus.completed;
     if (row.origin == TransferOrigin.backup || keptOffline) {
       // Backup keeps its own record of each photo, and offline copies are
       // listed in their own table; finished rows here would only bury the
@@ -1989,7 +2099,9 @@ class TransferQueue extends Notifier<TransfersState> {
       if (row.status == TransferStatus.completed && row.resultPath != null) {
         completer.complete(row.resultPath);
       } else {
-        completer.completeError(error ?? DriveException(describeTransferError(row.error)));
+        completer.completeError(
+          error ?? DriveException(describeTransferError(row.error)),
+        );
       }
     }
     _emit();
@@ -1999,7 +2111,9 @@ class TransferQueue extends Notifier<TransfersState> {
     // Work still under way for a transfer that was cancelled, or removed
     // from the list, would otherwise bring it back as it saves its
     // progress, and start it again on the next launch.
-    if (_cancelled.contains(row.id) && row.status != TransferStatus.cancelled) return;
+    if (_cancelled.contains(row.id) && row.status != TransferStatus.cancelled) {
+      return;
+    }
     _rows[row.id] = row;
     await _db.saveTransfer(row);
   }
@@ -2026,17 +2140,18 @@ class TransferQueue extends Notifier<TransfersState> {
           ? instant
           : smoothed * 0.7 + instant * 0.3;
     }
-    final items = _rows.values
-        .map(
-          (r) => TransferItem(
-            r,
-            bytesPerSecond: _speeds[r.id] ?? 0,
-            preparing: _preparing.contains(r.id),
-            wait: _waitOf(r, now),
-          ),
-        )
-        .toList()
-      ..sort((a, b) => b.row.createdAt.compareTo(a.row.createdAt));
+    final items =
+        _rows.values
+            .map(
+              (r) => TransferItem(
+                r,
+                bytesPerSecond: _speeds[r.id] ?? 0,
+                preparing: _preparing.contains(r.id),
+                wait: _waitOf(r, now),
+              ),
+            )
+            .toList()
+          ..sort((a, b) => b.row.createdAt.compareTo(a.row.createdAt));
     state = TransfersState(items);
   }
 
@@ -2055,5 +2170,6 @@ class TransferQueue extends Notifier<TransfersState> {
   }
 }
 
-final transferQueueProvider =
-    NotifierProvider<TransferQueue, TransfersState>(TransferQueue.new);
+final transferQueueProvider = NotifierProvider<TransferQueue, TransfersState>(
+  TransferQueue.new,
+);

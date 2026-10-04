@@ -239,6 +239,11 @@ class AppDatabase extends _$AppDatabase {
     driveFiles,
   )..where((f) => _shown(f) & _inFolder(f.folderId, folderId))).watch();
 
+  /// What [watchFilesIn] shows for [folderId], read once.
+  Future<List<FileRow>> filesIn(String? folderId) => (select(
+    driveFiles,
+  )..where((f) => _shown(f) & _inFolder(f.folderId, folderId))).get();
+
   /// Newest additions first. With [excludeCameraRoll], only files added by
   /// hand or forwarded in: photo backup is the only thing that records a
   /// capture time, and a batch of new photos shouldn't bury the rest.
@@ -796,6 +801,18 @@ class AppDatabase extends _$AppDatabase {
             )
             ..orderBy([(f) => OrderingTerm.desc(f.trashedAt)]))
           .watch();
+
+  /// The files in the trash that [fileId] replaced, the one trashed last
+  /// first. A replacement counts only while the file is in the trash: a
+  /// restore clears it, and a build that doesn't know the key leaves it
+  /// behind when it restores.
+  Future<List<FileRow>> trashedReplacementsOf(String fileId) =>
+      (select(driveFiles)
+            ..where(
+              (f) => f.replacedBy.equals(fileId) & f.trashedAt.isNotNull(),
+            )
+            ..orderBy([(f) => OrderingTerm.desc(f.trashedAt)]))
+          .get();
 
   // ---------------------------------------------------------------------------
   // Albums

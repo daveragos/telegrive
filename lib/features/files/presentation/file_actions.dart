@@ -12,6 +12,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../app/theme/file_style.dart';
 import '../../../app/theme/tokens.dart';
 import '../../../core/files/file_kind.dart';
 import '../../../core/format/formatters.dart';
@@ -527,10 +528,25 @@ abstract final class FileActions {
               ),
         ),
     ];
+    if (!context.mounted) return;
+    final resolved = await resolveUploadClashes(
+      context,
+      ref,
+      requests,
+      folderId: folderId,
+    );
+    if (!context.mounted) return;
+    if (resolved.isEmpty) {
+      showSnack(context, 'Nothing to upload');
+      return;
+    }
+    final going = resolved.length == 1
+        ? resolved.single.name
+        : Formatters.count(resolved.length, 'file');
     final recent = ref.read(recentDestinationsProvider.notifier);
     await ref
         .read(transferQueueProvider.notifier)
-        .enqueueUploads(requests, folderId: folderId);
+        .enqueueUploads(resolved, folderId: folderId);
     unawaited(recent.note(folderId));
     if (!context.mounted) return;
     // Transfers goes over the screen that started the upload, so back
@@ -539,11 +555,138 @@ abstract final class FileActions {
     showSnack(
       context,
       choice == DataChoice.later
-          ? 'Waiting for Wi-Fi to upload $what'
-          : 'Uploading $what',
+          ? 'Waiting for Wi-Fi to upload $going'
+          : 'Uploading $going',
       actionLabel: 'View',
       onAction: () => router.push('/transfers'),
     );
+  }
+
+  /// Settles [requests], bound for [folderId] (the root when null), against
+  /// the files already there. One whose name a file in the folder has, in
+  /// any case, asks Replace, Keep both or Skip through [showClashSheet];
+  /// with several clashes the answer can stand for all of them. Replace
+  /// marks the request to trash that file once it lands, Keep both gives
+  /// it the first free numbered name, and Skip drops it, deleting the copy
+  /// the app made of it. A name an earlier request or an upload still on
+  /// its way to the folder took is numbered without asking, so a batch
+  /// never carries two files of one name. Returns what is left to upload,
+  /// or nothing when the screen asking went away before the batch was
+  /// settled, in which case every copy the app made is deleted.
+  static Future<List<UploadRequest>> resolveUploadClashes(
+    BuildContext context,
+    WidgetRef ref,
+    List<UploadRequest> requests, {
+    String? folderId,
+  }) async {
+    // Everything [ref] gives is read before the first wait: the screen that
+    // asked may be gone by the time the folder has been read.
+    final repository = ref.read(driveRepositoryProvider);
+    final onTheirWay = [
+      for (final item in ref.read(transferQueueProvider).items)
+        if (item.kind == TransferKind.upload &&
+            item.status.isPending &&
+            item.row.folderId == folderId)
+          item.name.toLowerCase(),
+    ];
+    final clashes = await repository.nameClashes(
+      requests.map((r) => r.name),
+      folderId,
+    );
+    final taken = {...await repository.takenNamesIn(folderId), ...onTheirWay};
+    String? folderName;
+    ClashChoice? forAll;
+    final resolved = <UploadRequest>[];
+    for (final (index, request) in requests.indexed) {
+      final lower = request.name.toLowerCase();
+      final existing = clashes[lower];
+      if (existing == null) {
+        final name = repository.freeName(request.name, taken);
+        taken.add(name.toLowerCase());
+        resolved.add(await _renamed(request, name));
+        continue;
+      }
+      ClashChoice? choice = forAll;
+      if (choice == null) {
+        // Nothing of the batch goes up once the screen asking is gone.
+        Future<List<UploadRequest>> abandon() async {
+          for (final request in [...resolved, ...requests.skip(index)]) {
+            await _discardRequest(request);
+          }
+          return const [];
+        }
+
+        if (!context.mounted) return abandon();
+        folderName ??= await _folderName(repository, folderId);
+        if (!context.mounted) return abandon();
+        final answer = await showClashSheet(
+          context,
+          name: request.name,
+          existing: existing,
+          newSize: request.size ?? 0,
+          folderName: folderName,
+          keepBothName: repository.freeName(request.name, taken),
+          // This request and the later ones still up against a file in
+          // the folder: a name Replace has already settled no longer is.
+          clashesLeft: requests
+              .skip(index)
+              .where((r) => clashes.containsKey(r.name.toLowerCase()))
+              .length,
+        );
+        choice = answer?.$1 ?? ClashChoice.skip;
+        if (answer != null && answer.$2) forAll = choice;
+      }
+      switch (choice) {
+        case ClashChoice.replace:
+          resolved.add(request.copyWith(replacesFileId: existing.id));
+          // A later request of the same name is numbered, not a second
+          // replacement of a file that will be in the trash by then.
+          clashes.remove(lower);
+        case ClashChoice.keepBoth:
+          final name = repository.freeName(request.name, taken);
+          taken.add(name.toLowerCase());
+          resolved.add(await _renamed(request, name));
+        case ClashChoice.skip:
+          await _discardRequest(request);
+      }
+    }
+    return resolved;
+  }
+
+  /// Where uploads into [folderId] are said to land: the folder's name, or
+  /// My Drive for the root, as the share sheet puts it.
+  static Future<String> _folderName(
+    DriveRepository repository,
+    String? folderId,
+  ) async {
+    if (folderId == null) return 'My Drive';
+    return (await repository.pathTo(folderId)).lastOrNull?.name ??
+        'this folder';
+  }
+
+  /// [request] as [name]: a copy the app owns takes the name on disk too,
+  /// so Telegram shows the same name the drive does.
+  static Future<UploadRequest> _renamed(
+    UploadRequest request,
+    String name,
+  ) async {
+    if (name == request.name) return request;
+    final path = request.path;
+    return request.copyWith(
+      name: name,
+      path: path != null && request.ownsSource
+          ? await renamedOnDisk(path, name)
+          : null,
+    );
+  }
+
+  /// Deletes the copy the app made for [request], which won't be uploaded.
+  static Future<void> _discardRequest(UploadRequest request) async {
+    final path = request.path;
+    if (!request.ownsSource || path == null) return;
+    try {
+      await File(path).delete();
+    } catch (_) {}
   }
 
   static Future<void> createFolder(
@@ -977,19 +1120,118 @@ abstract final class FileActions {
     if (destination == null || !context.mounted) return false;
     final target = destination.folderId;
     final repository = ref.read(driveRepositoryProvider);
+
+    // A file named like one already in the destination asks what to do.
+    // Replace sends that file to the trash once the move is through, Keep
+    // both moves under a numbered name, and Skip leaves the file where it
+    // is. The files already in the destination are left out of it, and a
+    // file named like one settled earlier in the batch is numbered without
+    // asking, so the folder never ends up with two files of one name.
+    final arriving = [
+      for (final file in files)
+        if (file.folderId != target) file,
+    ];
+    final clashes = await repository.nameClashes(
+      arriving.map((f) => f.name),
+      target,
+    );
+    final renames = <String, String>{};
+    // Moved file id to the id of the file it replaces.
+    final replacements = <String, String>{};
+    final moving = [...files];
+    if (arriving.isNotEmpty) {
+      final taken = await repository.takenNamesIn(target);
+      bool clashing(DriveFile file) {
+        final existing = clashes[file.name.toLowerCase()];
+        return existing != null && existing.id != file.id;
+      }
+
+      ClashChoice? forAll;
+      for (final (index, file) in arriving.indexed) {
+        final lower = file.name.toLowerCase();
+        final existing = clashes[lower];
+        // A file whose folder is gone already shows at the root under its
+        // own name.
+        if (existing?.id == file.id) continue;
+        if (existing == null) {
+          if (taken.add(lower)) continue;
+          final name = repository.freeName(file.name, taken);
+          taken.add(name.toLowerCase());
+          renames[file.id] = name;
+          continue;
+        }
+        ClashChoice? choice = forAll;
+        if (choice == null) {
+          if (!context.mounted) return false;
+          final answer = await showClashSheet(
+            context,
+            name: file.name,
+            existing: existing,
+            newSize: file.size,
+            folderName: destination.name,
+            keepBothName: repository.freeName(file.name, taken),
+            clashesLeft: arriving.skip(index).where(clashing).length,
+            moving: file,
+          );
+          choice = answer?.$1 ?? ClashChoice.skip;
+          if (answer != null && answer.$2) forAll = choice;
+        }
+        switch (choice) {
+          case ClashChoice.replace:
+            replacements[file.id] = existing.id;
+            // The name is now this file's: a later file of the same name
+            // is numbered rather than replacing a file bound for the
+            // trash.
+            clashes.remove(lower);
+          case ClashChoice.keepBoth:
+            final name = repository.freeName(file.name, taken);
+            taken.add(name.toLowerCase());
+            renames[file.id] = name;
+          case ClashChoice.skip:
+            moving.remove(file);
+        }
+      }
+    }
+    if (!context.mounted) return false;
+    if (moving.isEmpty && folders.isEmpty) {
+      showSnack(context, 'Nothing moved');
+      return false;
+    }
+
     final outcome = await runBulk<_Step>(
       context,
       ref.read(bulkEditsProvider.notifier),
-      label: 'Moving ${Formatters.count(count, 'item')}',
+      label:
+          'Moving ${Formatters.count(moving.length + folders.length, 'item')}',
       icon: Icons.drive_file_move_outline,
       items: <_Step>[
-        for (final file in files)
+        for (final file in moving)
           (
-            apply: () => repository.moveFiles([file], target),
-            undo: () async => repository.moveFiles(
-              await _current(repository, [file]),
-              file.folderId,
-            ),
+            apply: () async {
+              await repository.moveFiles([file], target, renames: renames);
+              if (replacements[file.id] case final replaced?) {
+                await repository.replaceWith(
+                  oldFileId: replaced,
+                  newFileId: file.id,
+                );
+              }
+            },
+            undo: () async {
+              await repository.moveFiles(
+                await _current(repository, [file]),
+                file.folderId,
+                renames: renames.containsKey(file.id)
+                    ? {file.id: file.name}
+                    : const {},
+              );
+              // The file it replaced comes back out of the trash.
+              if (replacements[file.id] case final replaced?) {
+                final old = await repository.fileById(replaced);
+                if (old != null && old.trashedAt != null) {
+                  await repository.restore(files: [old]);
+                }
+              }
+            },
           ),
         for (final folder in folders)
           (
@@ -1533,10 +1775,12 @@ abstract final class FileActions {
     DriveFile file,
   ) async {
     final db = ref.read(appDatabaseProvider);
-    final (path, albums, assetId) = await (
-      ref.read(driveRepositoryProvider).pathTo(file.folderId),
+    final repository = ref.read(driveRepositoryProvider);
+    final (path, albums, assetId, previous) = await (
+      repository.pathTo(file.folderId),
       db.albumNamesOf(file.id),
       db.localAssetOf(file.id),
+      repository.previousVersionOf(file.id),
     ).wait;
     if (!context.mounted) return;
     await showModalBottomSheet<void>(
@@ -1548,6 +1792,7 @@ abstract final class FileActions {
           path: [for (final folder in path) folder.name],
           albums: albums,
           backedUp: assetId != null,
+          previous: previous,
           showFolder: () {
             Navigator.pop(sheetContext);
             showInFolder(context, ref, file);
@@ -1567,6 +1812,19 @@ abstract final class FileActions {
                 const SizedBox(height: 16),
                 for (final line in lines)
                   _DetailRow(line.label, line.value, onTap: line.onTap),
+                // Restoring keeps both files side by side; nothing swaps
+                // back.
+                if (previous != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: Space.xs),
+                    child: TextButton(
+                      onPressed: () {
+                        Navigator.pop(sheetContext);
+                        restore(context, ref, files: [previous]);
+                      },
+                      child: const Text('Restore previous version'),
+                    ),
+                  ),
                 const SizedBox(height: Space.l),
                 SizedBox(
                   width: double.infinity,
@@ -1591,12 +1849,14 @@ abstract final class FileActions {
   /// the folders it is in from the top, [albums] the albums holding it, and
   /// [backedUp] says it was backed up from a photo on this phone; a backed-up
   /// photo's phone folder is the one under Photo backup that holds it.
-  /// [showFolder] makes Location a link to the folder.
+  /// [previous] is the file this one replaced, while it is still in the
+  /// trash. [showFolder] makes Location a link to the folder.
   static List<DetailLine> detailLines(
     DriveFile file, {
     List<String> path = const [],
     List<String> albums = const [],
     bool backedUp = false,
+    DriveFile? previous,
     VoidCallback? showFolder,
   }) => [
     DetailLine(
@@ -1624,6 +1884,11 @@ abstract final class FileActions {
       DetailLine(
         'Stored as',
         '${file.partCount} parts. Telegram caps one message at 2 GB.',
+      ),
+    if (previous?.trashedAt case final trashed?)
+      DetailLine(
+        'Previous version',
+        'In Trash · ${Formatters.daysLeft(trashed.add(DriveRepository.trashKeepsFor))}',
       ),
   ];
 
@@ -2245,12 +2510,16 @@ class _SheetAction extends StatelessWidget {
     required this.icon,
     required this.label,
     required this.onTap,
+    this.detail,
     this.destructive = false,
   });
 
   final IconData icon;
   final String label;
   final VoidCallback onTap;
+
+  /// What the action comes to, under its name.
+  final String? detail;
   final bool destructive;
 
   @override
@@ -2264,8 +2533,230 @@ class _SheetAction extends StatelessWidget {
           color: destructive ? colors.danger : colors.text,
         ),
       ),
+      subtitle: detail == null
+          ? null
+          : Text(
+              detail!,
+              style: context.text.bodySmall?.copyWith(
+                fontFeatures: tabularFigures,
+              ),
+            ),
       minVerticalPadding: 14,
       onTap: onTap,
+    );
+  }
+}
+
+/// What to do with a file whose name a file in the target folder already
+/// has.
+enum ClashChoice { replace, keepBoth, skip }
+
+/// Asks what to do with [name], [newSize] bytes, bound for [folderName],
+/// where [existing] already has that name: Replace, Keep both (as
+/// [keepBothName]) or Skip. With [moving], the file is one already in the
+/// drive on its way to another folder, and the rows and words say so.
+/// [clashesLeft] counts this clash and those still to come; above one, the
+/// sheet offers to answer for all of them. Returns the choice and whether
+/// it stands for the rest, or null when the sheet was swiped away, which
+/// counts as Skip for this file.
+Future<(ClashChoice, bool applyToAll)?> showClashSheet(
+  BuildContext context, {
+  required String name,
+  required DriveFile existing,
+  required int newSize,
+  required String folderName,
+  required String keepBothName,
+  required int clashesLeft,
+  DriveFile? moving,
+}) => showModalBottomSheet<(ClashChoice, bool)>(
+  context: context,
+  useRootNavigator: true,
+  // The sheet takes the height of its rows, and scrolls them on a short
+  // screen.
+  isScrollControlled: true,
+  builder: (_) => _ClashSheet(
+    name: name,
+    existing: existing,
+    newSize: newSize,
+    folderName: folderName,
+    keepBothName: keepBothName,
+    clashesLeft: clashesLeft,
+    moving: moving,
+  ),
+);
+
+/// The question [showClashSheet] asks. Nothing here is red: Replace keeps
+/// the file it replaces in the trash for 30 days.
+class _ClashSheet extends StatefulWidget {
+  const _ClashSheet({
+    required this.name,
+    required this.existing,
+    required this.newSize,
+    required this.folderName,
+    required this.keepBothName,
+    required this.clashesLeft,
+    this.moving,
+  });
+
+  final String name;
+  final DriveFile existing;
+  final int newSize;
+  final String folderName;
+  final String keepBothName;
+  final int clashesLeft;
+  final DriveFile? moving;
+
+  @override
+  State<_ClashSheet> createState() => _ClashSheetState();
+}
+
+class _ClashSheetState extends State<_ClashSheet> {
+  var _applyToAll = false;
+
+  void _choose(ClashChoice choice) =>
+      Navigator.pop(context, (choice, _applyToAll));
+
+  @override
+  Widget build(BuildContext context) {
+    final existing = widget.existing;
+    final moving = widget.moving;
+    final colors = context.colors;
+    final meta = context.text.bodySmall?.copyWith(fontFeatures: tabularFigures);
+    return SafeArea(
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                Space.gutter,
+                0,
+                Space.gutter,
+                Space.m,
+              ),
+              child: Text(
+                '"${widget.name}" is already in ${widget.folderName}',
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+                style: context.text.titleMedium,
+              ),
+            ),
+            _ClashRow(
+              slot: FileThumbnail(file: existing),
+              name: existing.name,
+              meta:
+                  'In the drive · ${Formatters.bytes(existing.size)} · '
+                  '${Formatters.date(existing.modifiedAt)}',
+              style: meta,
+            ),
+            _ClashRow(
+              slot: moving != null
+                  ? FileThumbnail(file: moving)
+                  : FileIconTile(
+                      style: FileStyle.forFile(
+                        widget.name,
+                        FileKind.detect(fileName: widget.name),
+                      ),
+                    ),
+              name: widget.name,
+              meta:
+                  '${moving != null ? 'Moving' : 'New'} · '
+                  '${Formatters.bytes(widget.newSize)}',
+              style: meta,
+            ),
+            const SizedBox(height: Space.s),
+            const Divider(height: 1),
+            _SheetAction(
+              icon: Icons.sync_alt_rounded,
+              label: 'Replace',
+              detail: 'The copy in the drive goes to Trash for 30 days',
+              onTap: () => _choose(ClashChoice.replace),
+            ),
+            _SheetAction(
+              icon: Icons.filter_none_rounded,
+              label: 'Keep both',
+              detail:
+                  '${moving != null ? 'Moved' : 'Saved'} as ${widget.keepBothName}',
+              onTap: () => _choose(ClashChoice.keepBoth),
+            ),
+            _SheetAction(
+              icon: Icons.skip_next_rounded,
+              label: 'Skip',
+              detail: moving != null
+                  ? 'Leave it where it is'
+                  : 'Don\'t upload this one',
+              onTap: () => _choose(ClashChoice.skip),
+            ),
+            if (widget.clashesLeft > 1)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: Space.gutter),
+                child: CheckboxListTile(
+                  contentPadding: EdgeInsets.zero,
+                  controlAffinity: ListTileControlAffinity.leading,
+                  title: Text(
+                    'Do this for all ${Formatters.count(widget.clashesLeft, 'name clash', 'name clashes')}',
+                    style: context.text.bodyMedium?.copyWith(
+                      color: colors.text,
+                      fontFeatures: tabularFigures,
+                    ),
+                  ),
+                  value: _applyToAll,
+                  onChanged: (value) =>
+                      setState(() => _applyToAll = value ?? false),
+                ),
+              ),
+            const SizedBox(height: Space.s),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// One of the two files in the clash sheet: its media slot, name and a
+/// line saying which it is and how big.
+class _ClashRow extends StatelessWidget {
+  const _ClashRow({
+    required this.slot,
+    required this.name,
+    required this.meta,
+    required this.style,
+  });
+
+  final Widget slot;
+  final String name;
+  final String meta;
+  final TextStyle? style;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: Space.gutter,
+        vertical: Space.xs,
+      ),
+      child: Row(
+        children: [
+          slot,
+          const SizedBox(width: Space.m),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: context.text.bodyLarge,
+                ),
+                const SizedBox(height: 2),
+                Text(meta, style: style),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

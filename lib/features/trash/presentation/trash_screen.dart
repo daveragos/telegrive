@@ -46,7 +46,8 @@ class TrashScreen extends ConsumerWidget {
             ? const EmptyState(
                 icon: Icons.delete_outline_rounded,
                 title: 'Trash is empty',
-                message: 'Deleted files stay here for 30 days, then go for good.',
+                message:
+                    'Deleted files stay here for 30 days, then go for good.',
               )
             : ListView(
                 padding: const EdgeInsets.only(bottom: Space.x4),
@@ -69,16 +70,21 @@ class TrashScreen extends ConsumerWidget {
                       for (final folder in contents.folders)
                         FolderListTile(
                           folder: folder,
-                          subtitle: '${_left(folder.trashedAt)}${place(folder.parentId)}',
-                          onTap: () => _showSheet(context, ref, folders: [folder]),
-                          onMore: () => _showSheet(context, ref, folders: [folder]),
+                          subtitle:
+                              '${_left(folder.trashedAt)}${place(folder.parentId)}',
+                          onTap: () =>
+                              _showSheet(context, ref, folders: [folder]),
+                          onMore: () =>
+                              _showSheet(context, ref, folders: [folder]),
                         ),
+                      // A file that a newer upload replaced says so in
+                      // place of its size, so the line stays one line.
                       for (final file in contents.files)
                         FileListTile(
                           file: file,
                           subtitle:
-                              '${Formatters.bytes(file.size)} · ${_left(file.trashedAt)}'
-                              '${place(file.folderId)}',
+                              '${file.replacedBy != null ? 'Replaced' : Formatters.bytes(file.size)}'
+                              ' · ${_left(file.trashedAt)}${place(file.folderId)}',
                           onTap: () => _showSheet(context, ref, files: [file]),
                           onMore: () => _showSheet(context, ref, files: [file]),
                         ),
@@ -92,11 +98,9 @@ class TrashScreen extends ConsumerWidget {
 
   static String _left(DateTime? trashedAt) {
     if (trashedAt == null) return 'In the trash';
-    final gone = trashedAt.add(DriveRepository.trashKeepsFor);
-    final days = gone.difference(DateTime.now()).inDays;
-    return days <= 0
-        ? 'Goes for good today'
-        : 'Goes for good in ${Formatters.count(days, 'day')}';
+    return Formatters.capitalised(
+      Formatters.daysLeft(trashedAt.add(DriveRepository.trashKeepsFor)),
+    );
   }
 
   static Future<void> _showSheet(
@@ -122,7 +126,12 @@ class TrashScreen extends ConsumerWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Padding(
-                padding: const EdgeInsets.fromLTRB(Space.gutter, 0, Space.gutter, Space.m),
+                padding: const EdgeInsets.fromLTRB(
+                  Space.gutter,
+                  0,
+                  Space.gutter,
+                  Space.m,
+                ),
                 child: Text(
                   name,
                   maxLines: 2,
@@ -135,17 +144,30 @@ class TrashScreen extends ConsumerWidget {
                 leading: Icon(Icons.restore_rounded, color: colors.text2),
                 title: const Text('Restore'),
                 onTap: () => run(
-                  () => FileActions.restore(context, ref, files: files, folders: folders),
+                  () => FileActions.restore(
+                    context,
+                    ref,
+                    files: files,
+                    folders: folders,
+                  ),
                 ),
               ),
               ListTile(
-                leading: Icon(Icons.delete_forever_outlined, color: colors.danger),
+                leading: Icon(
+                  Icons.delete_forever_outlined,
+                  color: colors.danger,
+                ),
                 title: Text(
                   'Delete for good',
                   style: context.text.bodyLarge?.copyWith(color: colors.danger),
                 ),
                 onTap: () => run(
-                  () => FileActions.deleteForever(context, ref, files: files, folders: folders),
+                  () => FileActions.deleteForever(
+                    context,
+                    ref,
+                    files: files,
+                    folders: folders,
+                  ),
                 ),
               ),
             ],

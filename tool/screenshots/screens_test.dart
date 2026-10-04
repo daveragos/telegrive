@@ -47,6 +47,7 @@ import 'package:telegrive/features/drive/data/drive_sync.dart';
 import 'package:telegrive/features/drive/data/telegram_wait.dart';
 import 'package:telegrive/features/drive/domain/drive_models.dart';
 import 'package:telegrive/features/files/data/bulk_edits.dart';
+import 'package:telegrive/features/files/presentation/file_actions.dart';
 import 'package:telegrive/features/files/presentation/file_list_screen.dart';
 import 'package:telegrive/features/files/presentation/file_location.dart';
 import 'package:telegrive/features/files/presentation/files_screen.dart';
@@ -926,6 +927,9 @@ void main() {
                             trashedAt: DateTime.now().subtract(
                               Duration(days: f.size > _mb ? 26 : 2),
                             ),
+                            // The draft went to the trash when a newer
+                            // upload replaced it.
+                            replacedBy: f.size > _mb ? null : 'draft-v2',
                           ),
                         )
                         .toList(),
@@ -2370,6 +2374,28 @@ void main() {
   testWidgets('keep offline sheet', (tester) async {
     await keepOfflineSheet(tester, NetworkState.unknown);
     await snap(tester, 'keep_offline_sheet');
+  });
+
+  testWidgets('clash sheet', (tester) async {
+    await prepareData(tester);
+    await pumpApp(tester, location: '/files');
+    // Budget 2026.xlsx is being uploaded into Work, which has one already,
+    // as the first of three clashes in the batch.
+    unawaited(
+      showClashSheet(
+        tester.element(find.byType(Scaffold).first),
+        name: 'Budget 2026.xlsx',
+        existing: files[5],
+        newSize: 91000,
+        folderName: 'Work',
+        keepBothName: 'Budget 2026 (2).xlsx',
+        clashesLeft: 3,
+      ),
+    );
+    for (var i = 0; i < 6; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    await snap(tester, 'clash_sheet');
   });
 
   testWidgets('keep offline sheet on mobile data', (tester) async {

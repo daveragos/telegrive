@@ -64,6 +64,16 @@ phone number.
   and points it out for a moment. Starred, Recent and each category say
   which folder each file is in, and Trash says where each item goes back
   to.
+- **Replace, keep both or skip.** Uploading, sharing in or moving a file
+  whose name a file in that folder already has, in any case, asks what to
+  do instead of quietly making a second one. Replace uploads the new file
+  and puts the old one in Trash for 30 days, marked as replaced, so the
+  last version is one tap away; Keep both saves the new one as "name
+  (2).ext"; Skip leaves it out. With several clashes in one batch, one
+  answer can stand for all of them. The new file's Details say where the
+  previous version is and offer Restore previous version, which brings it
+  back beside the new one. Renaming a file to a name a sibling already has
+  is refused.
 - **Star a folder.** A folder can be starred like a file, from its menu or
   the selection bar. Starred folders sit in a Starred group at the top of
   Home, each saying how many files it holds, in it and below it, and how
@@ -113,7 +123,8 @@ phone number.
   this phone, files kept offline included, and drops any delete still
   waiting out its Undo, so nothing is deleted after you have left.
 - **Trash.** Deleting moves things to the trash for 30 days; restore or
-  delete for good from Trash. Moving more than 100 items there asks first.
+  delete for good from Trash, where a file a newer upload replaced reads
+  Replaced. Moving more than 100 items there asks first.
   Photos and videos this phone still has can leave the phone too: tick
   "Also delete from this phone" and, once Undo has had its time without
   being tapped, Android asks to delete them (if you have left the app by
@@ -217,9 +228,11 @@ phone number.
   on the phone; anything else is copied first, and a file the phone has no
   room to copy is named in the sheet with the space it needs.
   Recent folders show up in the share sheet, so a tap sends a file
-  straight there, with Undo. The Save to Telegrive sheet starts on the
-  last folder you used and offers the others. While app lock is on, the
-  share sheet shows no folder names.
+  straight there, with Undo, and a name that folder already has gets a
+  number. The Save to Telegrive sheet starts on the last folder you used
+  and offers the others, and asks Replace, Keep both or Skip for a name
+  the folder already has. While app lock is on, the share sheet shows no
+  folder names.
 - **Scan or snap into a folder.** New › Scan a document straightens and
   crops paper pages into a PDF on the phone; Take a photo puts the picture
   straight into the folder you are in, not your gallery. You name it once
@@ -319,7 +332,9 @@ Telegram (source of truth)                 This device
 ```
 
 - **Files** carry a manifest in their caption: id, name, folder, MIME type,
-  size, dates, star, and `partIndex`/`partCount` for split files.
+  size, dates, star, and `partIndex`/`partCount` for split files. A file
+  that Replace sent to the trash also names the file that replaced it;
+  restoring it clears that again.
 - **Folders** are small text messages carrying their own id, name, parent
   and star, so renames, moves and stars are a single edit and two devices
   never overwrite each other's folder tree.
@@ -394,6 +409,10 @@ two commands are at the top of that test.
 - Split files appear in Telegram as numbered parts (`movie.mkv.001`, …). Only
   Telegrive joins them back.
 - Forwarded files land at the root; move them into folders from the app.
+- Replace moves the old file to Trash only once the new upload has landed,
+  so a cancelled or failed upload leaves the old file as it was. Photo
+  backup never asks about name clashes; it recognises its own photos by
+  name and size.
 - A group in slow mode takes one message at a time, so sending there
   delivers the first file only, and says so.
 - When Telegram asks for a pause longer than five minutes, Telegrive lets the
