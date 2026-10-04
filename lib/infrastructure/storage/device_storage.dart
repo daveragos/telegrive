@@ -31,6 +31,15 @@ class DeviceStorage {
     }
   }
 
+  /// The size of the phone's storage, or null when it can't be read.
+  Future<int?> totalBytes() async {
+    try {
+      return await _channel.invokeMethod<int>('totalBytes');
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// Asks for whatever access saving needs. Only Android 9 and older need a
   /// permission for files; the gallery needs photo access on iOS.
   Future<bool> ensureAccess({required bool gallery}) async {

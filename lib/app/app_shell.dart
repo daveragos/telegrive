@@ -18,6 +18,7 @@ import '../features/search/data/content_indexer.dart';
 import '../features/share/data/recent_destinations.dart';
 import '../features/share/data/share_intake.dart';
 import '../features/share/presentation/share_sheet.dart';
+import '../features/space/data/cache_janitor.dart';
 import '../features/transfers/data/transfer_queue.dart';
 import '../features/transfers/domain/transfer_wait.dart';
 import '../features/trash/data/pending_deletes.dart';
@@ -94,10 +95,12 @@ class _AppShellState extends ConsumerState<AppShell> {
       pendingLaunchActionProvider,
       (_, action) => _carryOut(action),
     );
-    // Keeps pinned files and folders on the phone, and reads photos and
-    // documents for search, while the drive is open.
+    // Keeps pinned files and folders on the phone, reads photos and
+    // documents for search, and trims the caches once a day, while the
+    // drive is open.
     ref.watch(offlineSyncProvider);
     ref.watch(contentIndexerProvider);
+    ref.watch(cacheJanitorProvider);
     // Keeps the recent folders, and their targets in the system share
     // sheet, following the drive while it is open, without rebuilding the
     // shell when they change.

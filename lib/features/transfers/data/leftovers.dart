@@ -15,13 +15,21 @@ const leftoverDirs = [
   'captured',
 ];
 
-/// Deletes what sits directly in [roots] that nothing needs, and returns
-/// the bytes it freed. An entry stays when it is one of the [keep] paths
-/// or a folder holding one, and when anything in it changed less than
-/// [minAge] before [now], since a pick or a share may still be being
-/// copied into it.
-Future<int> sweepLeftovers({
+/// Files in the app's cache that only setting up the drive needs: the
+/// channel photo handed to Telegram.
+const leftoverFiles = ['telegrive-channel-photo.jpg'];
+
+/// A copy nothing needs, and the bytes in it.
+typedef Leftover = ({FileSystemEntity entry, int bytes});
+
+/// What sits directly in [roots], and each of [files] that is there, that
+/// nothing needs. An entry is needed when it is one of the [keep] paths or
+/// a folder holding one, and when anything in it changed less than
+/// [minAge] before [now], since a pick or a share may still be being copied
+/// into it. Nothing is deleted.
+Future<List<Leftover>> findLeftovers({
   required List<Directory> roots,
+  List<File> files = const [],
   required Set<String> keep,
   Duration minAge = const Duration(minutes: 10),
   DateTime? now,
@@ -29,19 +37,51 @@ Future<int> sweepLeftovers({
   final cutoff = (now ?? DateTime.now()).subtract(minAge);
   final kept = {for (final path in keep) p.normalize(path)};
   bool needed(String path) => kept.any((k) => k == path || p.isWithin(path, k));
-  var freed = 0;
+  final found = <Leftover>[];
+  Future<void> consider(FileSystemEntity entry) async {
+    if (needed(p.normalize(entry.path))) return;
+    try {
+      final (bytes, changed) = await _measure(entry);
+      if (!changed.isAfter(cutoff)) found.add((entry: entry, bytes: bytes));
+    } on FileSystemException catch (_) {
+      // Gone already; the next look passes it over.
+    }
+  }
+
   for (final root in roots) {
     if (!await root.exists()) continue;
     await for (final entry in root.list(followLinks: false)) {
-      if (needed(p.normalize(entry.path))) continue;
-      try {
-        final (bytes, changed) = await _measure(entry);
-        if (changed.isAfter(cutoff)) continue;
-        await entry.delete(recursive: true);
-        freed += bytes;
-      } on FileSystemException catch (_) {
-        // Gone already, or not ours to delete; the next sweep looks again.
-      }
+      await consider(entry);
+    }
+  }
+  for (final file in files) {
+    if (await file.exists()) await consider(file);
+  }
+  return found;
+}
+
+/// Deletes what [findLeftovers] finds, and returns the bytes it freed.
+Future<int> sweepLeftovers({
+  required List<Directory> roots,
+  List<File> files = const [],
+  required Set<String> keep,
+  Duration minAge = const Duration(minutes: 10),
+  DateTime? now,
+}) async {
+  final found = await findLeftovers(
+    roots: roots,
+    files: files,
+    keep: keep,
+    minAge: minAge,
+    now: now,
+  );
+  var freed = 0;
+  for (final leftover in found) {
+    try {
+      await leftover.entry.delete(recursive: true);
+      freed += leftover.bytes;
+    } on FileSystemException catch (_) {
+      // Gone already, or not ours to delete; the next sweep looks again.
     }
   }
   return freed;

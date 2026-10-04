@@ -19,7 +19,7 @@ import '../../transfers/domain/transfer_wait.dart';
 
 /// Files and folders this phone keeps available offline: pinned items are
 /// copied into the app's own store, open without a connection, and survive
-/// clearing downloaded copies. New files in a pinned folder follow on their
+/// clearing opened files. New files in a pinned folder follow on their
 /// own, the big ones over Wi-Fi only; files that leave the drive (or the
 /// pin) lose their copy, and stop downloading if they are still on their
 /// way.

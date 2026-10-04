@@ -22,6 +22,7 @@ import 'package:telegrive/app/theme/app_theme.dart';
 import 'package:telegrive/features/auth/presentation/phone_screen.dart';
 import 'package:telegrive/features/auth/presentation/welcome_screen.dart';
 import 'package:telegrive/features/backup/data/backup_controller.dart';
+import 'package:telegrive/features/backup/data/free_up_space.dart';
 import 'package:telegrive/features/backup/data/local_media.dart';
 import 'package:telegrive/features/backup/presentation/backup_screen.dart';
 import 'package:telegrive/features/backup/presentation/not_backed_up_screen.dart';
@@ -56,6 +57,8 @@ import 'package:telegrive/features/settings/data/settings_providers.dart';
 import 'package:telegrive/features/settings/presentation/settings_screen.dart';
 import 'package:telegrive/features/share/data/recent_destinations.dart';
 import 'package:telegrive/features/share/data/share_intake.dart';
+import 'package:telegrive/features/space/data/phone_usage.dart';
+import 'package:telegrive/features/space/presentation/space_screen.dart';
 import 'package:telegrive/features/transfers/data/transfer_queue.dart';
 import 'package:telegrive/features/transfers/domain/transfer_wait.dart';
 import 'package:telegrive/features/transfers/presentation/mobile_data_prompt.dart';
@@ -680,6 +683,11 @@ void main() {
         ),
         GoRoute(path: '/trash', builder: (_, _) => const TrashScreen()),
         GoRoute(path: '/offline', builder: (_, _) => const OfflineScreen()),
+        GoRoute(
+          path: '/space',
+          builder: (_, state) =>
+              SpaceScreen(focusPhone: state.uri.queryParameters['focus'] == 'phone'),
+        ),
         GoRoute(path: '/albums', builder: (_, _) => const AlbumsScreen()),
         GoRoute(path: '/transfers', builder: (_, _) => const TransfersScreen()),
         GoRoute(path: '/settings', builder: (_, _) => const SettingsScreen()),
@@ -1711,6 +1719,99 @@ void main() {
       progress: 0.24,
     );
   }
+
+  /// Space with the sample files placed in folders, nothing transferring,
+  /// and what the phone holds measured.
+  List<Override> spaceData() {
+    DriveFile placed(DriveFile file, String? folderId) => DriveFile(
+      id: file.id,
+      folderId: folderId,
+      name: file.name,
+      mimeType: file.mimeType,
+      kind: file.kind,
+      size: file.size,
+      createdAt: file.createdAt,
+      modifiedAt: file.modifiedAt,
+      partCount: file.partCount,
+      starred: file.starred,
+      minithumbnail: file.minithumbnail,
+      thumbnailFileId: file.thumbnailFileId,
+    );
+    const homes = {
+      'Wedding highlights 4K.mp4': 'Trips',
+      'Project backup.zip': 'Work',
+      'gramx-release.apk': 'Work',
+      'Budget 2026.xlsx': 'Work',
+      'Simien trek.png': 'Photos',
+      'Lalibela sunrise.jpg': 'Photos',
+      'Tax return 2025.pdf': 'Documents',
+    };
+    final largest = [for (final file in files) placed(file, homes[file.name])]
+      ..sort((a, b) => b.size.compareTo(a.size));
+    FolderSize sum(String? id, String name) {
+      final inside = largest.where(
+        (f) => id == 'Videos' ? f.folderId == 'Trips' : f.folderId == id,
+      );
+      return FolderSize(id, name, inside.length, inside.fold(0, (s, f) => s + f.size));
+    }
+
+    return [
+      largestFilesProvider.overrideWith((ref) => Stream.value(largest)),
+      folderIndexProvider.overrideWith(
+        (ref) => Stream.value({
+          for (final folder in [
+            ...folders,
+            _folder('Videos', 40),
+            _folder('Trips', 20, parentId: 'Videos'),
+          ])
+            folder.id: folder,
+        }),
+      ),
+      folderSizesProvider.overrideWith(
+        (ref) => Stream.value([
+          sum('Videos', 'Videos'),
+          sum('Work', 'Work'),
+          sum('Photos', 'Photos'),
+          sum('Documents', 'Documents'),
+          sum(null, ''),
+        ]),
+      ),
+      trashTotalsProvider.overrideWith((ref) => Stream.value((3, (85.2 * _mb).round()))),
+      phoneUsageProvider.overrideWith(
+        (ref) async => PhoneUsage(
+          openedFiles: 420 * _mb,
+          thumbnails: 310 * _mb,
+          leftovers: 95 * _mb,
+          offline: (1.1 * _gb).round(),
+          index: 38 * _mb,
+          telegramDatabase: 120 * _mb,
+          budget: _gb,
+        ),
+      ),
+      offlineUsageProvider.overrideWith((ref) => Stream.value((19, (1.1 * _gb).round()))),
+      freeableProvider.overrideWith(
+        (ref) async => Freeable(
+          [for (var i = 0; i < 1240; i++) 'asset-$i'],
+          (8.2 * _gb).round(),
+        ),
+      ),
+    ];
+  }
+
+  testWidgets('space', (tester) async {
+    await prepareData(tester);
+    transfers = TransfersState.empty;
+    await pumpApp(tester, location: '/space', overrides: spaceData());
+    await snap(tester, 'space');
+  });
+
+  testWidgets('space on this phone', (tester) async {
+    await prepareData(tester);
+    transfers = TransfersState.empty;
+    await pumpApp(tester, location: '/space?focus=phone', overrides: spaceData());
+    expect(find.text('Telegram\'s records'), findsOneWidget);
+    await snap(tester, 'space_phone');
+  });
 
   testWidgets('offline', (tester) async {
     await prepareData(tester);

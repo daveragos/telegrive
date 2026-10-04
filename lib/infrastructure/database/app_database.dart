@@ -22,6 +22,18 @@ class KindTotal {
   final int bytes;
 }
 
+/// A top-level folder with how many files it holds, in it or in any folder
+/// below it, and their size. A [folderId] of null stands for the files in
+/// no folder, and has an empty [name].
+class FolderSize {
+  const FolderSize(this.folderId, this.name, this.count, this.bytes);
+
+  final String? folderId;
+  final String name;
+  final int count;
+  final int bytes;
+}
+
 /// A photo album with how many files it holds and the newest one, for its
 /// cover.
 class AlbumSummary {
@@ -448,6 +460,62 @@ class AppDatabase extends _$AppDatabase {
       ],
     );
   }
+
+  /// The [limit] biggest files the drive shows, biggest first.
+  Stream<List<FileRow>> watchLargestFiles({int limit = 50}) =>
+      (select(driveFiles)
+            ..where(_shown)
+            ..orderBy([
+              (f) => OrderingTerm.desc(f.size),
+              (f) => OrderingTerm.asc(f.name),
+            ])
+            ..limit(limit))
+          .watch();
+
+  /// Every top-level folder that holds files, with what is in it and below
+  /// it, biggest first, then one row for the files in no folder when there
+  /// are any. A folder or file whose parent is gone counts as top-level, as
+  /// Files lists it at the root, so the rows add up to the drive's total.
+  /// UNION rather than UNION ALL, so a folder tree that loops ends anyway.
+  Stream<List<FolderSize>> watchFolderSizes() => customSelect(
+    'WITH RECURSIVE tree(root, id) AS ('
+    'SELECT id, id FROM folders WHERE hidden = 0 '
+    'AND (parent_id IS NULL OR parent_id NOT IN (SELECT id FROM folders)) '
+    'UNION SELECT t.root, f.id FROM folders f JOIN tree t ON f.parent_id = t.id '
+    'WHERE f.hidden = 0) '
+    'SELECT * FROM ('
+    'SELECT t.root AS id, r.name AS name, COUNT(d.id) AS n, '
+    'COALESCE(SUM(d.size), 0) AS bytes '
+    'FROM tree t JOIN drive_files d ON d.folder_id = t.id '
+    'JOIN folders r ON r.id = t.root '
+    'WHERE d.hidden = 0 AND d.parts_present >= d.part_count '
+    'GROUP BY t.root '
+    'UNION ALL '
+    "SELECT NULL, '', COUNT(*), COALESCE(SUM(size), 0) FROM drive_files "
+    'WHERE hidden = 0 AND parts_present >= part_count '
+    'AND (folder_id IS NULL OR folder_id NOT IN (SELECT id FROM folders))'
+    ') ORDER BY id IS NULL, bytes DESC, name',
+    readsFrom: {folders, driveFiles},
+  ).watch().map(
+    (rows) => [
+      for (final row in rows)
+        if (row.read<String?>('id') != null || row.read<int>('n') > 0)
+          FolderSize(
+            row.read<String?>('id'),
+            row.read<String>('name'),
+            row.read<int>('n'),
+            row.read<int>('bytes'),
+          ),
+    ],
+  );
+
+  /// How many files the trash holds, those inside trashed folders included,
+  /// and their size.
+  Stream<(int count, int bytes)> watchTrashTotals() => customSelect(
+    'SELECT COUNT(*) AS n, COALESCE(SUM(size), 0) AS bytes FROM drive_files '
+    'WHERE hidden = 1 AND parts_present >= part_count',
+    readsFrom: {driveFiles},
+  ).watchSingle().map((row) => (row.read<int>('n'), row.read<int>('bytes')));
 
   Stream<FileRow?> watchFile(String id) =>
       (select(driveFiles)..where((f) => f.id.equals(id))).watchSingleOrNull();
@@ -1001,6 +1069,20 @@ class AppDatabase extends _$AppDatabase {
 
   Future<List<TransferRow>> allTransfers() =>
       (select(transfers)..orderBy([(t) => OrderingTerm.asc(t.createdAt)])).get();
+
+  /// The files that transfers not yet completed or cancelled still need:
+  /// what each sends, its thumbnail and where a download lands. A failed
+  /// one counts, since Retry starts it from the same files.
+  Future<Set<String>> pathsInUse() async {
+    final rows = await (select(transfers)
+          ..where(
+            (t) => t.status.isNotInValues([TransferStatus.completed, TransferStatus.cancelled]),
+          ))
+        .get();
+    return {
+      for (final row in rows) ...[?row.sourcePath, ?row.thumbnailPath, ?row.resultPath],
+    };
+  }
 
   Future<void> saveTransfer(TransferRow row) =>
       into(transfers).insertOnConflictUpdate(row);

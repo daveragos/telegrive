@@ -147,6 +147,26 @@ void main() {
     error: status == TransferStatus.failed ? 'Lost the connection to Telegram.' : null,
   );
 
+  /// A download of the two parts of [fileId], kept in the database as it
+  /// would be after the app stopped, with the first already joined.
+  TransferRow download(String fileId, TransferStatus status) => TransferRow(
+    id: fileId,
+    kind: TransferKind.download,
+    status: status,
+    name: '$fileId.mkv',
+    mimeType: 'video/x-matroska',
+    fileId: fileId,
+    ownsSource: false,
+    wifiOnly: false,
+    origin: TransferOrigin.manual,
+    totalBytes: 40,
+    doneBytes: 20,
+    partCount: 2,
+    completedParts: 1,
+    createdAt: now,
+    finishedAt: status.isFinished ? now : null,
+  );
+
   test('a save the phone has no room for waits, sends nothing, and starts once '
       'there is room', () async {
     // Two parts of 600 MB, each fetched here as a few bytes.
@@ -346,5 +366,36 @@ void main() {
     expect(staging.listSync(recursive: true).whereType<File>(), isEmpty);
     expect(state().items.single.status, TransferStatus.cancelled);
     expect(telegram.sends, 0);
+  });
+
+  test('joined split files go once they are old, unless a download is waiting for them', () async {
+    File joined(String fileId, int bytes) =>
+        File(p.join(dir.path, 'downloads', fileId, '$fileId.mkv'))
+          ..createSync(recursive: true)
+          ..writeAsBytesSync(List.filled(bytes, 1));
+    final opened = joined('opened', 30);
+    final failed = joined('failed', 20);
+    final paused = joined('paused', 40);
+    final recent = joined('recent', 50);
+    await db.saveTransfers([
+      download('opened', TransferStatus.completed),
+      download('failed', TransferStatus.failed),
+      download('paused', TransferStatus.paused),
+    ]);
+    final (_, queue) = await openQueue(_Telegram(''));
+
+    // Three weeks on, with one joined only two days before.
+    final later = DateTime.now().add(const Duration(days: 21));
+    recent.setLastModifiedSync(later.subtract(const Duration(days: 2)));
+    final freed = await queue.clearOldDownloads(
+      olderThan: const Duration(days: 14),
+      now: later,
+    );
+
+    expect(freed, 50);
+    expect(opened.existsSync(), isFalse);
+    expect(failed.existsSync(), isFalse);
+    expect(paused.existsSync(), isTrue);
+    expect(recent.existsSync(), isTrue);
   });
 }

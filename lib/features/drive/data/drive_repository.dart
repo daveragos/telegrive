@@ -201,6 +201,18 @@ class DriveRepository {
   Stream<StorageSummary> watchSummary() =>
       _db.watchTotals().map((totals) => StorageSummary(totals: totals));
 
+  /// The [limit] biggest files the drive shows, biggest first.
+  Stream<List<DriveFile>> watchLargestFiles({int limit = 50}) =>
+      _db.watchLargestFiles(limit: limit).map(_files);
+
+  /// Each top-level folder's share of the drive, biggest first, then the
+  /// files in no folder.
+  Stream<List<FolderSize>> watchFolderSizes() => _db.watchFolderSizes();
+
+  /// How many files the trash holds, those in trashed folders included,
+  /// and their size.
+  Stream<(int count, int bytes)> watchTrashTotals() => _db.watchTrashTotals();
+
   /// Root-first chain of folders leading to [folderId], for breadcrumbs.
   Future<List<DriveFolder>> pathTo(String? folderId) async {
     if (folderId == null) return const [];
@@ -997,6 +1009,23 @@ final kindFilesProvider = StreamProvider.autoDispose
 
 final storageSummaryProvider = StreamProvider.autoDispose<StorageSummary>(
   (ref) => ref.watch(driveRepositoryProvider).watchSummary(),
+);
+
+/// The 50 biggest files the drive shows, biggest first.
+final largestFilesProvider = StreamProvider.autoDispose<List<DriveFile>>(
+  (ref) => ref.watch(driveRepositoryProvider).watchLargestFiles(),
+);
+
+/// Each top-level folder's share of the drive, biggest first, then the
+/// files in no folder.
+final folderSizesProvider = StreamProvider.autoDispose<List<FolderSize>>(
+  (ref) => ref.watch(driveRepositoryProvider).watchFolderSizes(),
+);
+
+/// How many files the trash holds, those in trashed folders included, and
+/// their size.
+final trashTotalsProvider = StreamProvider.autoDispose<(int count, int bytes)>(
+  (ref) => ref.watch(driveRepositoryProvider).watchTrashTotals(),
 );
 
 /// Every photo and video in the drive, newest moment first.

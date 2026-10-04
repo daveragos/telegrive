@@ -24,6 +24,7 @@ import '../features/search/presentation/search_screen.dart';
 import '../features/settings/presentation/settings_screen.dart';
 import '../features/setup/presentation/setup_screen.dart';
 import '../features/setup/presentation/splash_screen.dart';
+import '../features/space/presentation/space_screen.dart';
 import '../features/transfers/presentation/transfers_screen.dart';
 import '../features/trash/presentation/trash_screen.dart';
 import '../features/viewer/presentation/image_viewer_screen.dart';
@@ -186,6 +187,12 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/offline',
         parentNavigatorKey: _rootKey,
         builder: (_, _) => const OfflineScreen(),
+      ),
+      GoRoute(
+        path: '/space',
+        parentNavigatorKey: _rootKey,
+        builder: (_, state) =>
+            SpaceScreen(focusPhone: state.uri.queryParameters['focus'] == 'phone'),
       ),
       GoRoute(
         path: '/starred',

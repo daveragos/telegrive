@@ -43,7 +43,10 @@ class IndexerState {
 /// It happens on this phone, a file at a time while the app is open;
 /// nothing is sent anywhere. Documents not on the phone yet are fetched only
 /// on an unmetered network, so never over mobile data or a phone's hotspot,
-/// and only while the phone keeps [_keepFree] free besides.
+/// and only while the phone keeps [_keepFree] free besides. A pass doesn't
+/// start on a phone with less than that free, and a document fetched only
+/// to be read is deleted again once it has been, so reading leaves no
+/// copies behind.
 class ContentIndexer extends Notifier<IndexerState> {
   /// 2: documents only; version 1 also read photos.
   static const int version = 2;
@@ -99,6 +102,7 @@ class ContentIndexer extends Notifier<IndexerState> {
 
   Future<void> _run() async {
     if (state.running || !state.enabled || !_supported) return;
+    if (await Room.shortfall(ref.read(deviceStorageProvider), _keepFree) != null) return;
     _stop = false;
     state = state.copyWith(running: true);
     try {
@@ -145,25 +149,33 @@ class ContentIndexer extends Notifier<IndexerState> {
 
   /// What [file] contains, or null to try again on a later pass.
   Future<String?> _read(DriveFile file) async {
+    int? fetched;
     try {
-      final path = await _documentPath(file);
-      if (path == null) return null;
-      return _preview(file) == Preview.pdf ? await _readPdf(path) : await _readText(path);
+      final document = await _documentPath(file);
+      if (document == null) return null;
+      fetched = document.fetchedId;
+      return _preview(file) == Preview.pdf
+          ? await _readPdf(document.path)
+          : await _readText(document.path);
     } catch (e) {
       debugPrint('[Indexer] ${file.name}: $e');
       // Unreadable files are recorded as empty so they aren't retried
       // forever.
       return '';
+    } finally {
+      if (fetched != null) await _letGo(file, fetched);
     }
   }
 
-  /// A document's path, fetching it only on Wi-Fi and with room to spare.
-  Future<String?> _documentPath(DriveFile file) async {
+  /// A document's path, fetching it only on Wi-Fi and with room to spare,
+  /// and TDLib's id for the copy when it was fetched here. An empty path
+  /// stands for a file that can't be read on its own, as a split one can't.
+  Future<({String path, int? fetchedId})?> _documentPath(DriveFile file) async {
     final local = await ref.read(transferQueueProvider.notifier).localPathIfAvailable(file);
-    if (local != null) return local;
+    if (local != null) return (path: local, fetchedId: null);
     if (!_onWifi) return null;
     final parts = await ref.read(driveRepositoryProvider).partsOf(file.id);
-    if (parts.length != 1) return '';
+    if (parts.length != 1) return (path: '', fetchedId: null);
     if (await Room.shortfall(ref.read(deviceStorageProvider), file.size + _keepFree) != null) {
       return null;
     }
@@ -172,7 +184,24 @@ class ContentIndexer extends Notifier<IndexerState> {
       td.DownloadFile(fileId: tdFile.id, priority: 1, offset: 0, limit: 0, synchronous: true),
       timeout: const Duration(minutes: 10),
     );
-    return fetched.local.isDownloadingCompleted ? fetched.local.path : null;
+    return fetched.local.isDownloadingCompleted
+        ? (path: fetched.local.path, fetchedId: fetched.id)
+        : null;
+  }
+
+  /// Deletes the copy of [file] fetched only to be read, TDLib's file
+  /// [tdFileId], unless a download of the same file is under way, which
+  /// would need it again.
+  Future<void> _letGo(DriveFile file, int tdFileId) async {
+    final downloading = ref.read(transferQueueProvider).items.any(
+      (t) => t.kind == TransferKind.download && t.row.fileId == file.id && t.status.isPending,
+    );
+    if (downloading) return;
+    try {
+      await _client.send<td.Ok>(td.DeleteFile(fileId: tdFileId));
+    } catch (e) {
+      debugPrint('[Indexer] Could not delete the copy of ${file.name}: $e');
+    }
   }
 
   Future<String> _readPdf(String path) async {

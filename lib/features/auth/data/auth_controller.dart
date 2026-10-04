@@ -120,8 +120,10 @@ class AuthController extends Notifier<AuthUiState> {
   /// last sent to go too, since they belong to the account that sent them,
   /// and so do the recent upload folders, and with them their targets in the
   /// system share sheet, so no folder name of this drive is left in other
-  /// apps. Anything new that the phone keeps per drive, whether a table, a
-  /// preference or a file, adds its cleanup here.
+  /// apps. When the phone's caches were last trimmed is forgotten as well,
+  /// so the next drive to open trims them once straight away. Anything new
+  /// that the phone keeps per drive, whether a table, a preference or a
+  /// file, adds its cleanup here.
   Future<void> wipeDeviceState() async {
     ref.read(pendingDeletesProvider.notifier).discardAll();
     ref.read(driveSessionProvider.notifier).close();
@@ -132,6 +134,7 @@ class AuthController extends Notifier<AuthUiState> {
     await prefs.setDeletePhoneCopyToo(false);
     await prefs.setOfflineWifiOnly(false);
     await prefs.forgetRecentSendChats();
+    await prefs.forgetCacheSweptAt();
     ref.invalidate(revealHiddenProvider);
     ref.invalidate(offlineSyncProvider);
     await ref.read(recentDestinationsProvider.notifier).clear();

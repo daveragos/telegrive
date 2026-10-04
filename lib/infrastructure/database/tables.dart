@@ -131,7 +131,7 @@ class OfflinePins extends Table {
 }
 
 /// The copies this phone keeps for offline use, outside TDLib's cache so
-/// clearing downloaded copies leaves them alone.
+/// clearing opened files leaves them alone.
 @DataClassName('OfflineCopyRow')
 class OfflineCopies extends Table {
   TextColumn get fileId => text()();

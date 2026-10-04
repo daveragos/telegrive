@@ -122,6 +122,16 @@ class Preferences {
   bool get offlineWifiOnly => _prefs.getBool('offline_wifi_only') ?? false;
   Future<void> setOfflineWifiOnly(bool on) => _prefs.setBool('offline_wifi_only', on);
 
+  /// When the daily trim of what Telegrive keeps on the phone last ran.
+  DateTime? get cacheSweptAt {
+    final millis = _prefs.getInt('cache_swept_at');
+    return millis == null ? null : DateTime.fromMillisecondsSinceEpoch(millis);
+  }
+
+  Future<void> setCacheSweptAt(DateTime at) =>
+      _prefs.setInt('cache_swept_at', at.millisecondsSinceEpoch);
+  Future<void> forgetCacheSweptAt() => _prefs.remove('cache_swept_at');
+
   bool get hasSeenWelcome => _prefs.getBool('seen_welcome') ?? false;
   Future<void> setSeenWelcome() => _prefs.setBool('seen_welcome', true);
 

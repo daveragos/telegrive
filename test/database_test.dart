@@ -542,6 +542,123 @@ void main() {
     expect(await db.allTransfers(), hasLength(100));
   });
 
+  test('paths in use come only from unfinished transfers', () async {
+    TransferRow upload(String id, TransferStatus status) => TransferRow(
+      id: id,
+      kind: TransferKind.upload,
+      status: status,
+      name: '$id.mp4',
+      mimeType: 'video/mp4',
+      fileId: 'f-$id',
+      sourcePath: '/cache/telegrive-staging/$id.mp4',
+      thumbnailPath: '/cache/telegrive-thumbs/$id.jpg',
+      ownsSource: true,
+      wifiOnly: false,
+      totalBytes: 1,
+      doneBytes: 0,
+      partCount: 1,
+      completedParts: 0,
+      createdAt: now,
+      origin: TransferOrigin.manual,
+    );
+    await db.saveTransfers([
+      upload('queued', TransferStatus.queued),
+      upload('paused', TransferStatus.paused),
+      upload('failed', TransferStatus.failed),
+      upload('done', TransferStatus.completed),
+      upload('gone', TransferStatus.cancelled),
+      TransferRow(
+        id: 'save',
+        kind: TransferKind.download,
+        status: TransferStatus.running,
+        name: 'film.mkv',
+        mimeType: 'video/x-matroska',
+        fileId: 'film',
+        resultPath: '/support/downloads/film/film.mkv',
+        ownsSource: false,
+        wifiOnly: false,
+        totalBytes: 1,
+        doneBytes: 0,
+        partCount: 2,
+        completedParts: 1,
+        createdAt: now,
+        origin: TransferOrigin.save,
+      ),
+    ]);
+
+    expect(await db.pathsInUse(), {
+      for (final id in ['queued', 'paused', 'failed']) ...[
+        '/cache/telegrive-staging/$id.mp4',
+        '/cache/telegrive-thumbs/$id.jpg',
+      ],
+      '/support/downloads/film/film.mkv',
+    });
+  });
+
+  group('space', () {
+    DriveFilesCompanion sized(String id, int size, {String? folderId, int partCount = 1}) =>
+        file(id, folderId: folderId, partCount: partCount).copyWith(size: Value(size));
+
+    test('largest files skip trashed and incomplete files, biggest first', () async {
+      await db.upsertFilePart(sized('small', 10), part('small', 0, 10));
+      await db.upsertFilePart(sized('big', 900), part('big', 0, 11));
+      await db.upsertFilePart(sized('middle', 500, folderId: 'docs'), part('middle', 0, 12));
+      await db.upsertFilePart(
+        sized('trashed', 5000).copyWith(trashedAt: Value(now)),
+        part('trashed', 0, 13),
+      );
+      // One of two parts, so it isn't in the drive yet.
+      await db.upsertFilePart(sized('half', 8000, partCount: 2), part('half', 0, 14));
+
+      expect(
+        (await db.watchLargestFiles().first).map((f) => f.id),
+        ['big', 'middle', 'small'],
+      );
+      expect((await db.watchLargestFiles(limit: 2).first).map((f) => f.id), ['big', 'middle']);
+    });
+
+    test('folder sizes roll nested folders into their top-level folder and list root '
+        'files once', () async {
+      await db.upsertFolder(folder('a', 1));
+      await db.upsertFolder(folder('b', 2, parentId: 'a'));
+      await db.upsertFolder(folder('old', 3).copyWith(trashedAt: Value(now)));
+      await db.upsertFolder(folder('orphan', 4, parentId: 'missing'));
+      await db.upsertFolder(folder('empty', 5));
+      await db.upsertFilePart(sized('in-a', 200, folderId: 'a'), part('in-a', 0, 10));
+      await db.upsertFilePart(sized('in-b', 300, folderId: 'b'), part('in-b', 0, 11));
+      await db.upsertFilePart(sized('in-old', 1000, folderId: 'old'), part('in-old', 0, 12));
+      await db.upsertFilePart(sized('in-orphan', 400, folderId: 'orphan'), part('in-orphan', 0, 13));
+      await db.upsertFilePart(sized('root', 50), part('root', 0, 14));
+      // Its folder is gone, so Files shows it at the root.
+      await db.upsertFilePart(sized('lost', 25, folderId: 'gone'), part('lost', 0, 15));
+
+      final sizes = await db.watchFolderSizes().first;
+      expect(
+        [for (final s in sizes) (s.folderId, s.name, s.count, s.bytes)],
+        [('a', 'a', 2, 500), ('orphan', 'orphan', 1, 400), (null, '', 2, 75)],
+      );
+      final totals = await db.watchTotals().first;
+      expect(
+        sizes.fold(0, (sum, s) => sum + s.bytes),
+        totals.fold(0, (sum, t) => sum + t.bytes),
+      );
+    });
+
+    test('trash totals include files inside trashed folders', () async {
+      await db.upsertFolder(folder('old', 1).copyWith(trashedAt: Value(now)));
+      await db.upsertFolder(folder('inner', 2, parentId: 'old'));
+      await db.upsertFilePart(sized('in-old', 100, folderId: 'old'), part('in-old', 0, 10));
+      await db.upsertFilePart(sized('in-inner', 200, folderId: 'inner'), part('in-inner', 0, 11));
+      await db.upsertFilePart(
+        sized('loose', 300).copyWith(trashedAt: Value(now)),
+        part('loose', 0, 12),
+      );
+      await db.upsertFilePart(sized('kept', 400), part('kept', 0, 13));
+
+      expect(await db.watchTrashTotals().first, (3, 600));
+    });
+  });
+
   group('trash', () {
     Future<void> trashFolder(String id, int messageId, {String? parentId}) =>
         db.upsertFolder(folder(id, messageId, parentId: parentId).copyWith(trashedAt: Value(now)));

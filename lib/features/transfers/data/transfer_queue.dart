@@ -1705,7 +1705,7 @@ class TransferQueue extends Notifier<TransfersState> {
     return Directory(p.join(support.path, 'downloads'));
   }
 
-  /// Copies kept available offline. Clearing downloaded copies skips it.
+  /// Copies kept available offline. Clearing opened files leaves it alone.
   static Future<Directory> offlineDirectory() async {
     final support = await getApplicationSupportDirectory();
     return Directory(p.join(support.path, 'offline'));
@@ -1830,35 +1830,79 @@ class TransferQueue extends Notifier<TransfersState> {
     _holdForWifi();
     _emit();
     _pump();
-    unawaited(_sweepLeftovers());
+    unawaited(_sweepOnOpen());
   }
 
-  /// Deletes the copies made for uploads that nothing needs any more: those
-  /// of transfers that are gone, and those left when the app was stopped as
-  /// it made them. What a transfer that hasn't gone through still uses, and
-  /// what the share sheet is holding, stays.
-  Future<void> _sweepLeftovers() async {
+  /// Clears the [leftovers] once the drive has opened and its transfers are
+  /// read, so whatever they still use stays.
+  Future<void> _sweepOnOpen() async {
     try {
-      final temp = (await getTemporaryDirectory()).path;
-      final keep = <String>{
-        for (final file in ref.read(shareIntakeProvider)) ?file.path,
-      };
-      // A snapshot, since transfers can be added while the parts folders
-      // are looked up.
-      for (final row in _rows.values.toList()) {
-        if (row.status == TransferStatus.completed || row.status == TransferStatus.cancelled) {
-          continue;
-        }
-        keep.addAll([?row.sourcePath, ?row.thumbnailPath, (await _partsDir(row.id)).path]);
-      }
-      final freed = await sweepLeftovers(
-        roots: [for (final dir in leftoverDirs) Directory(p.join(temp, dir))],
-        keep: keep,
-      );
+      final freed = await clearLeftovers();
       if (freed > 0) debugPrint('[Transfers] Deleted $freed bytes of leftover copies');
     } catch (e) {
       debugPrint('[Transfers] Could not sweep leftover copies: $e');
     }
+  }
+
+  /// What the transfers that haven't finished still use, as
+  /// [AppDatabase.pathsInUse] reads it, with the folder a split upload
+  /// cuts its parts into and the files the share sheet is holding.
+  Future<Set<String>> pathsInUse() async {
+    final keep = {
+      ...await _db.pathsInUse(),
+      for (final file in ref.read(shareIntakeProvider)) ?file.path,
+    };
+    // A snapshot, since transfers can be added while the parts folders are
+    // looked up.
+    for (final row in _rows.values.toList()) {
+      if (row.status == TransferStatus.completed || row.status == TransferStatus.cancelled) {
+        continue;
+      }
+      keep.add((await _partsDir(row.id)).path);
+    }
+    return keep;
+  }
+
+  /// The copies made for uploads that nothing needs any more, with the
+  /// bytes in each: those of transfers that are gone, those left when the
+  /// app was stopped as it made them, and the channel photo from setting up
+  /// the drive. Nothing in [pathsInUse] is among them.
+  Future<List<Leftover>> leftovers() async {
+    final (roots, files) = await _leftoverPlaces();
+    return findLeftovers(roots: roots, files: files, keep: await pathsInUse());
+  }
+
+  /// Deletes the [leftovers], and returns the bytes it freed. It runs when
+  /// the drive opens, from the daily trim and from Space's Clear.
+  Future<int> clearLeftovers() async {
+    final (roots, files) = await _leftoverPlaces();
+    return sweepLeftovers(roots: roots, files: files, keep: await pathsInUse());
+  }
+
+  /// Deletes the split files joined back together to open them that no
+  /// download is waiting for, those joined more than [olderThan] before
+  /// [now], and returns the bytes it freed. Opening one again leaves it as
+  /// it was, so its age is how long it has been on the phone.
+  Future<int> clearOldDownloads({required Duration olderThan, DateTime? now}) async {
+    final downloads = await downloadsDirectory();
+    return sweepLeftovers(
+      roots: [downloads],
+      keep: {
+        for (final row in _rows.values)
+          if (row.kind == TransferKind.download && row.status.isPending)
+            p.join(downloads.path, row.fileId),
+      },
+      minAge: olderThan,
+      now: now,
+    );
+  }
+
+  static Future<(List<Directory>, List<File>)> _leftoverPlaces() async {
+    final temp = (await getTemporaryDirectory()).path;
+    return (
+      [for (final dir in leftoverDirs) Directory(p.join(temp, dir))],
+      [for (final name in leftoverFiles) File(p.join(temp, name))],
+    );
   }
 
   void _reset() {

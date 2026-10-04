@@ -10,8 +10,6 @@ import '../../../core/widgets/common.dart';
 import '../../../infrastructure/storage/preferences.dart';
 import '../../auth/data/auth_controller.dart';
 import '../../backup/data/backup_controller.dart';
-import '../../backup/data/free_up_space.dart';
-import '../../backup/presentation/free_up_space_sheet.dart';
 import '../../drive/data/drive_repository.dart';
 import '../../drive/data/drive_session.dart';
 import '../../drive/data/drive_sync.dart';
@@ -21,7 +19,6 @@ import '../../lock/data/app_lock.dart';
 import '../../network/data/mobile_data.dart';
 import '../../offline/data/offline_sync.dart';
 import '../../search/data/content_indexer.dart';
-import '../../transfers/data/transfer_queue.dart';
 import '../../trash/data/pending_deletes.dart';
 import '../data/settings_providers.dart';
 import 'data_limit_sheet.dart';
@@ -39,11 +36,9 @@ class SettingsScreen extends ConsumerWidget {
     final themeMode = ref.watch(themeModeProvider);
     final viewMode = ref.watch(browsePreferencesProvider.select((p) => p.viewMode));
     final cache = ref.watch(cacheSizeProvider);
-    final busyTransfers = ref.watch(transferQueueProvider.select((s) => s.activeCount)) > 0;
     final hidden = ref.watch(pendingDeletesProvider.select((s) => s.hiddenIds));
     final trashCount = ref.watch(trashProvider).value?.without(hidden).count ?? 0;
     final lock = ref.watch(appLockProvider);
-    final freeable = ref.watch(freeableProvider);
     final offline = ref.watch(offlineUsageProvider);
     final indexer = ref.watch(contentIndexerProvider);
     final indexed = ref.watch(indexedCountProvider).value ?? 0;
@@ -141,12 +136,19 @@ class SettingsScreen extends ConsumerWidget {
               ),
               ListTile(
                 title: const Text('Stored in Telegram'),
-                trailing: trailingValue(
-                  summary == null
-                      ? ''
-                      : '${Formatters.bytes(summary.bytes)} · '
-                            '${Formatters.count(summary.fileCount, 'file')}',
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    trailingValue(
+                      summary == null
+                          ? ''
+                          : '${Formatters.bytes(summary.bytes)} · '
+                                '${Formatters.count(summary.fileCount, 'file')}',
+                    ),
+                    Icon(Icons.chevron_right_rounded, color: colors.text3),
+                  ],
                 ),
+                onTap: () => context.push('/space'),
               ),
               ListTile(
                 title: const Text('Download everything'),
@@ -266,7 +268,8 @@ class SettingsScreen extends ConsumerWidget {
                   indexer.running && indexer.left > 0
                       ? 'Reading · ${Formatters.count(indexer.left, 'file')} to go'
                       : 'Finds PDFs and text files by the words in them. Read on '
-                            'this phone, on Wi-Fi${indexed > 0 ? ' · ${Formatters.count(indexed, 'file')} read' : ''}.',
+                            'this phone, on Wi-Fi. Keeps no copies'
+                            '${indexed > 0 ? ' · ${Formatters.count(indexed, 'file')} read' : ''}.',
                 ),
                 value: indexer.enabled,
                 onChanged: (on) => ref.read(contentIndexerProvider.notifier).setEnabled(on),
@@ -322,44 +325,14 @@ class SettingsScreen extends ConsumerWidget {
                 onTap: () => context.push('/offline'),
               ),
               ListTile(
-                title: const Text('Free up space'),
-                subtitle: Text(switch (freeable) {
-                  AsyncData(:final value) when value.isEmpty =>
-                    'Delete backed-up photos from this phone',
+                title: const Text('Space on this phone'),
+                subtitle: Text(switch (cache) {
                   AsyncData(:final value) =>
-                    '${Formatters.bytes(value.bytes)} of photos and videos are safely backed up',
-                  _ => 'Checking backed-up photos',
+                    '${Formatters.bytes(value)} · What Telegrive keeps on this phone',
+                  _ => 'Measuring',
                 }),
-                onTap: () => showFreeUpSpace(context, ref),
-              ),
-              ListTile(
-                enabled: !busyTransfers,
-                title: const Text('Clear downloaded copies'),
-                subtitle: Text(
-                  busyTransfers
-                      ? 'Available when transfers finish'
-                      : switch (cache) {
-                          AsyncData(:final value) => '${Formatters.bytes(value)} on this phone',
-                          _ => 'Measuring',
-                        },
-                ),
-                onTap: () async {
-                  final ok = await showConfirmDialog(
-                    context,
-                    title: 'Clear downloaded copies?',
-                    message:
-                        'Your files stay in Telegram and download again when '
-                        'you open them.',
-                    confirmLabel: 'Clear',
-                  );
-                  if (!ok) return;
-                  try {
-                    await clearLocalCache(ref);
-                    if (context.mounted) showSnack(context, 'Downloaded copies cleared');
-                  } catch (e) {
-                    if (context.mounted) showSnack(context, 'Couldn\'t clear them: $e');
-                  }
-                },
+                trailing: Icon(Icons.chevron_right_rounded, color: colors.text3),
+                onTap: () => context.push('/space?focus=phone'),
               ),
             ],
           ),

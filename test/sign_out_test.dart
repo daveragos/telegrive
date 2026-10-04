@@ -74,6 +74,7 @@ void main() {
       'offline_wifi_only': true,
       'recent_send_chats': ['42', '7'],
       'recent_destinations': ['docs', ''],
+      'cache_swept_at': DateTime(2026, 9, 26).millisecondsSinceEpoch,
     });
     final shared = await SharedPreferences.getInstance();
     final db = AppDatabase(NativeDatabase.memory());
@@ -170,6 +171,10 @@ void main() {
     // account starts with none.
     expect(prefs.recentDestinations, isEmpty);
     expect(shared.containsKey('recent_destinations'), isFalse);
+    // The next drive on this phone is trimmed once when it opens, not left
+    // waiting out the last account's day.
+    expect(prefs.cacheSweptAt, isNull);
+    expect(shared.containsKey('cache_swept_at'), isFalse);
 
     // Nothing that was waiting to be deleted goes after signing out, from
     // Telegram or from the phone; it is all still in the channel.

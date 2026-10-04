@@ -33,6 +33,21 @@ phone number.
   sync, and when that was last checked.
 - **Free up space.** Delete the phone's copies of photos and videos that are
   safely backed up; they stay in the drive.
+- **See where the space goes.** The storage total on Home, or Stored in
+  Telegram in Settings, opens Space: the 50 biggest files, which you can
+  select and move or put in the trash, each top-level folder with
+  everything below it, files in no folder, and what the trash holds. Under
+  On this phone it says in plain figures what Telegrive keeps here (opened
+  files, thumbnails, copies left by uploads that didn't finish, files kept
+  offline, backed-up photos, the index and Telegram's own records), with
+  Clear or Free up only where nothing is lost; Settings › Space on this
+  phone opens it there. Opened files are trimmed once a day, for as long
+  as the drive stays open, to a budget of a tenth of the phone's storage
+  or a third of what is free, whichever is less, between 100 MB and 1 GB,
+  the ones opened longest ago going first. A split file joined back
+  together to open it goes after two weeks. A phone with under 300 MB free
+  is trimmed further each time the drive opens and each day after.
+  Nothing is trimmed while a transfer runs.
 - **Real folders.** Create, rename, move and delete folders; breadcrumbs;
   list and grid views; sort by name, date, size or type. Show in folder,
   in any file's menu or its Details, opens the folder the file lives in
@@ -125,13 +140,15 @@ phone number.
   file's parts. PDFs and text files open in the app. Everything else opens
   in the right app on your phone.
 - **Search inside documents.** The words in PDFs and text files are read on
-  the phone, so search finds documents by what they say. Words and a date
-  narrow each other: "invoice march 2024" finds the invoices from that
-  month, and "last week" alone finds everything from then. A search from
-  inside a folder starts limited to it and the folders below it; a search
-  from Photos finds photos and videos and shows them as the grid. Each
-  file in the results list says which folder it is in, and Starred,
-  Recent and each category have a search button too.
+  the phone, so search finds documents by what they say. A document fetched
+  only to be read is deleted again once it has been, so reading keeps no
+  copies, and reading waits while the phone has under 200 MB free. Words
+  and a date narrow each other: "invoice march 2024" finds the invoices
+  from that month, and "last week" alone finds everything from then. A
+  search from inside a folder starts limited to it and the folders below
+  it; a search from Photos finds photos and videos and shows them as the
+  grid. Each file in the results list says which folder it is in, and
+  Starred, Recent and each category have a search button too.
 - **Send in Telegram.** Send files, a whole folder or an album to any chat
   straight from the drive, with no re-upload, so it uses almost no data. An
   optional line goes first, starting as the folder's or album's name; each

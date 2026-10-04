@@ -353,8 +353,8 @@ class _NothingYet extends ConsumerWidget {
   }
 }
 
-/// Total, one proportional bar, then a row per kind that opens it, and the
-/// way into what this phone keeps offline.
+/// Total, which opens Space, one proportional bar, then a row per kind that
+/// opens it, and the way into what this phone keeps offline.
 class _Storage extends StatelessWidget {
   const _Storage({required this.summary, required this.offline});
 
@@ -372,49 +372,59 @@ class _Storage extends StatelessWidget {
 
     return ListGroup(
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(Space.gutter, Space.l, Space.gutter, Space.l),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text.rich(
-                TextSpan(
+        InkWell(
+          onTap: () => context.push('/space'),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(Space.gutter, Space.l, Space.gutter, Space.l),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
                   children: [
-                    TextSpan(
-                      text: Formatters.bytes(summary.bytes),
-                      style: context.text.titleMedium,
+                    Expanded(
+                      child: Text.rich(
+                        TextSpan(
+                          children: [
+                            TextSpan(
+                              text: Formatters.bytes(summary.bytes),
+                              style: context.text.titleMedium,
+                            ),
+                            TextSpan(
+                              text: '  in ${Formatters.count(summary.fileCount, 'file')}',
+                              style: context.text.bodyMedium,
+                            ),
+                          ],
+                        ),
+                        style: const TextStyle(fontFeatures: tabularFigures),
+                      ),
                     ),
-                    TextSpan(
-                      text: '  in ${Formatters.count(summary.fileCount, 'file')}',
-                      style: context.text.bodyMedium,
-                    ),
+                    Icon(Icons.chevron_right_rounded, color: colors.text3, size: 20),
                   ],
                 ),
-                style: const TextStyle(fontFeatures: tabularFigures),
-              ),
-              const SizedBox(height: Space.m),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(3),
-                child: SizedBox(
-                  height: 6,
-                  width: double.infinity,
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      for (final (index, total) in kinds.indexed) ...[
-                        if (index > 0) SizedBox(width: 2, child: ColoredBox(color: colors.surface)),
-                        Expanded(
-                          flex: (total.bytes * 1000 ~/ summary.bytes).clamp(6, 1000),
-                          child: ColoredBox(
-                            color: FileStyle.forKind(total.kind).resolve(context, colors.text3),
+                const SizedBox(height: Space.m),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(3),
+                  child: SizedBox(
+                    height: 6,
+                    width: double.infinity,
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        for (final (index, total) in kinds.indexed) ...[
+                          if (index > 0) SizedBox(width: 2, child: ColoredBox(color: colors.surface)),
+                          Expanded(
+                            flex: (total.bytes * 1000 ~/ summary.bytes).clamp(6, 1000),
+                            child: ColoredBox(
+                              color: FileStyle.forKind(total.kind).resolve(context, colors.text3),
+                            ),
                           ),
-                        ),
+                        ],
                       ],
-                    ],
+                    ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
         for (final total in kinds) _KindRow(total: total),
