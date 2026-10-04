@@ -189,7 +189,8 @@ class AuthController extends Notifier<AuthUiState> {
   /// still in the channel for the next sign-in. Files kept available offline
   /// go with the index that knew about them, or nothing would find them
   /// again, and so do the pages of PDFs read in the app, which are pieces of
-  /// the drive's documents.
+  /// the drive's documents. So do changes made without a connection that
+  /// haven't reached Telegram yet, as the question before signing out says.
   ///
   /// App settings (theme, app lock, Save memory, photo backup choices, the
   /// folders Photos keeps out, how much Free up space keeps on the phone,

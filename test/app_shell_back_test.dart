@@ -14,6 +14,7 @@ import 'package:telegrive/app/launch_action.dart';
 import 'package:telegrive/app/theme/app_theme.dart';
 import 'package:telegrive/core/widgets/selection_bar.dart';
 import 'package:telegrive/features/backup/data/backup_controller.dart';
+import 'package:telegrive/features/drive/data/edit_outbox.dart';
 import 'package:telegrive/features/files/presentation/file_actions.dart';
 import 'package:telegrive/features/transfers/data/transfer_queue.dart';
 import 'package:telegrive/features/trash/data/pending_deletes.dart';
@@ -23,6 +24,14 @@ import 'package:telegrive/infrastructure/storage/preferences.dart';
 class _Backup extends BackupController {
   @override
   BackupState build() => const BackupState(phase: BackupPhase.off);
+}
+
+/// Nothing waiting to reach Telegram. The shell keeps the outbox alive,
+/// and the real one watches the index, whose watchers close on a timer
+/// that would outlast the test.
+class _Outbox extends EditOutbox {
+  @override
+  OutboxState build() => const OutboxState();
 }
 
 /// Takes uploads without Telegram behind it.
@@ -201,6 +210,7 @@ void main() {
           ),
           backupControllerProvider.overrideWith(_Backup.new),
           transferQueueProvider.overrideWith(_Queue.new),
+          editOutboxProvider.overrideWith(_Outbox.new),
           if (launchedInto != null)
             pendingLaunchActionProvider.overrideWith(
               () => _Launched(launchedInto),

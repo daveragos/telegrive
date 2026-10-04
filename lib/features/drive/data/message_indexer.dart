@@ -175,6 +175,19 @@ abstract final class MessageIndexer {
 
   static String adoptedId(int messageId) => 'tg$messageId';
 
+  /// The manifest [message] carries as the index reads it: a
+  /// [FileManifest] for media, the one made up for it when it was adopted
+  /// without one; a [FolderManifest] or [AlbumManifest] for the drive's text
+  /// records; null for anything else.
+  static Object? manifestOf(td.Message message) {
+    if (message.content case td.MessageText(:final text)) {
+      return ManifestCodec.decodeAlbum(text.text) ?? ManifestCodec.decodeFolder(text.text);
+    }
+    final media = describe(message);
+    if (media == null) return null;
+    return ManifestCodec.decodeFile(media.caption) ?? _adoptedManifest(message, media);
+  }
+
   /// Whether [message] is media the drive adopts: delivered, with a file
   /// the index keeps, and no manifest in its caption.
   static bool isAdopted(td.Message message) {

@@ -426,6 +426,17 @@ void main() {
       expect(const TelegramException(420, 'FLOOD_WAIT_37').isFloodWait, isTrue);
     });
 
+    test('tells a request that never got an answer from a refusal', () {
+      expect(
+        const TelegramException(408, 'Request timeout').isNetworkProblem,
+        isTrue,
+      );
+      expect(
+        const TelegramException(420, 'FLOOD_WAIT_37').isNetworkProblem,
+        isFalse,
+      );
+    });
+
     test('speaks human', () {
       expect(
         const TelegramException(400, 'PHONE_CODE_INVALID').friendlyMessage,

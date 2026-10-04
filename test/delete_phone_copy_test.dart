@@ -22,14 +22,15 @@ import 'package:telegrive/infrastructure/telegram/telegram_exception.dart';
 
 import 'support/fake_telegram.dart';
 
-/// A channel that can't be reached once the drive is open.
-class _Offline extends FakeTelegram {
-  bool online = true;
+/// A channel that turns caption edits down once [refusing], as one the
+/// account may no longer post in does.
+class _Refusing extends FakeTelegram {
+  bool refusing = false;
 
   @override
   Future<td.TdObject?> answer(td.TdFunction function) async {
-    if (!online && function is td.EditMessageCaption) {
-      throw const TelegramException(408, 'Request timeout');
+    if (refusing && function is td.EditMessageCaption) {
+      throw const TelegramException(403, 'CHAT_WRITE_FORBIDDEN');
     }
     return null;
   }
@@ -352,9 +353,9 @@ void main() {
   });
 
   testWidgets('a trash that fails says why and leaves the phone alone', (tester) async {
-    final channel = _Offline();
+    final channel = _Refusing();
     await open(tester, channel: channel);
-    channel.online = false;
+    channel.refusing = true;
     await tapTrash(tester, await filesOf(['a', 'b']));
     await moveToTrash(tester, tick: true);
 

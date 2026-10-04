@@ -32,6 +32,44 @@ void main() {
     await telegram.dispose();
   });
 
+  test('a change goes straight out only while Telegram is connected', () async {
+    final telegram = FakeTelegram();
+    // Before TDLib has said anything, changes go out as they always did.
+    expect(telegram.isOnline, isTrue);
+    final seen = <bool>[];
+    final listening = telegram.onlineChanges.listen(seen.add);
+
+    telegram.setConnectionState(const td.ConnectionStateWaitingForNetwork());
+    telegram.setConnectionState(const td.ConnectionStateConnecting());
+    expect(telegram.isOnline, isFalse);
+    telegram.setConnectionState(const td.ConnectionStateUpdating());
+    expect(telegram.isOnline, isTrue);
+    telegram.setConnectionState(const td.ConnectionStateReady());
+    await settle();
+
+    // Each change once: connecting after waiting is still offline, and
+    // ready after catching up is still online.
+    expect(seen, [false, true]);
+    await listening.cancel();
+    await telegram.dispose();
+  });
+
+  test('telegramOnlineProvider starts from where the client stands', () async {
+    final telegram = FakeTelegram()
+      ..setConnectionState(const td.ConnectionStateConnecting());
+    final container = ProviderContainer(
+      overrides: [telegramClientProvider.overrideWithValue(telegram)],
+    );
+    addTearDown(container.dispose);
+    container.listen(telegramOnlineProvider, (_, _) {});
+    await settle();
+    expect(container.read(telegramOnlineProvider).value, isFalse);
+
+    telegram.setConnectionState(const td.ConnectionStateReady());
+    await settle();
+    expect(container.read(telegramOnlineProvider).value, isTrue);
+  });
+
   test('connectionStateProvider follows the client', () async {
     final telegram = FakeTelegram();
     final container = ProviderContainer(

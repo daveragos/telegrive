@@ -45,6 +45,7 @@ class TelegramClient {
   td.AuthorizationState? _authState;
   final _connectionStates = StreamController<td.ConnectionState>.broadcast();
   td.ConnectionState? _connectionState;
+  final _online = StreamController<bool>.broadcast();
   Completer<void> _ready = Completer<void>();
 
   /// Set when configuration itself failed — a missing native library, a
@@ -81,6 +82,21 @@ class TelegramClient {
     if (current != null) yield current;
     yield* _connectionStates.stream;
   }
+
+  /// Whether a change sent now would reach Telegram: TDLib is connected,
+  /// or connected and catching up. A change made otherwise waits on the
+  /// phone rather than wait for a reply that may take minutes, since TDLib
+  /// holds a request it can't send instead of failing it. Before TDLib
+  /// has said anything about its connection, changes go straight out.
+  bool get isOnline => _reaches(_connectionState);
+
+  /// [isOnline] each time it changes, never the same value twice running.
+  Stream<bool> get onlineChanges => _online.stream;
+
+  static bool _reaches(td.ConnectionState? state) =>
+      state == null ||
+      state is td.ConnectionStateReady ||
+      state is td.ConnectionStateUpdating;
 
   /// File progress updates, for uploads and downloads alike.
   Stream<td.File> get fileUpdates => _updates.stream
@@ -200,8 +216,10 @@ class TelegramClient {
   void receive(Map<String, dynamic> payload) => _handlePayload(payload);
 
   void _onConnectionState(td.ConnectionState state) {
+    final wasOnline = isOnline;
     _connectionState = state;
     if (!_connectionStates.isClosed) _connectionStates.add(state);
+    if (isOnline != wasOnline && !_online.isClosed) _online.add(isOnline);
   }
 
   void _onAuthorizationState(td.AuthorizationState state) {
@@ -332,6 +350,7 @@ class TelegramClient {
     await _updates.close();
     await _authStates.close();
     await _connectionStates.close();
+    await _online.close();
     fatalError.dispose();
   }
 }
@@ -350,4 +369,12 @@ final authStateProvider = StreamProvider<td.AuthorizationState>((ref) {
 /// The live TDLib connection state: whether Telegram can be reached.
 final connectionStateProvider = StreamProvider<td.ConnectionState>((ref) {
   return ref.watch(telegramClientProvider).connectionStates;
+});
+
+/// Whether a change made now goes straight to Telegram; see
+/// [TelegramClient.isOnline].
+final telegramOnlineProvider = StreamProvider<bool>((ref) async* {
+  final client = ref.watch(telegramClientProvider);
+  yield client.isOnline;
+  yield* client.onlineChanges;
 });

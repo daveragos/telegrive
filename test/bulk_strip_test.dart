@@ -9,6 +9,7 @@ import 'package:telegrive/app/app_shell.dart';
 import 'package:telegrive/app/theme/app_theme.dart';
 import 'package:telegrive/core/widgets/selection_bar.dart';
 import 'package:telegrive/features/backup/data/backup_controller.dart';
+import 'package:telegrive/features/drive/data/edit_outbox.dart';
 import 'package:telegrive/features/files/data/bulk_edits.dart';
 import 'package:telegrive/features/transfers/data/transfer_queue.dart';
 import 'package:telegrive/infrastructure/storage/preferences.dart';
@@ -16,6 +17,12 @@ import 'package:telegrive/infrastructure/storage/preferences.dart';
 class _Backup extends BackupController {
   @override
   BackupState build() => const BackupState(phase: BackupPhase.off);
+}
+
+/// Nothing waiting to reach Telegram, without an index to read it from.
+class _Outbox extends EditOutbox {
+  @override
+  OutboxState build() => const OutboxState();
 }
 
 class _Queue extends TransferQueue {
@@ -98,6 +105,7 @@ void main() {
           sharedPreferencesProvider.overrideWithValue(prefs),
           backupControllerProvider.overrideWith(_Backup.new),
           transferQueueProvider.overrideWith(_Queue.new),
+          editOutboxProvider.overrideWith(_Outbox.new),
           bulkEditsProvider.overrideWith(_Bulk.new),
         ],
         child: MaterialApp.router(

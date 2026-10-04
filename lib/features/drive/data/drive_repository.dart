@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:drift/drift.dart' show Value, BooleanExpressionOperators;
 import 'package:flutter/foundation.dart' show debugPrint;
@@ -13,9 +14,11 @@ import '../../../infrastructure/storage/device_storage.dart';
 import '../../../infrastructure/telegram/telegram_client.dart';
 import '../../../infrastructure/telegram/telegram_exception.dart';
 import '../domain/drive_models.dart';
+import '../domain/edit_patch.dart';
 import '../domain/manifest.dart';
 import 'channel_messenger.dart';
 import 'drive_session.dart';
+import 'edit_outbox.dart';
 import 'message_indexer.dart';
 import 'telegram_wait.dart';
 
@@ -43,7 +46,10 @@ DriveException driveNotOpen(DriveSession? snapshot) => snapshot != null
 ///
 /// Every change goes to Telegram first and is written to the index from the
 /// message Telegram hands back, so the index never claims something the
-/// channel does not hold.
+/// channel does not hold. The one exception is a rename, move, star, trash,
+/// restore or album change made while Telegram can't be reached: it is made
+/// in the index at once and waits in the outbox, and [replay] sends it once
+/// the connection is back.
 class DriveRepository {
   DriveRepository(this._ref);
 
@@ -53,6 +59,16 @@ class DriveRepository {
 
   AppDatabase get _db => _ref.read(appDatabaseProvider);
   ChannelMessenger get _messenger => _ref.read(channelMessengerProvider);
+  TelegramClient get _client => _ref.read(telegramClientProvider);
+
+  /// Ids of the items with a change waiting, read from the outbox the first
+  /// time they are needed and kept in step with it from then on, so a sync
+  /// that reads thousands of messages looks up only those few.
+  Set<String>? _pendingIds;
+
+  /// Items whose waiting change is being sent: what Telegram hands back for
+  /// them is indexed as it is.
+  final Set<String> _settling = {};
 
   int get _chatId {
     final session = _ref.read(driveSessionProvider);
@@ -70,8 +86,11 @@ class DriveRepository {
   // Index maintenance
   // ---------------------------------------------------------------------------
 
+  /// Writes what [message] holds into the index. An item with a change
+  /// waiting shows that change over what the message says, so a sync never
+  /// makes a change made on this phone look undone.
   Future<void> ingest(td.Message message) async {
-    switch (MessageIndexer.entryFor(message)) {
+    switch (await _withWaitingChange(MessageIndexer.entryFor(message))) {
       case FilePartEntry(:final file, :final part, :final albums):
         await _db.upsertFilePart(file, part);
         await _db.setFileAlbums(part.fileId.value, albums);
@@ -450,7 +469,10 @@ class DriveRepository {
   }
 
   /// Rewrites a folder's message from what the index holds, so a rename or
-  /// move keeps the star and the keys only a newer version knows.
+  /// move keeps the star and the keys only a newer version knows. While
+  /// Telegram can't be reached, or the folder already has a change waiting,
+  /// the change is made on the phone and waits instead, as does one whose
+  /// request timed out.
   Future<void> _rewriteFolder(
     DriveFolder folder, {
     required String name,
@@ -461,7 +483,8 @@ class DriveRepository {
   }) async {
     final row = await _db.folderById(folder.id);
     if (row == null) return;
-    final manifest = FolderManifest(
+    final current = _folderManifest(row);
+    final next = FolderManifest(
       id: folder.id,
       name: name,
       parentId: parentId,
@@ -469,16 +492,47 @@ class DriveRepository {
       modifiedAt: DateTime.now(),
       trashedAt: restore ? null : (trashedAt ?? row.trashedAt),
       starred: starred ?? row.starred,
-      extra: ManifestCodec.decodeExtra(row.manifestExtra),
+      extra: current.extra,
+    );
+    final patch = EditPatch.folderDiff(current, next);
+    if (patch.isEmpty) return;
+    if (await _mustQueue(EditTarget.folder, row.id)) {
+      return _queueFolder(row, next, patch);
+    }
+    try {
+      await _writeFolderManifest(row.messageId, next);
+    } on TelegramException catch (e) {
+      if (!e.isNetworkProblem) rethrow;
+      await _queueFolder(row, next, patch);
+    }
+  }
+
+  /// What the index holds of a folder, as its manifest.
+  static FolderManifest _folderManifest(FolderRow row) => FolderManifest(
+    id: row.id,
+    name: row.name,
+    parentId: row.parentId,
+    createdAt: row.createdAt,
+    modifiedAt: row.modifiedAt,
+    trashedAt: row.trashedAt,
+    starred: row.starred,
+    extra: ManifestCodec.decodeExtra(row.manifestExtra),
+  );
+
+  /// Writes [manifest] into the folder's message [messageId] and indexes
+  /// what Telegram hands back. Flood waits are sat out when [patient].
+  Future<void> _writeFolderManifest(
+    int messageId,
+    FolderManifest manifest, {
+    bool patient = true,
+  }) async {
+    Future<td.Message> edit() => _messenger.editText(
+      _chatId,
+      messageId,
+      ManifestCodec.encodeFolder(manifest),
     );
     final message = await _ignoreUnchanged(
-      () => _patiently(
-        () => _messenger.editText(
-          _chatId,
-          row.messageId,
-          ManifestCodec.encodeFolder(manifest),
-        ),
-      ),
+      () => patient ? _patiently(edit) : edit(),
     );
     if (message != null) await ingest(message);
   }
@@ -668,48 +722,76 @@ class DriveRepository {
 
   /// Rewrites the manifest on every part of [file], starting from what the
   /// index holds so nothing the caller doesn't touch is lost, including
-  /// keys only a newer version knows.
+  /// keys only a newer version knows. While Telegram can't be reached, or
+  /// the file already has a change waiting, the change is made on the phone
+  /// and waits instead, as does one whose request timed out. A file that
+  /// came in without a manifest is written even when nothing else about it
+  /// changes, since giving it one is the change.
   Future<void> _rewriteFile(
     DriveFile file,
     FileManifest Function(FileManifest current) change,
   ) async {
     final row = await _db.fileById(file.id);
     if (row == null) return;
-    final parts = await _db.partsOf(file.id);
-    final base = change(
-      FileManifest(
-        id: row.id,
-        name: row.name,
-        folderId: row.folderId,
-        mimeType: row.mimeType,
-        size: row.size,
-        createdAt: row.createdAt,
-        modifiedAt: row.modifiedAt,
-        partCount: row.partCount,
-        starred: row.starred,
-        takenAt: row.takenAt,
-        trashedAt: row.trashedAt,
-        albums: await _db.albumIdsOf(row.id),
-        durationSeconds: row.durationSeconds,
-        replacedBy: row.replacedBy,
-        extra: ManifestCodec.decodeExtra(row.manifestExtra),
-      ),
-    ).copyWith(modifiedAt: DateTime.now());
+    final current = await _fileManifest(row);
+    final next = change(current);
+    final patch = EditPatch.fileDiff(current, next);
+    if (patch.isEmpty && !row.adopted) return;
+    if (!patch.isEmpty && await _mustQueue(EditTarget.file, row.id)) {
+      return _queueFile(row, next, patch);
+    }
+    try {
+      await _writeFileManifest(
+        await _db.partsOf(row.id),
+        next.copyWith(modifiedAt: DateTime.now()),
+      );
+    } on TelegramException catch (e) {
+      if (!e.isNetworkProblem || patch.isEmpty) rethrow;
+      await _queueFile(row, next, patch);
+    }
+  }
 
+  /// What the index holds of a file, as its manifest.
+  Future<FileManifest> _fileManifest(FileRow row) async => FileManifest(
+    id: row.id,
+    name: row.name,
+    folderId: row.folderId,
+    mimeType: row.mimeType,
+    size: row.size,
+    createdAt: row.createdAt,
+    modifiedAt: row.modifiedAt,
+    partCount: row.partCount,
+    starred: row.starred,
+    takenAt: row.takenAt,
+    trashedAt: row.trashedAt,
+    albums: await _db.albumIdsOf(row.id),
+    durationSeconds: row.durationSeconds,
+    replacedBy: row.replacedBy,
+    extra: ManifestCodec.decodeExtra(row.manifestExtra),
+  );
+
+  /// Writes [manifest] onto each of [parts], with that part's index, and
+  /// indexes what Telegram hands back. Flood waits are sat out when
+  /// [patient]; a waiting change being sent lets them through, for the
+  /// outbox to pause on.
+  Future<void> _writeFileManifest(
+    List<PartRow> parts,
+    FileManifest manifest, {
+    bool patient = true,
+  }) async {
     // Once one part carries the change, Stop no longer cuts a wait short,
     // so a split file never ends up with parts that disagree.
     var stoppable = true;
     for (final part in parts) {
       final caption = ManifestCodec.encodeFile(
-        base.copyWith(partIndex: part.partIndex),
+        manifest.copyWith(partIndex: part.partIndex),
       );
+      Future<td.Message> edit() =>
+          _messenger.editCaption(_chatId, part.messageId, caption);
       td.Message? message;
       try {
         message = await _ignoreUnchanged(
-          () => _patiently(
-            () => _messenger.editCaption(_chatId, part.messageId, caption),
-            stoppable: stoppable,
-          ),
+          () => patient ? _patiently(edit, stoppable: stoppable) : edit(),
         );
       } on TelegramException catch (e) {
         if (!e.isNotEditable) rethrow;
@@ -717,6 +799,7 @@ class DriveRepository {
           part.messageId,
           caption,
           stoppable: stoppable,
+          patient: patient,
         );
       }
       if (message != null) await ingest(message);
@@ -730,15 +813,14 @@ class DriveRepository {
   /// made by Telegram with no upload, which can be: the copy arrives with
   /// [caption] already on it, so it is never a caption-less forward the
   /// drive could take for a new one, and the original goes. The file keeps
-  /// its id throughout.
+  /// its id throughout. Flood waits are sat out when [patient].
   Future<td.Message> _replaceWithOwnCopy(
     int messageId,
     EncodedText caption, {
     bool stoppable = true,
+    bool patient = true,
   }) async {
-    // Telegram usually turns a copy away only once it is being sent, so the
-    // wait covers the delivery as well as the request.
-    final copy = await _patiently(() async {
+    Future<td.Message> copyOnce() async {
       try {
         return await _messenger.sendCopy(
           _chatId,
@@ -757,7 +839,13 @@ class DriveRepository {
         }
         rethrow;
       }
-    }, stoppable: stoppable);
+    }
+
+    // Telegram usually turns a copy away only once it is being sent, so the
+    // wait covers the delivery as well as the request.
+    final copy = patient
+        ? await _patiently(copyOnce, stoppable: stoppable)
+        : await copyOnce();
     await ingest(copy);
     await _messenger.deleteMessages(_chatId, [messageId]);
     await _db.removeMessages([messageId]);
@@ -965,38 +1053,71 @@ class DriveRepository {
     return manifest.id;
   }
 
+  /// Renames the album, on the phone at once and in Telegram later when it
+  /// can't be reached now, as a file's rename is.
   Future<void> renameAlbum(String albumId, String name) async {
     final clean = name.trim();
     if (clean.isEmpty) throw const DriveException('Give the album a name.');
     final row = await _db.albumById(albumId);
     if (row == null || row.name == clean) return;
-    final message = await _ignoreUnchanged(
-      () => _patiently(
-        () => _messenger.editText(
-          _chatId,
-          row.messageId,
-          ManifestCodec.encodeAlbum(
-            AlbumManifest(
-              id: row.id,
-              name: clean,
-              createdAt: row.createdAt,
-              modifiedAt: DateTime.now(),
-            ),
-          ),
+    final patch = EditPatch.albumRename(row.name, clean);
+    if (await _mustQueue(EditTarget.album, albumId)) {
+      return _queueAlbum(row, clean, patch);
+    }
+    try {
+      await _writeAlbumManifest(
+        row.messageId,
+        AlbumManifest(
+          id: row.id,
+          name: clean,
+          createdAt: row.createdAt,
+          modifiedAt: DateTime.now(),
         ),
-      ),
+      );
+    } on TelegramException catch (e) {
+      if (!e.isNetworkProblem) rethrow;
+      await _queueAlbum(row, clean, patch);
+    }
+  }
+
+  /// Writes [manifest] into the album's message [messageId] and indexes
+  /// what Telegram hands back. Flood waits are sat out when [patient].
+  Future<void> _writeAlbumManifest(
+    int messageId,
+    AlbumManifest manifest, {
+    bool patient = true,
+  }) async {
+    Future<td.Message> edit() => _messenger.editText(
+      _chatId,
+      messageId,
+      ManifestCodec.encodeAlbum(manifest),
+    );
+    final message = await _ignoreUnchanged(
+      () => patient ? _patiently(edit) : edit(),
     );
     if (message != null) await ingest(message);
   }
 
-  /// Deletes the album; its photos stay in the drive.
+  /// Deletes the album; its photos stay in the drive. Deleting is not a
+  /// change that can wait on the phone, so it is refused up front while
+  /// Telegram can't be reached, rather than taking the photos out of the
+  /// album and then failing to delete it.
   Future<void> deleteAlbum(String albumId) async {
+    if (_ref.read(driveSessionProvider) == null) {
+      throw driveNotOpen(_ref.read(driveSnapshotProvider));
+    }
+    if (!_client.isOnline) {
+      throw const DriveException(
+        'No connection to Telegram. Try again when you\'re back online.',
+      );
+    }
     final row = await _db.albumById(albumId);
     if (row == null) return;
     final members = await _db.watchAlbumFiles(albumId).first;
     await removeFromAlbum(members.map(DriveFile.fromRow).toList(), albumId);
     await _messenger.deleteMessages(_chatId, [row.messageId]);
     await _db.removeMessages([row.messageId]);
+    await _dropPending(EditTarget.album, albumId);
   }
 
   /// Adds [files] to the album and lifts it to the top of the list. A bulk
@@ -1032,28 +1153,21 @@ class DriveRepository {
   }
 
   /// Albums sort by when they last changed, so adding photos lifts one to
-  /// the top.
+  /// the top. While Telegram can't be reached, or a rename of the album
+  /// waits, the album stays where it is: lifting it is not worth a change
+  /// of its own to wait, and would send the waiting name past the outbox.
   Future<void> touchAlbum(String albumId) async {
     final row = await _db.albumById(albumId);
-    if (row == null) return;
-    await _ignoreUnchanged(
-      () => _patiently(
-        () => _messenger.editText(
-          _chatId,
-          row.messageId,
-          ManifestCodec.encodeAlbum(
-            AlbumManifest(
-              id: row.id,
-              name: row.name,
-              createdAt: row.createdAt,
-              modifiedAt: DateTime.now(),
-            ),
-          ),
-        ),
+    if (row == null || await _mustQueue(EditTarget.album, albumId)) return;
+    await _writeAlbumManifest(
+      row.messageId,
+      AlbumManifest(
+        id: row.id,
+        name: row.name,
+        createdAt: row.createdAt,
+        modifiedAt: DateTime.now(),
       ),
-    ).then((message) async {
-      if (message != null) await ingest(message);
-    });
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -1099,6 +1213,7 @@ class DriveRepository {
     await _db.markFilesRemoved(fileIds);
     await _messenger.deleteMessages(_chatId, messageIds);
     await _db.removeMessages(messageIds);
+    await _forgetWaitingChanges([...fileIds, ...folderIds]);
     return fileIds.length;
   }
 
@@ -1107,6 +1222,561 @@ class DriveRepository {
     if (ids.isEmpty) return;
     await _messenger.deleteMessages(_chatId, ids);
     await _db.removeMessages(ids);
+    await _forgetWaitingChanges([fileId]);
+  }
+
+  /// Drops the changes waiting for files and folders that are gone for
+  /// good, which have nothing left to change.
+  Future<void> _forgetWaitingChanges(List<String> ids) async {
+    await _db.deletePendingEditsFor(ids);
+    _pendingIds?.removeAll(ids);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Waiting changes
+  // ---------------------------------------------------------------------------
+
+  /// Whether a change to [id] waits on the phone instead of going to
+  /// Telegram now: Telegram can't be reached, or is still starting behind
+  /// the drive Home shows, or the item already has a change waiting, which
+  /// a newer one joins so the two reach Telegram in the order they were
+  /// made. With no drive open or saved, there is nothing to change.
+  Future<bool> _mustQueue(EditTarget target, String id) async {
+    if (_ref.read(driveSessionProvider) == null) {
+      final snapshot = _ref.read(driveSnapshotProvider);
+      if (snapshot == null) throw driveNotOpen(null);
+      return true;
+    }
+    if (!_client.isOnline) return true;
+    return (await _pending()).contains(id) &&
+        await _db.pendingEditOf(target, id) != null;
+  }
+
+  /// Whether a change sent now reaches Telegram.
+  bool get _reachable =>
+      _ref.read(driveSessionProvider) != null && _client.isOnline;
+
+  Future<Set<String>> _pending() async =>
+      _pendingIds ??= await _db.pendingEditIds();
+
+  Future<void> _queueFile(
+    FileRow row,
+    FileManifest next,
+    EditPatch patch,
+  ) async {
+    await _applyFileLocally(row, next);
+    await _enqueue(EditTarget.file, row.id, patch);
+  }
+
+  Future<void> _queueFolder(
+    FolderRow row,
+    FolderManifest next,
+    EditPatch patch,
+  ) async {
+    await _applyFolderLocally(row, next);
+    await _enqueue(EditTarget.folder, row.id, patch);
+  }
+
+  Future<void> _queueAlbum(AlbumRow row, String name, EditPatch patch) async {
+    await _applyAlbumLocally(row, name);
+    await _enqueue(EditTarget.album, row.id, patch);
+  }
+
+  /// Shows [next] in the index as if Telegram had taken it.
+  Future<void> _applyFileLocally(FileRow row, FileManifest next) async {
+    await _db.updateFile(
+      row.id,
+      DriveFilesCompanion(
+        name: Value(next.name),
+        kind: Value(
+          FileKind.detect(fileName: next.name, mimeType: row.mimeType),
+        ),
+        folderId: Value(next.folderId),
+        starred: Value(next.starred),
+        trashedAt: Value(next.trashedAt),
+        modifiedAt: Value(DateTime.now()),
+      ),
+    );
+    await _db.setFileAlbums(row.id, next.albums);
+    await _db.refreshHiddenFile(row.id);
+  }
+
+  /// Shows [next] in the index as if Telegram had taken it, with whatever
+  /// it moved into or out of the trash along with it.
+  Future<void> _applyFolderLocally(FolderRow row, FolderManifest next) async {
+    await _db.updateFolder(
+      row.id,
+      FoldersCompanion(
+        name: Value(next.name),
+        parentId: Value(next.parentId),
+        trashedAt: Value(next.trashedAt),
+        starred: Value(next.starred),
+        modifiedAt: Value(DateTime.now()),
+      ),
+    );
+    await _db.refreshHidden();
+  }
+
+  Future<void> _applyAlbumLocally(AlbumRow row, String name) => _db.upsertAlbum(
+    row
+        .toCompanion(false)
+        .copyWith(name: Value(name), modifiedAt: Value(DateTime.now())),
+  );
+
+  /// Adds [patch] to what waits for [id], after any change already waiting
+  /// for it. A change that ends where Telegram has it leaves nothing to
+  /// send, which is how Undo of a change made offline costs nothing. A new
+  /// change gets fresh tries, even on one that had failed.
+  Future<void> _enqueue(EditTarget target, String id, EditPatch patch) async {
+    await _db.transaction(() async {
+      final old = await _db.pendingEditOf(target, id);
+      final merged = old == null ? patch : _decode(old.patch).then(patch);
+      if (merged.isEmpty) {
+        await _dropPending(target, id);
+        return;
+      }
+      final now = DateTime.now();
+      await _db.savePendingEdit(
+        PendingEditsCompanion.insert(
+          target: target,
+          itemId: id,
+          patch: jsonEncode(merged.toJson()),
+          createdAt: old?.createdAt ?? now,
+          updatedAt: now,
+          attempts: const Value(0),
+          lastError: const Value(null),
+        ),
+      );
+      (await _pending()).add(id);
+    });
+    _ref.read(editOutboxProvider.notifier).soon();
+  }
+
+  Future<void> _dropPending(EditTarget target, String id) async {
+    await _db.deletePendingEdit(target, id);
+    _pendingIds?.remove(id);
+  }
+
+  static EditPatch _decode(String patch) {
+    try {
+      final json = jsonDecode(patch);
+      return json is Map<String, Object?>
+          ? EditPatch.fromJson(json)
+          : const EditPatch({});
+    } catch (_) {
+      return const EditPatch({});
+    }
+  }
+
+  /// [entry] with the change waiting for its item, if there is one, over
+  /// what its message says. Albums merge the way they merge on Telegram.
+  Future<IndexEntry?> _withWaitingChange(IndexEntry? entry) async {
+    final (target, id) = switch (entry) {
+      FilePartEntry(:final part) => (EditTarget.file, part.fileId.value),
+      FolderEntry(:final folder) => (EditTarget.folder, folder.id.value),
+      AlbumEntry(:final album) => (EditTarget.album, album.id.value),
+      null => (null, ''),
+    };
+    if (target == null ||
+        _settling.contains(id) ||
+        !(await _pending()).contains(id)) {
+      return entry;
+    }
+    final row = await _db.pendingEditOf(target, id);
+    if (row == null) return entry;
+    final patch = _decode(row.patch);
+    switch (entry) {
+      case FilePartEntry(:final file, :final part, :final albums):
+        final shown = patch.over({
+          'n': file.name.value,
+          'f': file.folderId.value,
+          'st': file.starred.value,
+          'tr': EditPatch.trashedValue(file.trashedAt.value),
+          'al': albums,
+        });
+        final name = shown['n']! as String;
+        return FilePartEntry(
+          file.copyWith(
+            name: Value(name),
+            kind: Value(
+              FileKind.detect(fileName: name, mimeType: file.mimeType.value),
+            ),
+            folderId: Value(shown['f'] as String?),
+            starred: Value(shown['st']! as bool),
+            trashedAt: Value(_time(shown['tr'])),
+          ),
+          part,
+          albums: (shown['al']! as List).cast<String>(),
+        );
+      case FolderEntry(:final folder):
+        final shown = patch.over({
+          'n': folder.name.value,
+          'p': folder.parentId.value,
+          'st': folder.starred.value,
+          'tr': EditPatch.trashedValue(folder.trashedAt.value),
+        });
+        return FolderEntry(
+          folder.copyWith(
+            name: Value(shown['n']! as String),
+            parentId: Value(shown['p'] as String?),
+            starred: Value(shown['st']! as bool),
+            trashedAt: Value(_time(shown['tr'])),
+          ),
+        );
+      case AlbumEntry(:final album):
+        final shown = patch.over({'n': album.name.value});
+        return AlbumEntry(album.copyWith(name: Value(shown['n']! as String)));
+      case null:
+        return null;
+    }
+  }
+
+  static DateTime? _time(Object? millis) =>
+      millis is int ? DateTime.fromMillisecondsSinceEpoch(millis) : null;
+
+  /// The message that holds what [id] is: a file's first part, or the
+  /// folder's or album's own.
+  Future<int?> _messageIdOf(EditTarget target, String id) async =>
+      switch (target) {
+        EditTarget.file => (await _db.partsOf(
+          id,
+        )).where((p) => p.partIndex == 0).firstOrNull?.messageId,
+        EditTarget.folder => (await _db.folderById(id))?.messageId,
+        EditTarget.album => (await _db.albumById(id))?.messageId,
+      };
+
+  /// Telegram has no such message, which went for good from another
+  /// device.
+  static bool _isGone(TelegramException e) =>
+      e.code == 404 ||
+      e.message.contains('MESSAGE_ID_INVALID') ||
+      e.message.toLowerCase().contains('message not found');
+
+  /// Sends the waiting change [row] to Telegram, onto what the channel
+  /// holds now, read again first: a field another device changed meanwhile
+  /// keeps that device's version, and the rest still goes. A split file has
+  /// the result written to every part, so parts a rewrite cut short agree
+  /// again. Returns what was left out, for the person to be told. A change
+  /// whose item is gone from the channel is dropped. Telegram's refusals,
+  /// flood waits included, come back as they are, for the outbox to settle.
+  ///
+  /// What Telegram hands back goes into the index as it is, since it is
+  /// what the channel now holds, and so does the message read first when
+  /// nothing needs writing; a change made while this one went is shown over
+  /// it again once the row is settled.
+  Future<EditNotice?> replay(PendingEditRow row) async {
+    final patch = _decode(row.patch);
+    final messageId = await _messageIdOf(row.target, row.itemId);
+    if (messageId == null) {
+      await _dropPending(row.target, row.itemId);
+      return null;
+    }
+    _settling.add(row.itemId);
+    try {
+      final td.Message message;
+      try {
+        message = await _client.send<td.Message>(
+          td.GetMessage(chatId: _chatId, messageId: messageId),
+        );
+      } on TelegramException catch (e) {
+        if (!_isGone(e)) rethrow;
+        await _dropPending(row.target, row.itemId);
+        return null;
+      }
+      final Set<String> skipped;
+      final String name;
+      switch ((row.target, MessageIndexer.manifestOf(message))) {
+        case (EditTarget.file, final FileManifest remote)
+            when remote.id == row.itemId:
+          final (:apply, skipped: left) = patch.resolve(
+            EditPatch.fileValues(remote),
+          );
+          if (apply.isEmpty) await ingest(message);
+          final parts = await _db.partsOf(row.itemId);
+          if (apply.isNotEmpty || parts.length > 1) {
+            final merged = EditPatch.applyToFile(remote, apply);
+            await _writeFileManifest(
+              parts,
+              apply.isEmpty
+                  ? merged
+                  : merged.copyWith(modifiedAt: DateTime.now()),
+              patient: false,
+            );
+          }
+          skipped = left;
+          name = remote.name;
+        case (EditTarget.folder, final FolderManifest remote)
+            when remote.id == row.itemId:
+          final (:apply, skipped: left) = patch.resolve(
+            EditPatch.folderValues(remote),
+          );
+          if (apply.isEmpty) {
+            await ingest(message);
+          } else {
+            await _writeFolderManifest(
+              messageId,
+              EditPatch.applyToFolder(
+                remote,
+                apply,
+                modifiedAt: DateTime.now(),
+              ),
+              patient: false,
+            );
+          }
+          skipped = left;
+          name = remote.name;
+        case (EditTarget.album, final AlbumManifest remote)
+            when remote.id == row.itemId:
+          final (:apply, skipped: left) = patch.resolve({'n': remote.name});
+          if (apply['n'] case final String wanted) {
+            await _writeAlbumManifest(
+              messageId,
+              AlbumManifest(
+                id: remote.id,
+                name: wanted,
+                createdAt: remote.createdAt,
+                modifiedAt: DateTime.now(),
+              ),
+              patient: false,
+            );
+          } else {
+            await ingest(message);
+          }
+          skipped = left;
+          name = remote.name;
+        default:
+          // The message holds something else now, so nothing of this item
+          // is left to change.
+          await _dropPending(row.target, row.itemId);
+          return null;
+      }
+      await _finishPending(row, patch);
+      return _noticeFor(patch, skipped, name);
+    } finally {
+      _settling.remove(row.itemId);
+      if (await _db.pendingEditOf(row.target, row.itemId) case final newer?) {
+        await _applyLocally(row.target, row.itemId, _decode(newer.patch).over);
+      }
+    }
+  }
+
+  /// Settles the waiting change once [sent], what [row] held, has gone to
+  /// Telegram. Nothing is left unless an edit came in meanwhile; then only
+  /// what that edit changed stays, starting from what was sent.
+  Future<void> _finishPending(PendingEditRow row, EditPatch sent) =>
+      _db.transaction(() async {
+        final current = await _db.pendingEditOf(row.target, row.itemId);
+        if (current == null) return;
+        final rest = _decode(current.patch).rebase(sent);
+        if (rest.isEmpty) {
+          await _dropPending(row.target, row.itemId);
+          return;
+        }
+        await _db.savePendingEdit(
+          current
+              .toCompanion(false)
+              .copyWith(
+                patch: Value(jsonEncode(rest.toJson())),
+                attempts: const Value(0),
+                lastError: const Value(null),
+              ),
+        );
+      });
+
+  /// What to tell the person about the first of [skipped], the fields
+  /// another device changed first, about the item called [current] in
+  /// Telegram. It is named as it was before either change, when the change
+  /// was a rename, so the name is one they know.
+  static EditNotice? _noticeFor(
+    EditPatch patch,
+    Set<String> skipped,
+    String current,
+  ) {
+    for (final key in const ['n', 'f', 'p', 'tr', 'st']) {
+      if (!skipped.contains(key)) continue;
+      return EditNotice(
+        name: switch (patch.fields['n']?.base) {
+          final String before => before,
+          _ => current,
+        },
+        verb: switch (key) {
+          'n' => 'rename',
+          'f' || 'p' => 'move',
+          'st' => 'star',
+          _ => patch.fields[key]!.want == null ? 'restore' : 'trash',
+        },
+      );
+    }
+    return null;
+  }
+
+  /// Throws away the change waiting for [id], so the item goes back to how
+  /// Telegram has it: read again from the channel when it can be reached,
+  /// and otherwise put back the way it was when the change was made.
+  Future<void> discardPending(EditTarget target, String id) async {
+    final row = await _db.pendingEditOf(target, id);
+    if (row == null) return;
+    await _dropPending(target, id);
+    final messageId = await _messageIdOf(target, id);
+    if (_reachable && messageId != null) {
+      try {
+        await ingest(
+          await _client.send<td.Message>(
+            td.GetMessage(chatId: _chatId, messageId: messageId),
+          ),
+        );
+        return;
+      } on TelegramException catch (e) {
+        debugPrint('[Drive] Reading a discarded change back: $e');
+      }
+    }
+    final base = {
+      for (final MapEntry(:key, value: field) in _decode(
+        row.patch,
+      ).fields.entries)
+        key: field.base,
+    };
+    await _applyLocally(target, id, (_) => base);
+  }
+
+  /// Shows [values], worked out from what the index holds of the item now,
+  /// in place of that, as if Telegram had taken them.
+  Future<void> _applyLocally(
+    EditTarget target,
+    String id,
+    Map<String, Object?> Function(Map<String, Object?> current) values,
+  ) async {
+    switch (target) {
+      case EditTarget.file:
+        final file = await _db.fileById(id);
+        if (file == null) return;
+        final current = await _fileManifest(file);
+        await _applyFileLocally(
+          file,
+          EditPatch.applyToFile(current, values(EditPatch.fileValues(current))),
+        );
+      case EditTarget.folder:
+        final folder = await _db.folderById(id);
+        if (folder == null) return;
+        final current = _folderManifest(folder);
+        await _applyFolderLocally(
+          folder,
+          EditPatch.applyToFolder(
+            current,
+            values(EditPatch.folderValues(current)),
+          ),
+        );
+      case EditTarget.album:
+        final album = await _db.albumById(id);
+        if (album == null) return;
+        if (values({'n': album.name})['n'] case final String name) {
+          await _applyAlbumLocally(album, name);
+        }
+    }
+  }
+
+  /// The changes waiting to reach Telegram, the one made first first, each
+  /// with its item as the phone shows it and a sentence saying what
+  /// changed. A change whose item has left the index is passed over.
+  Stream<List<PendingEditView>> watchPendingEdits() =>
+      _db.watchPendingEdits().asyncMap((rows) async {
+        final folders = {
+          for (final folder in await _db.allFolders()) folder.id: folder.name,
+        };
+        final albums = <String, String?>{};
+        Future<String?> albumName(String id) async =>
+            albums[id] ??= (await _db.albumById(id))?.name;
+        final views = <PendingEditView>[];
+        for (final row in rows) {
+          final patch = _decode(row.patch);
+          final description = await _describeChange(patch, folders, albumName);
+          final error = row.attempts >= EditOutbox.maxAttempts
+              ? row.lastError
+              : null;
+          switch (row.target) {
+            case EditTarget.file:
+              final file = await _db.fileById(row.itemId);
+              if (file == null) continue;
+              views.add(
+                PendingEditView(
+                  target: row.target,
+                  id: row.itemId,
+                  name: file.name,
+                  file: DriveFile.fromRow(file),
+                  description: description,
+                  error: error,
+                ),
+              );
+            case EditTarget.folder:
+              final folder = await _db.folderById(row.itemId);
+              if (folder == null) continue;
+              views.add(
+                PendingEditView(
+                  target: row.target,
+                  id: row.itemId,
+                  name: folder.name,
+                  folder: DriveFolder.fromRow(folder),
+                  description: description,
+                  error: error,
+                ),
+              );
+            case EditTarget.album:
+              final name = await albumName(row.itemId);
+              if (name == null) continue;
+              views.add(
+                PendingEditView(
+                  target: row.target,
+                  id: row.itemId,
+                  name: name,
+                  description: description,
+                  error: error,
+                ),
+              );
+          }
+        }
+        return views;
+      });
+
+  /// What [patch] changes, one phrase per change joined with ' · ', as in
+  /// 'Renamed from "Scan 12.pdf" · Moved to Work'. Folders are named from
+  /// [folders], with the root as Files, and albums through [albumName].
+  static Future<String> _describeChange(
+    EditPatch patch,
+    Map<String, String> folders,
+    Future<String?> Function(String id) albumName,
+  ) async {
+    final fields = patch.fields;
+    String place(Object? folderId) =>
+        folderId is String ? folders[folderId] ?? 'a folder' : 'Files';
+    Future<String> album(String id) async => switch (await albumName(id)) {
+      final String name => '"$name"',
+      null => 'an album',
+    };
+    List<String> ids(Object? value) => [
+      if (value is List)
+        for (final id in value)
+          if (id is String) id,
+    ];
+    final phrases = [
+      if (fields['n'] case final rename?) 'Renamed from "${rename.base}"',
+      if (fields['f'] ?? fields['p'] case final move?)
+        'Moved to ${place(move.want)}',
+      if (fields['tr'] case final trash?)
+        trash.want == null ? 'Restored from Trash' : 'Moved to Trash',
+      if (fields['st'] case final star?)
+        star.want == true ? 'Added to Starred' : 'Removed from Starred',
+    ];
+    if (fields['al'] case final albums?) {
+      final before = ids(albums.base).toSet();
+      final after = ids(albums.want).toSet();
+      for (final id in after.difference(before)) {
+        phrases.add('Added to ${await album(id)}');
+      }
+      for (final id in before.difference(after)) {
+        phrases.add('Removed from ${await album(id)}');
+      }
+    }
+    return phrases.join(' · ');
   }
 
   /// Longest flood wait an edit sits out. Anything longer fails with

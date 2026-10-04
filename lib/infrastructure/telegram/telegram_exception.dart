@@ -18,6 +18,11 @@ class TelegramException implements Exception {
 
   bool get isFloodWait => code == 420 || code == 429;
 
+  /// The request never got an answer: TDLib holds what it can't send for
+  /// want of a network, and the client stops waiting for it after its
+  /// timeout, though TDLib may still send it later.
+  bool get isNetworkProblem => code == 408 || message == 'Request timeout';
+
   /// Telegram refused to edit the message: it was forwarded in, or isn't
   /// the account's own to change.
   bool get isNotEditable =>

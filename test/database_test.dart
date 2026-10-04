@@ -389,6 +389,102 @@ void main() {
     expect(await waiting(), isEmpty);
   });
 
+  group('waiting changes', () {
+    PendingEditsCompanion change(
+      EditTarget target,
+      String id, {
+      required DateTime at,
+      String patch = '{"st":{"b":false,"w":true}}',
+    }) => PendingEditsCompanion.insert(
+      target: target,
+      itemId: id,
+      patch: patch,
+      createdAt: at,
+      updatedAt: at,
+    );
+
+    test('are saved, read back, replaced and deleted one by one', () async {
+      await db.savePendingEdit(change(EditTarget.file, 'a', at: now));
+      expect((await db.pendingEditOf(EditTarget.file, 'a'))!.patch, contains('"st"'));
+      expect(await db.pendingEditOf(EditTarget.folder, 'a'), isNull);
+
+      // Saving again replaces the patch rather than adding a second row.
+      await db.savePendingEdit(
+        change(EditTarget.file, 'a', at: now, patch: '{"n":{"b":"a","w":"b"}}'),
+      );
+      expect(await db.pendingEditList(), hasLength(1));
+      expect((await db.pendingEditOf(EditTarget.file, 'a'))!.patch, contains('"n"'));
+
+      await db.deletePendingEdit(EditTarget.file, 'a');
+      expect(await db.pendingEditOf(EditTarget.file, 'a'), isNull);
+    });
+
+    test('are listed the one made first first, and watched by id', () async {
+      final ids = db.watchPendingItemIds();
+      await db.savePendingEdit(
+        change(EditTarget.album, 'late', at: now.add(const Duration(minutes: 2))),
+      );
+      await db.savePendingEdit(change(EditTarget.file, 'early', at: now));
+      await db.savePendingEdit(
+        change(EditTarget.folder, 'middle', at: now.add(const Duration(minutes: 1))),
+      );
+
+      expect([for (final row in await db.pendingEditList()) row.itemId], [
+        'early',
+        'middle',
+        'late',
+      ]);
+      expect([for (final row in await db.watchPendingEdits().first) row.itemId], [
+        'early',
+        'middle',
+        'late',
+      ]);
+      expect(await db.pendingEditIds(), {'early', 'middle', 'late'});
+      expect(await ids.first, {'early', 'middle', 'late'});
+    });
+
+    test('made within the same second keep the order they were made in', () async {
+      await db.savePendingEdit(change(EditTarget.file, 'first', at: now));
+      await db.savePendingEdit(change(EditTarget.file, 'second', at: now));
+      // A later edit of the first one leaves it first.
+      await db.savePendingEdit(
+        change(EditTarget.file, 'first', at: now, patch: '{"n":{"b":"a","w":"b"}}'),
+      );
+
+      expect([for (final row in await db.pendingEditList()) row.itemId], ['first', 'second']);
+    });
+
+    test('of files and folders deleted for good go with them, albums stay', () async {
+      await db.savePendingEdit(change(EditTarget.file, 'a', at: now));
+      await db.savePendingEdit(change(EditTarget.folder, 'b', at: now));
+      await db.savePendingEdit(change(EditTarget.album, 'a', at: now));
+      await db.savePendingEdit(change(EditTarget.file, 'c', at: now));
+
+      await db.deletePendingEditsFor(['a', 'b']);
+
+      expect(
+        [for (final row in await db.pendingEditList()) (row.target, row.itemId)],
+        unorderedEquals([(EditTarget.album, 'a'), (EditTarget.file, 'c')]),
+      );
+    });
+
+    test('count failed tries and get them back on Try again', () async {
+      await db.savePendingEdit(change(EditTarget.file, 'a', at: now));
+      await db.failPendingEdit(EditTarget.file, 'a', 'Telegram won\'t let this file be changed.');
+      await db.failPendingEdit(EditTarget.file, 'a', 'Nothing changed.');
+
+      var row = (await db.pendingEditOf(EditTarget.file, 'a'))!;
+      expect(row.attempts, 2);
+      expect(row.lastError, 'Nothing changed.');
+      expect(row.patch, contains('"st"'));
+
+      await db.retryPendingEdits();
+      row = (await db.pendingEditOf(EditTarget.file, 'a'))!;
+      expect(row.attempts, 0);
+      expect(row.lastError, isNull);
+    });
+  });
+
   test(
     'a photo with only a small copy in the drive is never safe to free',
     () async {

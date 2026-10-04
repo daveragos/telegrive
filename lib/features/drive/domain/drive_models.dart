@@ -408,3 +408,43 @@ class StorageSummary {
     orElse: () => KindTotal(kind, 0, 0),
   );
 }
+
+/// A change made on this phone that is still to reach Telegram, as Waiting
+/// changes lists it: the item as the phone shows it now, under [name], and
+/// what changed, as [description] says it. [error] says why it couldn't be
+/// sent, once it has failed too often to be tried again by itself.
+@immutable
+class PendingEditView {
+  const PendingEditView({
+    required this.target,
+    required this.id,
+    required this.name,
+    this.file,
+    this.folder,
+    required this.description,
+    this.error,
+  });
+
+  final EditTarget target;
+  final String id;
+  final String name;
+
+  /// The file changed, when [target] is a file.
+  final DriveFile? file;
+
+  /// The folder changed, when [target] is a folder.
+  final DriveFolder? folder;
+  final String description;
+  final String? error;
+}
+
+/// A waiting change that reached Telegram without one of its parts,
+/// because another device had changed the same thing meanwhile: [name] is
+/// the item as it was called before either change, and [verb] the part
+/// left out, as in 'your rename was skipped'.
+class EditNotice {
+  const EditNotice({required this.name, required this.verb});
+
+  final String name;
+  final String verb;
+}

@@ -5,6 +5,7 @@ import '../../../app/theme/tokens.dart';
 import '../../../core/format/formatters.dart';
 import '../../../core/widgets/file_visuals.dart';
 import '../../../infrastructure/database/app_database.dart' show FolderSize;
+import '../../drive/data/edit_outbox.dart';
 import '../../drive/domain/drive_models.dart';
 import '../../offline/data/offline_sync.dart';
 
@@ -75,6 +76,9 @@ class FileListTile extends ConsumerWidget {
         (copies) => copies.value?.containsKey(file.id) ?? false,
       ),
     );
+    final pending = ref.watch(
+      pendingItemIdsProvider.select((ids) => ids.value?.contains(file.id) ?? false),
+    );
     return _Row(
       selected: selected,
       highlighted: highlighted,
@@ -89,6 +93,7 @@ class FileListTile extends ConsumerWidget {
       metaColor: subtitleColor,
       starred: file.starred,
       offline: offline,
+      pending: pending,
       trailing: trailing,
       progress: progress,
       onMore: selecting ? null : onMore,
@@ -135,11 +140,15 @@ class FolderListTile extends ConsumerWidget {
         (pins) => pins.value?.contains(folder.id) ?? false,
       ),
     );
+    final pending = ref.watch(
+      pendingItemIdsProvider.select((ids) => ids.value?.contains(folder.id) ?? false),
+    );
     return _Row(
       selected: selected,
       onTap: onTap,
       onLongPress: onLongPress,
       offline: offline,
+      pending: pending,
       slot: _Selectable(selected: selected, child: const FolderIconTile()),
       title: folder.name,
       meta: subtitle ?? 'Folder · ${Formatters.date(folder.modifiedAt)}',
@@ -162,6 +171,7 @@ class _Row extends StatelessWidget {
     this.onMore,
     this.starred = false,
     this.offline = false,
+    this.pending = false,
     this.highlighted = false,
     this.metaColor,
     this.trailing,
@@ -182,6 +192,9 @@ class _Row extends StatelessWidget {
 
   /// Kept on this phone for use without a connection.
   final bool offline;
+
+  /// Changed on this phone in a way that is still to reach Telegram.
+  final bool pending;
 
   /// How far playback is through the file, as a thin bar under the meta
   /// line, or null for no bar.
@@ -221,6 +234,14 @@ class _Row extends StatelessWidget {
                       const SizedBox(height: 2),
                       Row(
                         children: [
+                          if (pending) ...[
+                            Icon(
+                              Icons.schedule_rounded,
+                              size: 14,
+                              color: colors.text2,
+                            ),
+                            const SizedBox(width: Space.xs),
+                          ],
                           if (starred) ...[
                             Icon(
                               Icons.star_rounded,

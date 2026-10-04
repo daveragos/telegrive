@@ -10,6 +10,7 @@ import '../features/backup/data/backup_controller.dart';
 import '../features/backup/data/watched_folders.dart';
 import '../features/drive/data/drive_session.dart';
 import '../features/drive/data/drive_sync.dart';
+import '../features/drive/data/edit_outbox.dart';
 import '../features/network/data/proxies.dart';
 import '../features/network/data/proxy_link_intake.dart';
 import '../features/network/domain/proxy_link.dart';
@@ -80,9 +81,10 @@ class _TelegriveAppState extends ConsumerState<TelegriveApp>
         ref.read(driveSessionProvider) != null) {
       // Catch up on anything added from another device while away, back up
       // whatever the camera took meanwhile, send what other apps saved into
-      // the watched folders, and let go transfers waiting for room that was
-      // made in another app.
+      // the watched folders and the changes made without a connection, and
+      // let go transfers waiting for room that was made in another app.
       ref.read(driveSyncProvider.notifier).refresh();
+      ref.read(editOutboxProvider.notifier).soon();
       ref.read(backupControllerProvider.notifier).schedule(immediate: true);
       ref.read(watchedFoldersProvider.notifier).schedule(immediate: true);
       unawaited(ref.read(transferQueueProvider.notifier).recheckRoom());

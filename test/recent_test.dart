@@ -10,6 +10,7 @@ import 'package:telegrive/features/backup/data/backup_controller.dart';
 import 'package:telegrive/features/drive/data/drive_repository.dart';
 import 'package:telegrive/features/drive/data/drive_session.dart';
 import 'package:telegrive/features/drive/data/drive_sync.dart';
+import 'package:telegrive/features/drive/data/edit_outbox.dart';
 import 'package:telegrive/features/drive/domain/drive_models.dart';
 import 'package:telegrive/features/files/presentation/file_list_screen.dart';
 import 'package:telegrive/features/home/presentation/home_screen.dart';
@@ -25,6 +26,12 @@ import 'support/fake_telegram.dart';
 class _Backup extends BackupController {
   @override
   BackupState build() => const BackupState(phase: BackupPhase.upToDate);
+}
+
+/// Nothing waiting to reach Telegram, without an index to read it from.
+class _Outbox extends EditOutbox {
+  @override
+  OutboxState build() => const OutboxState();
 }
 
 class _Sync extends DriveSync {
@@ -96,6 +103,9 @@ void main() {
             offlinePinsProvider.overrideWith((ref) => Stream.value(const {})),
             offlineUsageProvider.overrideWith((ref) => Stream.value((0, 0))),
             offlineCopiesProvider.overrideWith((ref) => Stream.value(const {})),
+            // Nothing changed without a connection.
+            editOutboxProvider.overrideWith(_Outbox.new),
+            pendingItemIdsProvider.overrideWith((ref) => Stream.value(const {})),
             continuePlayingProvider.overrideWith(
               (ref) => continuing == null
                   ? Stream.error(StateError('closed'))
@@ -365,6 +375,7 @@ void main() {
         overrides: [
           sharedPreferencesProvider.overrideWithValue(shared),
           offlineCopiesProvider.overrideWith((ref) => Stream.value(const {})),
+          pendingItemIdsProvider.overrideWith((ref) => Stream.value(const {})),
           recentOpenedProvider.overrideWith(
             (ref) => Stream.value([
               for (final file in files)

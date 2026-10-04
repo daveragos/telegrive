@@ -874,6 +874,10 @@ class AppDatabase extends _$AppDatabase {
     );
   }
 
+  /// Works out [DriveFiles.hidden] again for one file, after a change made
+  /// on this phone moved it to or out of the trash or into another folder.
+  Future<void> refreshHiddenFile(String fileId) => _refreshHiddenFile(fileId);
+
   Future<void> _refreshHiddenFile(String fileId) => customUpdate(
     '${_trashedTree}UPDATE drive_files SET hidden = $_fileHidden '
     'WHERE id = ? AND hidden != $_fileHidden',
@@ -1494,6 +1498,81 @@ class AppDatabase extends _$AppDatabase {
     readsFrom: {watchedFiles},
   ).watch().map(
     (rows) => {for (final row in rows) row.read<String>('rule_id'): row.read<int>('n')},
+  );
+
+  // ---------------------------------------------------------------------------
+  // Waiting changes (this phone only)
+  // ---------------------------------------------------------------------------
+
+  Future<PendingEditRow?> pendingEditOf(EditTarget target, String itemId) =>
+      (select(pendingEdits)
+            ..where((e) => e.target.equalsValue(target) & e.itemId.equals(itemId)))
+          .getSingleOrNull();
+
+  /// Waiting changes, the one made first first. Times are kept to the
+  /// second, so changes made within one keep the order their rows were
+  /// added in, which a later edit of the same item leaves alone.
+  SimpleSelectStatement<$PendingEditsTable, PendingEditRow> get _pendingInOrder =>
+      select(pendingEdits)..orderBy([
+        (e) => OrderingTerm.asc(e.createdAt),
+        (e) => OrderingTerm.asc(e.rowId),
+      ]);
+
+  /// Every waiting change, in the order they go to Telegram.
+  Future<List<PendingEditRow>> pendingEditList() => _pendingInOrder.get();
+
+  /// [pendingEditList] as it changes.
+  Stream<List<PendingEditRow>> watchPendingEdits() => _pendingInOrder.watch();
+
+  Selectable<String> get _pendingItemIds =>
+      (selectOnly(pendingEdits)..addColumns([pendingEdits.itemId]))
+          .map((row) => row.read(pendingEdits.itemId)!);
+
+  /// The ids of the items with a change waiting, whatever they are.
+  Future<Set<String>> pendingEditIds() async => (await _pendingItemIds.get()).toSet();
+
+  /// [pendingEditIds] as they change.
+  Stream<Set<String>> watchPendingItemIds() =>
+      _pendingItemIds.watch().map((ids) => ids.toSet());
+
+  Future<void> savePendingEdit(PendingEditsCompanion row) =>
+      into(pendingEdits).insertOnConflictUpdate(row);
+
+  Future<void> deletePendingEdit(EditTarget target, String itemId) =>
+      (delete(pendingEdits)
+            ..where((e) => e.target.equalsValue(target) & e.itemId.equals(itemId)))
+          .go();
+
+  /// Drops the changes waiting for the files and folders [ids], which are
+  /// being deleted for good.
+  Future<void> deletePendingEditsFor(Iterable<String> ids) => transaction(() async {
+    for (final slice in _slices(ids.toList())) {
+      await (delete(pendingEdits)..where(
+            (e) =>
+                e.itemId.isIn(slice) &
+                e.target.isInValues([EditTarget.file, EditTarget.folder]),
+          ))
+          .go();
+    }
+  });
+
+  /// Counts one more try at sending a waiting change that failed, and why,
+  /// leaving its patch as it is, so an edit made meanwhile stays.
+  Future<void> failPendingEdit(EditTarget target, String itemId, String error) =>
+      customUpdate(
+        'UPDATE pending_edits SET attempts = attempts + 1, last_error = ? '
+        'WHERE target = ? AND item_id = ?',
+        variables: [
+          Variable.withString(error),
+          Variable.withString(target.name),
+          Variable.withString(itemId),
+        ],
+        updates: {pendingEdits},
+      );
+
+  /// Gives every waiting change that failed its tries back.
+  Future<void> retryPendingEdits() => update(pendingEdits).write(
+    const PendingEditsCompanion(attempts: Value(0), lastError: Value(null)),
   );
 
   // ---------------------------------------------------------------------------

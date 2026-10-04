@@ -13,6 +13,7 @@ import '../features/backup/presentation/backup_screen.dart';
 import '../features/backup/presentation/free_up_preview_screen.dart';
 import '../features/backup/presentation/not_backed_up_screen.dart';
 import '../features/checkup/presentation/checkup_screen.dart';
+import '../features/drive/presentation/waiting_changes_screen.dart';
 import '../features/files/presentation/file_list_screen.dart';
 import '../features/files/presentation/files_screen.dart';
 import '../features/home/presentation/home_screen.dart';
@@ -134,6 +135,11 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/checkup',
         parentNavigatorKey: rootNavigatorKey,
         builder: (_, _) => const CheckupScreen(),
+      ),
+      GoRoute(
+        path: '/changes',
+        parentNavigatorKey: rootNavigatorKey,
+        builder: (_, _) => const WaitingChangesScreen(),
       ),
       GoRoute(
         path: '/backup',

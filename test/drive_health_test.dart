@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:telegrive/core/format/formatters.dart';
 import 'package:telegrive/features/backup/data/backup_controller.dart';
 import 'package:telegrive/features/drive/data/drive_sync.dart';
+import 'package:telegrive/features/drive/data/edit_outbox.dart';
 import 'package:telegrive/features/drive/data/forward_filer.dart';
 import 'package:telegrive/features/home/presentation/drive_health.dart';
 import 'package:telegrive/features/network/data/connection_health.dart';
@@ -820,6 +821,96 @@ void main() {
         'Filed 2 forwarded files into Wedding',
       );
       expect(filed(const FilingSummary(count: 0, folderNames: [])), isNull);
+    });
+
+    group('changes waiting to reach Telegram', () {
+      DriveHealth? changes(
+        OutboxState outbox, {
+        TransfersState transfers = TransfersState.empty,
+        FilingSummary? filed,
+      }) => secondaryHealth(
+        _top(backup: _upToDate, transfers: transfers),
+        backup: _upToDate,
+        transfers: transfers,
+        changes: outbox,
+        filed: filed,
+        now: _now,
+      );
+
+      test('say how many wait for the network, and open Waiting changes', () {
+        final row = changes(const OutboxState(waiting: 3));
+        expect(row?.text, '3 changes waiting for the network');
+        expect(row?.detail, 'They reach Telegram when you\'re back online.');
+        expect(row?.icon, Icons.schedule_rounded);
+        expect(row?.tone, HealthTone.neutral);
+        expect(row?.progress, isNull);
+        expect(row?.action, HealthAction.none);
+        expect(row?.target, HealthTarget.changes);
+        expect(changes(const OutboxState(waiting: 1))?.detail, 'It reaches Telegram when you\'re back online.');
+      });
+
+      test('are gone once nothing waits', () {
+        expect(changes(const OutboxState()), isNull);
+      });
+
+      test('show a bar while they go', () {
+        final row = changes(const OutboxState(waiting: 2, sending: true));
+        expect(row?.text, 'Sending 2 changes to Telegram');
+        expect(row?.progress, -1);
+        expect(row?.tone, HealthTone.neutral);
+      });
+
+      test('say roughly when they go after a pause Telegram asked for', () {
+        final row = changes(
+          OutboxState(waiting: 3, sending: true, pausedUntil: _now.add(const Duration(minutes: 4))),
+        );
+        expect(row?.text, 'Telegram asked to wait');
+        expect(row?.detail, 'Your 3 changes go in about 4 minutes.');
+        // A pause that is over says they wait again.
+        expect(
+          changes(OutboxState(waiting: 1, pausedUntil: _now.subtract(const Duration(seconds: 1))))?.text,
+          '1 change waiting for the network',
+        );
+      });
+
+      test('say in red how many couldn\'t be sent', () {
+        final row = changes(const OutboxState(waiting: 3, failed: 2, sending: true));
+        expect(row?.text, '2 changes couldn\'t be sent');
+        expect(row?.detail, 'Open to see why.');
+        expect(row?.tone, HealthTone.bad);
+        expect(row?.target, HealthTarget.changes);
+      });
+
+      test('come after failed transfers and before the filing report', () {
+        final failed = TransfersState([_transfer('a.zip', TransferStatus.failed)]);
+        expect(changes(const OutboxState(waiting: 3), transfers: failed)?.text, '1 transfer failed');
+        expect(
+          changes(
+            const OutboxState(waiting: 3),
+            filed: const FilingSummary(count: 3, folderNames: ['Wedding']),
+          )?.text,
+          '3 changes waiting for the network',
+        );
+      });
+
+      test('sit under the line about connecting to Telegram', () {
+        final top = describeDriveHealth(
+          backup: const BackupState(phase: BackupPhase.waitingForDrive),
+          sync: const SyncState(),
+          transfers: TransfersState.empty,
+          opening: DriveOpening.connecting,
+          now: _now,
+        );
+        expect(top.text, 'Connecting to Telegram');
+        final row = secondaryHealth(
+          top,
+          backup: const BackupState(phase: BackupPhase.waitingForDrive),
+          transfers: TransfersState.empty,
+          changes: const OutboxState(waiting: 2),
+          now: _now,
+        );
+        expect(row?.text, '2 changes waiting for the network');
+      });
     });
 
     test('a failed transfer comes before the filing report', () {

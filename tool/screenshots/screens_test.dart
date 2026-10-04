@@ -50,10 +50,12 @@ import 'package:telegrive/features/drive/data/drive_repository.dart';
 import 'package:telegrive/features/drive/data/previews.dart';
 import 'package:telegrive/features/drive/data/drive_session.dart';
 import 'package:telegrive/features/drive/data/drive_sync.dart';
+import 'package:telegrive/features/drive/data/edit_outbox.dart';
 import 'package:telegrive/features/drive/data/forward_filer.dart';
 import 'package:telegrive/features/drive/data/forward_origin.dart';
 import 'package:telegrive/features/drive/data/telegram_wait.dart';
 import 'package:telegrive/features/drive/domain/drive_models.dart';
+import 'package:telegrive/features/drive/presentation/waiting_changes_screen.dart';
 import 'package:telegrive/features/files/data/bulk_edits.dart';
 import 'package:telegrive/features/files/presentation/file_actions.dart';
 import 'package:telegrive/features/files/presentation/file_list_screen.dart';
@@ -563,6 +565,16 @@ class _Filer extends ForwardFiler {
   FilingSummary? build() => _summary;
 }
 
+/// Changes waiting to reach Telegram, as [_state] says, without an index.
+class _Outbox extends EditOutbox {
+  _Outbox(this._state);
+
+  final OutboxState _state;
+
+  @override
+  OutboxState build() => _state;
+}
+
 /// [count] photos backed up from this phone and still on it, [each] bytes
 /// apiece, three a day going back from [fromDaysAgo] days ago.
 Freeable _backedUp(int count, int each, {int fromDaysAgo = 0}) => Freeable([
@@ -980,6 +992,10 @@ void main() {
         GoRoute(path: '/settings', builder: (_, _) => const SettingsScreen()),
         GoRoute(path: '/checkup', builder: (_, _) => const CheckupScreen()),
         GoRoute(
+          path: '/changes',
+          builder: (_, _) => const WaitingChangesScreen(),
+        ),
+        GoRoute(
           path: '/recent',
           builder: (_, _) => const FileListScreen.recent(),
         ),
@@ -1395,6 +1411,73 @@ void main() {
     expect(find.text('Connecting to Telegram'), findsOneWidget);
     expect(find.text('DB'), findsOneWidget);
     await snap(tester, 'home_connecting');
+  });
+
+  /// Home with three changes made on the bus, waiting for a connection.
+  testWidgets('home waiting changes', (tester) async {
+    await prepareData(tester);
+    transfers = TransfersState.empty;
+    await pumpApp(
+      tester,
+      location: '/home',
+      backup: BackupState(
+        phase: BackupPhase.upToDate,
+        total: 4847,
+        done: 4847,
+        lastCompleted: DateTime.now().subtract(const Duration(minutes: 3)),
+      ),
+      overrides: [
+        editOutboxProvider.overrideWith(
+          () => _Outbox(const OutboxState(waiting: 3)),
+        ),
+      ],
+    );
+    expect(find.text('3 changes waiting for the network'), findsOneWidget);
+    await snap(tester, 'home_waiting_changes');
+  });
+
+  /// Waiting changes with a rename and move, a trash and an album add.
+  testWidgets('waiting changes', (tester) async {
+    await prepareData(tester);
+    final lease = _file('Lease.pdf', 1800000, 2, folderId: 'Work');
+    final draft = _file('Draft v1.docx', 900000, 40);
+    final photo = photos[1];
+    await pumpApp(
+      tester,
+      location: '/changes',
+      overrides: [
+        pendingEditsProvider.overrideWith(
+          (ref) => Stream.value([
+            PendingEditView(
+              target: EditTarget.file,
+              id: lease.id,
+              name: lease.name,
+              file: lease,
+              description: 'Renamed from "Scan 12.pdf" · Moved to Work',
+            ),
+            PendingEditView(
+              target: EditTarget.file,
+              id: draft.id,
+              name: draft.name,
+              file: draft,
+              description: 'Moved to Trash',
+            ),
+            PendingEditView(
+              target: EditTarget.file,
+              id: photo.id,
+              name: photo.name,
+              file: photo,
+              description: 'Added to "Lalibela 2026"',
+            ),
+          ]),
+        ),
+        pendingItemIdsProvider.overrideWith(
+          (ref) => Stream.value({lease.id, draft.id, photo.id}),
+        ),
+      ],
+    );
+    expect(find.text('Waiting changes'), findsOneWidget);
+    await snap(tester, 'waiting_changes');
   });
 
   /// Home just after forwards named Wedding in their comment went there.

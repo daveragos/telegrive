@@ -17,6 +17,7 @@ import '../../checkup/presentation/checkup_screen.dart';
 import '../../drive/data/drive_repository.dart';
 import '../../drive/data/drive_session.dart';
 import '../../drive/data/drive_sync.dart';
+import '../../drive/data/edit_outbox.dart';
 import '../../files/data/browse_preferences.dart';
 import '../../files/presentation/file_actions.dart';
 import '../../lock/data/app_lock.dart';
@@ -467,12 +468,20 @@ class SettingsScreen extends ConsumerWidget {
                   style: context.text.bodyLarge?.copyWith(color: colors.danger),
                 ),
                 onTap: () async {
+                  // Changes still waiting on this phone go with the rest of
+                  // what it keeps of the drive.
+                  final waiting = ref.read(editOutboxProvider).waiting;
+                  final lost = waiting == 0
+                      ? ''
+                      : ' ${Formatters.count(waiting, 'change')} '
+                            '${waiting == 1 ? 'hasn\'t' : 'haven\'t'} reached '
+                            'Telegram yet and will be lost.';
                   final ok = await showConfirmDialog(
                     context,
                     title: 'Sign out?',
                     message:
                         'Your files stay in your Telegram channel. Sign in '
-                        'again any time to see them.',
+                        'again any time to see them.$lost',
                     confirmLabel: 'Sign out',
                     destructive: true,
                   );

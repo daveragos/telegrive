@@ -72,7 +72,7 @@ abstract final class AlbumActions {
       icon: Icons.photo_album_outlined,
       items: files,
       apply: (file) => repository.addToAlbum([file], albumId, touch: false),
-      success: 'Added $count to "$name"',
+      success: FileActions.offlineAware(ref, 'Added $count to "$name"'),
       undo: (
         label: (done) => 'Removing ${Formatters.count(done, 'item')} from "$name"',
         apply: (file) async {
@@ -124,7 +124,7 @@ abstract final class AlbumActions {
     await FileActions.guarded(
       context,
       () => repository.renameAlbum(album.id, name),
-      success: 'Renamed to "$name"',
+      success: FileActions.offlineAware(ref, 'Renamed to "$name"'),
       undo: () => repository.renameAlbum(album.id, album.name),
     );
   }
@@ -159,7 +159,7 @@ abstract final class AlbumActions {
       icon: Icons.photo_album_outlined,
       items: files,
       apply: (file) => repository.removeFromAlbum([file], albumId),
-      success: 'Removed $count from the album',
+      success: FileActions.offlineAware(ref, 'Removed $count from the album'),
       undo: (
         label: (done) => 'Adding ${Formatters.count(done, 'item')} back to the album',
         apply: (file) => repository.addToAlbum([file], albumId, touch: false),

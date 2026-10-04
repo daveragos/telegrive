@@ -23,6 +23,7 @@ import '../../../infrastructure/database/app_database.dart'
 import '../../../infrastructure/network/network_status.dart';
 import '../../../infrastructure/storage/device_storage.dart';
 import '../../../infrastructure/storage/preferences.dart';
+import '../../../infrastructure/telegram/telegram_client.dart';
 import '../../../infrastructure/telegram/telegram_exception.dart';
 import '../../backup/data/backup_controller.dart';
 import '../../backup/data/free_up_space.dart';
@@ -1076,7 +1077,7 @@ abstract final class FileActions {
     await _guard(
       context,
       () => repository.renameFile(file, name),
-      success: 'Renamed to "$name"',
+      success: offlineAware(ref, 'Renamed to "$name"'),
       undo: () async {
         for (final current in await _current(repository, [file])) {
           await repository.renameFile(current, file.name);
@@ -1107,7 +1108,7 @@ abstract final class FileActions {
         await repository.renameFolder(folder, name);
         unawaited(recent.refresh());
       },
-      success: 'Renamed to "$name"',
+      success: offlineAware(ref, 'Renamed to "$name"'),
       undo: () async {
         for (final current in await _currentFolders(repository, [folder])) {
           await repository.renameFolder(current, folder.name);
@@ -1259,7 +1260,7 @@ abstract final class FileActions {
           ),
       ],
       apply: (step) => step.apply(),
-      success: 'Moved to ${destination.name}',
+      success: offlineAware(ref, 'Moved to ${destination.name}'),
       undo: (
         label: (done) => 'Moving ${Formatters.count(done, 'item')} back',
         apply: (step) => step.undo(),
@@ -1295,7 +1296,10 @@ abstract final class FileActions {
         ], starred: starred),
         _ => Future.value(),
       },
-      success: starred ? 'Added to Starred' : 'Removed from Starred',
+      success: offlineAware(
+        ref,
+        starred ? 'Added to Starred' : 'Removed from Starred',
+      ),
       // Each item goes back to how it was, so one that was starred before
       // stays starred.
       undo: (
@@ -1387,7 +1391,7 @@ abstract final class FileActions {
           ),
       ],
       apply: (step) => step.apply(),
-      success: 'Moved $what to Trash',
+      success: offlineAware(ref, 'Moved $what to Trash'),
       undo: (
         label: (done) => 'Restoring ${Formatters.count(done, 'item')}',
         apply: (step) => step.undo(),
@@ -1484,7 +1488,7 @@ abstract final class FileActions {
     return _guard(
       context,
       () => repository.restore(files: files, folders: folders),
-      success: 'Restored ${_describe(files, folders)}',
+      success: offlineAware(ref, 'Restored ${_describe(files, folders)}'),
       undo: () async => repository.trash(
         files: await _current(repository, files),
         folders: await _currentFolders(repository, folders),
@@ -1974,6 +1978,20 @@ abstract final class FileActions {
     if (!opened && context.mounted) {
       showSnack(context, 'Couldn\'t open Telegram.');
     }
+  }
+
+  /// [success] as it is while changes go straight to Telegram. While they
+  /// wait on this phone instead, because Telegram can't be reached or is
+  /// still starting behind the drive Home shows, the sentence says so:
+  /// renames, moves, stars, the trash and albums are kept for when the
+  /// connection is back.
+  static String offlineAware(WidgetRef ref, String success) {
+    final waits = ref.read(driveSessionProvider) == null
+        ? ref.read(driveSnapshotProvider) != null
+        : !ref.read(telegramClientProvider).isOnline;
+    return waits
+        ? '$success. It reaches Telegram when you\'re back online.'
+        : success;
   }
 
   /// Whether the drive is open for something that starts in Telegram. While

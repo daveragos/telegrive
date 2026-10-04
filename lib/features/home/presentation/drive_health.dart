@@ -5,6 +5,7 @@ import '../../../infrastructure/database/app_database.dart'
     show TransferOrigin, TransferStatus;
 import '../../backup/data/backup_controller.dart';
 import '../../drive/data/drive_sync.dart';
+import '../../drive/data/edit_outbox.dart';
 import '../../drive/data/forward_filer.dart';
 import '../../network/data/connection_health.dart';
 import '../../transfers/data/transfer_queue.dart';
@@ -75,10 +76,10 @@ enum DriveOpening {
 
 /// Where tapping a line goes: a screen, another try at syncing, the proxy
 /// sheet, or the folder forwards were just filed into ([filed]; Files
-/// itself when there were several). A line about opening the drive goes
-/// nowhere ([none]): it says what is happening, and its button, when it
-/// has one, is the one thing to do.
-enum HealthTarget { backup, notBackedUp, transfers, refresh, proxy, filed, none }
+/// itself when there were several). [changes] is Waiting changes. A line
+/// about opening the drive goes nowhere ([none]): it says what is
+/// happening, and its button, when it has one, is the one thing to do.
+enum HealthTarget { backup, notBackedUp, transfers, refresh, proxy, filed, changes, none }
 
 /// What a line is about. The second row keeps to a different topic from the
 /// top line, so the two rows say different things and their buttons never
@@ -87,8 +88,9 @@ enum HealthTarget { backup, notBackedUp, transfers, refresh, proxy, filed, none 
 /// not reaching it or it asking for a pause, are [sync]; lines about the
 /// phone's own connection, none at all or only mobile data, are [network];
 /// the line about the phone's free space is [storage]; the report of
-/// forwards filed by their comment is [filing].
-enum HealthTopic { backup, transfers, sync, network, storage, filing }
+/// forwards filed by their comment is [filing]; changes made without a
+/// connection that are still to reach Telegram are [changes].
+enum HealthTopic { backup, transfers, sync, network, storage, filing, changes }
 
 /// One line of Home's Activity group, worked out from state alone so the
 /// wording and its priority can be tested without a widget.
@@ -314,9 +316,11 @@ DriveHealth describeDriveHealth({
 /// never a third. A top line about transfers in progress still leaves the
 /// row to failed ones; paused ones only count once nothing is moving.
 ///
-/// Forwards the filer just put where their comment said ([filed]) are
-/// reported after what needs doing about transfers and before the offers,
-/// since the report asks for nothing but a look.
+/// Changes made without a connection that are still to reach Telegram
+/// ([changes]) come after what needs doing about transfers, and so does
+/// the report of forwards the filer just put where their comment said
+/// ([filed]), after them; both come before the offers, since neither asks
+/// for more than a look.
 ///
 /// Last of all, when the phone is [lowOnSpace] and more than
 /// [freeUpWorthwhile] of backed-up photos ([freeableBytes]) could leave it,
@@ -330,11 +334,13 @@ DriveHealth? secondaryHealth(
   int renewDay = 1,
   bool lowOnSpace = false,
   int freeableBytes = 0,
+  OutboxState? changes,
   FilingSummary? filed,
   DateTime? now,
 }) {
   final at = now ?? DateTime.now();
   final failedTransfers = transfers.failedCount;
+  final waitingChanges = changes == null ? null : _waitingChanges(changes, at);
   final heldForWifi = transfersWaitingForWifi(transfers);
   final paused = transfers.items
       .where((t) => t.status == TransferStatus.paused && t.origin != TransferOrigin.backup)
@@ -358,6 +364,7 @@ DriveHealth? secondaryHealth(
         target: HealthTarget.transfers,
         topic: HealthTopic.transfers,
       ),
+    ?waitingChanges,
     if (filed != null && filed.count > 0) _filed(filed),
     if (backup.phase == BackupPhase.off) _off,
     if (lowOnSpace && freeableBytes > freeUpWorthwhile) _freeUp(freeableBytes),
@@ -585,6 +592,58 @@ DriveHealth _freeUp(int bytes) => DriveHealth(
   target: HealthTarget.backup,
   topic: HealthTopic.storage,
 );
+
+/// Changes made on this phone that are still to reach Telegram, or null
+/// when none are: any that failed too often first, in red; then a pause
+/// Telegram asked for, with roughly how long it has to go at [at]; then
+/// the ones being sent, with the one accent there is on the bar; and
+/// otherwise how many wait for the connection.
+DriveHealth? _waitingChanges(OutboxState outbox, DateTime at) {
+  if (outbox.failed > 0) {
+    return DriveHealth(
+      icon: Icons.error_outline_rounded,
+      tone: HealthTone.bad,
+      text: '${Formatters.count(outbox.failed, 'change')} couldn\'t be sent',
+      detail: 'Open to see why.',
+      target: HealthTarget.changes,
+      topic: HealthTopic.changes,
+    );
+  }
+  if (outbox.waiting == 0) return null;
+  final count = Formatters.count(outbox.waiting, 'change');
+  final one = outbox.waiting == 1;
+  final pausedUntil = outbox.pausedUntil;
+  if (pausedUntil != null && pausedUntil.isAfter(at)) {
+    return DriveHealth(
+      icon: Icons.hourglass_empty_rounded,
+      tone: HealthTone.neutral,
+      text: 'Telegram asked to wait',
+      detail:
+          'Your $count ${one ? 'goes' : 'go'} in about '
+          '${Formatters.inWords(pausedUntil.difference(at))}.',
+      target: HealthTarget.changes,
+      topic: HealthTopic.changes,
+    );
+  }
+  if (outbox.sending) {
+    return DriveHealth(
+      icon: Icons.schedule_rounded,
+      tone: HealthTone.neutral,
+      text: 'Sending $count to Telegram',
+      progress: -1,
+      target: HealthTarget.changes,
+      topic: HealthTopic.changes,
+    );
+  }
+  return DriveHealth(
+    icon: Icons.schedule_rounded,
+    tone: HealthTone.neutral,
+    text: '$count waiting for the network',
+    detail: '${one ? 'It reaches' : 'They reach'} Telegram when you\'re back online.',
+    target: HealthTarget.changes,
+    topic: HealthTopic.changes,
+  );
+}
 
 /// Forwards went into the folder their comment named, or into several;
 /// tapping opens the folder, or Files when there were several.

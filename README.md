@@ -112,7 +112,11 @@ phone number.
   which goes once the drive is open, or offers Retry when it couldn't be
   reached. Files, Photos and Search work meanwhile, with the phone's own
   thumbnails; uploads and downloads wait and start on their own once it
-  connects, and other changes say to try again in a moment. Photos fetches
+  connects. Meanwhile, and with no connection at all, renames, moves,
+  stars, the trash and album changes show at once and wait to reach
+  Telegram: each row waiting carries a clock, Home says how many changes
+  wait, and Waiting changes lists them, each with Discard. Other changes
+  say to try again in a moment. Photos fetches
   thumbnails only for what stops on screen, not for what scrolls past, and
   on Wi-Fi it fetches the newest ones ahead, so browsing them later on
   mobile data costs nothing.
@@ -419,6 +423,11 @@ Telegram (source of truth)                 This device
   move made here doesn't lose what a newer version stored.
 - **Changes go to Telegram first.** The index is written from the message
   Telegram sends back, so it never claims something the channel doesn't have.
+  Without a connection, a change shows at once, waits on the phone (marked
+  with a clock), and goes to Telegram in order when the connection is back;
+  if another device changed the same thing meanwhile, that version wins,
+  and you're told. Each waiting change is merged onto the message as
+  Telegram has it by then, field by field, so the rest of it still goes.
 - **Sync** runs live while the app is open, catches up incrementally on launch
   and on pull-to-refresh, and does a full reconciliation daily, once on the
   first launch after an update that changes how messages are indexed, and
@@ -461,7 +470,8 @@ lib/
     ├── auth/          # welcome, credentials, phone/code/password/QR
     ├── setup/         # splash, find-or-create (and brand) the drive channel,
     │                  # open a known drive behind Home
-    ├── drive/         # manifest format, indexer, repository, sync
+    ├── drive/         # manifest format, indexer, repository, sync, and the
+    │                  # outbox for changes made without a connection
     ├── transfers/     # upload/download queue, background keep-alive
     ├── backup/        # photo backup: controller, worker, notification, UI
     ├── files/ home/ photos/ search/ settings/ viewer/
@@ -559,12 +569,19 @@ two commands are at the top of that test.
   phone.
 - While Telegram is still connecting, Home shows what the index held when
   the app last ran, so it can be behind what other devices did since.
-  New folders, renames, moves, stars, the trash, sending, Show in
-  Telegram and Rebuild index wait for the connection: they say "Still
-  connecting to Telegram. Try again in a moment." rather than queue. Check
+  Renames, moves, stars, the trash and album changes wait on the phone
+  for the connection. New folders and albums, deleting an album, deleting
+  for good, sending, Show in Telegram and Rebuild index say "Still
+  connecting to Telegram. Try again in a moment." rather than wait. Check
   my drive can't look at anything yet, so it says it didn't finish, and
   Check again runs it once the drive is open. In Settings, the timer for
   an unused account and this session's name fill in once Telegram answers.
+- A change made without a connection stays on this phone until it reaches
+  Telegram, through restarts. Signing out loses it, and the question
+  before signing out says how many would go. A change Telegram turns down
+  three times waits in Waiting changes for Try again. Creating folders and
+  albums, deleting an album, deleting for good and emptying the trash
+  still need the connection.
 - Where you stopped in a video or recording is kept on this phone only, for
   files of three minutes or longer and for 60 days after you last played
   them. Rebuild index keeps these points; signing out clears them.

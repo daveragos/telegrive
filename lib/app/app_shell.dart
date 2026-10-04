@@ -13,8 +13,10 @@ import '../core/widgets/selection_bar.dart';
 import '../features/backup/data/backup_controller.dart';
 import '../features/backup/presentation/backup_prompt.dart';
 import '../features/capture/data/device_capture.dart';
+import '../features/drive/data/edit_outbox.dart';
 import '../features/drive/data/telegram_wait.dart';
 import '../features/drive/data/thumbnail_prefetch.dart';
+import '../features/drive/domain/drive_models.dart' show EditNotice;
 import '../features/files/data/bulk_edits.dart';
 import '../features/offline/data/offline_sync.dart';
 import '../features/search/data/content_indexer.dart';
@@ -134,6 +136,16 @@ class _AppShellState extends ConsumerState<AppShell> {
     ref.watch(offlineSyncProvider);
     ref.watch(contentIndexerProvider);
     ref.watch(cacheJanitorProvider);
+    // Sends the changes made without a connection once there is one again,
+    // and says when another device had changed the same thing first. The
+    // shell listens rather than rebuild each time their count changes.
+    ref.listen<EditNotice?>(editOutboxProvider.select((s) => s.notice), (_, notice) {
+      if (notice == null) return;
+      showSnack(
+        context,
+        '"${notice.name}" changed on another device, so your ${notice.verb} was skipped.',
+      );
+    });
     // Keeps the recent folders, and their targets in the system share
     // sheet, following the drive while it is open, without rebuilding the
     // shell when they change.

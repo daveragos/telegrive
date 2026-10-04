@@ -19,16 +19,19 @@ import 'package:telegrive/infrastructure/telegram/telegram_exception.dart';
 
 import 'support/fake_telegram.dart';
 
-/// A channel that stops taking caption edits when [online] is off, and
-/// won't take an edit to an album's own message when [albumsStuck] is on.
+/// A channel that turns caption edits down when [refusing], as one the
+/// account may no longer post in does, and doesn't answer an edit to an
+/// album's own message when [albumsStuck] is on.
 class _Channel extends FakeTelegram {
-  bool online = true;
+  bool refusing = false;
   bool albumsStuck = false;
 
   @override
   Future<td.TdObject?> answer(td.TdFunction function) async {
-    if ((!online && function is td.EditMessageCaption) ||
-        (albumsStuck && function is td.EditMessageText)) {
+    if (refusing && function is td.EditMessageCaption) {
+      throw const TelegramException(403, 'CHAT_WRITE_FORBIDDEN');
+    }
+    if (albumsStuck && function is td.EditMessageText) {
       throw const TelegramException(408, 'Request timeout');
     }
     return null;
@@ -212,11 +215,11 @@ void main() {
     testWidgets('an Undo that can\'t go through says why', (tester) async {
       await open();
       await moveIntoSub(tester);
-      telegram.online = false;
+      telegram.refusing = true;
 
       await tester.tap(find.text('Undo'));
       await tester.pumpAndSettle();
-      expect(find.text('Couldn\'t undo: Telegram took too long to answer.'), findsOneWidget);
+      expect(find.text('Couldn\'t undo: Chat write forbidden'), findsOneWidget);
       expect((await file()).folderId, 'sub');
     });
 

@@ -9,6 +9,7 @@ import 'package:telegrive/core/files/file_kind.dart';
 import 'package:telegrive/core/format/formatters.dart';
 import 'package:telegrive/features/backup/data/local_media.dart';
 import 'package:telegrive/features/drive/data/drive_repository.dart';
+import 'package:telegrive/features/drive/data/edit_outbox.dart';
 import 'package:telegrive/features/drive/domain/drive_models.dart';
 import 'package:telegrive/features/files/presentation/file_tiles.dart';
 import 'package:telegrive/features/offline/data/offline_sync.dart';
@@ -142,6 +143,7 @@ void main() {
           ),
           offlineCopiesProvider.overrideWith((ref) => Stream.value(const {})),
           offlinePinsProvider.overrideWith((ref) => Stream.value(const {})),
+          pendingItemIdsProvider.overrideWith((ref) => Stream.value(const {})),
           for (final f in files)
             for (final px in thumbBuckets)
               localThumbnailProvider((fileId: f.id, px: px)).overrideWith((ref) async => null),
