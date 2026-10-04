@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/config/app_config.dart';
 import '../features/backup/data/backup_controller.dart';
+import '../features/backup/data/watched_folders.dart';
 import '../features/drive/data/drive_session.dart';
 import '../features/drive/data/drive_sync.dart';
 import '../features/network/data/proxy_link_intake.dart';
@@ -74,10 +75,12 @@ class _TelegriveAppState extends ConsumerState<TelegriveApp>
     if (state == AppLifecycleState.resumed &&
         ref.read(driveSessionProvider) != null) {
       // Catch up on anything added from another device while away, back up
-      // whatever the camera took meanwhile, and let go transfers waiting for
-      // room that was made in another app.
+      // whatever the camera took meanwhile, send what other apps saved into
+      // the watched folders, and let go transfers waiting for room that was
+      // made in another app.
       ref.read(driveSyncProvider.notifier).refresh();
       ref.read(backupControllerProvider.notifier).schedule(immediate: true);
+      ref.read(watchedFoldersProvider.notifier).schedule(immediate: true);
       unawaited(ref.read(transferQueueProvider.notifier).recheckRoom());
     }
   }
@@ -115,8 +118,10 @@ class _TelegriveAppState extends ConsumerState<TelegriveApp>
     // opens, not the first time someone visits the Transfers tab.
     ref.watch(transferQueueProvider.select((s) => s.activeCount));
     ref.watch(transferKeepAliveProvider);
-    // Alive from the start so backup resumes the moment the drive opens.
+    // Alive from the start so backup resumes the moment the drive opens,
+    // and the watched folders are checked then too.
     ref.watch(backupControllerProvider.select((b) => b.phase));
+    ref.watch(watchedFoldersProvider.select((s) => s.working));
     // Alive from the start too: it is what tells TDLib about every network
     // change, the call that makes it drop dead sockets and reconnect.
     ref.watch(networkStatusProvider);

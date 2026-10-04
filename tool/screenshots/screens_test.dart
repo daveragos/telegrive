@@ -25,6 +25,8 @@ import 'package:telegrive/features/auth/presentation/welcome_screen.dart';
 import 'package:telegrive/features/backup/data/backup_controller.dart';
 import 'package:telegrive/features/backup/data/free_up_space.dart';
 import 'package:telegrive/features/backup/data/local_media.dart';
+import 'package:telegrive/features/backup/data/phone_folders.dart';
+import 'package:telegrive/features/backup/data/watched_folders.dart';
 import 'package:telegrive/features/backup/presentation/backup_screen.dart';
 import 'package:telegrive/features/backup/presentation/free_up_preview_screen.dart';
 import 'package:telegrive/features/backup/presentation/not_backed_up_screen.dart';
@@ -297,6 +299,68 @@ class _Bulk extends BulkEdits {
   BulkEdit? build() => _edit;
 }
 
+/// Download › Bank as Android's folder picker hands it over, holding 42
+/// statements, 18.3 MB in all.
+class _PhoneFolders extends PhoneFolders {
+  static const _bank = 'content://com.android.externalstorage.documents/tree/primary%3ADownload%2FBank';
+
+  @override
+  Future<PickedFolder?> pick() async => const PickedFolder(uri: _bank, name: 'Bank');
+
+  @override
+  Future<({List<PhoneDocument> files, bool truncated})> list(
+    String uri, {
+    required bool recursive,
+  }) async => (
+    files: [
+      for (var i = 0; i < 42; i++)
+        PhoneDocument(
+          id: 'primary:Download/Bank/Statement-$i.pdf',
+          name: 'Statement-${2023 + i ~/ 12}-${(i % 12 + 1).toString().padLeft(2, '0')}.pdf',
+          mimeType: 'application/pdf',
+          size: i == 41 ? 492940 : 456000,
+          modifiedAt: DateTime(2023, 1 + i, 3),
+        ),
+    ],
+    truncated: false,
+  );
+}
+
+/// Two watched folders: Bank sending its new statements, and Recordings
+/// checked this afternoon with everything in it up.
+List<WatchedFolderView> _watchedFolders() {
+  final now = DateTime.now();
+  WatchedFolderRow row(String label, {required DateTime checkedAt}) => WatchedFolderRow(
+    id: label,
+    treeUri: 'content://com.android.externalstorage.documents/tree/primary%3A$label',
+    label: label,
+    destinationId: 'auto-$label',
+    filter: label == 'Bank' ? WatchFilter.documents : WatchFilter.audio,
+    subfolders: true,
+    createdAt: DateTime(2026, 9, 1),
+    checkedAt: checkedAt,
+  );
+  return [
+    WatchedFolderView(
+      row: row('Bank', checkedAt: now.subtract(const Duration(days: 2))),
+      uploadedCount: 64,
+      status: const RuleStatus(
+        phase: RulePhase.uploading,
+        total: 12,
+        done: 2,
+        current: 'Invoice-0925.pdf',
+      ),
+      destinationLabel: 'Auto upload › Bank',
+    ),
+    WatchedFolderView(
+      row: row('Recordings', checkedAt: DateTime(now.year, now.month, now.day, 14, 14)),
+      uploadedCount: 118,
+      status: const RuleStatus(),
+      destinationLabel: 'Auto upload › Recordings',
+    ),
+  ];
+}
+
 /// Files another app just shared in, waiting for the sheet.
 class _Intake extends ShareIntake {
   @override
@@ -562,6 +626,9 @@ void main() {
 
   setUpAll(() async {
     await _loadFonts();
+    // The Backup screen shows the watched folders as it does on Android.
+    // ignore: invalid_use_of_visible_for_testing_member
+    PhoneFolders.supported = true;
   });
 
   Future<void> prepareData(WidgetTester tester) async {
@@ -803,6 +870,7 @@ void main() {
     Future<void> Function(AppDatabase db)? seed,
     Freeable? freeable,
     bool forwarded = false,
+    List<WatchedFolderView>? watched,
   }) async {
     debugDisableShadows = false;
     tester.view.physicalSize = const Size(1080, 2340);
@@ -1008,6 +1076,10 @@ void main() {
           captureSupportProvider.overrideWith((ref) async => captureSupport),
           mediaTimelineProvider.overrideWith((ref) => Stream.value(photos)),
           // Every sample photo is still on the phone and safely backed up.
+          watchedFolderViewsProvider.overrideWith(
+            (ref) => Stream.value(watched ?? _watchedFolders()),
+          ),
+          phoneFoldersProvider.overrideWithValue(_PhoneFolders()),
           freeableProvider.overrideWith(
             (ref) async =>
                 freeable ??
@@ -2807,6 +2879,34 @@ void main() {
       mobileData: _nearLimit,
     );
     await snap(tester, 'backup_settings');
+  });
+
+  testWidgets('backup folders', (tester) async {
+    await prepareData(tester);
+    await pumpApp(
+      tester,
+      location: '/backup',
+      backup: BackupState(
+        phase: BackupPhase.upToDate,
+        total: 4847,
+        done: 4847,
+        lastCompleted: DateTime.now().subtract(const Duration(minutes: 3)),
+      ),
+      prefs: {'backup_enabled': true, 'backup_mobile_data': 'photos'},
+    );
+    // Down to Mobile data and the other folders on the phone.
+    await tester.drag(find.byType(ListView).first, const Offset(0, -900));
+    await tester.pump(const Duration(milliseconds: 300));
+    await snap(tester, 'backup_folders');
+  });
+
+  testWidgets('watched folder add', (tester) async {
+    await prepareData(tester);
+    await pumpApp(tester, location: '/backup', watched: const []);
+    await tester.tap(find.text('Add a folder'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 600));
+    await snap(tester, 'watched_folder_add');
   });
 
   testWidgets('free up sheet', (tester) async {

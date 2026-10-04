@@ -255,6 +255,95 @@ void main() {
     expect(await ledger(), isEmpty);
   });
 
+  WatchedFoldersCompanion watchedFolder(String id, {required DateTime createdAt}) =>
+      WatchedFoldersCompanion.insert(
+        id: id,
+        treeUri: 'content://com.android.externalstorage.documents/tree/primary%3A$id',
+        label: id,
+        filter: WatchFilter.documents,
+        createdAt: createdAt,
+      );
+
+  WatchedFilesCompanion watchedFile(String ruleId, String documentId, WatchedFileState state) =>
+      WatchedFilesCompanion.insert(
+        ruleId: ruleId,
+        documentId: documentId,
+        size: 3,
+        modifiedAt: now,
+        state: state,
+        updatedAt: now,
+      );
+
+  test('watched folders keep a ledger and lose it with the folder', () async {
+    await db.saveWatchedFolder(watchedFolder('Recordings', createdAt: now));
+    await db.saveWatchedFolder(
+      watchedFolder('Bank', createdAt: now.subtract(const Duration(days: 1))),
+    );
+    await db.saveWatchedFiles([
+      watchedFile('Bank', 'statement.pdf', WatchedFileState.pending),
+      watchedFile('Bank', 'lease.pdf', WatchedFileState.skipped),
+      watchedFile('Recordings', 'memo.m4a', WatchedFileState.done),
+    ]);
+
+    // Oldest first, in the stream and in the one-off read alike.
+    expect([for (final rule in await db.watchWatchedFolders().first) rule.id], [
+      'Bank',
+      'Recordings',
+    ]);
+    expect([for (final rule in await db.watchedFolderList()) rule.id], ['Bank', 'Recordings']);
+
+    // Saving a ledger row again replaces it.
+    await db.saveWatchedFiles([watchedFile('Bank', 'statement.pdf', WatchedFileState.done)]);
+    final ledger = await db.watchedLedger('Bank');
+    expect(ledger.keys, unorderedEquals(['statement.pdf', 'lease.pdf']));
+    expect(ledger['statement.pdf']!.state, WatchedFileState.done);
+
+    // A change writes only the fields it holds, and so does saving the row
+    // again.
+    await db.updateWatchedFolder(
+      'Bank',
+      WatchedFoldersCompanion(checkedAt: Value(now), destinationId: const Value('auto-bank')),
+    );
+    var bank = (await db.watchedFolderList()).first;
+    expect(bank.checkedAt, now);
+    expect(bank.destinationId, 'auto-bank');
+    expect(bank.filter, WatchFilter.documents);
+    await db.saveWatchedFolder(
+      watchedFolder(
+        'Bank',
+        createdAt: bank.createdAt,
+      ).copyWith(filter: const Value(WatchFilter.everything)),
+    );
+    bank = (await db.watchedFolderList()).first;
+    expect(bank.filter, WatchFilter.everything);
+    expect(bank.checkedAt, now);
+
+    await db.deleteWatchedFolder('Bank');
+    expect([for (final rule in await db.watchedFolderList()) rule.id], ['Recordings']);
+    expect(await db.watchedLedger('Bank'), isEmpty);
+    expect((await db.watchedLedger('Recordings')).keys, ['memo.m4a']);
+  });
+
+  test('uploaded counts per folder', () async {
+    await db.saveWatchedFolder(watchedFolder('Bank', createdAt: now));
+    await db.saveWatchedFolder(watchedFolder('Recordings', createdAt: now));
+    final counts = db.watchUploadedCounts();
+    expect(await counts.first, isEmpty);
+
+    await db.saveWatchedFiles([
+      watchedFile('Bank', 'a.pdf', WatchedFileState.done),
+      watchedFile('Bank', 'b.pdf', WatchedFileState.done),
+      watchedFile('Bank', 'c.pdf', WatchedFileState.pending),
+      watchedFile('Bank', 'd.pdf', WatchedFileState.failed),
+      watchedFile('Recordings', 'memo.m4a', WatchedFileState.done),
+      watchedFile('Recordings', 'old.m4a', WatchedFileState.skipped),
+    ]);
+    expect(await counts.first, {'Bank': 2, 'Recordings': 1});
+
+    await db.deleteWatchedFolder('Recordings');
+    expect(await counts.first, {'Bank': 2});
+  });
+
   test('waiting changes outlast a rebuilt index and go on sign-out', () async {
     await db.upsertFilePart(file('a'), part('a', 0, 10));
     // A file and an album may share an id: the target tells them apart.

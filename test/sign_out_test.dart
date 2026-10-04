@@ -129,6 +129,34 @@ void main() {
       ..writeAsStringSync('page one');
     container.read(revealHiddenProvider.notifier).toggle();
 
+    // Two phone folders whose new files upload, each read on a grant
+    // Android keeps until it is given back.
+    const folders = MethodChannel('telegrive/folders');
+    final released = <String>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(
+      folders,
+      (call) async {
+        if (call.method != 'release') return null;
+        released.add((call.arguments as Map)['uri'] as String);
+        return 0;
+      },
+    );
+    addTearDown(
+      () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(folders, null),
+    );
+    for (final name in ['Bank', 'Recordings']) {
+      await db.saveWatchedFolder(
+        WatchedFoldersCompanion.insert(
+          id: name,
+          treeUri: 'content://com.android.externalstorage.documents/tree/primary%3A$name',
+          label: name,
+          filter: WatchFilter.everything,
+          createdAt: now,
+        ),
+      );
+    }
+
     // A delete of phone copies whose window closed while the app was away,
     // and a delete for good still waiting out its Undo.
     final pending = container.read(pendingDeletesProvider.notifier);
@@ -157,6 +185,12 @@ void main() {
     expect(container.read(driveSessionProvider), isNull);
     expect(await db.select(db.folders).get(), isEmpty);
     expect(await db.backupAssetMap(), isEmpty);
+    // No watched folder is left, and Android has every grant back.
+    expect(await db.watchedFolderList(), isEmpty);
+    expect(released, unorderedEquals([
+      'content://com.android.externalstorage.documents/tree/primary%3ABank',
+      'content://com.android.externalstorage.documents/tree/primary%3ARecordings',
+    ]));
 
     // Signing in again reads the whole channel instead of trusting
     // checkpoints for an index that is gone.

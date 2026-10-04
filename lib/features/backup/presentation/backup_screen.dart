@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -9,16 +11,20 @@ import '../../../core/widgets/common.dart';
 import '../../../infrastructure/storage/preferences.dart';
 import '../../network/data/mobile_data.dart';
 import '../data/backup_controller.dart';
+import '../data/phone_folders.dart';
+import '../data/watched_folders.dart';
 import 'backup_card.dart';
 import 'duplicates_sheet.dart';
 import 'free_up_space_sheet.dart';
+import 'watched_folder_sheets.dart';
 
 final _deviceFoldersProvider = FutureProvider.autoDispose<List<DeviceFolder>>(
   (ref) => ref.read(backupControllerProvider.notifier).deviceFolders(),
 );
 
-/// Everything about photo backup: where it stands, the switch, and what and
-/// when to back up.
+/// Everything about photo backup: where it stands, the switch, what and
+/// when to back up, and the other phone folders whose new files upload by
+/// themselves.
 class BackupScreen extends ConsumerWidget {
   const BackupScreen({super.key});
 
@@ -31,6 +37,49 @@ class BackupScreen extends ConsumerWidget {
     final mobileData = prefs.backupMobileData;
     final limit = ref.watch(mobileDataProvider.select((d) => d.limit));
     final missing = ref.watch(missingCountProvider).value ?? 0;
+    final folders = PhoneFolders.supported;
+    final watching =
+        folders && (ref.watch(watchedFolderViewsProvider).value?.isNotEmpty ?? false);
+
+    // Photo backup's Mobile data choice governs the watched folders too, so
+    // the group shows while either is in use.
+    final when = [
+      const SectionHeader('When'),
+      ListGroup(
+        children: [
+          ListTile(
+            title: const Text('Mobile data'),
+            subtitle: Text(
+              [
+                mobileData.explanation(folders: watching),
+                if (limit != null && mobileData != BackupMobileData.off)
+                  'Stays within your ${Formatters.bytes(limit, decimals: 0)} monthly limit.',
+              ].join(' '),
+            ),
+            trailing: PopupMenuButton<BackupMobileData>(
+              initialValue: mobileData,
+              onSelected: (choice) async {
+                final watcher = ref.read(watchedFoldersProvider.notifier);
+                await controller.setMobileData(choice);
+                ref.invalidate(preferencesProvider);
+                if (watching) await watcher.followMobileData();
+              },
+              itemBuilder: (_) => [
+                for (final option in BackupMobileData.values)
+                  PopupMenuItem(value: option, child: Text(option.label)),
+              ],
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(mobileData.label, style: context.text.bodyMedium),
+                  Icon(Icons.arrow_drop_down_rounded, color: colors.text3),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    ];
 
     return Scaffold(
       appBar: AppBar(title: const Text('Photo backup')),
@@ -64,6 +113,10 @@ class BackupScreen extends ConsumerWidget {
                 ),
               ),
             ),
+          if (!backup.enabled) ...[
+            if (folders) const _WatchedFolders(),
+            if (watching) ...when,
+          ],
           const FreeUpSpaceTile(),
           if (backup.failed > 0 || (backup.remaining > 0 && !backup.isWorking)) ...[
             const SizedBox(height: Space.s),
@@ -125,39 +178,8 @@ class BackupScreen extends ConsumerWidget {
                 const _FolderList(),
               ],
             ),
-            const SectionHeader('When'),
-            ListGroup(
-              children: [
-                ListTile(
-                  title: const Text('Mobile data'),
-                  subtitle: Text(
-                    [
-                      mobileData.explanation,
-                      if (limit != null && mobileData != BackupMobileData.off)
-                        'Stays within your ${Formatters.bytes(limit, decimals: 0)} monthly limit.',
-                    ].join(' '),
-                  ),
-                  trailing: PopupMenuButton<BackupMobileData>(
-                    initialValue: mobileData,
-                    onSelected: (choice) async {
-                      await controller.setMobileData(choice);
-                      ref.invalidate(preferencesProvider);
-                    },
-                    itemBuilder: (_) => [
-                      for (final option in BackupMobileData.values)
-                        PopupMenuItem(value: option, child: Text(option.label)),
-                    ],
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(mobileData.label, style: context.text.bodyMedium),
-                        Icon(Icons.arrow_drop_down_rounded, color: colors.text3),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
+            ...when,
+            if (folders) const _WatchedFolders(),
             const SizedBox(height: Space.xxl),
             const DuplicateBackupsTile(),
             const SizedBox(height: Space.m),
@@ -187,9 +209,15 @@ class BackupScreen extends ConsumerWidget {
           Padding(
             padding: const EdgeInsets.fromLTRB(Space.gutter, Space.xxl, Space.gutter, 0),
             child: Text(
-              'Originals go up in full quality to Files › ${BackupController.rootFolder}, '
-              'in a folder named after where they came from on this phone. '
-              'Nothing is deleted from your phone.',
+              [
+                'Originals go up in full quality to Files › ${BackupController.rootFolder}, '
+                    'in a folder named after where they came from on this phone. '
+                    'Nothing is deleted from your phone.',
+                if (folders)
+                  'Files from other folders go to Files › ${WatchedFoldersController.rootFolder} '
+                      'unless you pick a drive folder. Telegrive checks them when it opens '
+                      'and while it runs. This list stays on this phone.',
+              ].join(' '),
               style: context.text.bodySmall,
             ),
           ),
@@ -290,6 +318,123 @@ class _FolderList extends ConsumerWidget {
   }
 }
 
+/// The other folders on this phone whose new files upload by themselves,
+/// one row each, and the way to add one.
+class _WatchedFolders extends ConsumerWidget {
+  const _WatchedFolders();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colors = context.colors;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const SectionHeader('Other folders on this phone'),
+        AsyncView<List<WatchedFolderView>>(
+          value: ref.watch(watchedFolderViewsProvider),
+          data: (views) => AnimatedSize(
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeOut,
+            alignment: Alignment.topCenter,
+            child: ListGroup(
+              children: [
+                for (final view in views) _WatchedFolderRow(view, key: ValueKey(view.row.id)),
+                ListTile(
+                  leading: Icon(Icons.add_rounded, color: colors.text2),
+                  title: const Text('Add a folder'),
+                  subtitle: views.isEmpty
+                      ? const Text(
+                          'New files in it upload by themselves, like Recordings or '
+                          'Download › Bank.',
+                        )
+                      : null,
+                  onTap: () => showAddWatchedFolder(context, ref),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _WatchedFolderRow extends ConsumerWidget {
+  const _WatchedFolderRow(this.view, {super.key});
+
+  final WatchedFolderView view;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colors = context.colors;
+    final status = view.status;
+    void open() => showWatchedFolderSheet(context, ref, view);
+
+    switch (status.phase) {
+      case RulePhase.noAccess:
+        return StatusLine(
+          icon: Icons.error_outline_rounded,
+          color: colors.danger,
+          text: view.row.label,
+          detail: 'Telegrive can\'t read this folder any more.',
+          trailing: TextButton(
+            onPressed: () => chooseWatchedFolderAgain(context, ref, view),
+            child: const Text('Choose again'),
+          ),
+          onTap: open,
+        );
+      case RulePhase.waitingForWifi:
+        return StatusLine(
+          icon: Icons.folder_outlined,
+          text: view.row.label,
+          detail: status.waiting == 1
+              ? '1 file waits for Wi-Fi.'
+              : '${Formatters.count(status.waiting, 'file')} wait for Wi-Fi.',
+          trailing: TextButton(
+            onPressed: () async {
+              await ref.read(watchedFoldersProvider.notifier).useMobileData();
+              ref.invalidate(preferencesProvider);
+            },
+            child: const Text('Use data'),
+          ),
+          onTap: open,
+        );
+      case RulePhase.uploading:
+        final going = math.min(status.done + 1, status.total);
+        return TweenAnimationBuilder<double>(
+          tween: Tween(end: status.progress),
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+          builder: (context, progress, _) => StatusLine(
+            icon: Icons.folder_outlined,
+            text: view.row.label,
+            detail: [
+              'Uploading ${Formatters.number(going)} of ${Formatters.number(status.total)}',
+              ?status.current,
+            ].join(' · '),
+            progress: progress,
+            onTap: open,
+          ),
+        );
+      case RulePhase.idle || RulePhase.checking:
+        final checked = view.row.checkedAt;
+        return StatusLine(
+          icon: Icons.folder_outlined,
+          text: view.row.label,
+          detail: checked == null
+              ? 'Not checked yet'
+              : [
+                  '${Formatters.number(view.uploadedCount)} uploaded to ${view.destinationLabel} · '
+                      'checked ${Formatters.date(checked)}',
+                  if (status.truncated)
+                    'Only the first ${Formatters.number(PhoneFolders.listLimit)} files are checked.',
+                ].join('. '),
+          onTap: open,
+        );
+    }
+  }
+}
+
 /// The Mobile data choice, in the words the Backup screen uses.
 extension on BackupMobileData {
   String get label => switch (this) {
@@ -298,9 +443,12 @@ extension on BackupMobileData {
     BackupMobileData.all => 'Photos and videos',
   };
 
-  String get explanation => switch (this) {
-    BackupMobileData.off => 'Backup waits for Wi-Fi.',
-    BackupMobileData.photos => 'Videos wait for Wi-Fi.',
+  /// What the choice means, naming the files from other [folders] where
+  /// it treats them apart from photos.
+  String explanation({required bool folders}) => switch (this) {
+    BackupMobileData.off => 'Uploads wait for Wi-Fi.',
+    BackupMobileData.photos =>
+      folders ? 'Videos and files from other folders wait for Wi-Fi.' : 'Videos wait for Wi-Fi.',
     BackupMobileData.all => 'Everything goes up on mobile data.',
   };
 }

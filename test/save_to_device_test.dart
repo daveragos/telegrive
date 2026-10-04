@@ -186,9 +186,19 @@ void main() {
     expect(await db.watchAlbums().first, isEmpty);
     expect(await db.select(db.fileOpens).get(), isEmpty);
     expect(await db.select(db.playPositions).get(), isEmpty);
-    expect(await db.select(db.watchedFolders).get(), isEmpty);
+    expect(await db.watchWatchedFolders().first, isEmpty);
     expect(await db.select(db.watchedFiles).get(), isEmpty);
     expect(await db.select(db.pendingEdits).get(), isEmpty);
+    await db.saveWatchedFolder(
+      WatchedFoldersCompanion.insert(
+        id: 'bank',
+        treeUri: 'content://com.android.externalstorage.documents/tree/primary%3ADownload%2FBank',
+        label: 'Bank',
+        filter: WatchFilter.documents,
+        createdAt: DateTime(2026, 9, 26),
+      ),
+    );
+    expect([for (final rule in await db.watchWatchedFolders().first) rule.label], ['Bank']);
 
     await db.saveTransfer(
       TransferRow(

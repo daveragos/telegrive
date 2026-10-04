@@ -1452,6 +1452,49 @@ class AppDatabase extends _$AppDatabase {
   }
 
   // ---------------------------------------------------------------------------
+  // Watched phone folders (this phone only)
+  // ---------------------------------------------------------------------------
+
+  /// The watched folders, in the order they were added.
+  Stream<List<WatchedFolderRow>> watchWatchedFolders() =>
+      (select(watchedFolders)..orderBy([(w) => OrderingTerm.asc(w.createdAt)])).watch();
+
+  Future<List<WatchedFolderRow>> watchedFolderList() =>
+      (select(watchedFolders)..orderBy([(w) => OrderingTerm.asc(w.createdAt)])).get();
+
+  Future<void> saveWatchedFolder(WatchedFoldersCompanion row) =>
+      into(watchedFolders).insertOnConflictUpdate(row);
+
+  /// Writes only the fields [changes] holds, so a check that finishes while
+  /// the person edits the folder never puts back what they changed.
+  Future<void> updateWatchedFolder(String id, WatchedFoldersCompanion changes) =>
+      (update(watchedFolders)..where((w) => w.id.equals(id))).write(changes);
+
+  /// Forgets a watched folder together with its ledger, so a folder added
+  /// again starts over.
+  Future<void> deleteWatchedFolder(String id) => transaction(() async {
+    await (delete(watchedFiles)..where((f) => f.ruleId.equals(id))).go();
+    await (delete(watchedFolders)..where((w) => w.id.equals(id))).go();
+  });
+
+  /// What watched folder [ruleId] has settled so far, by document id.
+  Future<Map<String, WatchedFileRow>> watchedLedger(String ruleId) async => {
+    for (final row in await (select(watchedFiles)..where((f) => f.ruleId.equals(ruleId))).get())
+      row.documentId: row,
+  };
+
+  Future<void> saveWatchedFiles(Iterable<WatchedFilesCompanion> rows) =>
+      batch((b) => b.insertAllOnConflictUpdate(watchedFiles, rows.toList()));
+
+  /// How many files each watched folder has in the drive, by rule id.
+  Stream<Map<String, int>> watchUploadedCounts() => customSelect(
+    "SELECT rule_id, COUNT(*) AS n FROM watched_files WHERE state = 'done' GROUP BY rule_id",
+    readsFrom: {watchedFiles},
+  ).watch().map(
+    (rows) => {for (final row in rows) row.read<String>('rule_id'): row.read<int>('n')},
+  );
+
+  // ---------------------------------------------------------------------------
   // Transfers
   // ---------------------------------------------------------------------------
 

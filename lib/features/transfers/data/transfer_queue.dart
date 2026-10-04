@@ -2199,3 +2199,32 @@ class TransferQueue extends Notifier<TransfersState> {
 final transferQueueProvider = NotifierProvider<TransferQueue, TransfersState>(
   TransferQueue.new,
 );
+
+/// Waits for upload [id] to end, and answers its final row, or null once
+/// it is back in the queue waiting for Wi-Fi while the phone is on mobile
+/// data. Work that paces itself on its own uploads, photo backup and the
+/// watched phone folders, moves on then and leaves the upload where it is;
+/// the queue starts it again on Wi-Fi by itself.
+Future<TransferRow?> untilEndedOrHeld(Ref ref, String id) async {
+  final ended = Completer<TransferRow?>();
+  final queue = ref.listen<TransfersState>(transferQueueProvider, (_, transfers) {
+    final row = transfers.byId(id)?.row;
+    if (row != null &&
+        row.status == TransferStatus.queued &&
+        row.wifiOnly &&
+        ref.read(networkStatusProvider).metered &&
+        !ended.isCompleted) {
+      ended.complete(null);
+    }
+  }, fireImmediately: true);
+  unawaited(
+    ref.read(transferQueueProvider.notifier).whenFinished(id).then((row) {
+      if (!ended.isCompleted) ended.complete(row);
+    }),
+  );
+  try {
+    return await ended.future;
+  } finally {
+    queue.close();
+  }
+}

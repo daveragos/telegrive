@@ -12,6 +12,7 @@ import '../../../infrastructure/database/app_database.dart'
 import '../../../infrastructure/notifications/app_notifications.dart';
 import '../../../infrastructure/storage/preferences.dart';
 import '../../backup/data/backup_controller.dart';
+import '../../backup/data/watched_folders.dart';
 import '../domain/transfer_wait.dart';
 import 'transfer_notifications.dart';
 import 'transfer_queue.dart';
@@ -77,6 +78,10 @@ class TransferKeepAlive {
   /// back to wait for Wi-Fi from one that was waiting already.
   Set<String> _inFlight = {};
 
+  /// A check of the watched phone folders was sending files at the last
+  /// update.
+  bool _watching = false;
+
   static void _init() {
     FlutterForegroundTask.init(
       androidNotificationOptions: AndroidNotificationOptions(
@@ -98,11 +103,15 @@ class TransferKeepAlive {
   }
 
   /// Anything worth keeping the process alive for: a transfer, a photo
-  /// backup pass (which has short gaps between photos that must not bounce
-  /// the service off and on), or transfers that only just began to wait for
-  /// Wi-Fi.
+  /// backup pass or a check of the watched folders (both have short gaps
+  /// between files that must not bounce the service off and on, since
+  /// Android won't let an app in the background start it again), or
+  /// transfers that only just began to wait for Wi-Fi.
   bool _isActive(TransfersState state, BackupState backup) =>
-      state.activeCount > 0 || _backingUp(state, backup) || _lingering;
+      state.activeCount > 0 ||
+      _backingUp(state, backup) ||
+      _sendingFromFolders(state) ||
+      _lingering;
 
   bool get _lingering {
     final since = _heldSince;
@@ -127,7 +136,7 @@ class TransferKeepAlive {
       _lingerTimer = Timer(_lingerForWifi, () {
         _lingerTimer = null;
         final latest = _latest;
-        if (latest != null) unawaited(update(latest.$1, latest.$2));
+        if (latest != null) unawaited(update(latest.$1, latest.$2, watching: _watching));
       });
     }
   }
@@ -145,8 +154,22 @@ class TransferKeepAlive {
             (t.wait is WaitingForTelegram || t.wait is WaitingForRoom),
       );
 
-  Future<void> update(TransfersState state, BackupState backup) async {
+  /// A check of the watched folders that is moving. Its uploads are the
+  /// person's kind, so one on a long Telegram wait or waiting for room, as
+  /// any upload then is, lets the phone sleep the way a backup pass does.
+  bool _sendingFromFolders(TransfersState state) =>
+      _watching &&
+      !state.held.any((t) => t.wait is WaitingForTelegram || t.wait is WaitingForRoom);
+
+  /// Brings the service in line with [state], [backup] and whether the
+  /// watched folders are [watching].
+  Future<void> update(
+    TransfersState state,
+    BackupState backup, {
+    bool watching = false,
+  }) async {
     _latest = (state, backup);
+    _watching = watching;
     _noteHeld(state);
     if (!_isActive(state, backup)) {
       _pending = null;
@@ -176,12 +199,15 @@ class TransferKeepAlive {
       _refreshTimer ??= Timer(_updateEvery - since, () {
         _refreshTimer = null;
         final latest = _latest;
-        if (latest != null) unawaited(update(latest.$1, latest.$2));
+        if (latest != null) unawaited(update(latest.$1, latest.$2, watching: _watching));
       });
       return;
     }
     _refreshTimer?.cancel();
     _refreshTimer = null;
+    // Between two files from the watched folders nothing is in flight for
+    // a moment, and the notification keeps saying what it said.
+    if (_watching && state.active.isEmpty && !_backingUp(state, backup)) return;
     _lastUpdate = now;
     final (title, text) = describe(state, backup);
     await FlutterForegroundTask.updateService(
@@ -225,7 +251,7 @@ class TransferKeepAlive {
     }
     final pending = _pending;
     _pending = null;
-    if (pending != null) await update(pending.$1, pending.$2);
+    if (pending != null) await update(pending.$1, pending.$2, watching: _watching);
   }
 
   Future<void> _stop() async {
@@ -332,7 +358,11 @@ final transferKeepAliveProvider = Provider<void>((ref) {
   if (kIsWeb || !Platform.isAndroid) return;
   final keeper = TransferKeepAlive(ref.read(preferencesProvider));
   void push() => unawaited(
-    keeper.update(ref.read(transferQueueProvider), ref.read(backupControllerProvider)),
+    keeper.update(
+      ref.read(transferQueueProvider),
+      ref.read(backupControllerProvider),
+      watching: ref.read(watchedFoldersProvider).working,
+    ),
   );
 
   // When the transfers the person started last went from none in flight to
@@ -379,6 +409,7 @@ final transferKeepAliveProvider = Provider<void>((ref) {
     if (next == 0 && (previous ?? 0) > 0) unawaited(TransferNotifications.clearPaused());
   });
   ref.listen<BackupState>(backupControllerProvider, (_, _) => push(), fireImmediately: true);
+  ref.listen<bool>(watchedFoldersProvider.select((s) => s.working), (_, _) => push());
   ref.onDispose(() {
     FlutterForegroundTask.removeTaskDataCallback(onData);
     unawaited(

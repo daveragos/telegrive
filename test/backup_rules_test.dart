@@ -130,4 +130,42 @@ void main() {
       );
     });
   });
+
+  group('folderAllowance', () {
+    const fits = 3 * _mb;
+    const tooBig = 30 * _mb;
+
+    BackupAllowance allowance(MobileDataState data, BackupMobileData mode, int bytes) =>
+        folderAllowance(data: data, mode: mode, bytes: bytes);
+
+    test('files from other folders use mobile data only with photos and videos', () {
+      expect(foldersMayUseMobileData(BackupMobileData.off), isFalse);
+      expect(foldersMayUseMobileData(BackupMobileData.photos), isFalse);
+      expect(foldersMayUseMobileData(BackupMobileData.all), isTrue);
+    });
+
+    test('anything goes on an unmetered network', () {
+      for (final mode in BackupMobileData.values) {
+        expect(allowance(_data(metered: false), mode, tooBig), BackupAllowance.go, reason: '$mode');
+      }
+    });
+
+    test('on mobile data they wait for Wi-Fi unless photos and videos may use it', () {
+      final data = _data(metered: true);
+      expect(allowance(data, BackupMobileData.off, fits), BackupAllowance.waitForWifi);
+      expect(allowance(data, BackupMobileData.photos, fits), BackupAllowance.waitForWifi);
+      expect(allowance(data, BackupMobileData.all, fits), BackupAllowance.go);
+    });
+
+    test('they keep to the monthly limit, and Use data anyway lets them past it', () {
+      expect(
+        allowance(_data(metered: true), BackupMobileData.all, tooBig),
+        BackupAllowance.waitForBudget,
+      );
+      expect(
+        allowance(_data(metered: true, overridden: true), BackupMobileData.all, tooBig),
+        BackupAllowance.go,
+      );
+    });
+  });
 }

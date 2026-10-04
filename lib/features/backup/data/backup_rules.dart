@@ -34,3 +34,17 @@ bool mayUseMobileData(BackupMobileData mode, {required bool isVideo}) => switch 
   BackupMobileData.photos => !isVideo,
   BackupMobileData.all => true,
 };
+
+/// Whether [mode] lets files from the other watched folders on the phone
+/// use mobile data. They aren't photos, so they go on it only once videos
+/// may: Photos only keeps them for Wi-Fi.
+bool foldersMayUseMobileData(BackupMobileData mode) => mayUseMobileData(mode, isVideo: true);
+
+/// The rule for one file of [bytes] from another watched folder: the Mobile
+/// data choice by [foldersMayUseMobileData], then the monthly limit, as for
+/// what photo backup sends.
+BackupAllowance folderAllowance({
+  required MobileDataState data,
+  required BackupMobileData mode,
+  required int bytes,
+}) => backupAllowance(data: data, mode: mode, isVideo: true, bytes: bytes);

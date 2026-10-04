@@ -273,6 +273,10 @@ phone number.
   straight into the folder you are in, not your gallery. You name it once
   and it uploads there; a name the folder already has gets a number, so
   both files are kept. Scanning needs Google Play services.
+- **Other folders upload by themselves.** On the Backup screen, pick any
+  folder on the phone, such as Recordings or Download › Bank, and each new
+  file in it goes up once to Files › Auto upload, or a drive folder you
+  choose.
 - **Download to this phone.** Files, folders or the whole drive, in the
   drive's folders under Download › Telegrive; photos and videos can go back
   into the gallery.
@@ -336,7 +340,8 @@ phone number.
 - **Mobile data.** Don't use (the default), Photos only, or Photos and
   videos. With Photos only, videos wait for Wi-Fi, and one that is going up
   when the phone leaves Wi-Fi steps back and carries on from where it was
-  once Wi-Fi returns. With a monthly limit set, each one is checked against
+  once Wi-Fi returns. Files from other folders wait for Wi-Fi unless it is
+  Photos and videos. With a monthly limit set, each one is checked against
   what is left of it before it starts.
 - **Nothing silently skipped.** A photo that fails is tried again a few
   seconds later. After three tries it is listed under Backup › Not backed
@@ -355,6 +360,18 @@ phone number.
 - **Keeps going.** A pass runs when the drive opens, when the app comes back
   to the foreground, and whenever the photo library changes while the app is
   alive; a foreground service keeps it running in the background.
+- **Other folders.** Pick any folder on the phone (Recordings, Download ›
+  Bank); new files in it upload once to Files › Auto upload, or a folder
+  you choose. Checked when Telegrive opens and while it runs. Each folder
+  sends Documents and PDFs, Audio or Everything, with or without its
+  subfolders, and when you add it you say whether the files already there
+  go too. A file goes up once it has been left alone for a minute, so one
+  still being written waits and is looked at again a little over a minute
+  later, and one the drive already has under the same name and size is
+  passed over. The uploads show in Transfers like any
+  other. Android's folder picker grants read access to that folder alone,
+  so no storage permission is asked for, and the list stays on this phone;
+  signing out gives every folder's access back.
 - **When the app is closed**, Android wakes a tiny job the moment new photos
   land (a MediaStore content trigger) and every few hours as a fallback. It
   posts "N new photos to back up"; tapping it, or Back up now, opens the
@@ -509,6 +526,9 @@ two commands are at the top of that test.
 - Transfers that step back to wait for Wi-Fi keep Telegrive running in the
   background for ten minutes. If Wi-Fi takes longer, they start when it
   returns while the app is still running, or the next time you open it.
+- A watched folder sends each file once. A file changed after it went up
+  isn't sent again, and one renamed on the phone looks new and goes up
+  again under its new name. Folders are only checked while Telegrive runs.
 - Where you stopped in a video or recording is kept on this phone only, for
   files of three minutes or longer and for 60 days after you last played
   them. Rebuild index keeps these points; signing out clears them.

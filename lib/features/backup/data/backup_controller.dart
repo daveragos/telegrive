@@ -1082,7 +1082,7 @@ class BackupController extends Notifier<BackupState> {
     BackupAssetRow? record,
     void Function(String fileId) uploaded,
   ) async {
-    final row = await _untilEndedOrHeld(id);
+    final row = await untilEndedOrHeld(ref, id);
     if (row == null) {
       _heldUploads[asset.id] = id;
       return _hold(isVideo: asset.type == AssetType.video);
@@ -1096,35 +1096,6 @@ class BackupController extends Notifier<BackupState> {
         return _Outcome.skipped;
       default:
         return _fail(asset, record, row.error ?? 'Something went wrong.');
-    }
-  }
-
-  /// Upload [id]'s final row, or null once it is back in the queue waiting
-  /// for Wi-Fi while the phone is on mobile data.
-  Future<TransferRow?> _untilEndedOrHeld(String id) async {
-    final ended = Completer<TransferRow?>();
-    final queue = ref.listen<TransfersState>(transferQueueProvider, (
-      _,
-      transfers,
-    ) {
-      final row = transfers.items.where((t) => t.id == id).firstOrNull?.row;
-      if (row != null &&
-          row.status == TransferStatus.queued &&
-          row.wifiOnly &&
-          ref.read(networkStatusProvider).metered &&
-          !ended.isCompleted) {
-        ended.complete(null);
-      }
-    }, fireImmediately: true);
-    unawaited(
-      _queue.whenFinished(id).then((row) {
-        if (!ended.isCompleted) ended.complete(row);
-      }),
-    );
-    try {
-      return await ended.future;
-    } finally {
-      queue.close();
     }
   }
 

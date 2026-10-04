@@ -8,6 +8,7 @@ import '../../../infrastructure/database/app_database.dart';
 import '../../../infrastructure/storage/preferences.dart';
 import '../../../infrastructure/telegram/telegram_client.dart';
 import '../../../infrastructure/telegram/telegram_exception.dart';
+import '../../backup/data/watched_folders.dart';
 import '../../checkup/data/drive_checkup.dart';
 import '../../drive/data/drive_session.dart';
 import '../../offline/data/offline_sync.dart';
@@ -182,7 +183,9 @@ class AuthController extends Notifier<AuthUiState> {
   /// last sent to go too, since they belong to the account that sent them,
   /// and so do the recent upload folders, and with them their targets in the
   /// system share sheet, so no folder name of this drive is left in other
-  /// apps. When the phone's caches were last trimmed is forgotten as well,
+  /// apps. The phone folders watched for new files go, and Android gets
+  /// back the access to each, so no grant is left that nothing uses. When
+  /// the phone's caches were last trimmed is forgotten as well,
   /// so the next drive to open trims them once straight away. Anything new
   /// that the phone keeps per drive, whether a table, a preference or a
   /// file, adds its cleanup here.
@@ -205,6 +208,7 @@ class AuthController extends Notifier<AuthUiState> {
     ref.invalidate(revealHiddenProvider);
     ref.invalidate(offlineSyncProvider);
     await ref.read(recentDestinationsProvider.notifier).clear();
+    await ref.read(watchedFoldersProvider.notifier).forgetAll();
     await ref.read(appDatabaseProvider).clearAll();
     await _deleteOfflineCopies();
     await deletePdfBlockCache();
