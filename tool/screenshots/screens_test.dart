@@ -32,6 +32,8 @@ import 'package:telegrive/features/photos/data/photos_visibility.dart';
 import 'package:telegrive/features/photos/presentation/photos_screen.dart';
 import 'package:telegrive/features/search/presentation/search_screen.dart';
 import 'package:telegrive/features/photos/presentation/albums_screen.dart';
+import 'package:telegrive/features/photos/presentation/media_grid.dart';
+import 'package:telegrive/features/photos/presentation/media_grid_layout.dart';
 import 'package:telegrive/features/send/data/telegram_chats.dart';
 import 'package:telegrive/features/trash/presentation/trash_screen.dart';
 import 'package:telegrive/core/files/file_kind.dart';
@@ -456,6 +458,16 @@ void main() {
             starred: i == 4,
             // A third came from the phone's Screenshots folder.
             folderId: i % 3 == 2 ? 'scr' : null,
+          ),
+        // A trip from over a year ago, so the timeline runs long enough for
+        // the date scrubber and has a month that carries its year.
+        for (var i = 0; i < 24; i++)
+          _file(
+            'IMG_2025${i.toString().padLeft(4, '0')}.jpg',
+            (2 + i % 4) * _mb,
+            400 * 24 + i,
+            thumb: thumbs[(i * 2 + 1) % thumbs.length],
+            takenDaysAgo: 400 + i,
           ),
       ];
       ChatItem chatItem(DriveFile file, int messageId) => ChatItem(
@@ -2014,6 +2026,34 @@ void main() {
     await prepareData(tester);
     await pumpApp(tester, location: '/photos', backup: uploading);
     await snap(tester, 'photos');
+  });
+
+  testWidgets('photos scrub', (tester) async {
+    await prepareData(tester);
+    await pumpApp(tester, location: '/photos', backup: uploading);
+    final grid = tester.getRect(find.byType(MediaGrid));
+    // The handle shows once the grid has scrolled.
+    await tester.dragFrom(grid.center, const Offset(0, -200));
+    await tester.pump(const Duration(milliseconds: 100));
+    final gesture = await tester.startGesture(Offset(grid.right - 12, grid.top + 160));
+    await gesture.moveBy(const Offset(0, 40));
+    await tester.pump();
+    await gesture.moveTo(Offset(grid.right - 12, grid.top + grid.height * 0.85));
+    await tester.pump(const Duration(milliseconds: 300));
+    await snap(tester, 'photos_scrub');
+    await gesture.up();
+  });
+
+  testWidgets('photos month select', (tester) async {
+    await prepareData(tester);
+    await pumpApp(tester, location: '/photos', backup: uploading);
+    final second = monthSections(photos)[1];
+    // Long-press a photo of the second month, then take the rest of it.
+    await tester.longPress(find.byType(FileThumbnail).at(second.start));
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.tap(find.widgetWithText(InkWell, second.title));
+    await tester.pump(const Duration(milliseconds: 300));
+    await snap(tester, 'photos_month_select');
   });
 
   testWidgets('backup settings', (tester) async {

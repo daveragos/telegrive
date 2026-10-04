@@ -29,6 +29,10 @@ phone number.
   but the timeline leaves them out until you tap Show. Long-press and drag
   to select a run of photos, pinch to change the grid, and keep albums (a
   photo can be in several without being copied), plus Favorites and Videos.
+  On a long timeline a thin handle shows at the right edge while you
+  scroll; drag it and the month beside your finger is named, and letting
+  go puts that month at the top. While selecting, the circle by a month's
+  name selects or clears the whole month.
   Home opens with one line that says whether everything is backed up and in
   sync, and when that was last checked.
 - **Free up space.** Delete the phone's copies of photos and videos that are

@@ -6,12 +6,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:intl/intl.dart';
 
 import '../../../app/theme/tokens.dart';
 import '../../../core/widgets/file_visuals.dart';
 import '../../../infrastructure/storage/preferences.dart';
 import '../../drive/domain/drive_models.dart';
+import 'media_grid_layout.dart';
 
 /// Which photos are selected, shared by a grid and its app bar.
 class MediaSelection extends ChangeNotifier {
@@ -69,7 +69,9 @@ final photoColumnsProvider = NotifierProvider<PhotoColumns, int>(PhotoColumns.ne
 
 /// Photos and videos as square tiles grouped by month. Tap to open,
 /// long-press to select and keep dragging to select a run (scrolling at the
-/// edges), pinch to make tiles bigger or smaller.
+/// edges), pinch to make tiles bigger or smaller. A long grid has a handle
+/// at its right edge that jumps between months, and while selecting, a
+/// month's header selects or clears all of it.
 class MediaGrid extends ConsumerStatefulWidget {
   const MediaGrid({
     super.key,
@@ -117,6 +119,9 @@ class MediaGrid extends ConsumerStatefulWidget {
 
 class _MediaGridState extends ConsumerState<MediaGrid> {
   final _scroll = ScrollController();
+
+  /// How far the slivers above the first month reach, as laid out.
+  double _leading = 0;
 
   // Drag to select.
   int? _anchor;
@@ -167,21 +172,25 @@ class _MediaGridState extends ConsumerState<MediaGrid> {
   // ---------------------------------------------------------------------------
   // Drag to select
 
-  int? _indexAt(Offset global) {
+  /// The markers under [global]: a tile's index, and the scrubber's strip
+  /// when it lies over the tile.
+  List<Object?> _marksAt(Offset global) {
     final result = HitTestResult();
     WidgetsBinding.instance.hitTestInView(result, global, View.of(context).viewId);
-    for (final entry in result.path) {
-      final target = entry.target;
-      if (target is RenderMetaData && target.metaData is _TileIndex) {
-        return (target.metaData as _TileIndex).index;
-      }
-    }
-    return null;
+    return [
+      for (final entry in result.path)
+        if (entry.target case final RenderMetaData target) target.metaData,
+    ];
   }
+
+  int? _indexAt(Offset global) => _marksAt(global).whereType<_TileIndex>().firstOrNull?.index;
 
   void _dragStart(LongPressStartDetails details) {
     if (!widget.selectable) return;
-    final index = _indexAt(details.globalPosition);
+    final marks = _marksAt(details.globalPosition);
+    // A finger resting on the scrubber is there to scrub, not to select.
+    if (marks.any((mark) => mark is _ScrubStrip)) return;
+    final index = marks.whereType<_TileIndex>().firstOrNull?.index;
     if (index == null) return;
     HapticFeedback.selectionClick();
     _anchor = index;
@@ -279,10 +288,36 @@ class _MediaGridState extends ConsumerState<MediaGrid> {
   }
 
   // ---------------------------------------------------------------------------
+  // Months
+
+  void _toggleMonth(MonthSection month) {
+    HapticFeedback.selectionClick();
+    widget.selection.replace(toggleMonth(widget.selection.ids, month));
+  }
+
+  /// Keeps the laid-out height of [MediaGrid.header], which can change with
+  /// what it shows. Layout is where it is known, so it lands a frame later.
+  void _noteLeading(double extent) {
+    if (extent == _leading) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && extent != _leading) setState(() => _leading = extent);
+    });
+  }
+
+  // ---------------------------------------------------------------------------
 
   @override
   Widget build(BuildContext context) {
     final columns = ref.watch(photoColumnsProvider);
+    final titleStyle = context.text.titleSmall!;
+    // Every header is exactly this tall, at any text size, so the
+    // scrubber's arithmetic and the laid-out grid never disagree.
+    final headerHeight =
+        Space.xxl +
+        MediaQuery.textScalerOf(context).scale(titleStyle.fontSize!) * titleStyle.height! +
+        Space.s;
+    final sections = monthSections(widget.files);
+    final selected = _selecting ? widget.selection.ids : const <String>{};
     final slivers = <Widget>[...widget.header];
     // A page that doesn't fill the screen leaves nothing to scroll.
     if (widget.onNearEnd != null) {
@@ -292,30 +327,39 @@ class _MediaGridState extends ConsumerState<MediaGrid> {
     if (widget.files.isEmpty && widget.empty != null) {
       slivers.add(SliverFillRemaining(hasScrollBody: false, child: widget.empty));
     } else {
-      var offset = 0;
-      for (final section in _byMonth(widget.files)) {
-        final start = offset;
+      for (final (index, section) in sections.indexed) {
+        final header = SliverToBoxAdapter(
+          child: _MonthHeader(
+            title: section.title,
+            height: headerHeight,
+            selecting: _selecting,
+            allSelected: _selecting && section.allSelected(selected),
+            onTap: () => _toggleMonth(section),
+          ),
+        );
         slivers
           ..add(
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(Space.gutter, Space.xxl, Space.gutter, Space.s),
-                child: Text(section.title, style: context.text.titleSmall),
-              ),
-            ),
+            index == 0
+                ? SliverLayoutBuilder(
+                    builder: (context, constraints) {
+                      _noteLeading(constraints.precedingScrollExtent);
+                      return header;
+                    },
+                  )
+                : header,
           )
           ..add(
             SliverGrid.builder(
               gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: columns,
-                mainAxisSpacing: 2,
-                crossAxisSpacing: 2,
+                mainAxisSpacing: GridLayout.spacing,
+                crossAxisSpacing: GridLayout.spacing,
               ),
               itemCount: section.files.length,
               itemBuilder: (context, i) {
                 final file = section.files[i];
                 return MetaData(
-                  metaData: _TileIndex(start + i),
+                  metaData: _TileIndex(section.start + i),
                   behavior: HitTestBehavior.opaque,
                   child: _MediaTile(
                     file: file,
@@ -329,7 +373,6 @@ class _MediaGridState extends ConsumerState<MediaGrid> {
               },
             ),
           );
-        offset += section.files.length;
       }
     }
     slivers
@@ -356,27 +399,27 @@ class _MediaGridState extends ConsumerState<MediaGrid> {
         onLongPressMoveUpdate: _dragUpdate,
         onLongPressEnd: _dragEnd,
         onLongPressCancel: _dragEnd,
-        child: scroll,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final layout = GridLayout(
+              columns: columns,
+              width: constraints.maxWidth,
+              headerHeight: headerHeight,
+              leading: _leading,
+              sections: sections,
+            );
+            return Stack(
+              children: [
+                scroll,
+                // Worth a handle only when the grid runs past two screens.
+                if (sections.isNotEmpty && layout.total > constraints.maxHeight * 2)
+                  _DateScrubber(controller: _scroll, layout: layout, height: constraints.maxHeight),
+              ],
+            );
+          },
+        ),
       ),
     );
-  }
-
-  static List<({String title, List<DriveFile> files})> _byMonth(List<DriveFile> files) {
-    final now = DateTime.now();
-    final sections = <({String title, List<DriveFile> files})>[];
-    for (final file in files) {
-      final moment = file.momentAt;
-      final title = moment.year == now.year && moment.month == now.month
-          ? 'This month'
-          : moment.year == now.year
-          ? DateFormat.MMMM().format(moment)
-          : DateFormat.yMMMM().format(moment);
-      if (sections.isEmpty || sections.last.title != title) {
-        sections.add((title: title, files: []));
-      }
-      sections.last.files.add(file);
-    }
-    return sections;
   }
 }
 
@@ -385,6 +428,277 @@ class _TileIndex {
   const _TileIndex(this.index);
 
   final int index;
+}
+
+/// Marks the scrubber's strip for drag selection's hit test.
+class _ScrubStrip {
+  const _ScrubStrip();
+}
+
+/// A month's title over its photos. While selecting, the row selects or
+/// clears the whole month, and its circle is filled only when all of it is
+/// selected.
+class _MonthHeader extends StatelessWidget {
+  const _MonthHeader({
+    required this.title,
+    required this.height,
+    required this.selecting,
+    required this.allSelected,
+    required this.onTap,
+  });
+
+  final String title;
+  final double height;
+  final bool selecting;
+  final bool allSelected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return InkWell(
+      onTap: selecting ? onTap : null,
+      child: SizedBox(
+        height: height,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(Space.gutter, Space.xxl, Space.gutter, Space.s),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: context.text.titleSmall,
+                ),
+              ),
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 150),
+                switchInCurve: Curves.easeOut,
+                switchOutCurve: Curves.easeOut,
+                child: !selecting
+                    ? const SizedBox.shrink()
+                    : allSelected
+                    ? Icon(Icons.check_circle_rounded, size: 22, color: colors.accent)
+                    : Icon(Icons.radio_button_unchecked_rounded, size: 22, color: colors.text3),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A thin handle at the grid's right edge. It shows while the grid scrolls
+/// and for a second after; dragging it moves the grid with the finger,
+/// names the month under it, and on release settles on that month's
+/// header. Hidden, it lets touches through, so the edge scrolls as usual.
+class _DateScrubber extends StatefulWidget {
+  const _DateScrubber({required this.controller, required this.layout, required this.height});
+
+  final ScrollController controller;
+  final GridLayout layout;
+
+  /// The grid's height, the length the handle travels plus its own.
+  final double height;
+
+  @override
+  State<_DateScrubber> createState() => _DateScrubberState();
+}
+
+class _DateScrubberState extends State<_DateScrubber> {
+  static const _thumbHeight = 40.0;
+  static const _fade = Duration(milliseconds: 150);
+
+  bool _visible = false;
+  bool _dragging = false;
+
+  /// A finger is on the strip, so the handle stays until it lifts.
+  bool _held = false;
+
+  /// The month level with the handle, named by the label while dragging.
+  int _month = 0;
+  Timer? _hide;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.controller.addListener(_scrolled);
+  }
+
+  @override
+  void didUpdateWidget(_DateScrubber old) {
+    super.didUpdateWidget(old);
+    // Fewer months than a moment ago, as when photos leave the grid.
+    _month = math.min(_month, widget.layout.sections.length - 1);
+  }
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_scrolled);
+    _hide?.cancel();
+    super.dispose();
+  }
+
+  void _scrolled() {
+    setState(() => _visible = true);
+    if (!_held) _hideLater();
+  }
+
+  void _hideLater() {
+    _hide?.cancel();
+    _hide = Timer(const Duration(seconds: 1), () {
+      if (mounted) setState(() => _visible = false);
+    });
+  }
+
+  void _hold(bool held) {
+    _held = held;
+    if (held) {
+      _hide?.cancel();
+    } else if (!_dragging) {
+      _hideLater();
+    }
+  }
+
+  double get _track => math.max(0, widget.height - _thumbHeight);
+
+  /// The grid's scroll position, once the grid has been laid out.
+  ScrollPosition? get _position {
+    if (!widget.controller.hasClients) return null;
+    final position = widget.controller.position;
+    return position.hasContentDimensions ? position : null;
+  }
+
+  /// Moves the grid so the handle's middle sits under the finger at [dy].
+  /// The grid is then scrolled the same fraction of its way as the handle,
+  /// so the photos level with the handle are that fraction down the whole
+  /// grid, and their month is the one the label names.
+  void _jumpTo(double dy) {
+    final position = _position;
+    if (position == null) return;
+    final fraction = _track == 0 ? 0.0 : ((dy - _thumbHeight / 2) / _track).clamp(0.0, 1.0);
+    final extent = position.maxScrollExtent;
+    position.jumpTo(fraction * extent);
+    setState(() => _month = widget.layout.sectionAt(fraction * (extent + widget.height)));
+  }
+
+  void _dragStart(DragStartDetails details) {
+    setState(() => _dragging = true);
+    _jumpTo(details.localPosition.dy);
+  }
+
+  void _dragUpdate(DragUpdateDetails details) {
+    final before = _month;
+    _jumpTo(details.localPosition.dy);
+    if (_month != before) HapticFeedback.selectionClick();
+  }
+
+  void _dragEnd(DragEndDetails _) {
+    // Settle on the month the label named, with its header at the top. The
+    // first month goes to the very top, so whatever sits above it shows too.
+    if (_position case final position?) {
+      position.jumpTo(
+        _month == 0 ? 0 : math.min(widget.layout.offsets[_month], position.maxScrollExtent),
+      );
+    }
+    setState(() => _dragging = false);
+    _hideLater();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final shown = _visible || _dragging;
+    final position = _position;
+    final fraction = position == null || position.maxScrollExtent <= 0
+        ? 0.0
+        : (position.pixels / position.maxScrollExtent).clamp(0.0, 1.0);
+    final top = fraction * _track;
+
+    return Positioned.fill(
+      child: Stack(
+        children: [
+          Positioned(
+            right: 0,
+            top: 0,
+            bottom: 0,
+            width: 32,
+            child: IgnorePointer(
+              ignoring: !shown,
+              // Translucent all the way down: a drag here is the
+              // scrubber's, while a tap still reaches the tile beneath.
+              child: Listener(
+                behavior: HitTestBehavior.translucent,
+                onPointerDown: (_) => _hold(true),
+                onPointerUp: (_) => _hold(false),
+                onPointerCancel: (_) => _hold(false),
+                child: GestureDetector(
+                  behavior: HitTestBehavior.translucent,
+                  onVerticalDragStart: _dragStart,
+                  onVerticalDragUpdate: _dragUpdate,
+                  onVerticalDragEnd: _dragEnd,
+                  child: const MetaData(
+                    metaData: _ScrubStrip(),
+                    behavior: HitTestBehavior.translucent,
+                    child: SizedBox.expand(),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            right: 8,
+            top: top,
+            width: 4,
+            height: _thumbHeight,
+            child: IgnorePointer(
+              child: AnimatedOpacity(
+                opacity: shown ? 1 : 0,
+                duration: _fade,
+                curve: Curves.easeOut,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: colors.accent,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            right: 8 + 4 + 12,
+            top: top + _thumbHeight / 2,
+            child: IgnorePointer(
+              child: FractionalTranslation(
+                translation: const Offset(0, -0.5),
+                child: AnimatedOpacity(
+                  opacity: _dragging ? 1 : 0,
+                  duration: _fade,
+                  curve: Curves.easeOut,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: colors.surface,
+                      border: Border.all(color: colors.line),
+                      borderRadius: BorderRadius.circular(Radii.control),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: Space.s, horizontal: Space.m),
+                      child: Text(
+                        widget.layout.sections[_month].title,
+                        style: context.text.titleSmall,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _MediaTile extends StatelessWidget {
