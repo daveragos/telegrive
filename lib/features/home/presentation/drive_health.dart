@@ -35,6 +35,10 @@ enum HealthAction {
   /// backed up, for transfers waiting for room.
   freeUpSpace,
 
+  /// The same offer for a phone low on space, whose line already says how
+  /// much could go, so the button needs fewer words.
+  freeUp,
+
   /// Opens the proxy sheet where Telegram can't be reached directly.
   useProxy,
 
@@ -266,11 +270,19 @@ DriveHealth describeDriveHealth({
 /// action and that [top] doesn't already speak for, or null. There is
 /// never a third. A top line about transfers in progress still leaves the
 /// row to failed ones; paused ones only count once nothing is moving.
+///
+/// Last of all, when the phone is [lowOnSpace] and more than
+/// [freeUpWorthwhile] of backed-up photos ([freeableBytes]) could leave it,
+/// the line offers Free up. A phone too full for a transfer says so with
+/// its own Free up space instead, on either row, since both are about
+/// [HealthTopic.storage].
 DriveHealth? secondaryHealth(
   DriveHealth top, {
   required BackupState backup,
   required TransfersState transfers,
   int renewDay = 1,
+  bool lowOnSpace = false,
+  int freeableBytes = 0,
   DateTime? now,
 }) {
   final at = now ?? DateTime.now();
@@ -299,6 +311,7 @@ DriveHealth? secondaryHealth(
         topic: HealthTopic.transfers,
       ),
     if (backup.phase == BackupPhase.off) _off,
+    if (lowOnSpace && freeableBytes > freeUpWorthwhile) _freeUp(freeableBytes),
   ];
   final moving = top.tone == HealthTone.busy && top.topic == HealthTopic.transfers;
   return candidates.where((line) => line.topic != top.topic || moving).firstOrNull;
@@ -473,6 +486,21 @@ DriveHealth _nearlyFull(List<TransferItem> waiting) {
     topic: HealthTopic.storage,
   );
 }
+
+/// Less than this to free isn't worth a line on Home.
+const freeUpWorthwhile = 500 * 1024 * 1024;
+
+/// The phone is low on space and [bytes] of backed-up photos could leave
+/// it. Only the photos older than the window Free up space keeps count.
+DriveHealth _freeUp(int bytes) => DriveHealth(
+  icon: Icons.phonelink_erase_outlined,
+  tone: HealthTone.neutral,
+  text: '${Formatters.bytes(bytes)} of backed-up photos can leave this phone',
+  detail: 'This phone is running low on space.',
+  action: HealthAction.freeUp,
+  target: HealthTarget.backup,
+  topic: HealthTopic.storage,
+);
 
 /// There is something in [items], and all of it waits for the network.
 bool _allWaitForNetwork(List<TransferItem> items) =>

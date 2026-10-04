@@ -26,6 +26,7 @@ import 'package:telegrive/features/backup/data/backup_controller.dart';
 import 'package:telegrive/features/backup/data/free_up_space.dart';
 import 'package:telegrive/features/backup/data/local_media.dart';
 import 'package:telegrive/features/backup/presentation/backup_screen.dart';
+import 'package:telegrive/features/backup/presentation/free_up_preview_screen.dart';
 import 'package:telegrive/features/backup/presentation/not_backed_up_screen.dart';
 import 'package:telegrive/features/capture/data/device_capture.dart';
 import 'package:telegrive/features/photos/data/photos_visibility.dart';
@@ -189,6 +190,9 @@ final _nearLimit = MobileDataState(
 class _Storage extends DeviceStorage {
   @override
   Future<int?> freeBytes() async => 23 * _gb;
+
+  @override
+  Future<int?> totalBytes() async => 128 * _gb;
 }
 
 class _Queue extends TransferQueue {
@@ -368,6 +372,21 @@ DriveFile _file(
         : DateTime.now().subtract(Duration(days: takenDaysAgo)),
   );
 }
+
+/// [count] photos backed up from this phone and still on it, [each] bytes
+/// apiece, three a day going back from [fromDaysAgo] days ago.
+Freeable _backedUp(int count, int each, {int fromDaysAgo = 0}) => Freeable([
+  for (var i = 0; i < count; i++)
+    FreeableItem(
+      assetId: 'asset-$i',
+      file: _file(
+        'IMG_$i.jpg',
+        each,
+        24 * (fromDaysAgo + i ~/ 3),
+        takenDaysAgo: fromDaysAgo + i ~/ 3,
+      ),
+    ),
+]);
 
 DriveFolder _folder(String name, int daysAgo, {String? parentId}) {
   final at = DateTime.now().subtract(Duration(days: daysAgo));
@@ -646,6 +665,7 @@ void main() {
     bool notificationsEnabled = true,
     List<Override> overrides = const [],
     Future<void> Function(AppDatabase db)? seed,
+    Freeable? freeable,
   }) async {
     debugDisableShadows = false;
     tester.view.physicalSize = const Size(1080, 2340);
@@ -725,6 +745,7 @@ void main() {
             initialFolderId: state.uri.queryParameters['folder'],
           ),
         ),
+        GoRoute(path: '/free-up', builder: (_, _) => const FreeUpPreviewScreen()),
         GoRoute(path: '/trash', builder: (_, _) => const TrashScreen()),
         GoRoute(path: '/offline', builder: (_, _) => const OfflineScreen()),
         GoRoute(
@@ -803,6 +824,14 @@ void main() {
           mobileDataProvider.overrideWith(() => _MobileData(mobileData ?? _noLimit)),
           captureSupportProvider.overrideWith((ref) async => captureSupport),
           mediaTimelineProvider.overrideWith((ref) => Stream.value(photos)),
+          // Every sample photo is still on the phone and safely backed up.
+          freeableProvider.overrideWith(
+            (ref) async =>
+                freeable ??
+                Freeable([
+                  for (final photo in photos) FreeableItem(assetId: 'a-${photo.id}', file: photo),
+                ]),
+          ),
           trashProvider.overrideWith(
             (ref) => Stream.value(
               TrashContents(
@@ -981,6 +1010,26 @@ void main() {
       ),
     );
     await snap(tester, 'home_all_good');
+  });
+
+  testWidgets('home low space', (tester) async {
+    await prepareData(tester);
+    transfers = TransfersState.empty;
+    await pumpApp(
+      tester,
+      location: '/home',
+      backup: BackupState(
+        phase: BackupPhase.upToDate,
+        total: 4847,
+        done: 4847,
+        lastCompleted: DateTime.now().subtract(const Duration(minutes: 3)),
+      ),
+      // Two years of photos from before the last 30 days.
+      freeable: _backedUp(2140, (4.45 * _mb).round(), fromDaysAgo: 40),
+      overrides: [lowSpaceProvider.overrideWith((ref) async => true)],
+    );
+    expect(find.text('Free up'), findsOneWidget);
+    await snap(tester, 'home_low_space');
   });
 
   testWidgets('home backup stopped', (tester) async {
@@ -2012,26 +2061,30 @@ void main() {
         ),
       ),
       offlineUsageProvider.overrideWith((ref) => Stream.value((19, (1.1 * _gb).round()))),
-      freeableProvider.overrideWith(
-        (ref) async => Freeable(
-          [for (var i = 0; i < 1240; i++) 'asset-$i'],
-          (8.2 * _gb).round(),
-        ),
-      ),
     ];
   }
 
   testWidgets('space', (tester) async {
     await prepareData(tester);
     transfers = TransfersState.empty;
-    await pumpApp(tester, location: '/space', overrides: spaceData());
+    await pumpApp(
+      tester,
+      location: '/space',
+      overrides: spaceData(),
+      freeable: _backedUp(1240, (6.77 * _mb).round()),
+    );
     await snap(tester, 'space');
   });
 
   testWidgets('space on this phone', (tester) async {
     await prepareData(tester);
     transfers = TransfersState.empty;
-    await pumpApp(tester, location: '/space?focus=phone', overrides: spaceData());
+    await pumpApp(
+      tester,
+      location: '/space?focus=phone',
+      overrides: spaceData(),
+      freeable: _backedUp(1240, (6.77 * _mb).round()),
+    );
     expect(find.text('Telegram\'s records'), findsOneWidget);
     await snap(tester, 'space_phone');
   });
@@ -2197,6 +2250,31 @@ void main() {
       mobileData: _nearLimit,
     );
     await snap(tester, 'backup_settings');
+  });
+
+  testWidgets('free up sheet', (tester) async {
+    await prepareData(tester);
+    await pumpApp(
+      tester,
+      location: '/backup',
+      backup: BackupState(
+        phase: BackupPhase.upToDate,
+        total: 4847,
+        done: 4847,
+        lastCompleted: DateTime.now().subtract(const Duration(minutes: 3)),
+      ),
+      prefs: {'backup_enabled': true},
+      freeable: _backedUp(2140, (4.45 * _mb).round(), fromDaysAgo: 40),
+    );
+    await tester.tap(find.text('Free up space on this phone'));
+    await tester.pump(const Duration(milliseconds: 600));
+    await snap(tester, 'free_up_sheet');
+  });
+
+  testWidgets('free up preview', (tester) async {
+    await prepareData(tester);
+    await pumpApp(tester, location: '/free-up');
+    await snap(tester, 'free_up_preview');
   });
 
   testWidgets('photos kept out', (tester) async {

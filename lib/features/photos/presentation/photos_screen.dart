@@ -9,14 +9,13 @@ import '../../../core/widgets/selection_bar.dart';
 import '../../backup/data/backup_controller.dart';
 import '../../backup/presentation/backup_card.dart';
 import '../../backup/presentation/duplicates_sheet.dart';
-import '../../backup/presentation/free_up_space_sheet.dart';
 import '../../drive/data/drive_sync.dart';
 import '../../files/presentation/file_actions.dart';
 import '../data/photos_visibility.dart';
 import 'media_grid.dart';
 import 'media_selection_bar.dart';
 
-enum _PhotosMenu { select, fromChat, download, freeUp, duplicates }
+enum _PhotosMenu { select, fromChat, download, duplicates }
 
 /// Every photo and video in the drive as one timeline, newest moment first,
 /// with backup status on top.
@@ -122,7 +121,6 @@ class _PhotosScreenState extends ConsumerState<PhotosScreen> {
                           files: files ?? const [],
                           preferGallery: true,
                         ),
-                        _PhotosMenu.freeUp => showFreeUpSpace(context, ref),
                         _PhotosMenu.duplicates => removeDuplicateBackups(context, ref),
                       },
                       itemBuilder: (_) => [
@@ -133,10 +131,6 @@ class _PhotosScreenState extends ConsumerState<PhotosScreen> {
                         const PopupMenuItem(
                           value: _PhotosMenu.fromChat,
                           child: Text('Save photos from a Telegram chat'),
-                        ),
-                        const PopupMenuItem(
-                          value: _PhotosMenu.freeUp,
-                          child: Text('Free up space on this phone'),
                         ),
                         const PopupMenuItem(
                           value: _PhotosMenu.duplicates,

@@ -352,7 +352,10 @@ void main() {
       await verifier.migrateAndValidate(db, latest);
 
       expect((await db.fileById('shot'))!.originalSize, isNull);
-      expect(await db.safelyBackedUp(), {'a2041': 312000});
+      expect(
+        (await db.safelyBackedUp()).map((id, row) => MapEntry(id, row.size)),
+        {'a2041': 312000},
+      );
 
       await db.updateFile(
         'shot',

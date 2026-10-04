@@ -10,6 +10,7 @@ import '../features/auth/presentation/qr_screen.dart';
 import '../features/auth/presentation/unsupported_screen.dart';
 import '../features/auth/presentation/welcome_screen.dart';
 import '../features/backup/presentation/backup_screen.dart';
+import '../features/backup/presentation/free_up_preview_screen.dart';
 import '../features/backup/presentation/not_backed_up_screen.dart';
 import '../features/files/presentation/file_list_screen.dart';
 import '../features/files/presentation/files_screen.dart';
@@ -137,6 +138,11 @@ final routerProvider = Provider<GoRouter>((ref) {
             builder: (_, _) => const NotBackedUpScreen(),
           ),
         ],
+      ),
+      GoRoute(
+        path: '/free-up',
+        parentNavigatorKey: rootNavigatorKey,
+        builder: (_, _) => const FreeUpPreviewScreen(),
       ),
       GoRoute(
         path: '/albums',

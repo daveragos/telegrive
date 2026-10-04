@@ -11,6 +11,11 @@ void main() {
   setUp(() => db = AppDatabase(NativeDatabase.memory()));
   tearDown(() => db.close());
 
+  /// The photos safe to delete from the phone, each with its drive copy's
+  /// size.
+  Future<Map<String, int>> safeSizes() async =>
+      (await db.safelyBackedUp()).map((id, row) => MapEntry(id, row.size));
+
   DriveFilesCompanion file(String id, {String? folderId, int partCount = 1}) =>
       DriveFilesCompanion.insert(
         id: id,
@@ -241,7 +246,7 @@ void main() {
 
     await db.markAssetBackedUp('asset-1', 'p');
     await db.updateFile('p', const DriveFilesCompanion(originalSize: Value(null)));
-    expect(await db.safelyBackedUp(), {'asset-1': 100});
+    expect(await safeSizes(), {'asset-1': 100});
     expect(await db.localAssetsOf(['p']), {'p': ['asset-1']});
     expect(await db.watchBackedUpCount().first, 1);
   });
@@ -578,7 +583,7 @@ void main() {
     expect((await db.backupAssetMap()).keys, unorderedEquals(['asset-1', 'asset-3']));
     expect(await db.watchBackedUpCount().first, 1);
     expect(await db.watchLocalAssets().first, {'p': 'asset-1'});
-    expect(await db.safelyBackedUp(), {'asset-1': 4242});
+    expect(await safeSizes(), {'asset-1': 4242});
   });
 
   test('the phone copy of a backed-up file is found by file id', () async {
@@ -845,8 +850,23 @@ void main() {
       await db.upsertFilePart(file('q').copyWith(trashedAt: Value(now)), part('q', 0, 11));
       await db.markAssetBackedUp('asset-p', 'p');
       await db.markAssetBackedUp('asset-q', 'q');
-      expect(await db.safelyBackedUp(), {'asset-p': 100});
+      expect(await safeSizes(), {'asset-p': 100});
     });
+  });
+
+  test('a photo safe to free comes with its drive copy and when it was taken', () async {
+    final taken = DateTime(2021, 3, 14, 9, 30);
+    await db.upsertFilePart(file('p').copyWith(takenAt: Value(taken)), part('p', 0, 10));
+    await db.upsertFilePart(file('q'), part('q', 0, 11));
+    await db.markAssetBackedUp('asset-p', 'p');
+    await db.markAssetBackedUp('asset-q', 'q');
+
+    final safe = await db.safelyBackedUp();
+    expect(safe.keys, unorderedEquals(['asset-p', 'asset-q']));
+    final photo = safe['asset-p']!;
+    expect((photo.id, photo.size, photo.takenAt), ('p', 100, taken));
+    expect(safe['asset-q']!.takenAt, isNull);
+    expect(safe['asset-q']!.createdAt, now);
   });
 
   test('albums count and cover their shown files', () async {

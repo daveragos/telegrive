@@ -121,7 +121,7 @@ class MediaGrid extends ConsumerStatefulWidget {
   final bool alwaysSelecting;
 
   /// Whether a long-press starts selecting. Off where the screen has no
-  /// bar to act on a selection, as in Search.
+  /// bar to act on a selection, as in Search and Free up space's preview.
   final bool selectable;
 
   /// Called when the grid is scrolled close to its end, or left there by

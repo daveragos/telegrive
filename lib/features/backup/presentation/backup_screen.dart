@@ -11,6 +11,7 @@ import '../../network/data/mobile_data.dart';
 import '../data/backup_controller.dart';
 import 'backup_card.dart';
 import 'duplicates_sheet.dart';
+import 'free_up_space_sheet.dart';
 
 final _deviceFoldersProvider = FutureProvider.autoDispose<List<DeviceFolder>>(
   (ref) => ref.read(backupControllerProvider.notifier).deviceFolders(),
@@ -62,6 +63,7 @@ class BackupScreen extends ConsumerWidget {
                 ),
               ),
             ),
+          const FreeUpSpaceTile(),
           if (backup.failed > 0 || (backup.remaining > 0 && !backup.isWorking)) ...[
             const SizedBox(height: Space.s),
             ListGroup(

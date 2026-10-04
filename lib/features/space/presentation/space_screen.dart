@@ -278,6 +278,7 @@ class _OnThisPhone extends ConsumerWidget {
     final usage = ref.watch(phoneUsageProvider);
     final offline = ref.watch(offlineUsageProvider);
     final freeable = ref.watch(freeableProvider).value;
+    final keep = ref.watch(freeUpKeepProvider);
     final busy = ref.watch(transferQueueProvider.select((s) => s.activeCount)) > 0;
     final measured = usage.value;
     final failed = usage.hasError && measured == null;
@@ -358,7 +359,9 @@ class _OnThisPhone extends ConsumerWidget {
               _UsageRow(
                 title: 'Backed-up photos',
                 value: Formatters.bytes(freeable.bytes),
-                subtitle: 'Safely in your drive.',
+                subtitle: keep == KeepWindow.nothing
+                    ? 'Safely in your drive.'
+                    : 'Safely in your drive. Free up keeps the last ${keep.label}.',
                 action: TextButton(
                   onPressed: () => showFreeUpSpace(context, ref),
                   child: const Text('Free up'),

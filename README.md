@@ -40,7 +40,9 @@ phone number.
   Home opens with one line that says whether everything is backed up and in
   sync, and when that was last checked.
 - **Free up space.** Delete the phone's copies of photos and videos that are
-  safely backed up; they stay in the drive.
+  safely backed up, keeping the last 30 or 90 days on the phone if you like;
+  they stay in the drive. Photo backup's screen offers it, Show them lists
+  exactly what goes, and Home says so when the phone runs low on space.
 - **See where the space goes.** The storage total on Home, or Stored in
   Telegram in Settings, opens Space: the 50 biggest files, which you can
   select and move or put in the trash, each top-level folder with

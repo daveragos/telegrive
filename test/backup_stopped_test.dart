@@ -7,6 +7,7 @@ import 'package:photo_manager/photo_manager.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:telegrive/app/theme/app_theme.dart';
 import 'package:telegrive/features/backup/data/backup_controller.dart';
+import 'package:telegrive/features/backup/data/free_up_space.dart';
 import 'package:telegrive/features/backup/presentation/backup_screen.dart';
 import 'package:telegrive/features/backup/presentation/duplicates_sheet.dart';
 import 'package:telegrive/features/drive/data/drive_session.dart';
@@ -125,6 +126,7 @@ void main() {
           backupControllerProvider.overrideWith(_Stopped.new),
           transferQueueProvider.overrideWith(_Queue.new),
           duplicateBackupsProvider.overrideWith((ref) async => DuplicateBackups.none),
+          freeableProvider.overrideWith((ref) async => Freeable.none),
         ],
         child: MaterialApp(theme: AppTheme.light(), home: const BackupScreen()),
       ),

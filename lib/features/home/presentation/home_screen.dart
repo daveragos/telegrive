@@ -13,6 +13,7 @@ import '../../../infrastructure/database/app_database.dart'
     show KindTotal, TransferOrigin, TransferStatus;
 import '../../../infrastructure/storage/preferences.dart';
 import '../../backup/data/backup_controller.dart';
+import '../../backup/data/free_up_space.dart';
 import '../../backup/presentation/backup_card.dart';
 import '../../backup/presentation/free_up_space_sheet.dart';
 import '../../drive/data/drive_repository.dart';
@@ -241,11 +242,16 @@ class _Activity extends ConsumerWidget {
           ? ref.watch(enabledProxyProvider)?.label
           : null,
     );
+    // What could be freed is only worked out while the phone is low on
+    // space, since it reads the whole photo library.
+    final lowOnSpace = ref.watch(lowSpaceProvider).value ?? false;
     final second = secondaryHealth(
       top,
       backup: backup,
       transfers: transfers,
       renewDay: renewDay,
+      lowOnSpace: lowOnSpace,
+      freeableBytes: lowOnSpace ? ref.watch(freeUpCandidatesProvider).value?.bytes ?? 0 : 0,
     );
 
     return Padding(
@@ -321,6 +327,10 @@ class _Activity extends ConsumerWidget {
         HealthAction.freeUpSpace => TextButton(
           onPressed: () => showFreeUpSpace(context, ref),
           child: const Text('Free up space'),
+        ),
+        HealthAction.freeUp => TextButton(
+          onPressed: () => showFreeUpSpace(context, ref),
+          child: const Text('Free up'),
         ),
         HealthAction.useProxy => TextButton(
           onPressed: () => showProxySheet(context),

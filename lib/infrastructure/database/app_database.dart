@@ -895,10 +895,11 @@ class AppDatabase extends _$AppDatabase {
   // Freeing up space
   // ---------------------------------------------------------------------------
 
-  /// Phone media id to the size of its drive copy, for every photo and
-  /// video backed up from this phone whose copy is complete and not in the
-  /// trash — the ones safe to delete from the phone.
-  Future<Map<String, int>> safelyBackedUp() async {
+  /// Phone media id to its drive copy, for every photo and video backed up
+  /// from this phone whose copy is complete and not in the trash: the ones
+  /// safe to delete from the phone. The row carries the copy's size and
+  /// when the photo was taken, which Free up space counts and dates by.
+  Future<Map<String, FileRow>> safelyBackedUp() async {
     final query = select(backupAssets).join([
       innerJoin(driveFiles, driveFiles.id.equalsExp(backupAssets.fileId)),
     ])..where(
@@ -907,7 +908,7 @@ class AppDatabase extends _$AppDatabase {
       );
     return {
       for (final row in await query.get())
-        row.readTable(backupAssets).assetId: row.readTable(driveFiles).size,
+        row.readTable(backupAssets).assetId: row.readTable(driveFiles),
     };
   }
 

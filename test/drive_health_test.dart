@@ -868,5 +868,73 @@ void main() {
       expect(row?.text, 'Backup stopped');
       expect(row?.action, HealthAction.retryBackup);
     });
+
+    group('Free up', () {
+      DriveHealth? lowSpace(
+        BackupState backup,
+        TransfersState transfers, {
+        bool low = true,
+        int bytes = 9 * _gb,
+      }) => secondaryHealth(
+        _top(backup: backup, transfers: transfers),
+        backup: backup,
+        transfers: transfers,
+        lowOnSpace: low,
+        freeableBytes: bytes,
+        now: _now,
+      );
+
+      test('sits under all good when the phone is low on space', () {
+        final row = lowSpace(_upToDate, TransfersState.empty);
+        expect(row?.text, '9.0 GB of backed-up photos can leave this phone');
+        expect(row?.detail, 'This phone is running low on space.');
+        expect(row?.icon, Icons.phonelink_erase_outlined);
+        expect(row?.tone, HealthTone.neutral);
+        expect(row?.action, HealthAction.freeUp);
+        expect(row?.target, HealthTarget.backup);
+        expect(row?.topic, HealthTopic.storage);
+      });
+
+      test('needs a phone low on space and more than 500 MB to free', () {
+        expect(freeUpWorthwhile, 500 * _mb);
+        expect(lowSpace(_upToDate, TransfersState.empty, low: false), isNull);
+        expect(lowSpace(_upToDate, TransfersState.empty, bytes: freeUpWorthwhile), isNull);
+        expect(
+          lowSpace(_upToDate, TransfersState.empty, bytes: freeUpWorthwhile + 1)?.action,
+          HealthAction.freeUp,
+        );
+      });
+
+      test('comes after every other concern', () {
+        final failed = TransfersState([_transfer('a.zip', TransferStatus.failed)]);
+        expect(lowSpace(_upToDate, failed)?.action, HealthAction.retryTransfers);
+        final paused = TransfersState([_transfer('a.zip', TransferStatus.paused)]);
+        expect(lowSpace(_upToDate, paused)?.action, HealthAction.resumeTransfers);
+        // Backup off sits under a line about transfers; with nothing else
+        // going on it is the top line, and Free up takes the second.
+        final busy = TransfersState([_transfer('a.zip', TransferStatus.running)]);
+        expect(lowSpace(_off, busy)?.action, HealthAction.turnOn);
+        expect(lowSpace(_off, TransfersState.empty)?.action, HealthAction.freeUp);
+        // A backup that stopped while Telegram can't be reached keeps the row.
+        const stopped = BackupState(phase: BackupPhase.stopped);
+        final row = secondaryHealth(
+          _top(backup: stopped, sync: const SyncState(error: 'No connection')),
+          backup: stopped,
+          transfers: TransfersState.empty,
+          lowOnSpace: true,
+          freeableBytes: 9 * _gb,
+          now: _now,
+        );
+        expect(row?.action, HealthAction.retryBackup);
+      });
+
+      test('stays away while a transfer waits for room, which offers its own', () {
+        final waiting = TransfersState([_needsRoom('movie.mp4', 300 * _mb)]);
+        expect(_top(transfers: waiting).action, HealthAction.freeUpSpace);
+        expect(lowSpace(_upToDate, waiting), isNull);
+        const stopped = BackupState(phase: BackupPhase.stopped);
+        expect(lowSpace(stopped, waiting)?.action, HealthAction.freeUpSpace);
+      });
+    });
   });
 }

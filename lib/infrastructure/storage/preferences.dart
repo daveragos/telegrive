@@ -237,6 +237,11 @@ class Preferences {
   Future<void> setDeletePhoneCopyToo(bool on) =>
       _prefs.setBool('delete_phone_copy_too', on);
 
+  /// Name of how much of the newest Free up space keeps on the phone, see
+  /// `KeepWindow`.
+  String? get freeUpKeep => _prefs.getString('free_up_keep');
+  Future<void> setFreeUpKeep(String name) => _prefs.setString('free_up_keep', name);
+
   /// The drive folders this phone last uploaded into, most recent first,
   /// with '' for the root. Folder ids belong to one drive, so the list goes
   /// when the drive leaves the phone.
