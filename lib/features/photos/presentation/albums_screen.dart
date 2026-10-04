@@ -127,7 +127,7 @@ class AlbumScreen extends ConsumerStatefulWidget {
   ConsumerState<AlbumScreen> createState() => _AlbumScreenState();
 }
 
-enum _AlbumMenu { send, rename, delete }
+enum _AlbumMenu { select, send, rename, delete }
 
 class _AlbumScreenState extends ConsumerState<AlbumScreen> {
   final _selection = MediaSelection();
@@ -159,56 +159,71 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> {
         },
         child: Scaffold(
           appBar: _selection.active
-              ? mediaSelectionBar(
+              ? mediaSelectionAppBar(context, selection: _selection, files: files ?? const [])
+              : AppBar(
+                  title: Text(title, overflow: TextOverflow.ellipsis),
+                  actions: [
+                    if (album != null)
+                      IconButton(
+                        onPressed: () => context.push('/albums/$id/add'),
+                        icon: const Icon(Icons.add_photo_alternate_outlined),
+                        tooltip: 'Add photos',
+                      ),
+                    PopupMenuButton<_AlbumMenu>(
+                      tooltip: 'More',
+                      onSelected: (choice) async {
+                        switch (choice) {
+                          case _AlbumMenu.select:
+                            _selection.begin();
+                          case _AlbumMenu.send:
+                            if (files == null || files.isEmpty) {
+                              showSnack(context, 'This album is empty.');
+                            } else {
+                              await FileActions.sendToChats(
+                                context,
+                                ref,
+                                files,
+                                bundleName: album!.name,
+                                byMoment: true,
+                              );
+                            }
+                          case _AlbumMenu.rename:
+                            await AlbumActions.rename(context, ref, album!);
+                          case _AlbumMenu.delete:
+                            if (await AlbumActions.delete(context, ref, album!) &&
+                                context.mounted) {
+                              context.pop();
+                            }
+                        }
+                      },
+                      // Favorites and Videos are the app's own, so they
+                      // offer only Select.
+                      itemBuilder: (_) => [
+                        const PopupMenuItem(
+                          value: _AlbumMenu.select,
+                          child: Text('Select photos'),
+                        ),
+                        if (album != null) ...const [
+                          PopupMenuItem(
+                            value: _AlbumMenu.send,
+                            child: Text('Send album in Telegram'),
+                          ),
+                          PopupMenuItem(value: _AlbumMenu.rename, child: Text('Rename album')),
+                          PopupMenuItem(value: _AlbumMenu.delete, child: Text('Delete album')),
+                        ],
+                      ],
+                    ),
+                  ],
+                ),
+          bottomNavigationBar: _selection.active
+              ? mediaSelectionActions(
                   context,
                   ref,
                   selection: _selection,
                   files: files ?? const [],
                   albumId: album?.id,
                 )
-              : AppBar(
-                  title: Text(title, overflow: TextOverflow.ellipsis),
-                  actions: [
-                    if (album != null) ...[
-                      IconButton(
-                        onPressed: () => context.push('/albums/$id/add'),
-                        icon: const Icon(Icons.add_photo_alternate_outlined),
-                        tooltip: 'Add photos',
-                      ),
-                      PopupMenuButton<_AlbumMenu>(
-                        tooltip: 'More',
-                        onSelected: (choice) async {
-                          switch (choice) {
-                            case _AlbumMenu.send:
-                              if (files == null || files.isEmpty) {
-                                showSnack(context, 'This album is empty.');
-                              } else {
-                                await FileActions.sendToChats(
-                                  context,
-                                  ref,
-                                  files,
-                                  bundleName: album.name,
-                                  byMoment: true,
-                                );
-                              }
-                            case _AlbumMenu.rename:
-                              await AlbumActions.rename(context, ref, album);
-                            case _AlbumMenu.delete:
-                              if (await AlbumActions.delete(context, ref, album) &&
-                                  context.mounted) {
-                                context.pop();
-                              }
-                          }
-                        },
-                        itemBuilder: (_) => const [
-                          PopupMenuItem(value: _AlbumMenu.send, child: Text('Send album in Telegram')),
-                          PopupMenuItem(value: _AlbumMenu.rename, child: Text('Rename album')),
-                          PopupMenuItem(value: _AlbumMenu.delete, child: Text('Delete album')),
-                        ],
-                      ),
-                    ],
-                  ],
-                ),
+              : null,
           body: files == null
               ? const Center(child: CircularProgressIndicator())
               : MediaGrid(

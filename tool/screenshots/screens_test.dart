@@ -38,6 +38,7 @@ import 'package:telegrive/features/send/data/telegram_chats.dart';
 import 'package:telegrive/features/trash/presentation/trash_screen.dart';
 import 'package:telegrive/core/files/file_kind.dart';
 import 'package:telegrive/core/widgets/file_visuals.dart';
+import 'package:telegrive/core/widgets/selection_bar.dart';
 import 'package:telegrive/features/drive/data/drive_repository.dart';
 import 'package:telegrive/features/drive/data/previews.dart';
 import 'package:telegrive/features/drive/data/drive_session.dart';
@@ -733,6 +734,7 @@ void main() {
         GoRoute(path: '/transfers', builder: (_, _) => const TransfersScreen()),
         GoRoute(path: '/settings', builder: (_, _) => const SettingsScreen()),
         GoRoute(path: '/recent', builder: (_, _) => const FileListScreen.recent()),
+        GoRoute(path: '/starred', builder: (_, _) => const FileListScreen.starred()),
         GoRoute(
           path: '/import/:chatId',
           builder: (_, state) => ImportScreen(
@@ -886,6 +888,10 @@ void main() {
       await tester.pump(const Duration(milliseconds: 400));
     }
   }
+
+  /// An action in the bar at the foot of a screen that is selecting.
+  Finder barAction(String label) =>
+      find.descendant(of: find.byType(SelectionActionBar), matching: find.text(label));
 
   /// Shadows are drawn for real here (tests flatten them by default), then
   /// switched back so the framework's end-of-test checks pass.
@@ -1243,6 +1249,16 @@ void main() {
     await snap(tester, 'files_selection');
   });
 
+  testWidgets('starred selection', (tester) async {
+    await prepareData(tester);
+    await pumpApp(tester, location: '/starred');
+    await tester.tap(find.byTooltip('Select'));
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.tap(find.text('Lalibela sunrise.jpg'));
+    await tester.pump(const Duration(milliseconds: 300));
+    await snap(tester, 'starred_selection');
+  });
+
   testWidgets('save sheet', (tester) async {
     await prepareData(tester);
     await pumpApp(tester, location: '/files');
@@ -1251,7 +1267,7 @@ void main() {
     await tester.tap(find.text('Simien trek.png'));
     await tester.tap(find.text('Budget 2026.xlsx'));
     await tester.pump(const Duration(milliseconds: 300));
-    await tester.tap(find.byTooltip('Download to this phone'));
+    await tester.tap(barAction('Download'));
     for (var i = 0; i < 6; i++) {
       await tester.pump(const Duration(milliseconds: 100));
     }
@@ -1269,7 +1285,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
     await tester.tap(find.text('Simien trek.png'));
     await tester.pump(const Duration(milliseconds: 300));
-    await tester.tap(find.byTooltip('Download to this phone'));
+    await tester.tap(barAction('Download'));
     for (var i = 0; i < 6; i++) {
       await tester.pump(const Duration(milliseconds: 100));
     }
@@ -1410,7 +1426,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
     await gesture.up();
     await tester.pump(const Duration(milliseconds: 300));
-    await tester.tap(find.byTooltip('Move to Trash'));
+    await tester.tap(barAction('Trash'));
     await tester.pump(const Duration(milliseconds: 400));
     await snap(tester, 'trash_sheet');
   });
@@ -1473,7 +1489,7 @@ void main() {
     );
     await tester.longPress(find.text('Lalibela 2026'));
     await tester.pump(const Duration(milliseconds: 300));
-    await tester.tap(find.byTooltip('Send in Telegram'));
+    await tester.tap(barAction('Send'));
     for (var i = 0; i < 6; i++) {
       await tester.pump(const Duration(milliseconds: 100));
     }
@@ -2064,6 +2080,15 @@ void main() {
     await tester.tap(find.widgetWithText(InkWell, second.title));
     await tester.pump(const Duration(milliseconds: 300));
     await snap(tester, 'photos_month_select');
+  });
+
+  testWidgets('photos month', (tester) async {
+    await prepareData(tester);
+    await pumpApp(tester, location: '/photos', backup: uploading);
+    // A month's title selects the whole month, even with nothing selected.
+    await tester.tap(find.widgetWithText(InkWell, 'This month'));
+    await tester.pump(const Duration(milliseconds: 300));
+    await snap(tester, 'photos_month');
   });
 
   testWidgets('backup settings', (tester) async {

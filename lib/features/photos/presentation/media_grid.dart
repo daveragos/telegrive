@@ -17,10 +17,20 @@ import 'media_grid_layout.dart';
 class MediaSelection extends ChangeNotifier {
   Set<String> _ids = {};
 
+  /// Selecting was started from a menu, before any photo was picked.
+  bool _forced = false;
+
   Set<String> get ids => Set.unmodifiable(_ids);
-  bool get active => _ids.isNotEmpty;
+  bool get active => _forced || _ids.isNotEmpty;
   int get length => _ids.length;
   bool contains(String id) => _ids.contains(id);
+
+  /// Starts selecting with nothing picked yet, as Select photos does.
+  void begin() {
+    if (_forced) return;
+    _forced = true;
+    notifyListeners();
+  }
 
   void toggle(String id) {
     _ids.contains(id) ? _ids.remove(id) : _ids.add(id);
@@ -33,7 +43,12 @@ class MediaSelection extends ChangeNotifier {
     notifyListeners();
   }
 
-  void clear() => replace(const {});
+  void clear() {
+    if (!active) return;
+    _forced = false;
+    _ids = {};
+    notifyListeners();
+  }
 
   /// Lets go of anything not among [files], so the count and the actions
   /// only ever cover what is on screen.
@@ -70,8 +85,8 @@ final photoColumnsProvider = NotifierProvider<PhotoColumns, int>(PhotoColumns.ne
 /// Photos and videos as square tiles grouped by month. Tap to open,
 /// long-press to select and keep dragging to select a run (scrolling at the
 /// edges), pinch to make tiles bigger or smaller. A long grid has a handle
-/// at its right edge that jumps between months, and while selecting, a
-/// month's header selects or clears all of it.
+/// at its right edge that jumps between months, and a month's title selects
+/// or clears all of it, starting a selection when there is none.
 class MediaGrid extends ConsumerStatefulWidget {
   const MediaGrid({
     super.key,
@@ -131,6 +146,9 @@ class _MediaGridState extends ConsumerState<MediaGrid> {
 
   // Drag to select.
   int? _anchor;
+
+  /// The tile the drag last reached, so each new one ticks once.
+  int? _lastIndex;
   Set<String> _before = const {};
   bool _adding = true;
   Offset? _pointer;
@@ -220,6 +238,7 @@ class _MediaGridState extends ConsumerState<MediaGrid> {
     if (index == null) return;
     HapticFeedback.selectionClick();
     _anchor = index;
+    _lastIndex = index;
     _before = widget.selection.ids;
     _adding = !widget.selection.contains(widget.files[index].id);
     _pointer = details.globalPosition;
@@ -236,12 +255,17 @@ class _MediaGridState extends ConsumerState<MediaGrid> {
 
   void _dragEnd([LongPressEndDetails? _]) {
     _anchor = null;
+    _lastIndex = null;
     _pointer = null;
     _autoScroll?.cancel();
     _autoScroll = null;
   }
 
   void _selectRunTo(int index) {
+    if (index != _lastIndex) {
+      _lastIndex = index;
+      HapticFeedback.selectionClick();
+    }
     final from = math.min(_anchor!, index);
     final to = math.max(_anchor!, index);
     final run = widget.files.sublist(from, to + 1).map((f) => f.id);
@@ -362,7 +386,7 @@ class _MediaGridState extends ConsumerState<MediaGrid> {
             height: headerHeight,
             selecting: _selecting,
             allSelected: _selecting && section.allSelected(selected),
-            onTap: () => _toggleMonth(section),
+            onTap: _selecting || widget.selectable ? () => _toggleMonth(section) : null,
           ),
         );
         slivers
@@ -468,9 +492,9 @@ class _ScrubStrip {
   const _ScrubStrip();
 }
 
-/// A month's title over its photos. While selecting, the row selects or
-/// clears the whole month, and its circle is filled only when all of it is
-/// selected.
+/// A month's title over its photos. Tapping it selects or clears the whole
+/// month, and starts a selection when there is none. While selecting, its
+/// circle is filled only when all of the month is selected.
 class _MonthHeader extends StatelessWidget {
   const _MonthHeader({
     required this.title,
@@ -484,13 +508,15 @@ class _MonthHeader extends StatelessWidget {
   final double height;
   final bool selecting;
   final bool allSelected;
-  final VoidCallback onTap;
+
+  /// Null where the grid can't select.
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
     return InkWell(
-      onTap: selecting ? onTap : null,
+      onTap: onTap,
       child: SizedBox(
         height: height,
         child: Padding(

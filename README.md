@@ -31,8 +31,8 @@ phone number.
   photo can be in several without being copied), plus Favorites and Videos.
   On a long timeline a thin handle shows at the right edge while you
   scroll; drag it and the month beside your finger is named, and letting
-  go puts that month at the top. While selecting, the circle by a month's
-  name selects or clears the whole month.
+  go puts that month at the top. Tapping a month's name selects or clears
+  the whole month, and its circle fills while all of it is selected.
   Home opens with one line that says whether everything is backed up and in
   sync, and when that was last checked.
 - **Free up space.** Delete the phone's copies of photos and videos that are
@@ -58,6 +58,13 @@ phone number.
   and points it out for a moment. Starred, Recent and each category say
   which folder each file is in, and Trash says where each item goes back
   to.
+- **Act on many at once.** Long-press a file, folder or photo, or tap
+  Select, and the actions move to a bar along the bottom, each with its
+  name: Download, Send, Move and Trash for files, Album, Send, Download
+  and Trash for photos, and the rest under More. The top says how many are
+  selected and what they weigh. Files, Photos, albums, Starred, Recent and
+  each category all select this way, and Back lets go of the selection
+  first.
 - **Recent, as you use it.** Home lists the files you last opened, shared
   or sent on this phone together with the ones you added, each saying which
   and when. Backed-up photos stay in Photos, so a batch of them never

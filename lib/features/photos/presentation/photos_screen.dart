@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../app/theme/tokens.dart';
 import '../../../core/format/formatters.dart';
 import '../../../core/widgets/common.dart';
+import '../../../core/widgets/selection_bar.dart';
 import '../../backup/data/backup_controller.dart';
 import '../../backup/presentation/backup_card.dart';
 import '../../backup/presentation/duplicates_sheet.dart';
@@ -15,7 +16,7 @@ import '../data/photos_visibility.dart';
 import 'media_grid.dart';
 import 'media_selection_bar.dart';
 
-enum _PhotosMenu { fromChat, download, freeUp, duplicates }
+enum _PhotosMenu { select, fromChat, download, freeUp, duplicates }
 
 /// Every photo and video in the drive as one timeline, newest moment first,
 /// with backup status on top.
@@ -29,8 +30,28 @@ class PhotosScreen extends ConsumerStatefulWidget {
 class _PhotosScreenState extends ConsumerState<PhotosScreen> {
   final _selection = MediaSelection();
 
+  /// Tells the shell whether this tab is selecting, so its bar makes way for
+  /// the selection's. Kept from the start, for when the screen goes.
+  late final SelectionActive _selectionActive;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectionActive = ref.read(selectionActiveProvider.notifier);
+    // The shell gives up its bar while this tab is selecting, told in the
+    // same turn as the selection changes so the two bars never show together.
+    _selection.addListener(() => _selectionActive.set(_selection.active));
+  }
+
   @override
   void dispose() {
+    // A shell taken down while selecting, as when the account signs out,
+    // leaves the flag set for the next shell. Nothing may change while
+    // screens are being taken down, so that waits for the end of the frame.
+    if (_selection.active) {
+      final active = _selectionActive;
+      WidgetsBinding.instance.addPostFrameCallback((_) => active.set(false));
+    }
     _selection.dispose();
     super.dispose();
   }
@@ -41,6 +62,11 @@ class _PhotosScreenState extends ConsumerState<PhotosScreen> {
     // Hide, or a file going away, can take selected photos off screen.
     ref.listen(photosTimelineProvider, (_, next) {
       if (next.value case final files?) _selection.keepOnly(files);
+    });
+    // A selection stays on its tab: the shell, switching tabs, says nothing
+    // is selecting, and the selection goes.
+    ref.listen<bool>(selectionActiveProvider, (_, active) {
+      if (!active) _selection.clear();
     });
     final backup = ref.watch(backupControllerProvider);
     final keptOut = ref.watch(keptOutSummaryProvider);
@@ -55,7 +81,7 @@ class _PhotosScreenState extends ConsumerState<PhotosScreen> {
         },
         child: Scaffold(
           appBar: _selection.active
-              ? mediaSelectionBar(context, ref, selection: _selection, files: files ?? const [])
+              ? mediaSelectionAppBar(context, selection: _selection, files: files ?? const [])
               : AppBar(
                   toolbarHeight: 64,
                   title: Text('Photos', style: context.text.headlineSmall),
@@ -84,6 +110,7 @@ class _PhotosScreenState extends ConsumerState<PhotosScreen> {
                     PopupMenuButton<_PhotosMenu>(
                       tooltip: 'More',
                       onSelected: (choice) => switch (choice) {
+                        _PhotosMenu.select => _selection.begin(),
                         _PhotosMenu.fromChat => FileActions.saveFromChat(
                           context,
                           ref,
@@ -99,6 +126,10 @@ class _PhotosScreenState extends ConsumerState<PhotosScreen> {
                         _PhotosMenu.duplicates => removeDuplicateBackups(context, ref),
                       },
                       itemBuilder: (_) => [
+                        const PopupMenuItem(
+                          value: _PhotosMenu.select,
+                          child: Text('Select photos'),
+                        ),
                         const PopupMenuItem(
                           value: _PhotosMenu.fromChat,
                           child: Text('Save photos from a Telegram chat'),
@@ -120,6 +151,9 @@ class _PhotosScreenState extends ConsumerState<PhotosScreen> {
                     ),
                   ],
                 ),
+          bottomNavigationBar: _selection.active
+              ? mediaSelectionActions(context, ref, selection: _selection, files: files ?? const [])
+              : null,
           body: files == null
               ? const Center(child: CircularProgressIndicator())
               : MediaGrid(

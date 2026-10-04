@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:telegrive/app/app_shell.dart';
 import 'package:telegrive/app/theme/app_theme.dart';
+import 'package:telegrive/core/widgets/selection_bar.dart';
 import 'package:telegrive/features/backup/data/backup_controller.dart';
 import 'package:telegrive/features/files/data/bulk_edits.dart';
 import 'package:telegrive/features/transfers/data/transfer_queue.dart';
@@ -40,7 +41,8 @@ class _Bulk extends BulkEdits {
 
 void main() {
   /// The shell with its three tabs and Trash over it, as the app routes
-  /// them, with a long move under way.
+  /// them, with a long move under way. Files shows a selection bar while
+  /// the shell is told a tab is selecting.
   Future<GoRouter> pumpShell(WidgetTester tester) async {
     // ignore: invalid_use_of_visible_for_testing_member
     SharedPreferences.setMockInitialValues({'backup_prompt_shown': true});
@@ -60,7 +62,26 @@ void main() {
               routes: [GoRoute(path: '/home', builder: (_, _) => page('Home page'))],
             ),
             StatefulShellBranch(
-              routes: [GoRoute(path: '/files', builder: (_, _) => page('Files page'))],
+              routes: [
+                GoRoute(
+                  path: '/files',
+                  builder: (_, _) => Consumer(
+                    builder: (context, ref, _) => Scaffold(
+                      body: const Center(child: Text('Files page')),
+                      bottomNavigationBar: ref.watch(selectionActiveProvider)
+                          ? const SelectionActionBar(
+                              actions: [
+                                SelectionAction(
+                                  icon: Icons.drive_file_move_outline,
+                                  label: 'Move',
+                                ),
+                              ],
+                            )
+                          : null,
+                    ),
+                  ),
+                ),
+              ],
             ),
             StatefulShellBranch(
               routes: [GoRoute(path: '/photos', builder: (_, _) => page('Photos page'))],
@@ -170,5 +191,32 @@ void main() {
     await tester.tap(find.text('Stop'));
     expect(bulk.stops, 1);
     semantics.dispose();
+  });
+
+  testWidgets('while a tab selects, the bulk line rides on top of its bar', (tester) async {
+    final router = await pumpShell(tester);
+    router.go('/files');
+    await tester.pumpAndSettle();
+    final selecting = ProviderScope.containerOf(
+      tester.element(find.byType(AppShell)),
+    ).read(selectionActiveProvider.notifier);
+    final onBar = find.descendant(
+      of: find.byType(SelectionActionBar),
+      matching: find.text('Moving 500 items'),
+    );
+
+    selecting.set(true);
+    await tester.pumpAndSettle();
+    expect(find.text('Moving 500 items'), findsOneWidget);
+    expect(onBar, findsOneWidget);
+    expect(
+      tester.getBottomLeft(find.text('212 of 500 done')).dy,
+      lessThan(tester.getTopLeft(find.text('Move')).dy),
+    );
+
+    selecting.set(false);
+    await tester.pumpAndSettle();
+    expect(find.text('Moving 500 items'), findsOneWidget);
+    expect(onBar, findsNothing);
   });
 }

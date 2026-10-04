@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/format/formatters.dart';
+import '../../../core/widgets/selection_bar.dart';
 import '../../drive/domain/drive_models.dart';
 import '../../files/presentation/file_actions.dart';
 import 'album_actions.dart';
@@ -9,8 +9,27 @@ import 'media_grid.dart';
 
 enum _More { star, removeFromAlbum, selectAll }
 
-/// The app bar while photos are selected, on the Photos tab and in albums.
-PreferredSizeWidget mediaSelectionBar(
+/// The app bar while photos are selected, on the Photos tab and in albums:
+/// '6 selected · 48 MB', or 'Select photos' before any are picked.
+PreferredSizeWidget mediaSelectionAppBar(
+  BuildContext context, {
+  required MediaSelection selection,
+  required List<DriveFile> files,
+}) {
+  final picked = selection.pick(files);
+  return selectionAppBar(
+    context,
+    count: picked.length,
+    bytes: picked.fold(0, (sum, f) => sum + f.size),
+    onClear: selection.clear,
+    noun: 'photos',
+  );
+}
+
+/// What can be done with the selected photos, in the bar at the foot of
+/// the Photos tab and of albums. [albumId] is the album on screen, when it
+/// is one people made, which the photos can then be taken out of.
+Widget mediaSelectionActions(
   BuildContext context,
   WidgetRef ref, {
   required MediaSelection selection,
@@ -18,62 +37,60 @@ PreferredSizeWidget mediaSelectionBar(
   String? albumId,
 }) {
   final picked = selection.pick(files);
-  final allStarred = picked.isNotEmpty && picked.every((f) => f.starred);
+  final none = picked.isEmpty;
+  final allStarred = !none && picked.every((f) => f.starred);
 
   Future<void> then(Future<bool> action) async {
     if (await action) selection.clear();
   }
 
-  return AppBar(
-    backgroundColor: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.5),
-    leading: IconButton(
-      onPressed: selection.clear,
-      icon: const Icon(Icons.close_rounded),
-      tooltip: 'Clear selection',
-    ),
-    title: Text(Formatters.number(selection.length)),
+  VoidCallback? unlessNone(Future<bool> Function() action) =>
+      none ? null : () => then(action());
+
+  return SelectionActionBar(
     actions: [
-      IconButton(
-        onPressed: () => then(AlbumActions.addTo(context, ref, picked)),
-        icon: const Icon(Icons.library_add_outlined),
-        tooltip: 'Add to album',
+      SelectionAction(
+        icon: Icons.library_add_outlined,
+        label: 'Album',
+        onTap: unlessNone(() => AlbumActions.addTo(context, ref, picked)),
       ),
-      IconButton(
-        onPressed: () => then(FileActions.sendToChats(context, ref, picked, byMoment: true)),
-        icon: const Icon(Icons.send_outlined),
-        tooltip: 'Send in Telegram',
+      SelectionAction(
+        icon: Icons.send_outlined,
+        label: 'Send',
+        onTap: unlessNone(() => FileActions.sendToChats(context, ref, picked, byMoment: true)),
       ),
-      IconButton(
-        onPressed: () => then(
-          FileActions.saveToDevice(context, ref, files: picked, preferGallery: true),
+      SelectionAction(
+        icon: Icons.download_rounded,
+        label: 'Download',
+        onTap: unlessNone(
+          () => FileActions.saveToDevice(context, ref, files: picked, preferGallery: true),
         ),
-        icon: const Icon(Icons.download_rounded),
-        tooltip: 'Download to this phone',
       ),
-      IconButton(
-        onPressed: () => then(FileActions.delete(context, ref, files: picked)),
-        icon: const Icon(Icons.delete_outline_rounded),
-        tooltip: 'Move to Trash',
-      ),
-      PopupMenuButton<_More>(
-        tooltip: 'More',
-        onSelected: (choice) => switch (choice) {
-          _More.star => then(
-            FileActions.setStarred(context, ref, picked, starred: !allStarred),
-          ),
-          _More.removeFromAlbum => then(AlbumActions.removeFrom(context, ref, picked, albumId!)),
-          _More.selectAll => selection.replace({for (final f in files) f.id}),
-        },
-        itemBuilder: (_) => [
-          PopupMenuItem(
-            value: _More.star,
-            child: Text(allStarred ? 'Remove from Starred' : 'Add to Starred'),
-          ),
-          if (albumId != null)
-            const PopupMenuItem(value: _More.removeFromAlbum, child: Text('Remove from album')),
-          const PopupMenuItem(value: _More.selectAll, child: Text('Select all')),
-        ],
+      SelectionAction(
+        icon: Icons.delete_outline_rounded,
+        label: 'Trash',
+        onTap: unlessNone(() => FileActions.delete(context, ref, files: picked)),
       ),
     ],
+    more: [
+      if (!none)
+        PopupMenuItem(
+          value: _More.star,
+          child: Text(allStarred ? 'Remove from Starred' : 'Add to Starred'),
+        ),
+      if (!none && albumId != null)
+        const PopupMenuItem(value: _More.removeFromAlbum, child: Text('Remove from album')),
+      const PopupMenuItem(value: _More.selectAll, child: Text('Select all')),
+    ],
+    onMore: (choice) {
+      switch (choice) {
+        case _More.star:
+          then(FileActions.setStarred(context, ref, picked, starred: !allStarred));
+        case _More.removeFromAlbum:
+          then(AlbumActions.removeFrom(context, ref, picked, albumId!));
+        case _More.selectAll:
+          selection.replace({for (final f in files) f.id});
+      }
+    },
   );
 }

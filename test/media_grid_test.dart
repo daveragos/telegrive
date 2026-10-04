@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -48,6 +49,7 @@ void main() {
   Future<void> pumpGrid(
     WidgetTester tester, {
     bool alwaysSelecting = false,
+    bool selectable = true,
     List<Widget> header = const [],
     double textScale = 1,
     Map<String, Object> preferences = const {},
@@ -72,6 +74,7 @@ void main() {
               files: files,
               selection: selection,
               alwaysSelecting: alwaysSelecting,
+              selectable: selectable,
               header: header,
               onOpen: (_) {},
             ),
@@ -138,7 +141,9 @@ void main() {
     expect(headerIcon(first.title, Icons.radio_button_unchecked_rounded), findsOneWidget);
   });
 
-  testWidgets('outside selection, headers show nothing and taps do nothing', (tester) async {
+  testWidgets('outside selection, a title has no circle and a tap selects its month', (
+    tester,
+  ) async {
     await pumpGrid(tester);
     for (final month in months.take(2)) {
       expect(headerIcon(month.title, Icons.radio_button_unchecked_rounded), findsNothing);
@@ -147,7 +152,55 @@ void main() {
 
     await tester.tap(header(months[1].title));
     await tester.pumpAndSettle();
+    expect(selection.active, isTrue);
+    expect(selection.ids, idsOf(months[1]));
+    expect(headerIcon(months[1].title, Icons.check_circle_rounded), findsOneWidget);
+    expect(headerIcon(months[0].title, Icons.radio_button_unchecked_rounded), findsOneWidget);
+  });
+
+  testWidgets('where the grid can\'t select, a title does nothing', (tester) async {
+    await pumpGrid(tester, selectable: false);
+    await tester.tap(header(months[1].title));
+    await tester.pumpAndSettle();
     expect(selection.ids, isEmpty);
+    expect(selection.active, isFalse);
+  });
+
+  testWidgets('dragging to select ticks once for each new tile', (tester) async {
+    final ticks = <Object?>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'HapticFeedback.vibrate') ticks.add(call.arguments);
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
+    );
+    await pumpGrid(tester);
+    final tiles = find.byType(FileThumbnail);
+    final first = tester.getCenter(tiles.at(0));
+
+    final gesture = await tester.startGesture(first);
+    await tester.pump(const Duration(milliseconds: 700));
+    expect(ticks, hasLength(1));
+
+    await gesture.moveTo(tester.getCenter(tiles.at(1)));
+    await tester.pump();
+    // Moving about inside the same tile adds nothing.
+    await gesture.moveBy(const Offset(4, 4));
+    await tester.pump();
+    await gesture.moveTo(tester.getCenter(tiles.at(2)));
+    await tester.pump();
+    await gesture.up();
+    await tester.pump();
+
+    expect(ticks, List.filled(3, 'HapticFeedbackType.selectionClick'));
+    expect(selection.ids, {for (final f in months[0].files.take(3)) f.id});
   });
 
   testWidgets('dragging the handle jumps through months and lands on one', (tester) async {

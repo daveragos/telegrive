@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:telegrive/app/theme/app_theme.dart';
 import 'package:telegrive/core/files/file_kind.dart';
 import 'package:telegrive/core/widgets/file_visuals.dart';
+import 'package:telegrive/core/widgets/selection_bar.dart';
 import 'package:telegrive/features/backup/data/backup_controller.dart';
 import 'package:telegrive/features/drive/data/drive_repository.dart';
 import 'package:telegrive/features/drive/domain/drive_models.dart';
@@ -225,7 +226,14 @@ void main() {
     });
   });
 
-  testWidgets('Hide lets go of the selected photos it takes off screen', (tester) async {
+  /// Whether the Photos tab is in the tree. Taking it out leaves the scope,
+  /// and the container in it, as the app's container outlives its shell.
+  late ValueNotifier<bool> shown;
+
+  setUp(() => shown = ValueNotifier(true));
+  tearDown(() => shown.dispose());
+
+  Future<ProviderContainer> pumpPhotos(WidgetTester tester) async {
     // ignore: invalid_use_of_visible_for_testing_member
     SharedPreferences.setMockInitialValues({});
     final shared = await SharedPreferences.getInstance();
@@ -238,20 +246,42 @@ void main() {
           mediaTimelineProvider.overrideWith(
             (ref) => Stream.value([photo('camera'), photo('screenshot', folderId: 'scr')]),
           ),
-          hiddenBackupFoldersProvider.overrideWith(
-            (ref) => Stream.value({'scr': 'Screenshots'}),
-          ),
+          hiddenBackupFoldersProvider.overrideWith((ref) => Stream.value({'scr': 'Screenshots'})),
         ],
-        child: MaterialApp(theme: AppTheme.light(), home: const PhotosScreen()),
+        child: MaterialApp(
+          theme: AppTheme.light(),
+          home: ValueListenableBuilder(
+            valueListenable: shown,
+            builder: (_, shown, _) => shown ? const PhotosScreen() : const SizedBox(),
+          ),
+        ),
       ),
     );
     await tester.pump();
     await tester.pump();
+    return ProviderScope.containerOf(tester.element(find.byType(PhotosScreen)));
+  }
+
+  Future<void> settle(WidgetTester tester) async {
+    for (var i = 0; i < 6; i++) {
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+  }
+
+  Future<void> selectPhotos(WidgetTester tester) async {
+    await tester.tap(find.descendant(of: find.byType(AppBar), matching: find.byTooltip('More')));
+    await settle(tester);
+    await tester.tap(find.text('Select photos'));
+    await settle(tester);
+  }
+
+  testWidgets('Hide lets go of the selected photos it takes off screen', (tester) async {
+    await pumpPhotos(tester);
 
     Finder tile(String id) =>
         find.byWidgetPredicate((w) => w is FileThumbnail && w.file.id == id);
-    Finder selected(String count) =>
-        find.descendant(of: find.byType(AppBar), matching: find.text(count));
+    Finder selected(String title) =>
+        find.descendant(of: find.byType(AppBar), matching: find.text(title));
 
     await tester.tap(find.widgetWithText(TextButton, 'Show'));
     await tester.pump();
@@ -259,11 +289,42 @@ void main() {
     await tester.pump();
     await tester.tap(tile('screenshot'));
     await tester.pump();
-    expect(selected('2'), findsOneWidget);
+    expect(selected('2 selected · 200 B'), findsOneWidget);
 
     await tester.tap(find.widgetWithText(TextButton, 'Hide'));
     await tester.pump();
     expect(tile('screenshot'), findsNothing);
-    expect(selected('1'), findsOneWidget);
+    expect(selected('1 selected · 100 B'), findsOneWidget);
+  });
+
+  testWidgets('Select photos tells the shell to give up its bar, and ending it takes it back', (
+    tester,
+  ) async {
+    final container = await pumpPhotos(tester);
+    expect(container.read(selectionActiveProvider), isFalse);
+
+    await selectPhotos(tester);
+    expect(
+      find.descendant(of: find.byType(AppBar), matching: find.text('Select photos')),
+      findsOneWidget,
+    );
+    expect(find.byType(SelectionActionBar), findsOneWidget);
+    expect(container.read(selectionActiveProvider), isTrue);
+
+    await tester.tap(find.byTooltip('Clear selection'));
+    await tester.pump();
+    expect(find.byType(SelectionActionBar), findsNothing);
+    expect(container.read(selectionActiveProvider), isFalse);
+  });
+
+  testWidgets('a tab taken down while selecting leaves the next shell its bar', (tester) async {
+    final container = await pumpPhotos(tester);
+    await selectPhotos(tester);
+    expect(container.read(selectionActiveProvider), isTrue);
+
+    shown.value = false;
+    await tester.pump();
+    await tester.pump();
+    expect(container.read(selectionActiveProvider), isFalse);
   });
 }

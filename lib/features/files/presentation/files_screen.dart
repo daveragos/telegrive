@@ -8,12 +8,14 @@ import 'package:go_router/go_router.dart';
 import '../../../app/theme/tokens.dart';
 import '../../../core/format/formatters.dart';
 import '../../../core/widgets/common.dart';
+import '../../../core/widgets/selection_bar.dart';
 import '../../../infrastructure/storage/preferences.dart';
 import '../../drive/data/drive_repository.dart';
 import '../../drive/data/drive_sync.dart';
 import '../../drive/domain/drive_models.dart';
 import '../data/browse_preferences.dart';
 import 'file_actions.dart';
+import 'file_selection_bar.dart';
 import 'file_tiles.dart';
 
 /// The folder browser. `folderId == null` is the drive root.
@@ -35,20 +37,55 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
   final Set<String> _files = {};
   final Set<String> _folders = {};
 
-  bool get _selecting => _files.isNotEmpty || _folders.isNotEmpty;
+  /// Select was picked from the menu, so the screen is selecting before
+  /// anything is.
+  bool _selectMode = false;
 
-  void _clearSelection() => setState(() {
-    _files.clear();
-    _folders.clear();
-  });
+  bool get _selecting => _selectMode || _files.isNotEmpty || _folders.isNotEmpty;
 
-  void _toggleFile(DriveFile file) => setState(() {
-    if (!_files.remove(file.id)) _files.add(file.id);
-  });
+  /// Tells the shell whether this folder is selecting, so its bar makes way
+  /// for the selection's. Kept from the start, for when the screen goes.
+  late final SelectionActive _selectionActive;
 
-  void _toggleFolder(DriveFolder folder) => setState(() {
-    if (!_folders.remove(folder.id)) _folders.add(folder.id);
-  });
+  /// Said in the same turn as the change, so the shell's bar and this one
+  /// never show together.
+  void _publish() => _selectionActive.set(_selecting);
+
+  void _clearSelection() {
+    setState(() {
+      _selectMode = false;
+      _files.clear();
+      _folders.clear();
+    });
+    _publish();
+  }
+
+  void _startSelecting() {
+    setState(() => _selectMode = true);
+    _publish();
+  }
+
+  void _toggleFile(DriveFile file) {
+    setState(() {
+      if (!_files.remove(file.id)) _files.add(file.id);
+    });
+    _publish();
+  }
+
+  void _toggleFolder(DriveFolder folder) {
+    setState(() {
+      if (!_folders.remove(folder.id)) _folders.add(folder.id);
+    });
+    _publish();
+  }
+
+  void _selectAll(FolderContents data) {
+    setState(() {
+      _files.addAll(data.files.map((f) => f.id));
+      _folders.addAll(data.folders.map((f) => f.id));
+    });
+    _publish();
+  }
 
   /// How long a pointed-out row stays tinted before it fades.
   static const _highlightFor = Duration(milliseconds: 1500);
@@ -70,6 +107,7 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
   @override
   void initState() {
     super.initState();
+    _selectionActive = ref.read(selectionActiveProvider.notifier);
     _startHighlight();
   }
 
@@ -83,6 +121,13 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
 
   @override
   void dispose() {
+    // A folder left while selecting, by its breadcrumbs, gives the shell its
+    // bar back. Nothing may change while screens are being taken down, so
+    // that waits for the end of the frame.
+    if (_selecting) {
+      final active = _selectionActive;
+      WidgetsBinding.instance.addPostFrameCallback((_) => active.set(false));
+    }
     _highlightTimer?.cancel();
     _scroll.dispose();
     super.dispose();
@@ -167,12 +212,25 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
         ? 'Files'
         : (crumbs.isNotEmpty ? crumbs.last.name : '');
     final data = contents.value?.sorted(prefs.sort);
+    // A selection stays on its tab: the shell, switching tabs, says nothing
+    // is selecting, and the selection goes.
+    ref.listen<bool>(selectionActiveProvider, (_, active) {
+      if (!active && _selecting) _clearSelection();
+    });
 
-    // Drop selections that vanished (deleted elsewhere, moved away).
-    if (data != null && _selecting) {
+    // Drop selections that vanished (deleted elsewhere, moved away). The
+    // shell hears of it once this frame is built, since nothing may change
+    // while it is being built.
+    if (data != null && (_files.isNotEmpty || _folders.isNotEmpty)) {
       _files.retainWhere((id) => data.files.any((f) => f.id == id));
       _folders.retainWhere((id) => data.folders.any((f) => f.id == id));
+      if (!_selecting) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _publish();
+        });
+      }
     }
+    final picked = _picked(data);
     if (data != null && _highlightId != null && !_scrolledToHighlight) {
       _scrolledToHighlight = true;
       final mode = prefs.viewMode;
@@ -186,7 +244,12 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
       },
       child: Scaffold(
         appBar: _selecting
-            ? _selectionBar(context, data)
+            ? selectionAppBar(
+                context,
+                count: picked.files.length + picked.folders.length,
+                bytes: picked.files.fold(0, (sum, f) => sum + f.size),
+                onClear: _clearSelection,
+              )
             : AppBar(
                 toolbarHeight: widget.folderId == null ? 64 : kToolbarHeight,
                 title: Text(
@@ -215,15 +278,37 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
                     tooltip: prefs.viewMode == ViewMode.list ? 'Grid view' : 'List view',
                   ),
                   _SortButton(sort: prefs.sort),
-                  if (widget.folderId == null)
-                    IconButton(
-                      onPressed: () => context.push('/trash'),
-                      icon: const Icon(Icons.delete_outline_rounded),
-                      tooltip: 'Trash',
-                    ),
+                  PopupMenuButton<_FilesMenu>(
+                    tooltip: 'More',
+                    onSelected: (choice) {
+                      switch (choice) {
+                        case _FilesMenu.select:
+                          _startSelecting();
+                        case _FilesMenu.trash:
+                          context.push('/trash');
+                      }
+                    },
+                    itemBuilder: (_) => [
+                      const PopupMenuItem(value: _FilesMenu.select, child: Text('Select')),
+                      if (widget.folderId == null)
+                        const PopupMenuItem(value: _FilesMenu.trash, child: Text('Trash')),
+                    ],
+                  ),
                   const SizedBox(width: 4),
                 ],
               ),
+        bottomNavigationBar: _selecting
+            ? fileSelectionActions(
+                context,
+                ref,
+                files: picked.files,
+                folders: picked.folders,
+                onDone: _clearSelection,
+                onSelectAll: () {
+                  if (data != null) _selectAll(data);
+                },
+              )
+            : null,
         floatingActionButton: _selecting
             ? null
             : FloatingActionButton.extended(
@@ -269,7 +354,11 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
                   ..._listSlivers(data)
                 else
                   ..._gridSlivers(data),
-                const SliverToBoxAdapter(child: SizedBox(height: 112)),
+                // Room for New to float over, or while selecting, when New
+                // is gone and the bar below takes its place, a margin.
+                SliverToBoxAdapter(
+                  child: SizedBox(height: _selecting ? Space.xxl : 112),
+                ),
               ],
             ],
           ),
@@ -387,80 +476,14 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
     ],
   ];
 
-  PreferredSizeWidget _selectionBar(BuildContext context, FolderContents? data) {
-    final files = data?.files.where((f) => _files.contains(f.id)).toList() ?? [];
-    final folders = data?.folders.where((f) => _folders.contains(f.id)).toList() ?? [];
-    final count = files.length + folders.length;
-    final allStarred = files.isNotEmpty && files.every((f) => f.starred);
-    final onlyFiles = files.isNotEmpty && folders.isEmpty;
-    final scheme = Theme.of(context).colorScheme;
-
-    Future<void> then(Future<bool> action) async {
-      if (await action) _clearSelection();
-    }
-
-    return AppBar(
-      backgroundColor: scheme.primaryContainer.withValues(alpha: 0.5),
-      leading: IconButton(
-        onPressed: _clearSelection,
-        icon: const Icon(Icons.close_rounded),
-        tooltip: 'Clear selection',
-      ),
-      // The count alone: the actions leave no room for "selected".
-      title: Text(Formatters.number(count)),
-      actions: [
-        IconButton(
-          onPressed: () => then(
-            FileActions.saveToDevice(context, ref, files: files, folders: folders),
-          ),
-          icon: const Icon(Icons.download_rounded),
-          tooltip: 'Download to this phone',
-        ),
-        IconButton(
-          onPressed: () => then(FileActions.sendToChats(context, ref, files, folders: folders)),
-          icon: const Icon(Icons.send_outlined),
-          tooltip: 'Send in Telegram',
-        ),
-        IconButton(
-          onPressed: () => then(FileActions.move(context, ref, files: files, folders: folders)),
-          icon: const Icon(Icons.drive_file_move_outline),
-          tooltip: 'Move',
-        ),
-        IconButton(
-          onPressed: () => then(FileActions.delete(context, ref, files: files, folders: folders)),
-          icon: const Icon(Icons.delete_outline_rounded),
-          tooltip: 'Move to Trash',
-        ),
-        PopupMenuButton<_SelectionMore>(
-          tooltip: 'More',
-          onSelected: (choice) async {
-            switch (choice) {
-              case _SelectionMore.star:
-                await FileActions.setStarred(context, ref, files, starred: !allStarred);
-                _clearSelection();
-              case _SelectionMore.selectAll:
-                if (data == null) return;
-                setState(() {
-                  _files.addAll(data.files.map((f) => f.id));
-                  _folders.addAll(data.folders.map((f) => f.id));
-                });
-            }
-          },
-          itemBuilder: (_) => [
-            if (onlyFiles)
-              PopupMenuItem(
-                value: _SelectionMore.star,
-                child: Text(allStarred ? 'Remove from Starred' : 'Add to Starred'),
-              ),
-            const PopupMenuItem(value: _SelectionMore.selectAll, child: Text('Select all')),
-          ],
-        ),
-      ],
-    );
-  }
+  /// The selected files and folders among [data], in its order.
+  ({List<DriveFile> files, List<DriveFolder> folders}) _picked(FolderContents? data) => (
+    files: data?.files.where((f) => _files.contains(f.id)).toList() ?? [],
+    folders: data?.folders.where((f) => _folders.contains(f.id)).toList() ?? [],
+  );
 }
 
-enum _SelectionMore { star, selectAll }
+enum _FilesMenu { select, trash }
 
 class _Summary extends StatelessWidget {
   const _Summary({required this.contents});

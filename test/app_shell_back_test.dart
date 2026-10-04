@@ -10,6 +10,7 @@ import 'package:telegrive/app/app_phase.dart';
 import 'package:telegrive/app/app_shell.dart';
 import 'package:telegrive/app/launch_action.dart';
 import 'package:telegrive/app/theme/app_theme.dart';
+import 'package:telegrive/core/widgets/selection_bar.dart';
 import 'package:telegrive/features/backup/data/backup_controller.dart';
 import 'package:telegrive/features/files/presentation/file_actions.dart';
 import 'package:telegrive/features/transfers/data/transfer_queue.dart';
@@ -339,5 +340,70 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
     expect(find.text(failure), findsOneWidget);
+  });
+
+  testWidgets('the navigation bar hides while a branch selects', (tester) async {
+    await pumpShell(tester);
+    router.go('/files');
+    await tester.pumpAndSettle();
+    expect(find.byType(NavigationBar), findsOneWidget);
+
+    final selecting = container(tester).read(selectionActiveProvider.notifier);
+    selecting.set(true);
+    await tester.pump(const Duration(milliseconds: 250));
+    expect(find.byType(NavigationBar), findsNothing);
+
+    selecting.set(false);
+    await tester.pumpAndSettle();
+    expect(find.byType(NavigationBar), findsOneWidget);
+
+    // Switching tabs after that leaves the bar where it is.
+    await tester.tap(find.text('Photos'));
+    await tester.pumpAndSettle();
+    expect(find.text('Photos page'), findsOneWidget);
+    expect(find.byType(NavigationBar), findsOneWidget);
+  });
+
+  testWidgets('a branch that selects gets the phone\'s bottom inset for its own bar', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(400, 800);
+    tester.view.devicePixelRatio = 1;
+    tester.view.padding = const FakeViewPadding(bottom: 48);
+    tester.view.viewPadding = const FakeViewPadding(bottom: 48);
+    addTearDown(tester.view.reset);
+    await pumpShell(tester);
+    router.go('/files');
+    await tester.pumpAndSettle();
+    double inset() => MediaQuery.paddingOf(tester.element(find.text('Files page'))).bottom;
+    expect(inset(), 0);
+
+    container(tester).read(selectionActiveProvider.notifier).set(true);
+    await tester.pump(const Duration(milliseconds: 250));
+    expect(inset(), 48);
+
+    container(tester).read(selectionActiveProvider.notifier).set(false);
+    await tester.pumpAndSettle();
+    expect(inset(), 0);
+  });
+
+  testWidgets('on a wide window the rail stays while selecting, and a tab switch ends it', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(900, 700);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await pumpShell(tester);
+    router.go('/files');
+    await tester.pumpAndSettle();
+
+    container(tester).read(selectionActiveProvider.notifier).set(true);
+    await tester.pumpAndSettle();
+    expect(find.byType(NavigationRail), findsOneWidget);
+
+    await tester.tap(find.text('Photos'));
+    await tester.pumpAndSettle();
+    expect(find.text('Photos page'), findsOneWidget);
+    expect(container(tester).read(selectionActiveProvider), isFalse);
   });
 }

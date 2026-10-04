@@ -9,6 +9,7 @@ import 'package:open_filex/open_filex.dart';
 
 import '../core/format/formatters.dart';
 import '../core/widgets/common.dart';
+import '../core/widgets/selection_bar.dart';
 import '../features/backup/data/backup_controller.dart';
 import '../features/backup/presentation/backup_prompt.dart';
 import '../features/capture/data/device_capture.dart';
@@ -114,8 +115,12 @@ class _AppShellState extends ConsumerState<AppShell> {
     if (mounted) context.push('/transfers');
   }
 
-  void _go(int index) =>
-      shell.goBranch(index, initialLocation: index == shell.currentIndex);
+  /// Switches tabs. A selection doesn't come along to the next tab, so the
+  /// tab that was selecting lets go of it and the bar comes back.
+  void _go(int index) {
+    ref.read(selectionActiveProvider.notifier).set(false);
+    shell.goBranch(index, initialLocation: index == shell.currentIndex);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -161,20 +166,30 @@ class _AppShellState extends ConsumerState<AppShell> {
     final backingUp = ref.watch(backupControllerProvider.select((b) => b.isWorking));
     // A bulk change wins the one line there is.
     final showBulk = _bulkLineShows(ref);
-    final wide = MediaQuery.sizeOf(context).width >= 840;
+    // A tab that is selecting puts its own bar at the foot, which carries
+    // the bulk line on top; the transfer line waits for the selection to end.
+    final selecting = ref.watch(selectionActiveProvider);
+    final wide = MediaQuery.sizeOf(context).width >= SelectionActionBar.wideFrom;
 
     Widget icon(IconData data, int index) =>
         index == _photosBranch && backingUp ? Badge(child: Icon(data)) : Icon(data);
 
     final body = Column(
       children: [
-        Expanded(child: shell),
+        Expanded(
+          child: SelectionBarStatus(
+            line: selecting && showBulk ? const _BulkStrip() : null,
+            child: shell,
+          ),
+        ),
         AnimatedSize(
           duration: const Duration(milliseconds: 200),
           curve: Curves.easeOut,
           // Home already lists what is moving in its Activity group, but
           // not bulk changes.
-          child: showBulk
+          child: selecting
+              ? const SizedBox(width: double.infinity)
+              : showBulk
               ? const _BulkStrip()
               : manualActive > 0 && shell.currentIndex != 0
               ? const _TransferStrip()
@@ -208,7 +223,7 @@ class _AppShellState extends ConsumerState<AppShell> {
         ),
       );
     } else {
-      scaffold = _narrow(body, icon);
+      scaffold = _narrow(body, icon, selecting: selecting);
     }
 
     // Back never closes the app by surprise: from another tab it goes Home,
@@ -244,27 +259,58 @@ class _AppShellState extends ConsumerState<AppShell> {
     super.dispose();
   }
 
-  Widget _narrow(Widget body, Widget Function(IconData, int) icon) {
+  /// The tabs' bar along the foot. While a tab is selecting, the bar folds
+  /// away and the tab's own bar takes the foot.
+  Widget _narrow(
+    Widget body,
+    Widget Function(IconData, int) icon, {
+    required bool selecting,
+  }) {
     final colors = context.colors;
+    final inset = MediaQuery.paddingOf(context).bottom;
+    final viewInset = MediaQuery.viewPaddingOf(context).bottom;
     return Scaffold(
-      body: body,
-      bottomNavigationBar: DecoratedBox(
-        decoration: BoxDecoration(
-          border: Border(top: BorderSide(color: colors.line)),
-        ),
-        child: NavigationBar(
-          selectedIndex: shell.currentIndex,
-          onDestinationSelected: _go,
-          labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-          destinations: [
-            for (final (index, (outline, filled, label)) in _destinations.indexed)
-              NavigationDestination(
-                icon: icon(outline, index),
-                selectedIcon: icon(filled, index),
-                label: label,
+      // The bar's slot keeps the phone's bottom inset from the body even
+      // while folded away, so a tab that is selecting is handed it back for
+      // its own bar. The body is always wrapped the same way, so the tabs
+      // below keep their state as this changes.
+      body: Builder(
+        builder: (context) {
+          final inside = MediaQuery.of(context);
+          return MediaQuery(
+            data: selecting
+                ? inside.copyWith(
+                    padding: inside.padding.copyWith(bottom: inset),
+                    viewPadding: inside.viewPadding.copyWith(bottom: viewInset),
+                  )
+                : inside,
+            child: body,
+          );
+        },
+      ),
+      bottomNavigationBar: AnimatedSize(
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeOut,
+        child: selecting
+            ? const SizedBox(width: double.infinity)
+            : DecoratedBox(
+                decoration: BoxDecoration(
+                  border: Border(top: BorderSide(color: colors.line)),
+                ),
+                child: NavigationBar(
+                  selectedIndex: shell.currentIndex,
+                  onDestinationSelected: _go,
+                  labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+                  destinations: [
+                    for (final (index, (outline, filled, label)) in _destinations.indexed)
+                      NavigationDestination(
+                        icon: icon(outline, index),
+                        selectedIcon: icon(filled, index),
+                        label: label,
+                      ),
+                  ],
+                ),
               ),
-          ],
-        ),
       ),
     );
   }
