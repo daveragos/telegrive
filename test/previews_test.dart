@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:handy_tdlib/api.dart' as td;
@@ -49,6 +50,26 @@ void main() {
     await container.pump();
     await pumpEventQueue();
     expect(telegram.cancels, [(fileId: 5, onlyIfPending: true)]);
+  });
+
+  test('a thumbnail that lands after its tile went is left quietly', () async {
+    addTearDown(container.dispose);
+    final printed = <String?>[];
+    final print = debugPrint;
+    debugPrint = (message, {wrapWidth}) => printed.add(message);
+    addTearDown(() => debugPrint = print);
+    final tile = container.listen(thumbnailPathProvider(5), (_, _) {});
+    await pumpEventQueue();
+
+    // The tile scrolls away while TDLib is already sending the file, which
+    // it then finishes.
+    tile.close();
+    await container.pump();
+    telegram.downloads[5]!.complete(tdFile(5, path: '/thumbs/5.jpg', downloaded: true));
+    await pumpEventQueue();
+
+    expect(printed, isEmpty);
+    expect(container.exists(thumbnailPathProvider(5)), isFalse);
   });
 
   test('a thumbnail that arrived is kept, and nothing is called off', () async {

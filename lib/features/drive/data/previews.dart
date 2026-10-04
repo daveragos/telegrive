@@ -51,12 +51,14 @@ final thumbnailPathProvider = FutureProvider.autoDispose.family<String?, int>((
       timeout: const Duration(minutes: 2),
     );
     settled = true;
-    if (!file.local.isDownloadingCompleted) return null;
+    // A tile gone while the file arrived has nothing to show it in; the
+    // file stays on disk, so the next look finds it at once.
+    if (!ref.mounted || !file.local.isDownloadingCompleted) return null;
     ref.keepAlive();
     return file.local.path;
   } catch (e) {
     settled = true;
-    debugPrint('[Thumbnail] $tdFileId: $e');
+    if (ref.mounted) debugPrint('[Thumbnail] $tdFileId: $e');
     return null;
   }
 });
