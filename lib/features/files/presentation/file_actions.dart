@@ -1415,52 +1415,100 @@ abstract final class FileActions {
     );
   }
 
+  /// The Details sheet: what the index knows about [file], and Show in
+  /// Telegram. Everything it says is looked up before it opens, so it never
+  /// shows a half-filled sheet.
   static Future<void> showDetails(
     BuildContext context,
     WidgetRef ref,
     DriveFile file,
   ) async {
-    final path = await ref.read(driveRepositoryProvider).pathTo(file.folderId);
+    final db = ref.read(appDatabaseProvider);
+    final (path, albums, assetId) = await (
+      ref.read(driveRepositoryProvider).pathTo(file.folderId),
+      db.albumNamesOf(file.id),
+      db.localAssetOf(file.id),
+    ).wait;
     if (!context.mounted) return;
-    final location = ['Files', ...path.map((f) => f.name)].join(' › ');
     await showModalBottomSheet<void>(
       context: context,
       useRootNavigator: true,
-      builder: (sheetContext) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                file.name,
-                style: Theme.of(sheetContext).textTheme.titleMedium,
-              ),
-              const SizedBox(height: 16),
-              _DetailRow('Type', file.extension.isEmpty ? file.mimeType : '${file.kind.label.replaceAll(RegExp(r's$'), '')} · ${file.extension}'),
-              _DetailRow('Size', '${Formatters.bytes(file.size)} (${Formatters.count(file.size, 'byte')})'),
-              _DetailRow(
-                'Location',
-                location,
-                onTap: () {
-                  Navigator.pop(sheetContext);
-                  showInFolder(context, ref, file);
-                },
-              ),
-              _DetailRow('Added', Formatters.fullDate(file.createdAt)),
-              _DetailRow('Modified', Formatters.fullDate(file.modifiedAt)),
-              if (file.isSplit)
-                _DetailRow(
-                  'Stored as',
-                  '${file.partCount} parts. Telegram caps one message at 2 GB.',
+      builder: (sheetContext) {
+        final lines = detailLines(
+          file,
+          path: [for (final folder in path) folder.name],
+          albums: albums,
+          backedUp: assetId != null,
+          showFolder: () {
+            Navigator.pop(sheetContext);
+            showInFolder(context, ref, file);
+          },
+        );
+        return SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  file.name,
+                  style: Theme.of(sheetContext).textTheme.titleMedium,
                 ),
-            ],
+                const SizedBox(height: 16),
+                for (final line in lines) _DetailRow(line.label, line.value, onTap: line.onTap),
+                const SizedBox(height: Space.l),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: () {
+                      Navigator.pop(sheetContext);
+                      showInTelegram(context, ref, file);
+                    },
+                    icon: const Icon(Icons.telegram),
+                    label: const Text('Show in Telegram'),
+                  ),
+                ),
+              ],
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
+
+  /// What the Details sheet says about [file], line by line. [path] names
+  /// the folders it is in from the top, [albums] the albums holding it, and
+  /// [backedUp] says it was backed up from a photo on this phone; a backed-up
+  /// photo's phone folder is the one under Photo backup that holds it.
+  /// [showFolder] makes Location a link to the folder.
+  static List<DetailLine> detailLines(
+    DriveFile file, {
+    List<String> path = const [],
+    List<String> albums = const [],
+    bool backedUp = false,
+    VoidCallback? showFolder,
+  }) => [
+    DetailLine(
+      'Type',
+      file.extension.isEmpty
+          ? file.mimeType
+          : '${file.kind.label.replaceAll(RegExp(r's$'), '')} · ${file.extension}',
+    ),
+    DetailLine('Size', '${Formatters.bytes(file.size)} (${Formatters.count(file.size, 'byte')})'),
+    if (file.takenAt case final taken?) DetailLine('Taken', Formatters.fullDate(taken)),
+    DetailLine('Location', ['Files', ...path].join(' › '), onTap: showFolder),
+    DetailLine('Added', Formatters.fullDate(file.createdAt)),
+    DetailLine('Modified', Formatters.fullDate(file.modifiedAt)),
+    if (albums.isNotEmpty) DetailLine('In albums', albums.join(', ')),
+    if (backedUp)
+      DetailLine('Backed up from', switch (_backupAlbum(path)) {
+        final album? => 'This phone · $album',
+        null => 'This phone',
+      }),
+    if (file.isSplit)
+      DetailLine('Stored as', '${file.partCount} parts. Telegram caps one message at 2 GB.'),
+  ];
 
   /// Opens the folder [file] lives in, where its row is tinted for a
   /// moment. When that folder isn't one Files lists, the root opens, which
@@ -1485,20 +1533,30 @@ abstract final class FileActions {
     );
   }
 
-  /// Opens the file's message in the Telegram app.
+  /// Opens the file's message in the Telegram app; for a split file, its
+  /// first part's.
   static Future<void> showInTelegram(
     BuildContext context,
     WidgetRef ref,
     DriveFile file,
   ) async {
-    final session = ref.read(driveSessionProvider);
     final parts = await ref.read(driveRepositoryProvider).partsOf(file.id);
-    if (session == null || parts.isEmpty) return;
+    if (parts.isEmpty || !context.mounted) return;
+    await openInTelegram(context, ref, parts.first.messageId);
+  }
+
+  /// Opens the drive channel's message [messageId] in the Telegram app.
+  static Future<void> openInTelegram(
+    BuildContext context,
+    WidgetRef ref,
+    int messageId,
+  ) async {
+    final session = ref.read(driveSessionProvider);
+    if (session == null) return;
     // Private channel links use the bare channel id and the server message id.
     final channel = -session.chatId - 1000000000000;
-    final post = parts.first.messageId >> 20;
     final opened = await launchUrl(
-      Uri.parse('https://t.me/c/$channel/$post'),
+      Uri.parse('https://t.me/c/$channel/${messageId >> 20}'),
       mode: LaunchMode.externalApplication,
     );
     if (!opened && context.mounted) showSnack(context, 'Couldn\'t open Telegram.');
@@ -2054,6 +2112,16 @@ class _OfflineAction extends ConsumerWidget {
       onTap: () => onTap(pinned),
     );
   }
+}
+
+/// A line of the Details sheet: a label, the file's value for it, and with
+/// [onTap], where tapping it goes.
+class DetailLine {
+  const DetailLine(this.label, this.value, {this.onTap});
+
+  final String label;
+  final String value;
+  final VoidCallback? onTap;
 }
 
 class _DetailRow extends StatelessWidget {

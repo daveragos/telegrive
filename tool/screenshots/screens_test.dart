@@ -70,6 +70,8 @@ import 'package:telegrive/features/transfers/data/transfer_queue.dart';
 import 'package:telegrive/features/transfers/domain/transfer_wait.dart';
 import 'package:telegrive/features/transfers/presentation/mobile_data_prompt.dart';
 import 'package:telegrive/features/transfers/presentation/transfers_screen.dart';
+import 'package:telegrive/features/viewer/presentation/image_viewer_screen.dart';
+import 'package:telegrive/features/viewer/presentation/vertical_swipe.dart';
 import 'package:telegrive/infrastructure/database/app_database.dart';
 import 'package:telegrive/infrastructure/network/network_status.dart';
 import 'package:telegrive/infrastructure/storage/device_profile.dart';
@@ -743,6 +745,13 @@ void main() {
             photos: state.uri.queryParameters['photos'] == '1',
           ),
         ),
+        GoRoute(
+          path: '/viewer/:fileId',
+          builder: (_, state) => ImageViewerScreen(
+            fileId: state.pathParameters['fileId']!,
+            source: state.uri.queryParameters['from'],
+          ),
+        ),
       ],
     );
 
@@ -1380,6 +1389,83 @@ void main() {
     await prepareData(tester);
     await pumpApp(tester, location: '/albums');
     await snap(tester, 'albums');
+  });
+
+  /// The third photo on the timeline as Details finds it: in the phone's
+  /// Camera folder under Photo backup, and in two albums. pumpApp already
+  /// records it as backed up from this phone.
+  Future<void> seedViewer(AppDatabase db) async {
+    final photo = photos[2];
+    var message = 1;
+    for (final (id, name, parentId) in [
+      ('backup', 'Photo backup', null),
+      (photo.folderId!, 'Camera', 'backup'),
+    ]) {
+      await db.upsertFolder(
+        FoldersCompanion.insert(
+          id: id,
+          parentId: Value(parentId),
+          name: name,
+          messageId: message++,
+          createdAt: DateTime(2026),
+          modifiedAt: DateTime(2026),
+        ),
+      );
+    }
+    for (final (id, name) in [('a1', 'Lalibela 2026'), ('a2', 'Family')]) {
+      await db.upsertAlbum(
+        AlbumsCompanion.insert(
+          id: id,
+          name: name,
+          messageId: message++,
+          createdAt: DateTime(2026),
+          modifiedAt: DateTime(2026),
+        ),
+      );
+    }
+    await db.setFileAlbums(photo.id, ['a1', 'a2']);
+  }
+
+  /// The photo has come down from Telegram, so the viewer shows it whole.
+  Override fetched(DriveFile photo) => filePreviewProvider(photo.id).overrideWith(
+    (ref) => Stream.value(
+      PreviewProgress(
+        received: photo.size,
+        total: photo.size,
+        path: _thumbPaths[photo.thumbnailFileId],
+      ),
+    ),
+  );
+
+  /// Opens the third photo from the Photos tab, as a tap on its tile does.
+  Future<void> openViewer(WidgetTester tester) async {
+    await pumpApp(
+      tester,
+      location: '/photos',
+      seed: seedViewer,
+      overrides: [fetched(photos[2])],
+    );
+    GoRouter.of(tester.element(find.byType(PhotosScreen)))
+        .push('/viewer/${Uri.encodeComponent(photos[2].id)}?from=photos');
+    for (var i = 0; i < 6; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+  }
+
+  testWidgets('viewer', (tester) async {
+    await prepareData(tester);
+    await openViewer(tester);
+    await snap(tester, 'viewer');
+  });
+
+  testWidgets('viewer details', (tester) async {
+    await prepareData(tester);
+    await openViewer(tester);
+    await tester.drag(find.byType(VerticalSwipe), const Offset(0, -120));
+    for (var i = 0; i < 4; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    await snap(tester, 'viewer_details');
   });
 
   testWidgets('photos menu', (tester) async {

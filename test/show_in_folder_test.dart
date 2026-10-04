@@ -141,10 +141,14 @@ void main() {
     final shared = await SharedPreferences.getInstance();
     final router = _router(location, showing: showing);
     addTearDown(router.dispose);
+    // Details reads albums and backup records from the index.
+    final db = AppDatabase(NativeDatabase.memory());
+    addTearDown(db.close);
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
           sharedPreferencesProvider.overrideWithValue(shared),
+          appDatabaseProvider.overrideWithValue(db),
           driveRepositoryProvider.overrideWith(
             (ref) => _Repository(ref, folders, files, trashed: trashed),
           ),

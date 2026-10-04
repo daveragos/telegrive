@@ -879,6 +879,35 @@ void main() {
     expect(await db.watchAlbums().first, isEmpty);
   });
 
+  test('the albums a file is in are named in order', () async {
+    for (final (id, name, messageId) in [
+      ('t', 'Trip', 50),
+      ('f', 'Family', 51),
+      ('r', 'Receipts', 52),
+    ]) {
+      await db.upsertAlbum(
+        AlbumsCompanion.insert(
+          id: id,
+          name: name,
+          messageId: messageId,
+          createdAt: now,
+          modifiedAt: now,
+        ),
+      );
+    }
+    await db.upsertFilePart(file('p'), part('p', 0, 10));
+    await db.upsertFilePart(file('q'), part('q', 0, 11));
+    await db.setFileAlbums('p', ['t', 'f']);
+    await db.setFileAlbums('q', ['r']);
+
+    expect(await db.albumNamesOf('p'), ['Family', 'Trip']);
+    expect(await db.albumNamesOf('loose'), isEmpty);
+
+    // The album's message is gone; its links are not yet.
+    await db.removeMessages([51]);
+    expect(await db.albumNamesOf('p'), ['Trip']);
+  });
+
   test('search finds recognised content and dates', () async {
     await db.upsertFilePart(
       file('receipt').copyWith(takenAt: Value(DateTime(2024, 3, 5))),

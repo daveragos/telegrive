@@ -751,6 +751,17 @@ class AppDatabase extends _$AppDatabase {
           .map((a) => a.albumId)
           .get();
 
+  /// The names of the albums [fileId] is in, in name order, for Details.
+  /// An album whose message is gone drops out even while its links remain.
+  Future<List<String>> albumNamesOf(String fileId) async {
+    final query = select(albums).join([
+      innerJoin(albumFiles, albumFiles.albumId.equalsExp(albums.id)),
+    ])
+      ..where(albumFiles.fileId.equals(fileId))
+      ..orderBy([OrderingTerm.asc(albums.name)]);
+    return [for (final row in await query.get()) row.readTable(albums).name];
+  }
+
   /// Albums with how many shown files each holds and its newest one, most
   /// recently changed first.
   Stream<List<AlbumSummary>> watchAlbums() {

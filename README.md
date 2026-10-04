@@ -25,7 +25,11 @@ phone number.
   device folders, videos on or off, and whether mobile data carries nothing,
   photos only, or photos and videos. A Photos tab
   shows your photos and videos as a timeline grouped by month, with a
-  swipeable full-screen viewer. Screenshots and chat folders back up too,
+  swipeable full-screen viewer: flick down to close it, or up for Details,
+  which says when the photo was taken, which folder and albums it is in and
+  whether it came from this phone, and opens it in Telegram. The viewer's
+  bar says which photo of how many you are on and moves it to the trash,
+  with Undo. Screenshots and chat folders back up too,
   but the timeline leaves them out until you tap Show. Long-press and drag
   to select a run of photos, pinch to change the grid, and keep albums (a
   photo can be in several without being copied), plus Favorites and Videos.
