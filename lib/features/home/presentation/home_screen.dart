@@ -19,6 +19,7 @@ import '../../backup/presentation/free_up_space_sheet.dart';
 import '../../drive/data/drive_repository.dart';
 import '../../drive/data/drive_session.dart';
 import '../../drive/data/drive_sync.dart';
+import '../../drive/data/forward_filer.dart';
 import '../../drive/domain/drive_models.dart';
 import '../../files/presentation/file_actions.dart';
 import '../../files/presentation/file_tiles.dart';
@@ -320,6 +321,7 @@ class _Activity extends ConsumerWidget {
       freeableBytes: lowOnSpace
           ? ref.watch(freeUpCandidatesProvider).value?.bytes ?? 0
           : 0,
+      filed: ref.watch(forwardFilerProvider),
     );
 
     return Padding(
@@ -412,6 +414,11 @@ class _Activity extends ConsumerWidget {
           onPressed: () => showProxySheet(context),
           child: const Text('Change proxy'),
         ),
+        HealthAction.dismissFiling => IconButton(
+          onPressed: ref.read(forwardFilerProvider.notifier).clear,
+          icon: const Icon(Icons.close_rounded),
+          tooltip: 'Dismiss',
+        ),
         HealthAction.none => null,
       },
       onTap: switch (health.target) {
@@ -421,6 +428,14 @@ class _Activity extends ConsumerWidget {
         HealthTarget.refresh =>
           () => ref.read(driveSyncProvider.notifier).refresh(),
         HealthTarget.proxy => () => showProxySheet(context),
+        HealthTarget.filed => () {
+          // The folder opens in the Files tab, the way a starred folder
+          // does from Home; a folder is a place in that tab, not a screen
+          // over this one.
+          final folderId = ref.read(forwardFilerProvider)?.folderId;
+          context.go(folderId == null ? '/files' : '/files/$folderId');
+          ref.read(forwardFilerProvider.notifier).clear();
+        },
       },
     );
   }

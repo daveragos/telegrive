@@ -241,6 +241,8 @@ void main() {
   );
 
   test('a flood wait puts the download back in the queue, then it finishes', () async {
+    // Long enough for the wait to be seen while it lasts.
+    TransferQueue.waitUnit = const Duration(milliseconds: 100);
     final fetched = File('${dir.path}/report.pdf')..writeAsStringSync('0123456789');
     await addFile('report');
     final telegram = _FakeTelegram(fetched.path, flood: true);

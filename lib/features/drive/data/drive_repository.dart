@@ -222,6 +222,13 @@ class DriveRepository {
   Future<Set<String>> descendantFolderIds(String rootId) =>
       _db.descendantFolderIds(rootId);
 
+  /// Every folder the drive shows: not in the trash, nor inside a folder
+  /// that is.
+  Future<List<DriveFolder>> visibleFolders() async => [
+    for (final row in await _db.allFolders())
+      if (!row.hidden) DriveFolder.fromRow(row),
+  ];
+
   Stream<StorageSummary> watchSummary() =>
       _db.watchTotals().map((totals) => StorageSummary(totals: totals));
 
@@ -598,6 +605,20 @@ class DriveRepository {
       );
     }
   }
+
+  /// Gives [files] that came in without a manifest one at the root, so they
+  /// leave Forwarded and are the drive's own: an edit for media the account
+  /// sent itself, and an own copy for a forward.
+  Future<void> keepAtRoot(List<DriveFile> files) async {
+    for (final file in files) {
+      await _rewriteFile(file, (m) => m);
+    }
+  }
+
+  /// Deletes the text message [messageId], a forward's comment once every
+  /// file it named a folder for has gone there, sitting out flood waits.
+  Future<void> deleteComment(int messageId) =>
+      _patiently(() => _messenger.deleteMessages(_chatId, [messageId]));
 
   /// Moves the file [oldFileId] to the trash, marked as replaced by
   /// [newFileId], once that file has landed in its place. A file already

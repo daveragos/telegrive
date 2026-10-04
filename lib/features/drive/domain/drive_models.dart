@@ -73,6 +73,7 @@ class DriveFile {
     this.trashedAt,
     this.durationSeconds,
     this.replacedBy,
+    this.adopted = false,
   }) : hasMinithumbnail = hasMinithumbnail || minithumbnail != null;
 
   /// [hasMinithumbnail] says whether Telegram inlined a preview for a row
@@ -96,6 +97,7 @@ class DriveFile {
     trashedAt: row.trashedAt,
     durationSeconds: row.durationSeconds,
     replacedBy: row.replacedBy,
+    adopted: row.adopted,
   );
 
   final String id;
@@ -131,6 +133,10 @@ class DriveFile {
 
   /// The file that replaced this one, while it sits in the trash.
   final String? replacedBy;
+
+  /// Came into the channel without a manifest, forwarded or sent from
+  /// another Telegram app, and waits under Forwarded until it is filed.
+  final bool adopted;
 
   /// When the moment happened, as far as we know — what the Photos
   /// timeline sorts and groups by.
@@ -174,11 +180,12 @@ class DriveFile {
       other.starred == starred &&
       other.modifiedAt == modifiedAt &&
       other.thumbnailFileId == thumbnailFileId &&
-      other.durationSeconds == durationSeconds;
+      other.durationSeconds == durationSeconds &&
+      other.adopted == adopted;
 
   @override
   int get hashCode => Object.hash(
-    id, name, folderId, starred, modifiedAt, thumbnailFileId, durationSeconds, //
+    id, name, folderId, starred, modifiedAt, thumbnailFileId, durationSeconds, adopted, //
   );
 }
 

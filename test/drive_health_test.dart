@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:telegrive/core/format/formatters.dart';
 import 'package:telegrive/features/backup/data/backup_controller.dart';
 import 'package:telegrive/features/drive/data/drive_sync.dart';
+import 'package:telegrive/features/drive/data/forward_filer.dart';
 import 'package:telegrive/features/home/presentation/drive_health.dart';
 import 'package:telegrive/features/network/data/connection_health.dart';
 import 'package:telegrive/features/transfers/data/transfer_queue.dart';
@@ -682,6 +683,51 @@ void main() {
     test('is null when the top line already is that concern', () {
       expect(second(const BackupState(phase: BackupPhase.stopped), TransfersState.empty), isNull);
       expect(second(_upToDate, TransfersState.empty), isNull);
+    });
+
+    test('forwards filed by their comment are reported, with Dismiss', () {
+      DriveHealth? filed(FilingSummary summary, {BackupState backup = _upToDate}) =>
+          secondaryHealth(
+            _top(backup: backup, transfers: TransfersState.empty),
+            backup: backup,
+            transfers: TransfersState.empty,
+            filed: summary,
+            now: _now,
+          );
+
+      final one = filed(
+        const FilingSummary(count: 12, folderNames: ['Wedding'], folderId: 'w'),
+      );
+      expect(one?.text, 'Filed 12 forwarded files into Wedding');
+      expect(one?.detail, 'From your comment in Telegram.');
+      expect(one?.icon, Icons.drive_file_move_outline);
+      expect(one?.tone, HealthTone.good);
+      expect(one?.action, HealthAction.dismissFiling);
+      expect(one?.target, HealthTarget.filed);
+
+      final several = filed(
+        const FilingSummary(count: 1, folderNames: ['Wedding', 'Taxes', 'Work']),
+      );
+      expect(several?.text, 'Filed 1 forwarded file into 3 folders');
+
+      // Under Photo backup is off as well, since it is about something else.
+      expect(
+        filed(const FilingSummary(count: 2, folderNames: ['Wedding']), backup: _off)?.text,
+        'Filed 2 forwarded files into Wedding',
+      );
+      expect(filed(const FilingSummary(count: 0, folderNames: [])), isNull);
+    });
+
+    test('a failed transfer comes before the filing report', () {
+      final failed = TransfersState([_transfer('a.zip', TransferStatus.failed)]);
+      final row = secondaryHealth(
+        _top(backup: _upToDate, transfers: failed),
+        backup: _upToDate,
+        transfers: failed,
+        filed: const FilingSummary(count: 3, folderNames: ['Wedding']),
+        now: _now,
+      );
+      expect(row?.text, '1 transfer failed');
     });
 
     test('a failed transfer sits under all good, and retries in place', () {

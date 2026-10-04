@@ -12,6 +12,7 @@ import '../../../core/widgets/selection_bar.dart';
 import '../../../infrastructure/storage/preferences.dart';
 import '../../drive/data/drive_repository.dart';
 import '../../drive/data/drive_sync.dart';
+import '../../drive/data/forward_origin.dart';
 import '../../drive/domain/drive_models.dart';
 import '../data/browse_preferences.dart';
 import 'file_actions.dart';
@@ -143,12 +144,13 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
 
   /// Brings the pointed-out row into view and tints it. The tint goes on
   /// once the folder has been read rather than when the screen opens, so a
-  /// slow first read doesn't use up its moment. A file that isn't here
-  /// leaves the folder as it is, with nothing tinted.
-  void _showHighlight(FolderContents data, ViewMode mode) {
+  /// slow first read doesn't use up its moment. A file that isn't here,
+  /// among [data]'s files or the [forwarded] ones above them, leaves the
+  /// folder as it is, with nothing tinted.
+  void _showHighlight(FolderContents data, List<DriveFile> forwarded, ViewMode mode) {
     if (!mounted) return;
     final index = data.files.indexWhere((f) => f.id == _highlightId);
-    if (index < 0) return;
+    if (index < 0 && !forwarded.any((f) => f.id == _highlightId)) return;
     setState(() => _tinted = true);
     _highlightTimer?.cancel();
     _highlightTimer = Timer(_highlightFor, () {
@@ -156,8 +158,9 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
     });
     // Rows are built only near the screen, so in a long list the row may
     // not exist yet: jump to about where it is, then ease it into place
-    // once it has been built.
-    final offset = mode == ViewMode.list && _highlightKey.currentContext == null
+    // once it has been built. A row under Forwarded sits at the top, so it
+    // is there already.
+    final offset = mode == ViewMode.list && index >= 0 && _highlightKey.currentContext == null
         ? _listOffsetOf(index, data.files.length)
         : null;
     if (offset == null || !_scroll.hasClients) {
@@ -235,11 +238,22 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
       }
     }
     final picked = _picked(data);
-    if (data != null && _highlightId != null && !_scrolledToHighlight) {
+    // At the root, what came in without a manifest waits in its own section
+    // above the folders, so the rows below it are the rest.
+    final forwarded = widget.folderId == null && data != null
+        ? data.files.where((f) => f.adopted).toList()
+        : const <DriveFile>[];
+    final shown = forwarded.isEmpty || data == null
+        ? data
+        : FolderContents(
+            folders: data.folders,
+            files: data.files.where((f) => !f.adopted).toList(),
+          );
+    if (shown != null && _highlightId != null && !_scrolledToHighlight) {
       _scrolledToHighlight = true;
       final mode = prefs.viewMode;
       WidgetsBinding.instance.addPostFrameCallback(
-        (_) => _showHighlight(data, mode),
+        (_) => _showHighlight(shown, forwarded, mode),
       );
     }
 
@@ -370,10 +384,12 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
                 )
               else ...[
                 SliverToBoxAdapter(child: _Summary(contents: data)),
+                if (forwarded.isNotEmpty)
+                  ..._forwardedSlivers(forwarded, grid: prefs.viewMode == ViewMode.grid),
                 if (prefs.viewMode == ViewMode.list)
-                  ..._listSlivers(data)
+                  ..._listSlivers(shown!, afterForwarded: forwarded.isNotEmpty)
                 else
-                  ..._gridSlivers(data),
+                  ..._gridSlivers(shown!, afterForwarded: forwarded.isNotEmpty),
                 // Room for New to float over, or while selecting, when New
                 // is gone and the bar below takes its place, a margin.
                 SliverToBoxAdapter(
@@ -409,10 +425,108 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
           from: 'folder:${widget.folderId ?? ''}',
         );
 
-  List<Widget> _listSlivers(FolderContents data) => [
-    if (data.folders.isNotEmpty && data.files.isNotEmpty)
-      const SliverToBoxAdapter(
-        child: SectionHeader('Folders', padding: _firstHeader),
+  /// The files that came in without a manifest, under their own header with
+  /// Move all and Keep here, the way the rest of the root is laid out in
+  /// list or [grid] view. Each row says who it came from. The two actions
+  /// are quiet, in text-2, since New already carries the accent here.
+  List<Widget> _forwardedSlivers(List<DriveFile> forwarded, {required bool grid}) {
+    final repository = ref.read(driveRepositoryProvider);
+    final count = Formatters.count(forwarded.length, 'file');
+    Widget action(String label, VoidCallback onPressed) => TextButton(
+      style: TextButton.styleFrom(
+        foregroundColor: context.colors.text2,
+        minimumSize: const Size(0, 32),
+        padding: const EdgeInsets.symmetric(horizontal: Space.s),
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      ),
+      onPressed: onPressed,
+      child: Text(label),
+    );
+    return [
+      SliverToBoxAdapter(
+        child: SectionHeader(
+          'Forwarded · ${Formatters.number(forwarded.length)}',
+          padding: _firstHeader,
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              action(
+                'Move all',
+                () => FileActions.move(context, ref, files: forwarded),
+              ),
+              const SizedBox(width: Space.s),
+              action(
+                'Keep here',
+                () => FileActions.guarded(
+                  context,
+                  () => repository.keepAtRoot(forwarded),
+                  success: 'Kept $count in My Drive',
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+      if (grid)
+        SliverPadding(
+          padding: const EdgeInsets.symmetric(horizontal: Space.l),
+          sliver: SliverGrid.builder(
+            gridDelegate: _fileGridDelegate,
+            itemCount: forwarded.length,
+            itemBuilder: (context, index) {
+              final file = forwarded[index];
+              final pointed = file.id == _highlightId;
+              return FileGridCard(
+                key: pointed ? _highlightKey : null,
+                file: file,
+                highlighted: pointed && _tinted,
+                selected: _files.contains(file.id),
+                selecting: _selecting,
+                onTap: () => _onFileTap(file),
+                onLongPress: () => _toggleFile(file),
+                onMore: () => FileActions.showFileSheet(context, ref, file),
+              );
+            },
+          ),
+        )
+      else
+        SliverList.builder(
+          itemCount: forwarded.length,
+          itemBuilder: (context, index) {
+            final file = forwarded[index];
+            final pointed = file.id == _highlightId;
+            return _ForwardedTile(
+              key: pointed ? _highlightKey : null,
+              file: file,
+              highlighted: pointed && _tinted,
+              selected: _files.contains(file.id),
+              selecting: _selecting,
+              onTap: () => _onFileTap(file),
+              onLongPress: () => _toggleFile(file),
+              onMore: () => FileActions.showFileSheet(context, ref, file),
+            );
+          },
+        ),
+    ];
+  }
+
+  static const _fileGridDelegate = SliverGridDelegateWithMaxCrossAxisExtent(
+    maxCrossAxisExtent: 200,
+    childAspectRatio: 0.8,
+    crossAxisSpacing: Space.m,
+    mainAxisSpacing: Space.l,
+  );
+
+  /// The folders and files of this folder. With [afterForwarded], the
+  /// Forwarded section sits above, so both groups keep their headers and
+  /// the first follows that section's spacing.
+  List<Widget> _listSlivers(FolderContents data, {bool afterForwarded = false}) => [
+    if (data.folders.isNotEmpty && (data.files.isNotEmpty || afterForwarded))
+      SliverToBoxAdapter(
+        child: SectionHeader(
+          'Folders',
+          padding: afterForwarded ? null : _firstHeader,
+        ),
       ),
     SliverList.builder(
       itemCount: data.folders.length,
@@ -428,7 +542,7 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
         );
       },
     ),
-    if (data.folders.isNotEmpty && data.files.isNotEmpty)
+    if (data.files.isNotEmpty && (data.folders.isNotEmpty || afterForwarded))
       const SliverToBoxAdapter(child: SectionHeader('Files')),
     SliverList.builder(
       key: _filesListKey,
@@ -450,10 +564,13 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
     ),
   ];
 
-  List<Widget> _gridSlivers(FolderContents data) => [
+  List<Widget> _gridSlivers(FolderContents data, {bool afterForwarded = false}) => [
     if (data.folders.isNotEmpty) ...[
-      const SliverToBoxAdapter(
-        child: SectionHeader('Folders', padding: _firstHeader),
+      SliverToBoxAdapter(
+        child: SectionHeader(
+          'Folders',
+          padding: afterForwarded ? null : _firstHeader,
+        ),
       ),
       SliverPadding(
         padding: const EdgeInsets.symmetric(horizontal: Space.l),
@@ -480,17 +597,12 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
       ),
     ],
     if (data.files.isNotEmpty) ...[
-      if (data.folders.isNotEmpty)
+      if (data.folders.isNotEmpty || afterForwarded)
         const SliverToBoxAdapter(child: SectionHeader('Files')),
       SliverPadding(
         padding: const EdgeInsets.symmetric(horizontal: Space.l),
         sliver: SliverGrid.builder(
-          gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-            maxCrossAxisExtent: 200,
-            childAspectRatio: 0.8,
-            crossAxisSpacing: Space.m,
-            mainAxisSpacing: Space.l,
-          ),
+          gridDelegate: _fileGridDelegate,
           itemCount: data.files.length,
           itemBuilder: (context, index) {
             final file = data.files[index];
@@ -521,6 +633,53 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
 }
 
 enum _FilesMenu { select, trash }
+
+/// A row under Forwarded: the file, and who it came from in place of its
+/// size. It reads 'from Selam Tesfaye' once Telegram has said, 'Sent from
+/// Telegram' for media the account posted itself, and 'Forwarded' while
+/// the origin loads or when it isn't known.
+class _ForwardedTile extends ConsumerWidget {
+  const _ForwardedTile({
+    super.key,
+    required this.file,
+    required this.selected,
+    required this.selecting,
+    required this.onTap,
+    required this.onLongPress,
+    required this.onMore,
+    this.highlighted = false,
+  });
+
+  final DriveFile file;
+  final bool selected;
+  final bool selecting;
+
+  /// Pointed out for a moment, after Show in folder.
+  final bool highlighted;
+  final VoidCallback onTap;
+  final VoidCallback onLongPress;
+  final VoidCallback onMore;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final origin = ref.watch(forwardOriginProvider(file.id)).value;
+    final from = switch (origin) {
+      (forwarded: true, name: final name?) => 'from $name',
+      (forwarded: false, name: _) => 'Sent from Telegram',
+      _ => 'Forwarded',
+    };
+    return FileListTile(
+      file: file,
+      subtitle: '$from · ${Formatters.date(file.createdAt)}',
+      highlighted: highlighted,
+      selected: selected,
+      selecting: selecting,
+      onTap: onTap,
+      onLongPress: onLongPress,
+      onMore: onMore,
+    );
+  }
+}
 
 class _Summary extends StatelessWidget {
   const _Summary({required this.contents});

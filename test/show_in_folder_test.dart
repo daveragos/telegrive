@@ -2,6 +2,7 @@ import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -9,6 +10,7 @@ import 'package:telegrive/app/theme/app_theme.dart';
 import 'package:telegrive/core/files/file_kind.dart';
 import 'package:telegrive/features/backup/data/local_media.dart';
 import 'package:telegrive/features/drive/data/drive_repository.dart';
+import 'package:telegrive/features/drive/data/forward_origin.dart';
 import 'package:telegrive/features/drive/domain/drive_models.dart';
 import 'package:telegrive/features/files/presentation/file_actions.dart';
 import 'package:telegrive/features/files/presentation/file_tiles.dart';
@@ -113,7 +115,7 @@ void main() {
     modifiedAt: at,
   );
 
-  DriveFile file(String name, String? folderId) => DriveFile(
+  DriveFile file(String name, String? folderId, {bool adopted = false}) => DriveFile(
     id: name,
     folderId: folderId,
     name: name,
@@ -124,6 +126,7 @@ void main() {
     modifiedAt: at,
     partCount: 1,
     starred: false,
+    adopted: adopted,
   );
 
   final folders = [folder('Work', null), folder('Clients', 'Work'), folder('Old', null)];
@@ -135,6 +138,7 @@ void main() {
     Set<String> trashed = const {},
     DriveFile? showing,
     Map<String, Object> prefs = const {},
+    List<Override> overrides = const [],
   }) async {
     // ignore: invalid_use_of_visible_for_testing_member
     SharedPreferences.setMockInitialValues(prefs);
@@ -157,6 +161,7 @@ void main() {
           for (final f in files)
             for (final px in thumbBuckets)
               localThumbnailProvider((fileId: f.id, px: px)).overrideWith((ref) async => null),
+          ...overrides,
         ],
         child: MaterialApp.router(theme: AppTheme.light(), routerConfig: router),
       ),
@@ -217,6 +222,30 @@ void main() {
     expect(location(router), '/files?highlight=loose.pdf');
     expect(tinted(tester, 'loose.pdf'), isTrue);
     await tester.pump(const Duration(milliseconds: 1500));
+  });
+
+  testWidgets('a forwarded file at the root is pointed out under Forwarded', (tester) async {
+    final forward = file('contract.pdf', null, adopted: true);
+    final router = await pumpFiles(
+      tester,
+      '/over',
+      files: [file('loose.pdf', null), forward],
+      showing: forward,
+      overrides: [
+        forwardOriginProvider('contract.pdf').overrideWith(
+          (ref) async => (forwarded: true, name: 'Selam Tesfaye'),
+        ),
+      ],
+    );
+    await tester.tap(find.text('Show in folder'));
+    await settle(tester);
+    expect(location(router), '/files?highlight=contract.pdf');
+    expect(find.text('Forwarded · 1'), findsOneWidget);
+    expect(tinted(tester, 'contract.pdf'), isTrue);
+    expect(tinted(tester, 'loose.pdf'), isFalse);
+    await tester.pump(const Duration(milliseconds: 1500));
+    await settle(tester);
+    expect(tinted(tester, 'contract.pdf'), isFalse);
   });
 
   testWidgets('a file whose folder is in the trash opens Files', (tester) async {

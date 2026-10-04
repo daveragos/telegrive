@@ -472,7 +472,10 @@ class SettingsScreen extends ConsumerWidget {
                 point(
                   'Forwarding adds files',
                   'Forward any file to the channel in Telegram and it appears '
-                      'here, without uploading it again.',
+                      'here, without uploading it again. Write a folder name '
+                      'as the comment, like Wedding or #Taxes/2026, and it '
+                      'goes straight into that folder. A # makes the folder '
+                      'if it isn\'t there.',
                 ),
                 point(
                   'Saving from chats',

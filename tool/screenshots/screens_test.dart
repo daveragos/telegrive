@@ -46,6 +46,8 @@ import 'package:telegrive/features/drive/data/drive_repository.dart';
 import 'package:telegrive/features/drive/data/previews.dart';
 import 'package:telegrive/features/drive/data/drive_session.dart';
 import 'package:telegrive/features/drive/data/drive_sync.dart';
+import 'package:telegrive/features/drive/data/forward_filer.dart';
+import 'package:telegrive/features/drive/data/forward_origin.dart';
 import 'package:telegrive/features/drive/data/telegram_wait.dart';
 import 'package:telegrive/features/drive/domain/drive_models.dart';
 import 'package:telegrive/features/files/data/bulk_edits.dart';
@@ -369,6 +371,7 @@ DriveFile _file(
   int? takenDaysAgo,
   String? folderId,
   int? durationSeconds,
+  bool adopted = false,
 }) {
   final at = DateTime.now().subtract(Duration(hours: hoursAgo));
   return DriveFile(
@@ -388,7 +391,36 @@ DriveFile _file(
         ? null
         : DateTime.now().subtract(Duration(days: takenDaysAgo)),
     durationSeconds: durationSeconds,
+    adopted: adopted,
   );
+}
+
+/// Files that came into the channel without a manifest and wait under
+/// Forwarded: two forwards and one sent from another Telegram app, each with
+/// where it came from, as the origin provider answers.
+final _forwarded = <(DriveFile, ForwardOrigin)>[
+  (
+    _file('photo_2231.jpg', 2 * _mb + 180000, 30, adopted: true),
+    (forwarded: true, name: 'Selam Tesfaye'),
+  ),
+  (
+    _file('Venue contract.pdf', 640000, 31, adopted: true),
+    (forwarded: true, name: 'Family'),
+  ),
+  (
+    _file('voice_12.ogg', 96000, 52, adopted: true, durationSeconds: 48),
+    (forwarded: false, name: null),
+  ),
+];
+
+/// Home's report of what the filer just moved.
+class _Filer extends ForwardFiler {
+  _Filer(this._summary);
+
+  final FilingSummary? _summary;
+
+  @override
+  FilingSummary? build() => _summary;
 }
 
 /// [count] photos backed up from this phone and still on it, [each] bytes
@@ -705,6 +737,7 @@ void main() {
     List<Override> overrides = const [],
     Future<void> Function(AppDatabase db)? seed,
     Freeable? freeable,
+    bool forwarded = false,
   }) async {
     debugDisableShadows = false;
     tester.view.physicalSize = const Size(1080, 2340);
@@ -873,9 +906,19 @@ void main() {
             }),
           ),
           folderContentsProvider(null).overrideWith(
-            (ref) =>
-                Stream.value(FolderContents(folders: folders, files: files)),
+            (ref) => Stream.value(
+              FolderContents(
+                folders: folders,
+                files: [
+                  ...files,
+                  if (forwarded)
+                    for (final (file, _) in _forwarded) file,
+                ],
+              ),
+            ),
           ),
+          for (final (file, origin) in _forwarded)
+            forwardOriginProvider(file.id).overrideWith((ref) async => origin),
           folderInfoProvider('Work')
               .overrideWith((ref) => Stream.value(folders[2])),
           cacheSizeProvider.overrideWith((ref) async => 734 * _mb),
@@ -1175,6 +1218,35 @@ void main() {
     await snap(tester, 'home_all_good');
   });
 
+  /// Home just after forwards named Wedding in their comment went there.
+  testWidgets('home filed', (tester) async {
+    await prepareData(tester);
+    transfers = TransfersState.empty;
+    await pumpApp(
+      tester,
+      location: '/home',
+      backup: BackupState(
+        phase: BackupPhase.upToDate,
+        total: 4847,
+        done: 4847,
+        lastCompleted: DateTime.now().subtract(const Duration(minutes: 3)),
+      ),
+      overrides: [
+        forwardFilerProvider.overrideWith(
+          () => _Filer(
+            const FilingSummary(
+              count: 12,
+              folderNames: ['Wedding'],
+              folderId: 'Wedding',
+            ),
+          ),
+        ),
+      ],
+    );
+    expect(find.text('Filed 12 forwarded files into Wedding'), findsOneWidget);
+    await snap(tester, 'home_filed');
+  });
+
   testWidgets('home low space', (tester) async {
     await prepareData(tester);
     transfers = TransfersState.empty;
@@ -1417,9 +1489,11 @@ void main() {
     await snap(tester, 'recent');
   });
 
+  /// The root with three files that came in without a manifest waiting
+  /// under Forwarded.
   testWidgets('files list', (tester) async {
     await prepareData(tester);
-    await pumpApp(tester, location: '/files');
+    await pumpApp(tester, location: '/files', forwarded: true);
     await snap(tester, 'files_list');
   });
 
@@ -1459,6 +1533,7 @@ void main() {
       tester,
       location: '/files',
       prefs: {'view_mode': 'grid'},
+      forwarded: true,
       overrides: [
         offlinePinsProvider.overrideWith((ref) => Stream.value({'Work'})),
         offlineCopiesProvider.overrideWith(

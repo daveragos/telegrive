@@ -5,6 +5,7 @@ import '../../../infrastructure/database/app_database.dart'
     show TransferOrigin, TransferStatus;
 import '../../backup/data/backup_controller.dart';
 import '../../drive/data/drive_sync.dart';
+import '../../drive/data/forward_filer.dart';
 import '../../network/data/connection_health.dart';
 import '../../transfers/data/transfer_queue.dart';
 import '../../transfers/domain/transfer_wait.dart';
@@ -44,11 +45,15 @@ enum HealthAction {
 
   /// Opens the proxy sheet where the proxy in use isn't answering.
   changeProxy,
+
+  /// Takes the report of forwards filed by their comment off Home.
+  dismissFiling,
 }
 
-/// Where tapping a line goes: a screen, another try at syncing, or the
-/// proxy sheet.
-enum HealthTarget { backup, notBackedUp, transfers, refresh, proxy }
+/// Where tapping a line goes: a screen, another try at syncing, the proxy
+/// sheet, or the folder forwards were just filed into ([filed]; Files
+/// itself when there were several).
+enum HealthTarget { backup, notBackedUp, transfers, refresh, proxy, filed }
 
 /// What a line is about. The second row keeps to a different topic from the
 /// top line, so the two rows say different things and their buttons never
@@ -56,8 +61,9 @@ enum HealthTarget { backup, notBackedUp, transfers, refresh, proxy }
 /// are moving doesn't say that others failed. Lines about Telegram itself,
 /// not reaching it or it asking for a pause, are [sync]; lines about the
 /// phone's own connection, none at all or only mobile data, are [network];
-/// the line about the phone's free space is [storage].
-enum HealthTopic { backup, transfers, sync, network, storage }
+/// the line about the phone's free space is [storage]; the report of
+/// forwards filed by their comment is [filing].
+enum HealthTopic { backup, transfers, sync, network, storage, filing }
 
 /// One line of Home's Activity group, worked out from state alone so the
 /// wording and its priority can be tested without a widget.
@@ -271,6 +277,10 @@ DriveHealth describeDriveHealth({
 /// never a third. A top line about transfers in progress still leaves the
 /// row to failed ones; paused ones only count once nothing is moving.
 ///
+/// Forwards the filer just put where their comment said ([filed]) are
+/// reported after what needs doing about transfers and before the offers,
+/// since the report asks for nothing but a look.
+///
 /// Last of all, when the phone is [lowOnSpace] and more than
 /// [freeUpWorthwhile] of backed-up photos ([freeableBytes]) could leave it,
 /// the line offers Free up. A phone too full for a transfer says so with
@@ -283,6 +293,7 @@ DriveHealth? secondaryHealth(
   int renewDay = 1,
   bool lowOnSpace = false,
   int freeableBytes = 0,
+  FilingSummary? filed,
   DateTime? now,
 }) {
   final at = now ?? DateTime.now();
@@ -310,6 +321,7 @@ DriveHealth? secondaryHealth(
         target: HealthTarget.transfers,
         topic: HealthTopic.transfers,
       ),
+    if (filed != null && filed.count > 0) _filed(filed),
     if (backup.phase == BackupPhase.off) _off,
     if (lowOnSpace && freeableBytes > freeUpWorthwhile) _freeUp(freeableBytes),
   ];
@@ -500,6 +512,20 @@ DriveHealth _freeUp(int bytes) => DriveHealth(
   action: HealthAction.freeUp,
   target: HealthTarget.backup,
   topic: HealthTopic.storage,
+);
+
+/// Forwards went into the folder their comment named, or into several;
+/// tapping opens the folder, or Files when there were several.
+DriveHealth _filed(FilingSummary filed) => DriveHealth(
+  icon: Icons.drive_file_move_outline,
+  tone: HealthTone.good,
+  text:
+      'Filed ${Formatters.count(filed.count, 'forwarded file')} into '
+      '${filed.folderNames.length == 1 ? filed.folderNames.single : Formatters.count(filed.folderNames.length, 'folder')}',
+  detail: 'From your comment in Telegram.',
+  action: HealthAction.dismissFiling,
+  target: HealthTarget.filed,
+  topic: HealthTopic.filing,
 );
 
 /// There is something in [items], and all of it waits for the network.

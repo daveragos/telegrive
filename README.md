@@ -111,7 +111,13 @@ phone number.
   when it was the phone's memory that turned it on.
 - **Syncs itself.** New, edited or deleted messages flow in live. Anything you
   **forward into the channel from Telegram** (documents, videos, audio, voice
-  messages, photos) shows up in the drive with no re-upload.
+  messages, photos) shows up in the drive with no re-upload. Write a folder
+  name as the forward's comment, like `Wedding` or `#Taxes/2026`, and the
+  files go straight into that folder; a `#` makes the folder if it isn't
+  there. The same works for the caption on a file dropped into the channel
+  from another Telegram app. Forwards with no folder named wait together
+  under Forwarded at the top of Files, each saying who it came from, with
+  Move all and Keep here.
 - **Save from any chat.** Pick Saved Messages or any chat, a channel you only
   read included, choose its documents, photos and videos, or audio, and pick
   a folder. Telegram copies them into the drive itself, so nothing is
@@ -370,6 +376,15 @@ Telegram (source of truth)                 This device
   and on pull-to-refresh, and does a full reconciliation daily, once on the
   first launch after an update that changes how messages are indexed, and
   from Settings → Rebuild index.
+- **Forwards are filed by their comment.** A file that arrives without a
+  manifest is a forward, or a file sent from another Telegram app, whose
+  own caption is read instead. The plain text message sent just before a
+  burst of forwards is its comment; if it names a folder, each file is
+  moved there the way a move works for any forward (Telegram copies it into
+  a message of the drive's own, with the manifest on it, and the forward
+  goes), and the comment is deleted once every file it covered has moved.
+  Only forwards newer than the first sync after the update are filed, so
+  nothing that was already in the channel moves on its own.
 
 ## Project layout
 
@@ -431,7 +446,12 @@ two commands are at the top of that test.
   editing its messages in Telegram changes the drive accordingly.
 - Split files appear in Telegram as numbered parts (`movie.mkv.001`, …). Only
   Telegrive joins them back.
-- Forwarded files land at the root; move them into folders from the app.
+- A forward whose comment names a folder goes into it; `Wedding` finds the
+  folder by its path from the root or by its name when only one folder has
+  it, and `#Taxes/2026` makes what is missing. A comment that names no
+  folder moves nothing, and the file waits under Forwarded at the top of
+  Files until you move it or tap Keep here. Forwards that were already in
+  the channel the first time this version read it stay where they are.
 - A video the phone's player can't decode in the viewer, such as some MKV
   files, keeps its poster and offers Open with another app instead.
 - Replace moves the old file to Trash only once the new upload has landed,

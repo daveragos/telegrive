@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -9,6 +10,7 @@ import '../../../infrastructure/telegram/telegram_client.dart';
 import '../../../infrastructure/telegram/telegram_exception.dart';
 import 'drive_repository.dart';
 import 'drive_session.dart';
+import 'forward_filer.dart';
 import 'message_indexer.dart';
 
 @immutable
@@ -57,10 +59,25 @@ class SyncState {
 ///   trash for 30 days. Runs on first open, daily, on the first open after
 ///   an update that changes [MessageIndexer.version], and from Settings →
 ///   Rebuild index.
+///
+/// Media that arrives without a manifest, a forward or a file sent from
+/// another Telegram app, is handed to the [ForwardFiler] after each read,
+/// which files it where its comment says.
 class DriveSync extends Notifier<SyncState> {
   StreamSubscription<td.TdObject>? _live;
   int? _openChatId;
   Future<void>? _inFlight;
+
+  /// Manifest-less media that arrived live, waiting for the burst it came
+  /// with to finish before the filer looks at it.
+  final List<td.Message> _arrived = [];
+  Timer? _arrivedTimer;
+
+  /// How long after the last forward arrived live the filer gets the burst;
+  /// the files of one forward come in together, and the comment names a
+  /// folder for all of them.
+  @visibleForTesting
+  static Duration burstSettle = const Duration(seconds: 3);
 
   static const Duration _fullSyncInterval = Duration(hours: 24);
 
@@ -131,6 +148,7 @@ class DriveSync extends Notifier<SyncState> {
     try {
       final stopAt = full ? 0 : _prefs.lastSyncedMessageId(chatId);
       final seen = <int>{};
+      final adopted = <td.Message>[];
       var newest = 0;
       var from = 0;
 
@@ -150,6 +168,7 @@ class DriveSync extends Notifier<SyncState> {
           seen.add(message.id);
           if (message.id > newest) newest = message.id;
           await _repository.ingest(message);
+          if (MessageIndexer.isAdopted(message)) adopted.add(message);
         }
         state = state.copyWith(scanned: seen.length);
         if (reachedKnown) break;
@@ -175,6 +194,15 @@ class DriveSync extends Notifier<SyncState> {
         }
       }
       if (newest > 0) await _prefs.setLastSyncedMessageId(chatId, newest);
+
+      // The first read with the filer sets its watermark at the channel's
+      // end, so forwards from before it never move on their own; from then
+      // on, what each read brings in is filed by its comment.
+      if (_prefs.forwardFilingFrom(chatId) == null) {
+        await _prefs.setForwardFilingFrom(chatId, math.max(newest, stopAt));
+      } else if (adopted.isNotEmpty) {
+        unawaited(ref.read(forwardFilerProvider.notifier).consider(adopted));
+      }
 
       _failedFullSyncs = 0;
       state = state.copyWith(running: false, lastSynced: DateTime.now(), clearError: true);
@@ -253,9 +281,11 @@ class DriveSync extends Notifier<SyncState> {
         switch (update) {
           case td.UpdateNewMessage(:final message) when message.chatId == chatId:
             await _repository.ingest(message);
+            _noteArrival(message);
           case td.UpdateMessageSendSucceeded(:final message)
               when message.chatId == chatId:
             await _repository.ingest(message);
+            _noteArrival(message);
           case td.UpdateMessageContent(chatId: final id, :final messageId)
               when id == chatId:
             final message = await _client.send<td.Message>(
@@ -279,9 +309,25 @@ class DriveSync extends Notifier<SyncState> {
     });
   }
 
+  /// Keeps a manifest-less [message] for the filer, which gets the whole
+  /// burst once [burstSettle] has passed with nothing more arriving.
+  void _noteArrival(td.Message message) {
+    if (!MessageIndexer.isAdopted(message)) return;
+    _arrived.add(message);
+    _arrivedTimer?.cancel();
+    _arrivedTimer = Timer(burstSettle, () {
+      final batch = [..._arrived];
+      _arrived.clear();
+      unawaited(ref.read(forwardFilerProvider.notifier).consider(batch));
+    });
+  }
+
   void _stopLive() {
     _live?.cancel();
     _live = null;
+    _arrivedTimer?.cancel();
+    _arrivedTimer = null;
+    _arrived.clear();
     final open = _openChatId;
     _openChatId = null;
     if (open != null) {

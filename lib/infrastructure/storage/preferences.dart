@@ -106,12 +106,22 @@ class Preferences {
   Future<void> setIndexedWith(int chatId, int version) =>
       _prefs.setInt('indexed_with_$chatId', version);
 
+  /// The newest channel message the forward filer has looked at, or null
+  /// before it has run on this index. Only manifest-less media newer than
+  /// this is filed by its comment, so what was in the channel before the
+  /// filer first ran never moves on its own.
+  int? forwardFilingFrom(int chatId) =>
+      _prefs.getInt('forward_filing_from_$chatId');
+  Future<void> setForwardFilingFrom(int chatId, int messageId) =>
+      _prefs.setInt('forward_filing_from_$chatId', messageId);
+
   /// Per-channel keys that describe what the local index holds, so they
   /// are only true while it is.
   static const List<String> _syncKeys = [
     'synced_upto_',
     'full_sync_',
     'indexed_with_',
+    'forward_filing_from_',
   ];
 
   Future<void> clearSyncState(int chatId) async {

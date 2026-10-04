@@ -6,6 +6,7 @@ import 'package:handy_tdlib/api.dart' as td;
 import '../../../core/files/file_kind.dart';
 import '../../../infrastructure/database/app_database.dart';
 import '../domain/manifest.dart';
+import 'forward_filer.dart' show ChannelPost;
 
 /// What one channel message contributes to the index.
 sealed class IndexEntry {
@@ -61,7 +62,7 @@ abstract final class MessageIndexer {
   /// Bump when what a message becomes in the index changes, including the
   /// kind FileKind.detect gives it; the next open reads the channel again
   /// in full.
-  static const int version = 2;
+  static const int version = 3;
 
   static IndexEntry? entryFor(td.Message message) {
     // Still sending: the permanent message will arrive separately.
@@ -101,9 +102,8 @@ abstract final class MessageIndexer {
     final media = describe(message);
     if (media == null) return null;
 
-    final manifest =
-        ManifestCodec.decodeFile(media.caption) ??
-        _adoptedManifest(message, media);
+    final decoded = ManifestCodec.decodeFile(media.caption);
+    final manifest = decoded ?? _adoptedManifest(message, media);
     final kind = FileKind.detect(
       fileName: manifest.name,
       mimeType: manifest.mimeType,
@@ -133,6 +133,7 @@ abstract final class MessageIndexer {
         ),
         replacedBy: Value(manifest.replacedBy),
         manifestExtra: Value(ManifestCodec.encodeExtra(manifest.extra)),
+        adopted: Value(decoded == null),
         // Previews come from the first part only; later parts of a split
         // video have nothing meaningful to show.
         minithumbnail: isFirstPart
@@ -173,6 +174,52 @@ abstract final class MessageIndexer {
   }
 
   static String adoptedId(int messageId) => 'tg$messageId';
+
+  /// Whether [message] is media the drive adopts: delivered, with a file
+  /// the index keeps, and no manifest in its caption.
+  static bool isAdopted(td.Message message) {
+    if (message.sendingState != null) return false;
+    final media = describe(message);
+    return media != null && ManifestCodec.decodeFile(media.caption) == null;
+  }
+
+  /// [message] as the forward filer reads the channel: what it is, when it
+  /// was posted, whether it was forwarded in and what text it carries. A
+  /// text message's text is given only when it isn't a folder or album
+  /// manifest, so a comment can be told from the drive's own records.
+  static ChannelPost postOf(td.Message message) {
+    final media = describe(message);
+    if (media != null) {
+      return (
+        id: message.id,
+        date: message.date,
+        text: null,
+        media: true,
+        manifest: ManifestCodec.decodeFile(media.caption) != null,
+        forwarded: message.forwardInfo != null,
+        caption: media.caption,
+        albumId: message.mediaAlbumId,
+      );
+    }
+    String? text;
+    var manifest = false;
+    if (message.content case td.MessageText(text: final formatted)) {
+      manifest =
+          ManifestCodec.decodeFolder(formatted.text) != null ||
+          ManifestCodec.decodeAlbum(formatted.text) != null;
+      if (!manifest) text = formatted.text;
+    }
+    return (
+      id: message.id,
+      date: message.date,
+      text: text,
+      media: false,
+      manifest: manifest,
+      forwarded: message.forwardInfo != null,
+      caption: '',
+      albumId: message.mediaAlbumId,
+    );
+  }
 
   /// The downloadable file inside [message], whatever kind of media it is.
   static td.File? mediaFile(td.Message message) => describe(message)?.file;

@@ -88,6 +88,21 @@ void main() {
     expect((await db.watchFilesIn(null).first).single.id, 'uuid-1');
   });
 
+  test('a file is adopted until its message carries a manifest', () async {
+    await db.upsertFilePart(
+      file('tg10').copyWith(adopted: const Value(true)),
+      part('tg10', 0, 10),
+    );
+    expect((await db.fileById('tg10'))!.adopted, isTrue);
+
+    // Keep here writes a manifest onto the same message, under the same id.
+    await db.upsertFilePart(
+      file('tg10').copyWith(adopted: const Value(false)),
+      part('tg10', 0, 10),
+    );
+    expect((await db.fileById('tg10'))!.adopted, isFalse);
+  });
+
   test('a one-off read of a folder shows what watching it does', () async {
     await db.upsertFolder(folder('docs', 1));
     await db.upsertFilePart(file('a', folderId: 'docs'), part('a', 0, 10));

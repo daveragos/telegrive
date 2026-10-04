@@ -5,7 +5,9 @@ import 'package:handy_tdlib/api.dart' as td;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:telegrive/features/drive/data/drive_session.dart';
 import 'package:telegrive/features/drive/data/drive_sync.dart';
+import 'package:telegrive/features/drive/data/forward_filer.dart';
 import 'package:telegrive/features/drive/data/message_indexer.dart';
+import 'package:telegrive/features/drive/domain/manifest.dart';
 import 'package:telegrive/infrastructure/database/app_database.dart';
 import 'package:telegrive/infrastructure/storage/preferences.dart';
 import 'package:telegrive/infrastructure/telegram/secure_store.dart';
@@ -163,4 +165,158 @@ void main() {
     expect(await db.fileById(MessageIndexer.adoptedId(10)), isNull);
     expect(prefs.lastSyncedMessageId(_chatId), 11);
   });
+
+  group('forward filing', () {
+    final at = DateTime(2026, 9, 1);
+
+    Future<void> until(bool Function() condition) async {
+      for (var i = 0; i < 500 && !condition(); i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      expect(condition(), isTrue);
+    }
+
+    final wedding = textMessage(
+      5,
+      ManifestCodec.encodeFolder(
+        FolderManifest(id: 'wedding', name: 'Wedding', parentId: null, createdAt: at, modifiedAt: at),
+      ).text,
+    );
+    td.Message forward(int id, int seconds) => documentMessage(
+      id,
+      '',
+      fileName: 'contract.pdf',
+      mimeType: 'application/pdf',
+      date: 1000 + seconds,
+      forwardedFrom: const td.MessageOriginHiddenUser(senderName: 'Selam Tesfaye'),
+    );
+
+    Future<(ProviderContainer, _Channel, Preferences)> open(
+      List<td.Message> history, {
+      Map<String, Object> stored = const {},
+    }) async {
+      // ignore: invalid_use_of_visible_for_testing_member
+      SharedPreferences.setMockInitialValues(stored);
+      final prefs = await SharedPreferences.getInstance();
+      final db = AppDatabase(NativeDatabase.memory());
+      final telegram = _Channel();
+      for (final message in history) {
+        telegram.messages[message.id] = message;
+      }
+      final container = ProviderContainer(
+        overrides: [
+          sharedPreferencesProvider.overrideWithValue(prefs),
+          appDatabaseProvider.overrideWithValue(db),
+          telegramClientProvider.overrideWithValue(telegram),
+          driveSessionProvider.overrideWith(TestSession.new),
+        ],
+      );
+      addTearDown(() async {
+        container.dispose();
+        await db.close();
+      });
+      return (container, telegram, container.read(preferencesProvider));
+    }
+
+    test('the first read sets the watermark at the end and files nothing', () async {
+      final (container, telegram, prefs) = await open([
+        wedding,
+        textMessage(20, 'Wedding', date: 1000),
+        forward(21, 1),
+      ]);
+      await container.read(driveSyncProvider.notifier).fullSync();
+      await container.read(forwardFilerProvider.notifier).whenIdle();
+
+      expect(prefs.forwardFilingFrom(testChatId), 21);
+      final db = container.read(appDatabaseProvider);
+      expect((await db.fileById(MessageIndexer.adoptedId(21)))!.adopted, isTrue);
+      expect(telegram.copies, 0);
+      expect(telegram.messages.keys, contains(20));
+    });
+
+    test('a catch-up read hands what is newer than the watermark to the filer', () async {
+      final (container, telegram, prefs) = await open(
+        [wedding, textMessage(20, 'Wedding', date: 1000), forward(21, 1), forward(22, 2)],
+        stored: {
+          'full_sync_$testChatId': DateTime.now().millisecondsSinceEpoch,
+          'indexed_with_$testChatId': MessageIndexer.version,
+          'synced_upto_$testChatId': 4,
+          'forward_filing_from_$testChatId': 4,
+        },
+      );
+      await container.read(driveSyncProvider.notifier).syncOnOpen();
+      await container.read(forwardFilerProvider.notifier).whenIdle();
+
+      final db = container.read(appDatabaseProvider);
+      for (final id in [21, 22]) {
+        final file = (await db.fileById(MessageIndexer.adoptedId(id)))!;
+        expect(file.folderId, 'wedding');
+        expect(file.adopted, isFalse);
+      }
+      expect(telegram.copies, 2);
+      expect(telegram.messages.keys, isNot(contains(20)));
+      expect(prefs.forwardFilingFrom(testChatId), 22);
+      expect(container.read(forwardFilerProvider)?.count, 2);
+    });
+
+    test('forwards that arrive live are filed once the burst has settled', () async {
+      DriveSync.burstSettle = const Duration(milliseconds: 20);
+      addTearDown(() => DriveSync.burstSettle = const Duration(seconds: 3));
+      final (container, telegram, prefs) = await open(
+        [wedding],
+        stored: {
+          'full_sync_$testChatId': DateTime.now().millisecondsSinceEpoch,
+          'indexed_with_$testChatId': MessageIndexer.version,
+          'synced_upto_$testChatId': 4,
+          'forward_filing_from_$testChatId': 4,
+        },
+      );
+      final sync = container.read(driveSyncProvider.notifier);
+      await sync.syncOnOpen();
+
+      final comment = textMessage(20, 'Wedding', date: 1000);
+      telegram.messages[20] = comment;
+      telegram.receive(td.UpdateNewMessage(message: comment).toJson());
+      for (final message in [forward(21, 1), forward(22, 2)]) {
+        telegram.messages[message.id] = message;
+        telegram.receive(td.UpdateNewMessage(message: message).toJson());
+      }
+      // The burst settles, then the filer's pass runs; it has run once the
+      // watermark has passed the burst.
+      await until(() => prefs.forwardFilingFrom(testChatId) == 22);
+      await container.read(forwardFilerProvider.notifier).whenIdle();
+
+      final db = container.read(appDatabaseProvider);
+      expect((await db.fileById(MessageIndexer.adoptedId(21)))!.folderId, 'wedding');
+      expect((await db.fileById(MessageIndexer.adoptedId(22)))!.folderId, 'wedding');
+      expect(telegram.copies, 2);
+      expect(prefs.forwardFilingFrom(testChatId), 22);
+    });
+  });
+}
+
+/// The channel for the filing tests: history comes from [messages], newest
+/// first and older than the message asked from, the way TDLib pages.
+class _Channel extends FakeTelegram {
+  final List<td.TdFunction> requests = [];
+
+  @override
+  Future<td.TdObject?> answer(td.TdFunction function) async {
+    requests.add(function);
+    if (function is td.GetChatHistory) {
+      final older = messages.values.where((m) => m.id < function.fromMessageId).toList()
+        ..sort((a, b) => b.id.compareTo(a.id));
+      final page = function.fromMessageId == 0
+          ? (messages.values.toList()..sort((a, b) => b.id.compareTo(a.id)))
+          : older;
+      return td.Messages(totalCount: page.length, messages: page.take(function.limit).toList());
+    }
+    if (function is td.OpenChat || function is td.CloseChat) return const td.Ok();
+    return null;
+  }
+
+  int get copies => requests
+      .whereType<td.SendMessage>()
+      .where((r) => r.inputMessageContent is td.InputMessageForwarded)
+      .length;
 }

@@ -77,6 +77,60 @@ void main() {
     expect(entry.file.mimeType.value, 'audio/ogg');
   });
 
+  test('a message without a manifest is indexed as adopted, one with it is not', () {
+    final adopted = MessageIndexer.entryFor(_voice()) as FilePartEntry;
+    expect(adopted.file.adopted.value, isTrue);
+    expect(MessageIndexer.isAdopted(_voice()), isTrue);
+
+    final at = DateTime(2025, 9, 12);
+    final caption = ManifestCodec.encodeFile(
+      FileManifest(
+        id: 'k3v9',
+        name: 'Selam, Friday.ogg',
+        folderId: null,
+        mimeType: 'audio/ogg',
+        size: 48 * 1024,
+        createdAt: at,
+        modifiedAt: at,
+      ),
+    ).text;
+    final own = MessageIndexer.entryFor(_voice(caption: caption)) as FilePartEntry;
+    expect(own.file.adopted.value, isFalse);
+    expect(MessageIndexer.isAdopted(_voice(caption: caption)), isFalse);
+  });
+
+  test('a post is read for the filer: media, comment, or the drive\'s own record', () {
+    final media = MessageIndexer.postOf(
+      documentMessage(
+        21,
+        'look',
+        date: 1001,
+        forwardedFrom: const td.MessageOriginHiddenUser(senderName: 'Selam'),
+        albumId: 7,
+      ),
+    );
+    expect(media.id, 21);
+    expect(media.date, 1001);
+    expect(media.media, isTrue);
+    expect(media.manifest, isFalse);
+    expect(media.forwarded, isTrue);
+    expect(media.caption, 'look');
+    expect(media.text, isNull);
+    expect(media.albumId, 7);
+
+    final comment = MessageIndexer.postOf(textMessage(20, 'Wedding', date: 1000));
+    expect(comment.text, 'Wedding');
+    expect(comment.media, isFalse);
+    expect(comment.manifest, isFalse);
+    expect(comment.forwarded, isFalse);
+
+    final folder = MessageIndexer.postOf(
+      textMessage(_id, '📁 Invoices\ntgrf1:{"id":"inv","n":"Invoices"}'),
+    );
+    expect(folder.text, isNull);
+    expect(folder.manifest, isTrue);
+  });
+
   test('a voice message with a manifest is read from it', () {
     final at = DateTime(2025, 9, 12);
     final caption = ManifestCodec.encodeFile(
