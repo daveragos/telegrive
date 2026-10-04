@@ -7,6 +7,7 @@ import '../../../app/theme/tokens.dart';
 import '../../../core/config/app_config.dart';
 import '../../../core/format/formatters.dart';
 import '../../../core/widgets/common.dart';
+import '../../../infrastructure/notifications/app_notifications.dart';
 import '../../../infrastructure/storage/preferences.dart';
 import '../../auth/data/auth_controller.dart';
 import '../../backup/data/backup_controller.dart';
@@ -94,6 +95,7 @@ class SettingsScreen extends ConsumerWidget {
                 ],
               ),
             ),
+          const _NotificationsOff(),
           const SectionHeader('Drive'),
           ListGroup(
             children: [
@@ -504,6 +506,57 @@ class _MonthlyLimit extends ConsumerWidget {
         ],
       ),
       onTap: () => showDataLimitSheet(context, ref),
+    );
+  }
+}
+
+/// 'Notifications are off', with Turn on, while Android won't let
+/// Telegrive post them; nothing otherwise. Coming back from the system's
+/// settings looks again, so the row goes once they are on.
+class _NotificationsOff extends ConsumerStatefulWidget {
+  const _NotificationsOff();
+
+  @override
+  ConsumerState<_NotificationsOff> createState() => _NotificationsOffState();
+}
+
+class _NotificationsOffState extends ConsumerState<_NotificationsOff> {
+  late final AppLifecycleListener _lifecycle;
+
+  @override
+  void initState() {
+    super.initState();
+    _lifecycle = AppLifecycleListener(
+      onResume: () => ref.invalidate(notificationsEnabledProvider),
+    );
+  }
+
+  @override
+  void dispose() {
+    _lifecycle.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = ref.watch(notificationsEnabledProvider).value ?? true;
+    if (enabled) return const SizedBox.shrink();
+    return ListGroup(
+      margin: const EdgeInsets.fromLTRB(Space.l, Space.s, Space.l, 0),
+      children: [
+        ListTile(
+          leading: Icon(Icons.notifications_off_outlined, color: context.colors.text2),
+          title: const Text('Notifications are off'),
+          subtitle: const Text(
+            'Turn them on to see upload progress and when new photos are waiting '
+            'to be backed up.',
+          ),
+          trailing: TextButton(
+            onPressed: AppNotifications.openSettings,
+            child: const Text('Turn on'),
+          ),
+        ),
+      ],
     );
   }
 }

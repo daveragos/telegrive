@@ -75,6 +75,8 @@ void main() {
       'recent_send_chats': ['42', '7'],
       'recent_destinations': ['docs', ''],
       'cache_swept_at': DateTime(2026, 9, 26).millisecondsSinceEpoch,
+      'notifications_asked': true,
+      BackupPrefKeys.remindAfter: DateTime(2026, 9, 27).millisecondsSinceEpoch,
     });
     final shared = await SharedPreferences.getInstance();
     final db = AppDatabase(NativeDatabase.memory());
@@ -194,5 +196,12 @@ void main() {
     expect(prefs.themeMode, ThemeMode.dark);
     expect(prefs.backupEnabled, isTrue);
     expect(prefs.photosHiddenFolders, {'Screenshots'});
+    // Whether the phone was asked to allow notifications, and when a
+    // swiped-away backup reminder may come back, are about the phone.
+    expect(prefs.notificationsAsked, isTrue);
+    expect(
+      shared.getInt(BackupPrefKeys.remindAfter),
+      DateTime(2026, 9, 27).millisecondsSinceEpoch,
+    );
   });
 }

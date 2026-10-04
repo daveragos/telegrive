@@ -2,14 +2,18 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/format/formatters.dart';
 import '../../../infrastructure/database/app_database.dart'
-    show TransferKind, TransferOrigin;
+    show TransferKind, TransferOrigin, TransferRow;
+import '../../../infrastructure/notifications/app_notifications.dart';
+import '../../../infrastructure/storage/preferences.dart';
 import '../../backup/data/backup_controller.dart';
 import '../domain/transfer_wait.dart';
+import 'transfer_notifications.dart';
 import 'transfer_queue.dart';
 
 /// Keeps transfers alive when Telegrive leaves the screen (Android).
@@ -24,11 +28,23 @@ import 'transfer_queue.dart';
 /// service stays for a while longer. Android won't let an app in the
 /// background start it again, and Wi-Fi is often back in minutes, after a
 /// walk to the car, say, so the waiting rows can start the moment it is.
+///
+/// The notification shows the one-colour mark, and Pause while transfers
+/// the person started are running; photo backup has its own place to be
+/// stopped.
 class TransferKeepAlive {
+  TransferKeepAlive(this._prefs);
+
+  final Preferences _prefs;
+
   /// The route the transfer notification launches the app with. It rides on
   /// the notification's launch intent as Android's initial route; the app
-  /// reads it as a LaunchAction and opens Transfers over Home.
+  /// reads it as a LaunchRequest and opens Transfers over Home.
   static const String notificationRoute = '/transfers';
+
+  /// The id of the Pause button, which the service's isolate sends on to
+  /// the app's.
+  static const String pauseButton = 'pause';
 
   static const int _serviceId = 4107;
   static const Duration _updateEvery = Duration(milliseconds: 1500);
@@ -36,9 +52,13 @@ class TransferKeepAlive {
   /// How long the service stays for transfers waiting for Wi-Fi.
   static const Duration _lingerForWifi = Duration(minutes: 10);
 
+  /// The manifest entry naming the notification's small icon.
+  static const NotificationIcon _icon = NotificationIcon(
+    metaDataName: 'dev.ragoose.telegrive.STAT_ICON',
+  );
+
   bool _running = false;
   bool _starting = false;
-  bool _askedPermission = false;
   DateTime _lastUpdate = DateTime.fromMillisecondsSinceEpoch(0);
   (TransfersState, BackupState)? _pending;
   (TransfersState, BackupState)? _latest;
@@ -60,7 +80,7 @@ class TransferKeepAlive {
   static void _init() {
     FlutterForegroundTask.init(
       androidNotificationOptions: AndroidNotificationOptions(
-        channelId: 'transfers',
+        channelId: AppNotifications.transfersChannel,
         channelName: 'Transfers',
         channelDescription: 'Progress of uploads and downloads',
         channelImportance: NotificationChannelImportance.LOW,
@@ -167,6 +187,8 @@ class TransferKeepAlive {
     await FlutterForegroundTask.updateService(
       notificationTitle: title,
       notificationText: text,
+      notificationIcon: _icon,
+      notificationButtons: buttons(state),
     );
   }
 
@@ -174,12 +196,12 @@ class TransferKeepAlive {
     _starting = true;
     try {
       _init();
-      if (!_askedPermission) {
-        _askedPermission = true;
+      // Asked once ever. Without it the service still runs; the
+      // notification just stays out of the shade, and Settings says so.
+      if (!_prefs.notificationsAsked) {
+        await _prefs.setNotificationsAsked();
         final permission = await FlutterForegroundTask.checkNotificationPermission();
         if (permission != NotificationPermission.granted) {
-          // Without it the service still runs; the notification just stays
-          // out of the shade.
           await FlutterForegroundTask.requestNotificationPermission();
         }
       }
@@ -189,6 +211,8 @@ class TransferKeepAlive {
         serviceTypes: const [ForegroundServiceTypes.dataSync],
         notificationTitle: title,
         notificationText: text,
+        notificationIcon: _icon,
+        notificationButtons: buttons(state),
         notificationInitialRoute: notificationRoute,
         callback: transferServiceEntryPoint,
       );
@@ -214,6 +238,14 @@ class TransferKeepAlive {
       debugPrint('[KeepAlive] $e');
     }
   }
+
+  /// The notification's buttons for [state]: Pause while any transfer the
+  /// person started is in flight, and none while only photo backup runs.
+  @visibleForTesting
+  static List<NotificationButton> buttons(TransfersState state) => [
+    if (state.active.any((t) => t.origin != TransferOrigin.backup))
+      const NotificationButton(id: pauseButton, text: 'Pause'),
+  ];
 
   /// The notification's title and text for [state] and [backup]. Copies
   /// from chats are counted apart from uploads, since nothing goes up, and
@@ -283,20 +315,74 @@ class _IdleTaskHandler extends TaskHandler {
   @override
   void onNotificationPressed() =>
       FlutterForegroundTask.launchApp(TransferKeepAlive.notificationRoute);
+
+  /// The app's isolate holds the queue, so the press goes there.
+  @override
+  void onNotificationButtonPressed(String id) => FlutterForegroundTask.sendDataToMain(id);
 }
 
 /// Watched from the app root; does nothing off Android.
+///
+/// Besides the ongoing notification, it carries out Pause from the shade
+/// and posts the quiet notifications about the person's own transfers:
+/// 'Transfers paused' after Pause, cleared once nothing is paused, and one
+/// summary when a batch finishes while Telegrive is off screen. On screen,
+/// Home and the snacks already say it.
 final transferKeepAliveProvider = Provider<void>((ref) {
   if (kIsWeb || !Platform.isAndroid) return;
-  final keeper = TransferKeepAlive();
+  final keeper = TransferKeepAlive(ref.read(preferencesProvider));
   void push() => unawaited(
     keeper.update(ref.read(transferQueueProvider), ref.read(backupControllerProvider)),
   );
-  ref.listen<TransfersState>(transferQueueProvider, (_, _) => push());
+
+  // When the transfers the person started last went from none in flight to
+  // some; null while none are.
+  DateTime? batchSince;
+  void noteBatch(TransfersState state) {
+    final yours = state.active.any((t) => t.origin != TransferOrigin.backup);
+    if (yours) {
+      batchSince ??= DateTime.now();
+      return;
+    }
+    final since = batchSince;
+    if (since == null) return;
+    batchSince = null;
+    final summary = TransferSummary.of(state.items, since);
+    if (summary != null &&
+        WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed) {
+      unawaited(TransferNotifications.showSummary(summary));
+    }
+  }
+
+  Future<void> pauseYours() async {
+    bool yours(TransferRow row) => row.origin != TransferOrigin.backup;
+    final count = ref
+        .read(transferQueueProvider)
+        .items
+        .where((t) => t.status.isActive && yours(t.row))
+        .length;
+    if (count == 0) return;
+    await ref.read(transferQueueProvider.notifier).pauseAll(yours);
+    await TransferNotifications.showPaused(count);
+  }
+
+  void onData(Object data) {
+    if (data == TransferKeepAlive.pauseButton) unawaited(pauseYours());
+  }
+
+  FlutterForegroundTask.addTaskDataCallback(onData);
+  ref.listen<TransfersState>(transferQueueProvider, (_, next) {
+    push();
+    noteBatch(next);
+  });
+  ref.listen<int>(transferQueueProvider.select((s) => s.pausedCount), (previous, next) {
+    if (next == 0 && (previous ?? 0) > 0) unawaited(TransferNotifications.clearPaused());
+  });
   ref.listen<BackupState>(backupControllerProvider, (_, _) => push(), fireImmediately: true);
-  ref.onDispose(
-    () => unawaited(
+  ref.onDispose(() {
+    FlutterForegroundTask.removeTaskDataCallback(onData);
+    unawaited(
       keeper.update(TransfersState.empty, const BackupState(phase: BackupPhase.off)),
-    ),
-  );
+    );
+  });
 });

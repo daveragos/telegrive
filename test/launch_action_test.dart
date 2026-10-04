@@ -3,22 +3,22 @@ import 'package:telegrive/app/launch_action.dart';
 import 'package:telegrive/features/transfers/data/transfer_keep_alive.dart';
 
 void main() {
-  group('LaunchAction.fromRoute', () {
+  group('LaunchRequest.fromRoute', () {
     test('the transfer notification\'s route opens Transfers', () {
       expect(
-        LaunchAction.fromRoute(TransferKeepAlive.notificationRoute),
-        LaunchAction.transfers,
+        LaunchRequest.fromRoute(TransferKeepAlive.notificationRoute),
+        const LaunchRequest(LaunchAction.transfers),
       );
     });
 
     test('the default route, which a reopened app gets, is a plain launch', () {
-      expect(LaunchAction.fromRoute('/'), isNull);
-      expect(LaunchAction.fromRoute(''), isNull);
+      expect(LaunchRequest.fromRoute('/'), isNull);
+      expect(LaunchRequest.fromRoute(''), isNull);
     });
 
     test('no other route is an action', () {
-      expect(LaunchAction.fromRoute('/home'), isNull);
-      expect(LaunchAction.fromRoute('/transfers/'), isNull);
+      expect(LaunchRequest.fromRoute('/home'), isNull);
+      expect(LaunchRequest.fromRoute('/transfers/'), isNull);
     });
   });
 }

@@ -18,8 +18,9 @@ import 'backup_notifications.dart';
 /// * a **periodic check** every few hours as a safety net.
 ///
 /// Either one counts photos newer than the last finished backup and, if
-/// there are any, posts "N new photos to back up". When the app itself is
-/// running, the job runs on its engine instead and simply starts the backup.
+/// there are any, posts "N new photos to back up", unless that reminder was
+/// swiped away less than a day ago. When the app itself is running, the
+/// job runs on its engine instead and simply starts the backup.
 abstract final class BackupWorker {
   static const String _periodicTask = 'telegrive.backup-check';
   static const String _triggerTask = 'telegrive.media-trigger';
@@ -98,11 +99,34 @@ abstract final class BackupWorker {
     }
 
     final count = await _countNewMedia(prefs);
-    if (count == 0) return;
-    // Say it once per new batch, not every time the job wakes up.
-    if (count == prefs.getInt(BackupPrefKeys.notifiedCount)) return;
+    final remind = shouldRemind(
+      count: count,
+      notifiedCount: prefs.getInt(BackupPrefKeys.notifiedCount),
+      remindAfterMillis: prefs.getInt(BackupPrefKeys.remindAfter),
+      now: DateTime.now(),
+    );
+    if (!remind) return;
     await BackupNotifications.showNewMedia(count);
     await prefs.setInt(BackupPrefKeys.notifiedCount, count);
+  }
+
+  /// Whether to post the reminder for [count] new photos. It is said once
+  /// per new batch, not every time the job wakes up, so not when
+  /// [notifiedCount] photos were the last ones it was posted for, and not
+  /// before [remindAfterMillis], which a swipe sets a day ahead.
+  @visibleForTesting
+  static bool shouldRemind({
+    required int count,
+    int? notifiedCount,
+    int? remindAfterMillis,
+    required DateTime now,
+  }) {
+    if (count == 0) return false;
+    if (remindAfterMillis != null &&
+        now.isBefore(DateTime.fromMillisecondsSinceEpoch(remindAfterMillis))) {
+      return false;
+    }
+    return count != notifiedCount;
   }
 
   static Future<int> _countNewMedia(SharedPreferences prefs) async {

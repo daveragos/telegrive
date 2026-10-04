@@ -33,14 +33,14 @@ class _Queue extends TransferQueue {
   }) async => const [];
 }
 
-/// The app opened to do [action], as from a tapped notification.
+/// The app opened to do [request], as from a tapped notification.
 class _Launched extends PendingLaunchAction {
-  _Launched(this.action);
+  _Launched(this.request);
 
-  final LaunchAction action;
+  final LaunchRequest request;
 
   @override
-  LaunchAction? build() => action;
+  LaunchRequest? build() => request;
 }
 
 /// A picker that answers with one file called [name] straight away.
@@ -101,7 +101,7 @@ void main() {
   Future<void> pumpShell(
     WidgetTester tester, {
     ValueNotifier<AppPhase>? phase,
-    LaunchAction? launchedInto,
+    LaunchRequest? launchedInto,
   }) async {
     // ignore: invalid_use_of_visible_for_testing_member
     SharedPreferences.setMockInitialValues({'backup_prompt_shown': true});
@@ -285,7 +285,7 @@ void main() {
   });
 
   testWidgets('opened to show transfers, Transfers sits over Home', (tester) async {
-    await pumpShell(tester, launchedInto: LaunchAction.transfers);
+    await pumpShell(tester, launchedInto: const LaunchRequest(LaunchAction.transfers));
     expect(find.text('Transfers page'), findsOneWidget);
     expect(container(tester).read(pendingLaunchActionProvider), isNull);
 

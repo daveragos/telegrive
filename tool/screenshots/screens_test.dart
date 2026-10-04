@@ -600,6 +600,7 @@ void main() {
     NetworkState network = NetworkState.unknown,
     MobileDataState? mobileData,
     CaptureSupport captureSupport = const CaptureSupport(scan: true, photo: true),
+    bool notificationsEnabled = true,
     List<Override> overrides = const [],
     Future<void> Function(AppDatabase db)? seed,
   }) async {
@@ -739,6 +740,7 @@ void main() {
           ),
           folderInfoProvider('Work').overrideWith((ref) => Stream.value(folders[2])),
           cacheSizeProvider.overrideWith((ref) async => 734 * _mb),
+          notificationsEnabledProvider.overrideWith((ref) async => notificationsEnabled),
           backupControllerProvider.overrideWith(() => _Backup(backup)),
           bulkEditsProvider.overrideWith(() => _Bulk(bulk)),
           telegramWaitProvider.overrideWith(() => _Wait(telegramWait)),
@@ -1634,6 +1636,12 @@ void main() {
     await prepareData(tester);
     await pumpApp(tester, location: '/settings', mobileData: _nearLimit);
     await snap(tester, 'settings');
+  });
+
+  testWidgets('settings notifications off', (tester) async {
+    await prepareData(tester);
+    await pumpApp(tester, location: '/settings', notificationsEnabled: false);
+    await snap(tester, 'settings_notifications_off');
   });
 
   testWidgets('data limit sheet', (tester) async {

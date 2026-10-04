@@ -99,11 +99,18 @@ phone number.
   transfer says why in one sentence, and Home and Transfers retry it in
   place. On Android a foreground service keeps uploads going in the
   background, and interrupted split uploads resume at the last finished
-  part, saying how many parts are already in your drive. When the
-  connection drops, uploads and downloads say "Waiting for network" and
-  carry on by themselves once it is back, and a request that times out is
-  tried again, up to three times in a row, before anything is called
-  failed.
+  part, saying how many parts are already in your drive. The service's
+  notification has Pause while transfers you started are running, and a
+  quiet "Transfers paused" notification then offers Resume. When your
+  uploads or saves finish while Telegrive is in the background, one quiet
+  notification says so: what went where, with Open for a single file, or
+  how many didn't finish and why, with Retry. Files Telegram copies from a
+  chat count as saved from Telegram, never as uploaded. Telegrive asks once
+  to post notifications; when they are off, Settings says so, with Turn on.
+  When the connection drops, uploads and downloads say "Waiting for
+  network" and carry on by themselves once it is back, and a request that
+  times out is tried again, up to three times in a row, before anything is
+  called failed.
 - **Fits a full phone.** Before Telegrive writes a big copy, a split part or
   a download, it checks the phone has room for it. Without room the
   transfer waits, says how much it needs and how much is free, and starts
@@ -244,8 +251,9 @@ phone number.
   alive; a foreground service keeps it running in the background.
 - **When the app is closed**, Android wakes a tiny job the moment new photos
   land (a MediaStore content trigger) and every few hours as a fallback. It
-  posts "N new photos to back up"; tapping it opens the app, which backs
-  them up.
+  posts "N new photos to back up"; tapping it, or Back up now, opens the
+  app, which backs them up. Swiping it away puts it off for a day, after
+  which it comes back if photos are still waiting.
 
 ## How it works
 

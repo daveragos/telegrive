@@ -132,6 +132,12 @@ class Preferences {
       _prefs.setInt('cache_swept_at', at.millisecondsSinceEpoch);
   Future<void> forgetCacheSweptAt() => _prefs.remove('cache_swept_at');
 
+  /// Whether transfers have asked for permission to post notifications.
+  /// They ask once, the first time one starts, and never again; Settings
+  /// says when notifications are off.
+  bool get notificationsAsked => _prefs.getBool('notifications_asked') ?? false;
+  Future<void> setNotificationsAsked() => _prefs.setBool('notifications_asked', true);
+
   bool get hasSeenWelcome => _prefs.getBool('seen_welcome') ?? false;
   Future<void> setSeenWelcome() => _prefs.setBool('seen_welcome', true);
 
@@ -211,6 +217,7 @@ class Preferences {
     await _prefs.setInt('backup_last_completed', at.millisecondsSinceEpoch);
     await _prefs.setInt(BackupPrefKeys.checkpoint, at.millisecondsSinceEpoch);
     await _prefs.remove(BackupPrefKeys.notifiedCount);
+    await _prefs.remove(BackupPrefKeys.remindAfter);
   }
 
   /// Whether the "back up your photos?" question has been asked.
@@ -347,6 +354,11 @@ abstract final class BackupPrefKeys {
   static const String checkpoint = 'backup_checkpoint';
   static const String notifiedCount = 'backup_notified_count';
   static const String mobileData = 'backup_mobile_data';
+
+  /// When, in milliseconds since the epoch, the background check may post
+  /// the backup reminder again after it was swiped away. A finished backup
+  /// pass clears it.
+  static const String remindAfter = 'backup_remind_after';
 
   /// The switch [mobileData] took over from: true meant Wi-Fi only. It is
   /// read until a choice is saved, and never written.

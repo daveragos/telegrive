@@ -5,6 +5,7 @@ import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:open_filex/open_filex.dart';
 
 import '../core/format/formatters.dart';
 import '../core/widgets/common.dart';
@@ -22,7 +23,8 @@ import '../features/space/data/cache_janitor.dart';
 import '../features/transfers/data/transfer_queue.dart';
 import '../features/transfers/domain/transfer_wait.dart';
 import '../features/trash/data/pending_deletes.dart';
-import '../infrastructure/database/app_database.dart' show TransferKind, TransferOrigin;
+import '../infrastructure/database/app_database.dart'
+    show TransferKind, TransferOrigin, TransferStatus;
 import 'launch_action.dart';
 import 'theme/tokens.dart';
 
@@ -66,24 +68,49 @@ class _AppShellState extends ConsumerState<AppShell> {
       if (ref.read(shareIntakeProvider).isNotEmpty) {
         showShareSheet(context, ref);
       } else if (pending != null) {
-        _carryOut(pending);
+        unawaited(_carryOut(pending));
       } else {
         maybeAskToBackUp(context, ref);
       }
     });
   }
 
-  void _carryOut(LaunchAction? action) {
-    if (action == null) return;
+  /// Does what the app was opened to do. Retrying, resuming and opening
+  /// wait for the queue to read its rows, which a cold start may not have
+  /// done yet; each then shows Transfers over Home, where the rows are.
+  Future<void> _carryOut(LaunchRequest? request) async {
+    if (request == null) return;
     ref.read(pendingLaunchActionProvider.notifier).set(null);
-    switch (action) {
+    final queue = ref.read(transferQueueProvider.notifier);
+    switch (request.action) {
       case LaunchAction.backup:
         _go(_photosBranch);
         ref.read(backupControllerProvider.notifier).schedule(immediate: true);
+        return;
       case LaunchAction.transfers:
-        // Over Home rather than in its place, so back lands on Home.
-        context.push('/transfers');
+        break;
+      case LaunchAction.retryFailed:
+        await queue.loaded;
+        await queue.retryAll(
+          (row) => row.status == TransferStatus.failed && row.origin != TransferOrigin.backup,
+        );
+      case LaunchAction.resumePaused:
+        await queue.loaded;
+        await queue.resumeAll((row) => row.origin != TransferOrigin.backup);
+      case LaunchAction.openTransfer:
+        await queue.loaded;
+        if (!mounted) return;
+        final row = ref.read(transferQueueProvider).byId(request.transferId ?? '')?.row;
+        final path = row?.resultPath;
+        // When no app on the phone takes it, the row in Transfers says what
+        // it is and where.
+        if (row != null && path != null) {
+          final opened = await OpenFilex.open(path, type: row.mimeType);
+          if (opened.type == ResultType.done) return;
+        }
     }
+    // Over Home rather than in its place, so back lands on Home.
+    if (mounted) context.push('/transfers');
   }
 
   void _go(int index) =>
@@ -91,9 +118,9 @@ class _AppShellState extends ConsumerState<AppShell> {
 
   @override
   Widget build(BuildContext context) {
-    ref.listen<LaunchAction?>(
+    ref.listen<LaunchRequest?>(
       pendingLaunchActionProvider,
-      (_, action) => _carryOut(action),
+      (_, request) => unawaited(_carryOut(request)),
     );
     // Keeps pinned files and folders on the phone, reads photos and
     // documents for search, and trims the caches once a day, while the

@@ -399,6 +399,9 @@ class TransferQueue extends Notifier<TransfersState> {
   Timer? _wakeTimer;
   int? _loadedFor;
 
+  /// Completes once the open drive's transfers are read from the database.
+  Completer<void> _ready = Completer<void>();
+
   TelegramClient get _client => ref.read(telegramClientProvider);
   AppDatabase get _db => ref.read(appDatabaseProvider);
   DriveRepository get _repository => ref.read(driveRepositoryProvider);
@@ -433,6 +436,11 @@ class TransferQueue extends Notifier<TransfersState> {
   // ---------------------------------------------------------------------------
   // Public API
   // ---------------------------------------------------------------------------
+
+  /// Completes once the drive's transfers are loaded, so something asked
+  /// for as the app opens, from a notification, say, finds the rows it is
+  /// about.
+  Future<void> get loaded => _ready.future;
 
   /// Queues [requests]; returns the new transfers' ids, in order.
   Future<List<String>> enqueueUploads(
@@ -1755,6 +1763,14 @@ class TransferQueue extends Notifier<TransfersState> {
   }
 
   Future<void> _load() async {
+    try {
+      await _loadRows();
+    } finally {
+      if (!_ready.isCompleted) _ready.complete();
+    }
+  }
+
+  Future<void> _loadRows() async {
     _rows.clear();
     for (final row in await _db.allTransfers()) {
       _rows[row.id] = row;
@@ -1907,6 +1923,9 @@ class TransferQueue extends Notifier<TransfersState> {
 
   void _reset() {
     _loadedFor = null;
+    // [loaded] waits for the next drive's rows. One still waiting is kept,
+    // so whatever waits on it gets them too.
+    if (_ready.isCompleted) _ready = Completer<void>();
     _rows.clear();
     _running.clear();
     _holding.clear();
