@@ -22,6 +22,22 @@ class KindTotal {
   final int bytes;
 }
 
+/// A file this phone stopped partway through, with where it stopped and
+/// the name of the folder it sits in, or null at the root.
+class ResumePoint {
+  const ResumePoint(
+    this.file,
+    this.positionMs,
+    this.durationMs,
+    this.folderName,
+  );
+
+  final FileRow file;
+  final int positionMs;
+  final int durationMs;
+  final String? folderName;
+}
+
 /// A top-level folder with how many files it holds, in it or in any folder
 /// below it, and their size. A [folderId] of null stands for the files in
 /// no folder, and has an empty [name].
@@ -307,6 +323,74 @@ class AppDatabase extends _$AppDatabase {
             ..where((f) => _shown(f) & f.starred.equals(true))
             ..orderBy([(f) => OrderingTerm.desc(f.modifiedAt)]))
           .watch();
+
+  /// How long a play position is kept after it was last written.
+  static const Duration keptPositions = Duration(days: 60);
+
+  /// Remembers that playback of [fileId] stopped at [positionMs] of
+  /// [durationMs], and lets go of positions nothing has touched for
+  /// [keptPositions].
+  Future<void> savePlayPosition(
+    String fileId,
+    int positionMs,
+    int durationMs,
+  ) => transaction(() async {
+    final now = DateTime.now();
+    await into(playPositions).insertOnConflictUpdate(
+      PlayPositionsCompanion.insert(
+        fileId: fileId,
+        positionMs: positionMs,
+        durationMs: durationMs,
+        updatedAt: now,
+      ),
+    );
+    await (delete(playPositions)..where(
+          (p) => p.updatedAt.isSmallerThanValue(now.subtract(keptPositions)),
+        ))
+        .go();
+  });
+
+  /// Where playback of [fileId] stopped, or null when nothing is kept.
+  Future<PlayPositionRow?> playPositionOf(String fileId) => (select(
+    playPositions,
+  )..where((p) => p.fileId.equals(fileId))).getSingleOrNull();
+
+  Future<void> forgetPlayPosition(String fileId) =>
+      (delete(playPositions)..where((p) => p.fileId.equals(fileId))).go();
+
+  /// Files this phone stopped partway through since [since], most recently
+  /// played first, with the name of the folder each is in. Trashed and
+  /// incomplete files are left out.
+  Stream<List<ResumePoint>> watchResumePoints({
+    required DateTime since,
+    int limit = 3,
+  }) {
+    final query =
+        select(playPositions).join([
+            innerJoin(
+              driveFiles,
+              driveFiles.id.equalsExp(playPositions.fileId),
+            ),
+            leftOuterJoin(folders, folders.id.equalsExp(driveFiles.folderId)),
+          ])
+          ..where(
+            _shown(driveFiles) &
+                playPositions.updatedAt.isBiggerThanValue(since),
+          )
+          ..orderBy([OrderingTerm.desc(playPositions.updatedAt)])
+          ..limit(limit);
+    return query.watch().map(
+      (rows) => [
+        for (final row in rows)
+          ResumePoint(
+            row.readTable(driveFiles),
+            row.readTable(playPositions).positionMs,
+            row.readTable(playPositions).durationMs,
+            row.readTableOrNull(folders)?.name,
+          ),
+      ],
+    );
+  }
 
   /// Starred folders that aren't in the trash, in name order.
   Stream<List<FolderRow>> watchStarredFolders() =>

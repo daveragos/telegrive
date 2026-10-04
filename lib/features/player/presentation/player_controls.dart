@@ -8,7 +8,8 @@ import '../../drive/domain/drive_models.dart';
 import '../../files/presentation/file_actions.dart';
 
 /// The player's chrome: the title row with Back and More at the top, the
-/// skip and play buttons in the middle, and the position, slider, length
+/// skip and play buttons in the middle, with Previous and Next around them
+/// while a queue is playing, and the resume line, position, slider, length
 /// and speed button along the bottom. Everything it shows comes from
 /// [value], so it can be drawn without a player behind it.
 class PlayerControls extends ConsumerWidget {
@@ -22,6 +23,11 @@ class PlayerControls extends ConsumerWidget {
     required this.step,
     required this.speed,
     required this.onSpeed,
+    this.resumedFrom,
+    this.onStartOver,
+    this.hasQueue = false,
+    this.onPrevious,
+    this.onNext,
   });
 
   final DriveFile? file;
@@ -40,6 +46,17 @@ class PlayerControls extends ConsumerWidget {
   final double speed;
   final VoidCallback onSpeed;
 
+  /// Where the file picked up from, shown as 'Resumed from 42:10' with
+  /// Start over beside it while it is set.
+  final Duration? resumedFrom;
+  final VoidCallback? onStartOver;
+
+  /// Whether the file is one of several playing through, which adds the
+  /// Previous and Next buttons. Either is dimmed when its callback is null.
+  final bool hasQueue;
+  final VoidCallback? onPrevious;
+  final VoidCallback? onNext;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final ready = value?.isInitialized ?? false;
@@ -48,6 +65,7 @@ class PlayerControls extends ConsumerWidget {
     final buffered = value?.buffered.lastOrNull?.end ?? Duration.zero;
     const white = Colors.white;
     final dim = Colors.white.withValues(alpha: 0.7);
+    final faint = Colors.white.withValues(alpha: 0.38);
     final max = duration.inMilliseconds.toDouble();
     final thirty = step.inSeconds == 30;
 
@@ -93,6 +111,16 @@ class PlayerControls extends ConsumerWidget {
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
+                  if (hasQueue) ...[
+                    IconButton(
+                      onPressed: onPrevious,
+                      disabledColor: faint,
+                      icon: const Icon(Icons.skip_previous_rounded, size: 30),
+                      color: white,
+                      tooltip: 'Previous',
+                    ),
+                    const SizedBox(width: 12),
+                  ],
                   IconButton(
                     onPressed: () => onSkip(false),
                     icon: Icon(
@@ -135,9 +163,21 @@ class PlayerControls extends ConsumerWidget {
                         ? 'Forward 30 seconds'
                         : 'Forward 10 seconds',
                   ),
+                  if (hasQueue) ...[
+                    const SizedBox(width: 12),
+                    IconButton(
+                      onPressed: onNext,
+                      disabledColor: faint,
+                      icon: const Icon(Icons.skip_next_rounded, size: 30),
+                      color: white,
+                      tooltip: 'Next',
+                    ),
+                  ],
                 ],
               ),
             const Spacer(),
+            if (ready)
+              _ResumeLine(resumedFrom: resumedFrom, onStartOver: onStartOver),
             if (ready)
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 8, 12),
@@ -205,6 +245,85 @@ class PlayerControls extends ConsumerWidget {
               ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// 'Resumed from 42:10' with Start over beside it, above the slider row.
+/// When [resumedFrom] goes away the line keeps its last value while it
+/// fades out over 180 ms, and only then gives up its height, so the slider
+/// row moves up after the fade rather than jumping.
+class _ResumeLine extends StatefulWidget {
+  const _ResumeLine({required this.resumedFrom, required this.onStartOver});
+
+  final Duration? resumedFrom;
+  final VoidCallback? onStartOver;
+
+  @override
+  State<_ResumeLine> createState() => _ResumeLineState();
+}
+
+class _ResumeLineState extends State<_ResumeLine> {
+  /// The last point shown, kept while the line fades.
+  Duration? _shown;
+
+  @override
+  void initState() {
+    super.initState();
+    _shown = widget.resumedFrom;
+  }
+
+  @override
+  void didUpdateWidget(_ResumeLine oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.resumedFrom != null) _shown = widget.resumedFrom;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    const duration = Duration(milliseconds: 180);
+    final shown = _shown;
+    final visible = widget.resumedFrom != null;
+    return AnimatedSize(
+      duration: duration,
+      curve: Curves.easeOut,
+      alignment: Alignment.bottomCenter,
+      child: AnimatedOpacity(
+        opacity: visible ? 1 : 0,
+        duration: duration,
+        curve: Curves.easeOut,
+        onEnd: () {
+          if (!visible && mounted) setState(() => _shown = null);
+        },
+        child: shown == null
+            ? const SizedBox.shrink()
+            : Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+                child: Row(
+                  children: [
+                    Text(
+                      'Resumed from ${Formatters.length(shown)}',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.7),
+                        fontSize: 14,
+                        fontFeatures: tabularFigures,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    TextButton(
+                      onPressed: visible ? widget.onStartOver : null,
+                      style: TextButton.styleFrom(
+                        foregroundColor: Colors.white,
+                        disabledForegroundColor: Colors.white,
+                        minimumSize: const Size(48, 36),
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                      ),
+                      child: const Text('Start over'),
+                    ),
+                  ],
+                ),
+              ),
       ),
     );
   }

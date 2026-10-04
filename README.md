@@ -215,7 +215,13 @@ phone number.
   music stays at 1×. Pressing and holding the picture while something
   plays runs it at 2× until you let go. The skip buttons and a double tap
   on either half of the picture jump 10 seconds on a short file and 30
-  seconds on anything ten minutes or longer. PDFs open
+  seconds on anything ten minutes or longer. Videos and long recordings
+  pick up where you stopped (on this phone), with a Start over button for
+  the first few seconds, and Home lists up to three you are partway
+  through with how much is left; a file watched to its end starts from
+  the beginning next time, and Mark as finished drops one from the list.
+  Audio opened from a folder plays on to the next file in that folder, in
+  the order the list shows, with Previous and Next in the player. PDFs open
   page by page without downloading the whole file, split ones included,
   and text files open in the app too. Everything else opens in the right
   app on your phone.
@@ -453,5 +459,8 @@ two commands are at the top of that test.
 - Transfers that step back to wait for Wi-Fi keep Telegrive running in the
   background for ten minutes. If Wi-Fi takes longer, they start when it
   returns while the app is still running, or the next time you open it.
+- Where you stopped in a video or recording is kept on this phone only, for
+  files of three minutes or longer and for 60 days after you last played
+  them. Rebuild index keeps these points; signing out clears them.
 
 Telegrive is an independent project, not affiliated with Telegram.

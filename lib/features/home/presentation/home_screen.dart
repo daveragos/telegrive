@@ -27,11 +27,13 @@ import '../../network/data/mobile_data.dart';
 import '../../network/data/proxies.dart';
 import '../../network/presentation/proxy_sheet.dart';
 import '../../offline/data/offline_sync.dart';
+import '../../player/data/play_positions.dart';
 import '../../transfers/data/transfer_queue.dart';
 import 'drive_health.dart';
 
-/// What is in the drive and what is happening to it. Where the space goes
-/// first, which doubles as the way into each kind of file and, once
+/// What is in the drive and what is happening to it. What this phone was
+/// partway through playing first, when there is anything; then where the
+/// space goes, which doubles as the way into each kind of file and, once
 /// something is kept offline, into what this phone keeps; then the starred
 /// folders, each a tap from wherever it sits; then the files this phone
 /// opened or added lately.
@@ -81,6 +83,7 @@ class HomeScreen extends ConsumerWidget {
               sliver: SliverToBoxAdapter(child: _Header()),
             ),
             const SliverToBoxAdapter(child: _Activity()),
+            const SliverToBoxAdapter(child: _ContinuePlaying()),
             if (summary != null && summary.fileCount > 0) ...[
               const SliverToBoxAdapter(child: SectionHeader('Storage')),
               SliverToBoxAdapter(
@@ -421,6 +424,66 @@ class _Activity extends ConsumerWidget {
       },
     );
   }
+}
+
+/// Up to three videos or recordings this phone stopped partway through,
+/// most recent first, each with how much is left and where it lives. The
+/// group is there only while it has rows: nothing is said while they load,
+/// when there are none or when they can't be read.
+class _ContinuePlaying extends ConsumerWidget {
+  const _ContinuePlaying();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final items = switch (ref.watch(continuePlayingProvider)) {
+      AsyncData(value: final items) when items.isNotEmpty => items,
+      _ => null,
+    };
+    if (items == null) return const SizedBox.shrink();
+    final allVideo = items.every((i) => i.file.kind == FileKind.video);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SectionHeader(allVideo ? 'Continue watching' : 'Continue playing'),
+        ListGroup(
+          children: [
+            for (final item in items)
+              FileListTile(
+                file: item.file,
+                subtitle: '${Formatters.left(item.left)} · ${item.place}',
+                progress: item.progress,
+                onTap: () => FileActions.open(
+                  context,
+                  ref,
+                  item.file,
+                  from: item.file.kind == FileKind.audio
+                      ? 'folder:${item.file.folderId ?? ''}'
+                      : null,
+                ),
+                onLongPress: () => _showSheet(context, ref, item),
+                onMore: () => _showSheet(context, ref, item),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  static Future<void> _showSheet(
+    BuildContext context,
+    WidgetRef ref,
+    ContinueItem item,
+  ) => FileActions.showFileSheet(
+    context,
+    ref,
+    item.file,
+    onMarkFinished: () async {
+      await ref.read(playPositionsProvider).forget(item.file.id);
+      if (context.mounted) {
+        showSnack(context, '"${item.file.name}" marked as finished');
+      }
+    },
+  );
 }
 
 class _NothingYet extends ConsumerWidget {

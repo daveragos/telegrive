@@ -105,6 +105,11 @@ void main() {
       double speed = 1,
       void Function(bool forward)? onSkip,
       VoidCallback? onSpeed,
+      Duration? resumedFrom,
+      VoidCallback? onStartOver,
+      bool hasQueue = false,
+      VoidCallback? onPrevious,
+      VoidCallback? onNext,
     }) async {
       await tester.pumpWidget(
         ProviderScope(
@@ -125,12 +130,69 @@ void main() {
                 step: step,
                 speed: speed,
                 onSpeed: onSpeed ?? () {},
+                resumedFrom: resumedFrom,
+                onStartOver: onStartOver,
+                hasQueue: hasQueue,
+                onPrevious: onPrevious,
+                onNext: onNext,
               ),
             ),
           ),
         ),
       );
     }
+
+    testWidgets('a resumed file says where from and offers Start over', (
+      tester,
+    ) async {
+      var startedOver = 0;
+      await pump(
+        tester,
+        step: const Duration(seconds: 30),
+        resumedFrom: const Duration(minutes: 42, seconds: 10),
+        onStartOver: () => startedOver++,
+      );
+
+      expect(find.text('Resumed from 42:10'), findsOneWidget);
+      await tester.tap(find.text('Start over'));
+      expect(startedOver, 1);
+    });
+
+    testWidgets('without a resume point there is no line', (tester) async {
+      await pump(tester, step: const Duration(seconds: 30));
+      expect(find.textContaining('Resumed from'), findsNothing);
+      expect(find.text('Start over'), findsNothing);
+    });
+
+    testWidgets('a queue adds Previous and Next, dimmed at an end', (
+      tester,
+    ) async {
+      var nexts = 0;
+      await pump(
+        tester,
+        step: const Duration(seconds: 10),
+        hasQueue: true,
+        onNext: () => nexts++,
+      );
+
+      expect(find.byTooltip('Previous'), findsOneWidget);
+      expect(find.byTooltip('Next'), findsOneWidget);
+      await tester.tap(find.byIcon(Icons.skip_next_rounded));
+      expect(nexts, 1);
+      final previous = tester.widget<IconButton>(
+        find.ancestor(
+          of: find.byIcon(Icons.skip_previous_rounded),
+          matching: find.byType(IconButton),
+        ),
+      );
+      expect(previous.onPressed, isNull);
+    });
+
+    testWidgets('a file playing alone has no Previous or Next', (tester) async {
+      await pump(tester, step: const Duration(seconds: 10));
+      expect(find.byIcon(Icons.skip_previous_rounded), findsNothing);
+      expect(find.byIcon(Icons.skip_next_rounded), findsNothing);
+    });
 
     testWidgets('a 30 s step shows the 30 glyphs and says so', (tester) async {
       final skips = <bool>[];

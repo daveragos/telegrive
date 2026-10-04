@@ -41,7 +41,8 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
   /// anything is.
   bool _selectMode = false;
 
-  bool get _selecting => _selectMode || _files.isNotEmpty || _folders.isNotEmpty;
+  bool get _selecting =>
+      _selectMode || _files.isNotEmpty || _folders.isNotEmpty;
 
   /// Tells the shell whether this folder is selecting, so its bar makes way
   /// for the selection's. Kept from the start, for when the screen goes.
@@ -165,8 +166,10 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
     }
     final position = _scroll.position;
     _scroll.jumpTo(
-      (offset - position.viewportDimension * _highlightAt)
-          .clamp(0.0, position.maxScrollExtent),
+      (offset - position.viewportDimension * _highlightAt).clamp(
+        0.0,
+        position.maxScrollExtent,
+      ),
     );
     WidgetsBinding.instance.addPostFrameCallback((_) => _easeToHighlight());
   }
@@ -207,7 +210,8 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
   Widget build(BuildContext context) {
     final contents = ref.watch(folderContentsProvider(widget.folderId));
     final prefs = ref.watch(browsePreferencesProvider);
-    final crumbs = ref.watch(breadcrumbsProvider(widget.folderId)).value ?? const [];
+    final crumbs =
+        ref.watch(breadcrumbsProvider(widget.folderId)).value ?? const [];
     final title = widget.folderId == null
         ? 'Files'
         : (crumbs.isNotEmpty ? crumbs.last.name : '');
@@ -234,7 +238,9 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
     if (data != null && _highlightId != null && !_scrolledToHighlight) {
       _scrolledToHighlight = true;
       final mode = prefs.viewMode;
-      WidgetsBinding.instance.addPostFrameCallback((_) => _showHighlight(data, mode));
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _showHighlight(data, mode),
+      );
     }
 
     return PopScope(
@@ -255,7 +261,9 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
                 title: Text(
                   title,
                   overflow: TextOverflow.ellipsis,
-                  style: widget.folderId == null ? context.text.headlineSmall : null,
+                  style: widget.folderId == null
+                      ? context.text.headlineSmall
+                      : null,
                 ),
                 actions: [
                   IconButton(
@@ -268,14 +276,17 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
                     tooltip: 'Search',
                   ),
                   IconButton(
-                    onPressed: () =>
-                        ref.read(browsePreferencesProvider.notifier).toggleViewMode(),
+                    onPressed: () => ref
+                        .read(browsePreferencesProvider.notifier)
+                        .toggleViewMode(),
                     icon: Icon(
                       prefs.viewMode == ViewMode.list
                           ? Icons.grid_view_rounded
                           : Icons.view_agenda_outlined,
                     ),
-                    tooltip: prefs.viewMode == ViewMode.list ? 'Grid view' : 'List view',
+                    tooltip: prefs.viewMode == ViewMode.list
+                        ? 'Grid view'
+                        : 'List view',
                   ),
                   _SortButton(sort: prefs.sort),
                   PopupMenuButton<_FilesMenu>(
@@ -289,9 +300,15 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
                       }
                     },
                     itemBuilder: (_) => [
-                      const PopupMenuItem(value: _FilesMenu.select, child: Text('Select')),
+                      const PopupMenuItem(
+                        value: _FilesMenu.select,
+                        child: Text('Select'),
+                      ),
                       if (widget.folderId == null)
-                        const PopupMenuItem(value: _FilesMenu.trash, child: Text('Trash')),
+                        const PopupMenuItem(
+                          value: _FilesMenu.trash,
+                          child: Text('Trash'),
+                        ),
                     ],
                   ),
                   const SizedBox(width: 4),
@@ -342,8 +359,11 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
                         : 'This folder is empty',
                     message: 'Upload files, or tap New to make a folder.',
                     action: FilledButton(
-                      onPressed: () =>
-                          FileActions.upload(context, ref, folderId: widget.folderId),
+                      onPressed: () => FileActions.upload(
+                        context,
+                        ref,
+                        folderId: widget.folderId,
+                      ),
                       child: const Text('Upload files'),
                     ),
                   ),
@@ -368,19 +388,32 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
   }
 
   /// The first label sits close under the summary line.
-  static const _firstHeader = EdgeInsets.fromLTRB(Space.gutter, Space.s, Space.m, Space.s);
+  static const _firstHeader = EdgeInsets.fromLTRB(
+    Space.gutter,
+    Space.s,
+    Space.m,
+    Space.s,
+  );
 
   void _openFolder(DriveFolder folder) => context.push('/files/${folder.id}');
 
   void _onFolderTap(DriveFolder folder) =>
       _selecting ? _toggleFolder(folder) : _openFolder(folder);
 
-  void _onFileTap(DriveFile file) =>
-      _selecting ? _toggleFile(file) : FileActions.open(context, ref, file);
+  void _onFileTap(DriveFile file) => _selecting
+      ? _toggleFile(file)
+      : FileActions.open(
+          context,
+          ref,
+          file,
+          from: 'folder:${widget.folderId ?? ''}',
+        );
 
   List<Widget> _listSlivers(FolderContents data) => [
     if (data.folders.isNotEmpty && data.files.isNotEmpty)
-      const SliverToBoxAdapter(child: SectionHeader('Folders', padding: _firstHeader)),
+      const SliverToBoxAdapter(
+        child: SectionHeader('Folders', padding: _firstHeader),
+      ),
     SliverList.builder(
       itemCount: data.folders.length,
       itemBuilder: (context, index) {
@@ -419,7 +452,9 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
 
   List<Widget> _gridSlivers(FolderContents data) => [
     if (data.folders.isNotEmpty) ...[
-      const SliverToBoxAdapter(child: SectionHeader('Folders', padding: _firstHeader)),
+      const SliverToBoxAdapter(
+        child: SectionHeader('Folders', padding: _firstHeader),
+      ),
       SliverPadding(
         padding: const EdgeInsets.symmetric(horizontal: Space.l),
         sliver: SliverGrid.builder(
@@ -477,7 +512,9 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
   ];
 
   /// The selected files and folders among [data], in its order.
-  ({List<DriveFile> files, List<DriveFolder> folders}) _picked(FolderContents? data) => (
+  ({List<DriveFile> files, List<DriveFolder> folders}) _picked(
+    FolderContents? data,
+  ) => (
     files: data?.files.where((f) => _files.contains(f.id)).toList() ?? [],
     folders: data?.folders.where((f) => _folders.contains(f.id)).toList() ?? [],
   );
@@ -493,12 +530,19 @@ class _Summary extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final parts = [
-      if (contents.folders.isNotEmpty) Formatters.count(contents.folders.length, 'folder'),
-      if (contents.files.isNotEmpty) Formatters.count(contents.files.length, 'file'),
+      if (contents.folders.isNotEmpty)
+        Formatters.count(contents.folders.length, 'folder'),
+      if (contents.files.isNotEmpty)
+        Formatters.count(contents.files.length, 'file'),
       if (contents.files.isNotEmpty) Formatters.bytes(contents.totalBytes),
     ];
     return Padding(
-      padding: const EdgeInsets.fromLTRB(Space.gutter, 0, Space.gutter, Space.s),
+      padding: const EdgeInsets.fromLTRB(
+        Space.gutter,
+        0,
+        Space.gutter,
+        Space.s,
+      ),
       child: Text(
         parts.join(' · '),
         style: context.text.bodySmall?.copyWith(fontFeatures: tabularFigures),
@@ -537,7 +581,10 @@ class _Breadcrumbs extends StatelessWidget {
               borderRadius: BorderRadius.circular(Radii.thumb),
               onTap: isLast ? null : () => context.go(location),
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: Space.s, vertical: Space.xs),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: Space.s,
+                  vertical: Space.xs,
+                ),
                 child: Text(
                   label,
                   style: context.text.bodyMedium?.copyWith(
@@ -564,7 +611,8 @@ class _SortButton extends ConsumerWidget {
     return PopupMenuButton<SortField>(
       tooltip: 'Sort',
       icon: const Icon(Icons.sort_rounded),
-      onSelected: (field) => ref.read(browsePreferencesProvider.notifier).sortBy(field),
+      onSelected: (field) =>
+          ref.read(browsePreferencesProvider.notifier).sortBy(field),
       itemBuilder: (context) => [
         for (final field in SortField.values)
           PopupMenuItem(

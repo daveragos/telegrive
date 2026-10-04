@@ -42,6 +42,7 @@ class FileListTile extends ConsumerWidget {
     this.subtitle,
     this.subtitleColor,
     this.trailing,
+    this.progress,
   });
 
   final DriveFile file;
@@ -62,6 +63,10 @@ class FileListTile extends ConsumerWidget {
 
   /// An action of the row's own, before the menu.
   final Widget? trailing;
+
+  /// How much of the file has been played, from 0 to 1, drawn as a thin bar
+  /// under the meta line. Null leaves the row as it is.
+  final double? progress;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -85,6 +90,7 @@ class FileListTile extends ConsumerWidget {
       starred: file.starred,
       offline: offline,
       trailing: trailing,
+      progress: progress,
       onMore: selecting ? null : onMore,
     );
   }
@@ -159,6 +165,7 @@ class _Row extends StatelessWidget {
     this.highlighted = false,
     this.metaColor,
     this.trailing,
+    this.progress,
   });
 
   final bool selected;
@@ -175,6 +182,10 @@ class _Row extends StatelessWidget {
 
   /// Kept on this phone for use without a connection.
   final bool offline;
+
+  /// How far playback is through the file, as a thin bar under the meta
+  /// line, or null for no bar.
+  final double? progress;
 
   @override
   Widget build(BuildContext context) {
@@ -239,6 +250,18 @@ class _Row extends StatelessWidget {
                           ),
                         ],
                       ),
+                      if (progress case final progress?) ...[
+                        const SizedBox(height: 6),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(2),
+                          child: LinearProgressIndicator(
+                            value: progress,
+                            minHeight: 3,
+                            color: colors.accent,
+                            backgroundColor: colors.surface2,
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),

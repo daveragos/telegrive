@@ -35,6 +35,7 @@ import 'package:telegrive/features/search/presentation/search_screen.dart';
 import 'package:telegrive/features/photos/presentation/albums_screen.dart';
 import 'package:telegrive/features/photos/presentation/media_grid.dart';
 import 'package:telegrive/features/photos/presentation/media_grid_layout.dart';
+import 'package:telegrive/features/player/data/play_positions.dart';
 import 'package:telegrive/features/player/presentation/player_controls.dart';
 import 'package:telegrive/features/send/data/telegram_chats.dart';
 import 'package:telegrive/features/trash/presentation/trash_screen.dart';
@@ -1118,6 +1119,46 @@ void main() {
     await snap(tester, 'home_recent');
   });
 
+  /// Home with two files partway through: a film at the root and a track
+  /// in Music, so the header reads Continue playing.
+  testWidgets('home continue', (tester) async {
+    await prepareData(tester);
+    await pumpApp(
+      tester,
+      location: '/home',
+      overrides: [
+        continuePlayingProvider.overrideWith(
+          (ref) => Stream.value([
+            ContinueItem(
+              file: _file(
+                'Wedding highlights 4K.mp4',
+                (5.6 * _gb).round(),
+                20,
+                durationSeconds: 5040,
+              ),
+              position: const Duration(minutes: 46, seconds: 12),
+              length: const Duration(minutes: 84),
+              place: 'Files',
+            ),
+            ContinueItem(
+              file: _file(
+                'Tizita — live.mp3',
+                48 * _mb,
+                30,
+                folderId: 'Music',
+                durationSeconds: 1120,
+              ),
+              position: const Duration(minutes: 16, seconds: 30),
+              length: const Duration(minutes: 18, seconds: 40),
+              place: 'Music',
+            ),
+          ]),
+        ),
+      ],
+    );
+    await snap(tester, 'home_continue');
+  });
+
   testWidgets('home all good', (tester) async {
     await prepareData(tester);
     transfers = TransfersState.empty;
@@ -1745,6 +1786,58 @@ void main() {
     );
     await tester.pump(const Duration(milliseconds: 300));
     await snap(tester, 'player_controls');
+  });
+
+  /// The same chrome on an audiobook chapter playing through its folder:
+  /// Previous and Next around the skips, and the line saying it picked up
+  /// at 42:10 with Start over beside it.
+  testWidgets('player audio queue', (tester) async {
+    tester.view.physicalSize = const Size(1080, 2340);
+    tester.view.devicePixelRatio = 2.625;
+    addTearDown(tester.view.reset);
+    // ignore: invalid_use_of_visible_for_testing_member
+    SharedPreferences.setMockInitialValues({});
+    final shared = await SharedPreferences.getInstance();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [sharedPreferencesProvider.overrideWithValue(shared)],
+        child: MaterialApp(
+          debugShowCheckedModeBanner: false,
+          theme: AppTheme.dark(),
+          home: Scaffold(
+            backgroundColor: Colors.black,
+            body: PlayerControls(
+              file: _file(
+                'Chapter 3 — The long road.mp3',
+                48 * _mb,
+                30,
+                folderId: 'Audiobook',
+                durationSeconds: 4360,
+              ),
+              value: const VideoPlayerValue(
+                duration: Duration(hours: 1, minutes: 12, seconds: 40),
+                position: Duration(minutes: 42, seconds: 10),
+                isInitialized: true,
+                isPlaying: true,
+              ),
+              onPlay: () {},
+              onSkip: (_) {},
+              onSeek: (_) {},
+              step: const Duration(seconds: 30),
+              speed: 1,
+              onSpeed: () {},
+              resumedFrom: const Duration(minutes: 42, seconds: 10),
+              onStartOver: () {},
+              hasQueue: true,
+              onPrevious: () {},
+              onNext: () {},
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 300));
+    await snap(tester, 'player_audio_queue');
   });
 
   testWidgets('photos menu', (tester) async {

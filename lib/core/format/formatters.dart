@@ -60,6 +60,19 @@ abstract final class Formatters {
     return hours > 0 ? '$hours:$minutes:$seconds' : '$minutes:$seconds';
   }
 
+  /// `40 s` → `Less than a minute left`, `37:48` → `38 min left`,
+  /// `72 min` → `1 h 12 min left`: how much of a video or recording is still
+  /// to play, to the nearest minute.
+  static String left(Duration duration) {
+    final seconds = duration.inSeconds;
+    if (seconds < 60) return 'Less than a minute left';
+    final minutes = (seconds / 60).round();
+    if (minutes < 60) return '$minutes min left';
+    final rest = minutes % 60;
+    final hours = '${minutes ~/ 60} h';
+    return rest == 0 ? '$hours left' : '$hours $rest min left';
+  }
+
   /// `1` → `1×`, `1.25` → `1.25×`, `0.75` → `0.75×`: a playback speed, with
   /// up to two decimals and no trailing zeros.
   static String rate(double speed) {

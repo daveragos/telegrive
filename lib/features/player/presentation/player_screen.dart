@@ -15,8 +15,10 @@ import '../../../infrastructure/database/app_database.dart';
 import '../../../infrastructure/storage/preferences.dart';
 import '../../drive/data/drive_repository.dart';
 import '../../drive/domain/drive_models.dart';
+import '../../files/data/browse_preferences.dart';
 import '../../files/presentation/file_actions.dart';
 import '../../transfers/data/transfer_queue.dart';
+import '../data/play_positions.dart';
 import '../data/playback.dart';
 import '../data/stream_server.dart';
 import 'player_controls.dart';
@@ -35,11 +37,17 @@ Future<void> learnLength(WidgetRef ref, DriveFile file, Duration known) async {
 }
 
 /// Plays a video or audio file as it streams from Telegram, or from the
-/// phone when a copy is already here.
+/// phone when a copy is already here. A video or long recording picks up
+/// where this phone last stopped it, and an audio file opened from a
+/// folder plays on through that folder's audio files.
 class PlayerScreen extends ConsumerStatefulWidget {
-  const PlayerScreen({super.key, required this.fileId});
+  const PlayerScreen({super.key, required this.fileId, this.source});
 
   final String fileId;
+
+  /// Where the file was opened from: `folder:<id>`, with an empty id for
+  /// the root, queues that folder's audio files. Null plays the file alone.
+  final String? source;
 
   @override
   ConsumerState<PlayerScreen> createState() => _PlayerScreenState();
@@ -58,9 +66,31 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   /// Whether a press-and-hold on the stage is playing at [Playback.held].
   bool _holding = false;
 
+  /// The folder's audio files in list order, or empty when the file plays
+  /// alone.
+  List<DriveFile> _queue = const [];
+
+  /// Taken once at the start, so the last save in [dispose] never goes
+  /// through [ref].
+  late final PlayPositionStore _positions;
+  Timer? _saveTimer;
+
+  /// Where the current file picked up from, while the resume line shows.
+  Duration? _resumedFrom;
+  Timer? _resumedHide;
+
+  /// Set once a file's end has moved on to the next, so one completion
+  /// advances only once.
+  bool _advancing = false;
+
+  /// Counts each file opened, so an opening overtaken by Next or Previous
+  /// lets go of its player instead of starting it.
+  int _generation = 0;
+
   @override
   void initState() {
     super.initState();
+    _positions = ref.read(playPositionsProvider);
     unawaited(_start());
   }
 
@@ -74,19 +104,76 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       }
       if (!mounted) return;
       setState(() => _file = file);
+      await _buildQueue(file);
+      if (!mounted) return;
+      await _open(file);
+    } catch (e) {
+      if (mounted) setState(() => _error = e);
+    }
+  }
 
+  /// Reads the folder [source] names and keeps its audio files in the
+  /// order the list shows them, when [file] is an audio file among them.
+  Future<void> _buildQueue(DriveFile file) async {
+    const prefix = 'folder:';
+    final source = widget.source;
+    if (file.kind != FileKind.audio ||
+        source == null ||
+        !source.startsWith(prefix)) {
+      return;
+    }
+    final id = source.substring(prefix.length);
+    final contents = await ref
+        .read(driveRepositoryProvider)
+        .watchFolder(id.isEmpty ? null : id)
+        .first;
+    final queue = PlayQueue.fromFolder(
+      contents,
+      ref.read(browsePreferencesProvider).sort,
+    );
+    if (queue.any((f) => f.id == file.id)) _queue = queue;
+  }
+
+  /// Lets go of the file playing now, saving where it stopped, and starts
+  /// [file] from its saved point when it has one.
+  Future<void> _open(DriveFile file) async {
+    final generation = ++_generation;
+    final old = _controller;
+    final oldFile = _file;
+    _saveTimer?.cancel();
+    _resumedHide?.cancel();
+    old?.removeListener(_onTick);
+    _controller = null;
+    if (old != null && oldFile != null) {
+      unawaited(_record(oldFile.id, old.value));
+    }
+    unawaited(old?.dispose());
+    setState(() {
+      _file = file;
+      _error = null;
+      _resumedFrom = null;
+      _advancing = false;
+    });
+
+    VideoPlayerController? controller;
+    try {
       final local = await ref
           .read(transferQueueProvider.notifier)
           .localPathIfAvailable(file);
-      final controller = local != null
+      if (!mounted || generation != _generation) return;
+      controller = local != null
           ? VideoPlayerController.file(File(local))
           : VideoPlayerController.networkUrl(
               await ref.read(streamServerProvider).urlFor(file),
             );
+      if (!mounted || generation != _generation) {
+        unawaited(controller.dispose());
+        return;
+      }
       _controller = controller;
       controller.addListener(_onTick);
       await controller.initialize();
-      if (!mounted) return;
+      if (!mounted || generation != _generation) return;
       unawaited(learnLength(ref, file, controller.value.duration));
       _speed = Playback.sanitize(
         ref
@@ -94,12 +181,53 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
             .playbackSpeed(audio: file.kind == FileKind.audio),
       );
       await _applySpeed(_speed);
+      final at = await _positions.resumePoint(
+        file.id,
+        controller.value.duration,
+      );
+      if (!mounted || generation != _generation) return;
+      if (at != null) {
+        await controller.seekTo(at);
+        if (!mounted || generation != _generation) return;
+        _resumedFrom = at;
+        _resumedHide = Timer(const Duration(seconds: 5), () {
+          if (mounted) setState(() => _resumedFrom = null);
+        });
+      }
       await controller.play();
+      if (!mounted || generation != _generation) return;
+      _startSaving();
       _scheduleHide();
       setState(() {});
     } catch (e) {
-      if (mounted) setState(() => _error = e);
+      if (mounted && generation == _generation) setState(() => _error = e);
     }
+  }
+
+  /// Keeps where [value] is in [fileId], or forgets the file when the point
+  /// isn't worth keeping. Nothing is written for a player that hasn't
+  /// started or doesn't know its length.
+  Future<void> _record(String fileId, VideoPlayerValue value) {
+    if (!value.isInitialized || value.duration <= Duration.zero) {
+      return Future.value();
+    }
+    return _positions.record(fileId, value.position, value.duration);
+  }
+
+  /// Writes the position every 5 seconds while the file plays. The timer
+  /// stops when the file ends or another one opens, and starts again when
+  /// play is pressed.
+  void _startSaving() {
+    _saveTimer?.cancel();
+    _saveTimer = Timer.periodic(const Duration(seconds: 5), (_) => _persist());
+  }
+
+  /// Saves where the current file is, without waiting.
+  void _persist() {
+    final controller = _controller;
+    final file = _file;
+    if (controller == null || file == null) return;
+    unawaited(_record(file.id, controller.value));
   }
 
   void _onTick() {
@@ -110,15 +238,75 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         () => _error =
             value.errorDescription ?? 'This file can\'t be played here.',
       );
-    } else {
-      setState(() {});
+      return;
     }
+    if (!value.isCompleted) {
+      _advancing = false;
+    } else if (!_advancing) {
+      _advancing = true;
+      _saveTimer?.cancel();
+      final file = _file;
+      if (file != null) {
+        unawaited(_positions.record(file.id, value.duration, value.duration));
+      }
+      final next = _neighbour(1);
+      if (next != null) unawaited(_open(next));
+    }
+    setState(() {});
+  }
+
+  /// The file [step] places from the current one in the queue, or null at
+  /// either end or when nothing is queued.
+  DriveFile? _neighbour(int step) {
+    final id = _file?.id;
+    if (id == null) return null;
+    final index = _queue.indexWhere((f) => f.id == id);
+    if (index < 0) return null;
+    final target = index + step;
+    return target >= 0 && target < _queue.length ? _queue[target] : null;
+  }
+
+  Future<void> _next() async {
+    final next = _neighbour(1);
+    if (next != null) await _open(next);
+  }
+
+  /// Restarts the current file when it is more than 3 seconds in, and
+  /// otherwise moves back to the one before it.
+  Future<void> _previous() async {
+    final controller = _controller;
+    if (controller != null &&
+        controller.value.isInitialized &&
+        controller.value.position > const Duration(seconds: 3)) {
+      await controller.seekTo(Duration.zero);
+      if (mounted) _scheduleHide();
+      return;
+    }
+    final previous = _neighbour(-1);
+    if (previous != null) await _open(previous);
+  }
+
+  /// Whether Previous has something to do: a restart or an earlier file.
+  bool get _canGoBack =>
+      _neighbour(-1) != null ||
+      (_controller?.value.position ?? Duration.zero) >
+          const Duration(seconds: 3);
+
+  /// Plays the current file from its start and forgets its saved point.
+  Future<void> _startOver() async {
+    final controller = _controller;
+    final file = _file;
+    _resumedHide?.cancel();
+    setState(() => _resumedFrom = null);
+    if (file != null) unawaited(_positions.forget(file.id));
+    await controller?.seekTo(Duration.zero);
+    if (mounted) _scheduleHide();
   }
 
   void _scheduleHide() {
     _hideChrome?.cancel();
     if (_isAudio) return;
-    _hideChrome = Timer(const Duration(seconds: 3), () {
+    _hideChrome = Timer(Duration(seconds: _resumedFrom != null ? 5 : 3), () {
       if (mounted && (_controller?.value.isPlaying ?? false)) _setChrome(false);
     });
   }
@@ -136,6 +324,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   @override
   void dispose() {
     _hideChrome?.cancel();
+    _saveTimer?.cancel();
+    _resumedHide?.cancel();
+    _persist();
     _controller?.removeListener(_onTick);
     _controller?.dispose();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
@@ -147,11 +338,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     if (controller == null || !controller.value.isInitialized) return;
     if (controller.value.isPlaying) {
       await controller.pause();
+      _persist();
     } else {
       if (controller.value.position >= controller.value.duration) {
         await controller.seekTo(Duration.zero);
       }
       await controller.play();
+      if (!mounted) return;
+      _startSaving();
     }
     _scheduleHide();
   }
@@ -218,6 +412,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     final controller = _controller;
     final value = controller?.value;
     final ready = value?.isInitialized ?? false;
+    final hasQueue = _queue.length > 1;
 
     Widget stage;
     if (_error != null) {
@@ -228,7 +423,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         file: file,
       );
     } else if (_isAudio && file != null) {
-      stage = _AudioArt(file: file);
+      final track = _queue.indexWhere((f) => f.id == file.id);
+      stage = _AudioArt(
+        file: file,
+        trackLine: hasQueue && track >= 0
+            ? 'Track ${track + 1} of ${_queue.length} · '
+                  '${Formatters.bytes(file.size)}'
+            : null,
+      );
     } else if (ready) {
       stage = Center(
         child: AspectRatio(
@@ -282,6 +484,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                     step: Playback.skipStep(value?.duration ?? Duration.zero),
                     speed: _speed,
                     onSpeed: _cycleSpeed,
+                    resumedFrom: _resumedFrom,
+                    onStartOver: _startOver,
+                    hasQueue: hasQueue,
+                    onPrevious: hasQueue && _canGoBack ? _previous : null,
+                    onNext: _neighbour(1) != null ? _next : null,
                   ),
                 ),
               ),
@@ -354,11 +561,14 @@ class _HeldSpeedLabel extends StatelessWidget {
   }
 }
 
-/// Album art (the file's thumbnail) and the track's name.
+/// Album art (the file's thumbnail) and the track's name, with its place
+/// in the queue as 'Track 3 of 14 · 48.2 MB' when it is playing through a
+/// folder, or its size alone.
 class _AudioArt extends StatelessWidget {
-  const _AudioArt({required this.file});
+  const _AudioArt({required this.file, this.trackLine});
 
   final DriveFile file;
+  final String? trackLine;
 
   @override
   Widget build(BuildContext context) {
@@ -403,8 +613,11 @@ class _AudioArt extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             Text(
-              Formatters.bytes(file.size),
-              style: TextStyle(color: Colors.white.withValues(alpha: 0.6)),
+              trackLine ?? Formatters.bytes(file.size),
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.6),
+                fontFeatures: tabularFigures,
+              ),
             ),
           ],
         ),

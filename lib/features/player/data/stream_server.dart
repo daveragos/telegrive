@@ -37,7 +37,8 @@ class StreamServer {
     bool Function()? isMetered,
     bool Function(int tdFileId)? fetchingElsewhere,
     this._cancelGrace = const Duration(seconds: 3),
-  }) : _isMetered = isMetered ?? (() => _ref.read(networkStatusProvider).metered),
+  }) : _isMetered =
+           isMetered ?? (() => _ref.read(networkStatusProvider).metered),
        _fetchingElsewhere =
            fetchingElsewhere ??
            ((id) => _ref.read(transferQueueProvider.notifier).isFetching(id)) {
@@ -101,7 +102,9 @@ class StreamServer {
       final file = segments.length >= 2 && segments[0] == _token
           ? await _repository.fileById(segments[1])
           : null;
-      final parts = file == null ? const <PartRow>[] : await _repository.partsOf(file.id);
+      final parts = file == null
+          ? const <PartRow>[]
+          : await _repository.partsOf(file.id);
       if (file == null || parts.isEmpty) {
         response.statusCode = HttpStatus.notFound;
         return;
@@ -137,7 +140,10 @@ class StreamServer {
         }
         response
           ..statusCode = HttpStatus.partialContent
-          ..headers.set(HttpHeaders.contentRangeHeader, 'bytes $start-$end/$total');
+          ..headers.set(
+            HttpHeaders.contentRangeHeader,
+            'bytes $start-$end/$total',
+          );
       }
       response.headers
         ..contentType = ContentType.parse(file.mimeType)
@@ -147,7 +153,9 @@ class StreamServer {
       await _pipe(parts, start, end, response, openEnded: openEnded);
     } catch (e) {
       // Usually the player closing a connection to seek elsewhere.
-      if (e is! HttpException && e is! SocketException) debugPrint('[Stream] $e');
+      if (e is! HttpException && e is! SocketException) {
+        debugPrint('[Stream] $e');
+      }
     } finally {
       try {
         await response.close();
@@ -217,12 +225,22 @@ class StreamServer {
           // fetched, not the rest of the file.
           window = _meteredWindow;
           requestedUntil = math.min(position + window, to);
-          await _fetchFrom(fileId, position, limit: limit(), openEnded: openEnded);
+          await _fetchFrom(
+            fileId,
+            position,
+            limit: limit(),
+            openEnded: openEnded,
+          );
         } else if (window > 0 &&
             requestedUntil < to &&
             requestedUntil - position < window ~/ 2) {
           requestedUntil = math.min(position + window, to);
-          await _fetchFrom(fileId, position, limit: limit(), openEnded: openEnded);
+          await _fetchFrom(
+            fileId,
+            position,
+            limit: limit(),
+            openEnded: openEnded,
+          );
         }
         final ready = await _waitForBytes(
           fileId,
@@ -264,7 +282,9 @@ class StreamServer {
       if (_readers.containsKey(fileId) || _fetchingElsewhere(fileId)) return;
       unawaited(
         _client
-            .send<td.Ok>(td.CancelDownloadFile(fileId: fileId, onlyIfPending: false))
+            .send<td.Ok>(
+              td.CancelDownloadFile(fileId: fileId, onlyIfPending: false),
+            )
             .then<void>((_) {}, onError: (Object _) {}),
       );
     });

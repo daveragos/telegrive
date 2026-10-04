@@ -111,7 +111,9 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (_, state) {
           final kind = state.uri.queryParameters['kind'];
           return SearchScreen(
-            initialKind: FileKind.values.where((k) => k.name == kind).firstOrNull,
+            initialKind: FileKind.values
+                .where((k) => k.name == kind)
+                .firstOrNull,
             media: kind == 'media',
             initialFolderId: state.uri.queryParameters['folder'],
           );
@@ -178,7 +180,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/play/:fileId',
         parentNavigatorKey: rootNavigatorKey,
-        builder: (_, state) => PlayerScreen(fileId: state.pathParameters['fileId']!),
+        builder: (_, state) => PlayerScreen(
+          fileId: state.pathParameters['fileId']!,
+          source: state.uri.queryParameters['from'],
+        ),
       ),
       GoRoute(
         path: '/preview/:fileId',
@@ -199,8 +204,9 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/space',
         parentNavigatorKey: rootNavigatorKey,
-        builder: (_, state) =>
-            SpaceScreen(focusPhone: state.uri.queryParameters['focus'] == 'phone'),
+        builder: (_, state) => SpaceScreen(
+          focusPhone: state.uri.queryParameters['focus'] == 'phone',
+        ),
       ),
       GoRoute(
         path: '/starred',
@@ -215,8 +221,9 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/category/:kind',
         parentNavigatorKey: rootNavigatorKey,
-        builder: (_, state) =>
-            FileListScreen.kind(FileKind.fromName(state.pathParameters['kind'])),
+        builder: (_, state) => FileListScreen.kind(
+          FileKind.fromName(state.pathParameters['kind']),
+        ),
       ),
       GoRoute(
         path: '/viewer/:fileId',
@@ -246,12 +253,13 @@ GoRoute _gate(AppPhase phase, Widget screen) => GoRoute(
   pageBuilder: (_, state) => _fade(state, screen),
 );
 
-Page<void> _fade(GoRouterState state, Widget child) => CustomTransitionPage<void>(
-  key: state.pageKey,
-  child: child,
-  transitionDuration: const Duration(milliseconds: 260),
-  transitionsBuilder: (context, animation, _, child) => FadeTransition(
-    opacity: CurvedAnimation(parent: animation, curve: Curves.easeOut),
-    child: child,
-  ),
-);
+Page<void> _fade(GoRouterState state, Widget child) =>
+    CustomTransitionPage<void>(
+      key: state.pageKey,
+      child: child,
+      transitionDuration: const Duration(milliseconds: 260),
+      transitionsBuilder: (context, animation, _, child) => FadeTransition(
+        opacity: CurvedAnimation(parent: animation, curve: Curves.easeOut),
+        child: child,
+      ),
+    );

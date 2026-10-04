@@ -62,12 +62,15 @@ abstract final class FileActions {
   /// Shows [file] in the app when it can: photos in the viewer, video and
   /// audio in the player (streaming), PDFs and text in a reader. Anything
   /// else downloads and opens in whichever app handles it. Home's Recent
-  /// remembers it either way, without holding the file up.
+  /// remembers it either way, without holding the file up. [from] names
+  /// where the file was opened, as `folder:<id>` with an empty id for the
+  /// root; an audio file opened that way plays on through the folder.
   static Future<void> open(
     BuildContext context,
     WidgetRef ref,
-    DriveFile file,
-  ) async {
+    DriveFile file, {
+    String? from,
+  }) async {
     unawaited(ref.read(driveRepositoryProvider).recordOpen(file.id));
     switch (Preview.of(
       name: file.name,
@@ -79,7 +82,14 @@ abstract final class FileActions {
       case Preview.image:
         await context.push('/viewer/${file.id}');
       case Preview.media:
-        await context.push('/play/${file.id}');
+        await context.push(
+          file.kind == FileKind.audio && from != null
+              ? Uri(
+                  path: '/play/${file.id}',
+                  queryParameters: {'from': from},
+                ).toString()
+              : '/play/${file.id}',
+        );
       case Preview.pdf || Preview.text:
         await context.push('/preview/${file.id}');
       case Preview.none:
@@ -1578,11 +1588,14 @@ abstract final class FileActions {
   // Sheets
   // ---------------------------------------------------------------------------
 
+  /// The file's actions. With [onMarkFinished], the sheet opens with Mark
+  /// as finished, for a file Home offers to continue.
   static Future<void> showFileSheet(
     BuildContext context,
     WidgetRef ref,
-    DriveFile file,
-  ) {
+    DriveFile file, {
+    VoidCallback? onMarkFinished,
+  }) {
     return showModalBottomSheet<void>(
       context: context,
       useRootNavigator: true,
@@ -1604,6 +1617,15 @@ abstract final class FileActions {
                   subtitle: fileMetaLine(file),
                 ),
                 const Divider(height: 16),
+                if (onMarkFinished != null)
+                  _SheetAction(
+                    icon: Icons.done_all_rounded,
+                    label: 'Mark as finished',
+                    onTap: () {
+                      Navigator.pop(sheetContext);
+                      onMarkFinished();
+                    },
+                  ),
                 _SheetAction(
                   icon: Icons.open_in_new_rounded,
                   label: 'Open',

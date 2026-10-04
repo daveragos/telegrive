@@ -14,6 +14,7 @@ import 'package:telegrive/features/drive/domain/drive_models.dart';
 import 'package:telegrive/features/files/presentation/file_list_screen.dart';
 import 'package:telegrive/features/home/presentation/home_screen.dart';
 import 'package:telegrive/features/offline/data/offline_sync.dart';
+import 'package:telegrive/features/player/data/play_positions.dart';
 import 'package:telegrive/features/transfers/data/transfer_queue.dart';
 import 'package:telegrive/infrastructure/database/app_database.dart'
     show FolderSize, KindTotal;
@@ -66,6 +67,8 @@ void main() {
       List<DriveFolder> starredFolders = const [],
       // Null stands for sizes that haven't arrived yet.
       Map<String, FolderSize>? starredSizes = const {},
+      // Null stands for positions that can't be read.
+      List<ContinueItem>? continuing = const [],
     }) async {
       final shared = await prefs();
       await tester.pumpWidget(
@@ -92,6 +95,12 @@ void main() {
             // Nothing kept offline either.
             offlinePinsProvider.overrideWith((ref) => Stream.value(const {})),
             offlineUsageProvider.overrideWith((ref) => Stream.value((0, 0))),
+            offlineCopiesProvider.overrideWith((ref) => Stream.value(const {})),
+            continuePlayingProvider.overrideWith(
+              (ref) => continuing == null
+                  ? Stream.error(StateError('closed'))
+                  : Stream.value(continuing),
+            ),
           ],
           child: MaterialApp(theme: AppTheme.light(), home: const HomeScreen()),
         ),
@@ -174,6 +183,124 @@ void main() {
         findsOneWidget,
       );
     });
+
+    DriveFile playable(String name, FileKind kind, {String? folderId}) =>
+        DriveFile(
+          id: name,
+          folderId: folderId,
+          name: name,
+          mimeType: kind == FileKind.video ? 'video/mp4' : 'audio/mpeg',
+          kind: kind,
+          size: 48 * 1024 * 1024,
+          createdAt: DateTime(2026, 9),
+          modifiedAt: DateTime(2026, 9),
+          partCount: 1,
+          starred: false,
+        );
+
+    testWidgets('Continue watching lists what is partway through', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(800, 2400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await pumpHome(
+        tester,
+        Stream.value(
+          const StorageSummary(totals: [KindTotal(FileKind.video, 3, 3000)]),
+        ),
+        continuing: [
+          ContinueItem(
+            file: playable('Lecture 7.mp4', FileKind.video, folderId: 'lec'),
+            position: const Duration(minutes: 34),
+            length: const Duration(minutes: 72),
+            place: 'Lectures',
+          ),
+        ],
+      );
+      await tester.pump();
+
+      expect(
+        find.text('Continue watching', skipOffstage: false),
+        findsOneWidget,
+      );
+      expect(find.text('Lecture 7.mp4', skipOffstage: false), findsOneWidget);
+      expect(
+        find.text('38 min left · Lectures', skipOffstage: false),
+        findsOneWidget,
+      );
+      final bar = tester.widget<LinearProgressIndicator>(
+        find.byType(LinearProgressIndicator, skipOffstage: false),
+      );
+      expect(bar.value, closeTo(34 / 72, 0.001));
+      expect(
+        tester.getTopLeft(find.text('Lecture 7.mp4', skipOffstage: false)).dy,
+        lessThan(
+          tester.getTopLeft(find.text('Storage', skipOffstage: false)).dy,
+        ),
+      );
+    });
+
+    testWidgets('a recording among the rows makes it Continue playing', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(800, 2400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await pumpHome(
+        tester,
+        Stream.value(
+          const StorageSummary(totals: [KindTotal(FileKind.video, 3, 3000)]),
+        ),
+        continuing: [
+          ContinueItem(
+            file: playable('Lecture 7.mp4', FileKind.video),
+            position: const Duration(minutes: 34),
+            length: const Duration(minutes: 72),
+            place: 'Files',
+          ),
+          ContinueItem(
+            file: playable('Chapter 3.mp3', FileKind.audio),
+            position: const Duration(minutes: 40),
+            length: const Duration(minutes: 40, seconds: 30),
+            place: 'Files',
+          ),
+        ],
+      );
+      await tester.pump();
+
+      expect(
+        find.text('Continue playing', skipOffstage: false),
+        findsOneWidget,
+      );
+      expect(find.text('Continue watching', skipOffstage: false), findsNothing);
+      expect(
+        find.text('Less than a minute left · Files', skipOffstage: false),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets(
+      'with nothing to continue, or no way to know, Home has no group',
+      (tester) async {
+        final summary = Stream.value(
+          const StorageSummary(totals: [KindTotal(FileKind.document, 3, 3000)]),
+        );
+        await pumpHome(tester, summary);
+        await tester.pump();
+        expect(
+          find.textContaining('Continue', skipOffstage: false),
+          findsNothing,
+        );
+
+        await pumpHome(tester, summary, continuing: null);
+        await tester.pump();
+        expect(
+          find.textContaining('Continue', skipOffstage: false),
+          findsNothing,
+        );
+      },
+    );
 
     testWidgets('with nothing starred Home has no Starred group', (
       tester,
