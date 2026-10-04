@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../app/theme/tokens.dart';
 import '../../../core/widgets/common.dart';
 import '../../../infrastructure/telegram/telegram_client.dart';
+import '../../network/presentation/connection_notice.dart';
 import '../data/auth_controller.dart';
 import 'auth_layout.dart';
 
@@ -90,6 +91,7 @@ class QrScreen extends ConsumerWidget {
             style: theme.textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
           ),
         ),
+        const ConnectionNotice(margin: EdgeInsets.only(top: Space.l)),
       ],
     );
   }

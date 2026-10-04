@@ -100,6 +100,11 @@ void main() {
       expect(Formatters.countdown(Duration.zero), '0:00');
     });
 
+    test('latency', () {
+      expect(Formatters.latency(const Duration(microseconds: 240400)), '240 ms');
+      expect(Formatters.latency(const Duration(milliseconds: 1240)), '1,240 ms');
+    });
+
     test('inWords', () {
       expect(Formatters.inWords(const Duration(seconds: 1)), '1 second');
       expect(Formatters.inWords(const Duration(seconds: 37)), '37 seconds');

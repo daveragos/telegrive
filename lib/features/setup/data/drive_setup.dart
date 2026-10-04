@@ -21,6 +21,7 @@ class SetupState {
     this.step = SetupStep.account,
     this.createdChannel = false,
     this.error,
+    this.timedOut = false,
   });
 
   final SetupStep step;
@@ -29,15 +30,21 @@ class SetupState {
   final bool createdChannel;
   final String? error;
 
+  /// The [error] is Telegram not answering in time, which on a network
+  /// that blocks Telegram is all there is to see.
+  final bool timedOut;
+
   SetupState copyWith({
     SetupStep? step,
     bool? createdChannel,
     String? error,
+    bool? timedOut,
     bool clearError = false,
   }) => SetupState(
     step: step ?? this.step,
     createdChannel: createdChannel ?? this.createdChannel,
     error: clearError ? null : (error ?? this.error),
+    timedOut: clearError ? false : (timedOut ?? this.timedOut),
   );
 }
 
@@ -106,7 +113,7 @@ class DriveSetup extends Notifier<SetupState> {
 
       state = state.copyWith(step: SetupStep.done);
     } on TelegramException catch (e) {
-      state = state.copyWith(error: e.friendlyMessage);
+      state = state.copyWith(error: e.friendlyMessage, timedOut: e.code == 408);
     } catch (e) {
       debugPrint('[DriveSetup] $e');
       state = state.copyWith(error: 'Something went wrong: $e');

@@ -17,6 +17,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:handy_tdlib/api.dart' as td;
 import 'package:telegrive/app/app_shell.dart';
 import 'package:telegrive/app/theme/app_theme.dart';
 import 'package:telegrive/features/auth/presentation/phone_screen.dart';
@@ -49,7 +50,10 @@ import 'package:telegrive/features/files/presentation/folder_picker.dart';
 import 'package:telegrive/features/home/presentation/home_screen.dart';
 import 'package:telegrive/features/import/data/chat_media.dart';
 import 'package:telegrive/features/import/presentation/import_screen.dart';
+import 'package:telegrive/features/network/data/connection_health.dart';
 import 'package:telegrive/features/network/data/mobile_data.dart';
+import 'package:telegrive/features/network/data/proxies.dart';
+import 'package:telegrive/features/network/domain/proxy_link.dart';
 import 'package:telegrive/features/offline/data/offline_sync.dart';
 import 'package:telegrive/features/offline/presentation/keep_offline_sheet.dart';
 import 'package:telegrive/features/offline/presentation/offline_screen.dart';
@@ -66,6 +70,7 @@ import 'package:telegrive/features/transfers/presentation/transfers_screen.dart'
 import 'package:telegrive/infrastructure/database/app_database.dart';
 import 'package:telegrive/infrastructure/network/network_status.dart';
 import 'package:telegrive/infrastructure/storage/device_storage.dart';
+import 'package:telegrive/infrastructure/telegram/telegram_client.dart';
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:telegrive/infrastructure/storage/preferences.dart';
@@ -100,6 +105,28 @@ class _Network extends NetworkStatus {
 
   @override
   NetworkState build() => _state;
+}
+
+class _Health extends ConnectionHealthNotifier {
+  _Health(this._health);
+
+  final ConnectionHealth _health;
+
+  @override
+  ConnectionHealth build() => _health;
+}
+
+/// Saved proxies whose pings are already in.
+class _Proxies extends ProxyController {
+  _Proxies(this._entries);
+
+  final List<ProxyEntry> _entries;
+
+  @override
+  Future<List<ProxyEntry>> build() async => _entries;
+
+  @override
+  Future<void> pingAll() async {}
 }
 
 class _Backup extends BackupController {
@@ -1638,6 +1665,70 @@ void main() {
     await snap(tester, 'settings');
   });
 
+  /// A proxy in use that answered quickly, and a SOCKS5 one that didn't.
+  Override savedProxies() => proxiesProvider.overrideWith(
+    () => _Proxies([
+      ProxyEntry(
+        id: 2,
+        server: '185.76.9.14',
+        port: 443,
+        kind: ProxyKind.mtproto,
+        enabled: true,
+        lastUsed: DateTime.now(),
+        latency: const LatencyMeasured(Duration(milliseconds: 240)),
+      ),
+      const ProxyEntry(
+        id: 1,
+        server: 'socks.example.org',
+        port: 1080,
+        kind: ProxyKind.socks5,
+        enabled: false,
+        lastUsed: null,
+        latency: LatencyFailed(),
+      ),
+    ]),
+  );
+
+  Future<void> scrollToProxy(WidgetTester tester) async {
+    await tester.scrollUntilVisible(
+      find.text('Proxy'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+  }
+
+  testWidgets('settings connection', (tester) async {
+    await prepareData(tester);
+    await pumpApp(tester, location: '/settings', overrides: [savedProxies()]);
+    await scrollToProxy(tester);
+    // On to where Connection sits between Security and This phone.
+    await tester.drag(find.byType(ListView).first, const Offset(0, -500));
+    for (var i = 0; i < 4; i++) {
+      await tester.pump(const Duration(milliseconds: 200));
+    }
+    await snap(tester, 'settings_connection');
+  });
+
+  testWidgets('proxy sheet', (tester) async {
+    await prepareData(tester);
+    await pumpApp(
+      tester,
+      location: '/settings',
+      overrides: [
+        connectionStateProvider.overrideWith(
+          (ref) => Stream.value(const td.ConnectionStateReady()),
+        ),
+        savedProxies(),
+      ],
+    );
+    await scrollToProxy(tester);
+    await tester.tap(find.text('Proxy'));
+    for (var i = 0; i < 6; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    await snap(tester, 'proxy_sheet');
+  });
+
   testWidgets('settings notifications off', (tester) async {
     await prepareData(tester);
     await pumpApp(tester, location: '/settings', notificationsEnabled: false);
@@ -2080,7 +2171,11 @@ void main() {
     await snap(tester, 'transfers_backup');
   });
 
-  Future<void> pumpScreen(WidgetTester tester, Widget screen) async {
+  Future<void> pumpScreen(
+    WidgetTester tester,
+    Widget screen, {
+    List<Override> overrides = const [],
+  }) async {
     debugDisableShadows = false;
     tester.view.physicalSize = const Size(1080, 2340);
     tester.view.devicePixelRatio = 2.625;
@@ -2090,7 +2185,7 @@ void main() {
     final shared = await SharedPreferences.getInstance();
     await tester.pumpWidget(
       ProviderScope(
-        overrides: [sharedPreferencesProvider.overrideWithValue(shared)],
+        overrides: [sharedPreferencesProvider.overrideWithValue(shared), ...overrides],
         child: MaterialApp(
           debugShowCheckedModeBanner: false,
           theme: AppTheme.light(),
@@ -2111,6 +2206,17 @@ void main() {
   testWidgets('phone', (tester) async {
     await pumpScreen(tester, const PhoneScreen());
     await snap(tester, 'phone');
+  });
+
+  testWidgets('phone stuck', (tester) async {
+    await pumpScreen(
+      tester,
+      const PhoneScreen(),
+      overrides: [
+        connectionHealthProvider.overrideWith(() => _Health(ConnectionHealth.stuck)),
+      ],
+    );
+    await snap(tester, 'phone_stuck');
   });
 
   testWidgets('photos before thumbnails arrive', (tester) async {

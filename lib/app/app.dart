@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -8,11 +9,16 @@ import '../core/config/app_config.dart';
 import '../features/backup/data/backup_controller.dart';
 import '../features/drive/data/drive_session.dart';
 import '../features/drive/data/drive_sync.dart';
+import '../features/network/data/proxy_link_intake.dart';
+import '../features/network/domain/proxy_link.dart';
+import '../features/network/presentation/proxy_sheet.dart';
 import '../features/settings/data/settings_providers.dart';
+import '../features/setup/data/drive_setup.dart';
 import '../features/transfers/data/transfer_keep_alive.dart';
 import '../features/transfers/data/transfer_queue.dart';
 import '../features/trash/data/pending_deletes.dart';
 import '../infrastructure/network/network_status.dart';
+import 'app_phase.dart';
 import 'app_shell.dart';
 import 'router.dart';
 import 'theme/app_theme.dart';
@@ -61,6 +67,33 @@ class _TelegriveAppState extends ConsumerState<TelegriveApp>
     }
   }
 
+  /// Offers a proxy link tapped in another app in the proxy sheet, once
+  /// there is a screen that stays for the sheet to open over: not the
+  /// splash, and not setup while it runs, which an open drive replaces in
+  /// a blink. A setup that failed stays, and on a blocked network that is
+  /// where the proxy is wanted. Waiting for the splash to go also waits
+  /// for TDLib's parameters, before which it takes no proxy.
+  void _offerProxyLink() {
+    final link = ref.read(proxyLinkIntakeProvider);
+    if (link == null) return;
+    final settled = switch (ref.read(appPhaseProvider)) {
+      AppPhase.starting => false,
+      AppPhase.setup => ref.read(driveSetupProvider).error != null,
+      _ => true,
+    };
+    if (!settled) return;
+    ref.read(proxyLinkIntakeProvider.notifier).clear();
+    // After the frame that puts this phase's screen in place, so the sheet
+    // opens over it rather than over the screen it replaces, which would
+    // take the sheet with it.
+    unawaited(
+      SchedulerBinding.instance.endOfFrame.then((_) {
+        final context = rootNavigatorKey.currentContext;
+        if (context != null && context.mounted) unawaited(showProxySheet(context, prefill: link));
+      }),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     // Created up front so interrupted transfers resume as soon as the drive
@@ -72,6 +105,10 @@ class _TelegriveAppState extends ConsumerState<TelegriveApp>
     // Alive from the start too: it is what tells TDLib about every network
     // change, the call that makes it drop dead sockets and reconnect.
     ref.watch(networkStatusProvider);
+    // A tapped proxy link waits for a screen to be offered over.
+    ref.listen<ProxyLink?>(proxyLinkIntakeProvider, (_, _) => _offerProxyLink());
+    ref.listen<AppPhase>(appPhaseProvider, (_, _) => _offerProxyLink());
+    ref.listen<String?>(driveSetupProvider.select((s) => s.error), (_, _) => _offerProxyLink());
 
     final router = ref.watch(routerProvider);
     final popups = ref.watch(popupRoutesProvider);

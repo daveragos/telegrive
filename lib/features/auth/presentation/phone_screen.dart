@@ -3,8 +3,10 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:handy_tdlib/api.dart' as td;
 
+import '../../../app/theme/tokens.dart';
 import '../../../infrastructure/telegram/telegram_client.dart';
 import '../../../infrastructure/telegram/telegram_exception.dart';
+import '../../network/presentation/connection_notice.dart';
 import '../data/auth_controller.dart';
 import 'auth_layout.dart';
 
@@ -106,6 +108,7 @@ class _PhoneScreenState extends ConsumerState<PhoneScreen> {
           decoration: const InputDecoration(hintText: '+251 91 234 5678'),
         ),
         FormError(_error),
+        const ConnectionNotice(margin: EdgeInsets.only(top: Space.l)),
       ],
     );
   }

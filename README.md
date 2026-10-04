@@ -142,6 +142,17 @@ phone number.
   many items to an album shows its progress above the bar, or at the foot
   of a screen opened over it, with Stop, and waits out Telegram the same
   way.
+- **Through a proxy where Telegram is blocked.** When Telegram hasn't
+  answered for 20 seconds while the phone is online, the sign-in screens,
+  setup and Home say it isn't reachable on this network and offer Use a
+  proxy. Paste a tg://proxy, tg://socks or t.me/proxy link, or type an
+  MTProto or SOCKS5 proxy's details, and Telegrive connects through it;
+  Telegram's encryption still applies. Tapping a tg://proxy or tg://socks
+  link in another app opens Telegrive, which shows the proxy's address and
+  connects only once you tap Connect. Settings › Connection › Proxy lists
+  the saved proxies with how quickly each answers, switches between them,
+  removes them, or goes back to a direct connection. TDLib keeps them in
+  its encrypted database.
 - **Watch and read without downloading.** Videos, music, call recordings
   and audiobooks stream as they play, with seeking, even across a split
   file's parts. PDFs and text files open in the app. Everything else opens
@@ -358,6 +369,10 @@ two commands are at the top of that test.
 - Saving a file to the phone needs room for it twice over for a moment,
   since it is downloaded first and then copied into Download, the gallery
   or offline; the transfer says exactly how much it needs.
+- Signing out forgets the saved proxies along with the rest of Telegram's
+  data on the phone, so a blocked network needs the proxy again for the
+  next sign-in. Where Telegram is set to open proxy links, tapping one
+  goes there; paste it into Telegrive instead.
 - Transfers that step back to wait for Wi-Fi keep Telegrive running in the
   background for ten minutes. If Wi-Fi takes longer, they start when it
   returns while the app is still running, or the next time you open it.

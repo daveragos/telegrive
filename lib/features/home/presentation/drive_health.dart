@@ -5,6 +5,7 @@ import '../../../infrastructure/database/app_database.dart'
     show TransferOrigin, TransferStatus;
 import '../../backup/data/backup_controller.dart';
 import '../../drive/data/drive_sync.dart';
+import '../../network/data/connection_health.dart';
 import '../../transfers/data/transfer_queue.dart';
 import '../../transfers/domain/transfer_wait.dart';
 
@@ -33,10 +34,17 @@ enum HealthAction {
   /// Offers to delete the phone's copies of photos and videos that are
   /// backed up, for transfers waiting for room.
   freeUpSpace,
+
+  /// Opens the proxy sheet where Telegram can't be reached directly.
+  useProxy,
+
+  /// Opens the proxy sheet where the proxy in use isn't answering.
+  changeProxy,
 }
 
-/// Where tapping a line goes: a screen, or another try at syncing.
-enum HealthTarget { backup, notBackedUp, transfers, refresh }
+/// Where tapping a line goes: a screen, another try at syncing, or the
+/// proxy sheet.
+enum HealthTarget { backup, notBackedUp, transfers, refresh, proxy }
 
 /// What a line is about. The second row keeps to a different topic from the
 /// top line, so the two rows say different things and their buttons never
@@ -85,6 +93,11 @@ class DriveHealth {
 /// up, and only when none of that applies, that everything is backed up
 /// and in sync.
 ///
+/// Of the ways of not reaching Telegram, a [connection] stuck on a network
+/// that has internet goes first, with its proxy, since a proxy is the one
+/// thing that unblocks it; [proxy] names the proxy in use, if known. A
+/// sync that failed comes next.
+///
 /// Transfers someone started by hand rank above a stopped backup because
 /// they are what that person is waiting on, and the stopped backup keeps
 /// its Retry on the second row. Failed transfers never take this line,
@@ -117,11 +130,15 @@ DriveHealth describeDriveHealth({
   DateTime? lastFullSync,
   double backupSpeed = 0,
   int renewDay = 1,
+  ConnectionHealth connection = ConnectionHealth.ok,
+  String? proxy,
   DateTime? now,
 }) {
   final at = now ?? DateTime.now();
   final active = _manualActive(transfers, at);
 
+  final blocked = describeConnection(connection, proxy: proxy);
+  if (blocked != null) return blocked;
   if (sync.error != null) {
     return _unreachable(_latest([sync.lastSynced, lastFullSync]), at, retrying: sync.running);
   }
@@ -286,6 +303,32 @@ DriveHealth? secondaryHealth(
   final moving = top.tone == HealthTone.busy && top.topic == HealthTopic.transfers;
   return candidates.where((line) => line.topic != top.topic || moving).firstOrNull;
 }
+
+/// The line for a connection that is stuck, or null when [health] says
+/// nothing is wrong that a proxy could help with. Home's first line and the
+/// sign-in and setup screens' notice both say it. [proxy] is the proxy in
+/// use, for a proxy that isn't answering.
+DriveHealth? describeConnection(ConnectionHealth health, {String? proxy}) => switch (health) {
+  ConnectionHealth.stuck => const DriveHealth(
+    icon: Icons.cloud_off_rounded,
+    tone: HealthTone.neutral,
+    text: 'Telegram isn\'t reachable on this network',
+    detail: 'Still trying. A proxy often helps where Telegram is blocked.',
+    action: HealthAction.useProxy,
+    target: HealthTarget.proxy,
+    topic: HealthTopic.sync,
+  ),
+  ConnectionHealth.proxyStuck => DriveHealth(
+    icon: Icons.cloud_off_rounded,
+    tone: HealthTone.neutral,
+    text: 'Can\'t reach the proxy',
+    detail: '${proxy ?? 'The proxy'} isn\'t answering.',
+    action: HealthAction.changeProxy,
+    target: HealthTarget.proxy,
+    topic: HealthTopic.sync,
+  ),
+  ConnectionHealth.ok || ConnectionHealth.noNetwork => null,
+};
 
 /// The failure stays on the line while another try runs, with a bar to show
 /// the try, so a retry that is still offline never reads as in sync.

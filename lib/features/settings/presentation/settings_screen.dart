@@ -18,6 +18,8 @@ import '../../files/data/browse_preferences.dart';
 import '../../files/presentation/file_actions.dart';
 import '../../lock/data/app_lock.dart';
 import '../../network/data/mobile_data.dart';
+import '../../network/data/proxies.dart';
+import '../../network/presentation/proxy_sheet.dart';
 import '../../offline/data/offline_sync.dart';
 import '../../search/data/content_indexer.dart';
 import '../../trash/data/pending_deletes.dart';
@@ -45,6 +47,7 @@ class SettingsScreen extends ConsumerWidget {
     final indexed = ref.watch(indexedCountProvider).value ?? 0;
     final prefs = ref.watch(preferencesProvider);
     final mobileData = ref.watch(mobileDataProvider);
+    final proxy = ref.watch(enabledProxyProvider);
 
     Text trailingValue(String value) => Text(
       value,
@@ -311,6 +314,22 @@ class SettingsScreen extends ConsumerWidget {
                     ),
                   ),
                 ),
+            ],
+          ),
+          const SectionHeader('Connection'),
+          ListGroup(
+            children: [
+              ListTile(
+                title: const Text('Proxy'),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    trailingValue(proxy?.label ?? 'Off'),
+                    Icon(Icons.chevron_right_rounded, color: colors.text3),
+                  ],
+                ),
+                onTap: () => showProxySheet(context),
+              ),
             ],
           ),
           const SectionHeader('This phone'),

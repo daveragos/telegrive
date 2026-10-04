@@ -31,7 +31,9 @@ import '../features/viewer/presentation/image_viewer_screen.dart';
 import 'app_phase.dart';
 import 'app_shell.dart';
 
-final _rootKey = GlobalKey<NavigatorState>(debugLabel: 'root');
+/// The navigator every phase's screen sits in. Sheets that must open in
+/// any phase, before sign-in included, open on it from outside the router.
+final rootNavigatorKey = GlobalKey<NavigatorState>(debugLabel: 'root');
 
 /// The dialogs, sheets and menus open on the root navigator, which the bulk
 /// line at the foot of screens opened over the shell needs to know about.
@@ -48,7 +50,7 @@ final routerProvider = Provider<GoRouter>((ref) {
   ref.listen<AppPhase>(appPhaseProvider, (_, next) => phase.value = next);
 
   final router = GoRouter(
-    navigatorKey: _rootKey,
+    navigatorKey: rootNavigatorKey,
     observers: [ref.watch(popupRoutesProvider)],
     initialLocation: AppPhase.starting.location,
     // A notification launches the app with its own route as Android's
@@ -104,7 +106,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/search',
-        parentNavigatorKey: _rootKey,
+        parentNavigatorKey: rootNavigatorKey,
         builder: (_, state) {
           final kind = state.uri.queryParameters['kind'];
           return SearchScreen(
@@ -116,40 +118,40 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/transfers',
-        parentNavigatorKey: _rootKey,
+        parentNavigatorKey: rootNavigatorKey,
         builder: (_, _) => const TransfersScreen(),
       ),
       GoRoute(
         path: '/settings',
-        parentNavigatorKey: _rootKey,
+        parentNavigatorKey: rootNavigatorKey,
         builder: (_, _) => const SettingsScreen(),
       ),
       GoRoute(
         path: '/backup',
-        parentNavigatorKey: _rootKey,
+        parentNavigatorKey: rootNavigatorKey,
         builder: (_, _) => const BackupScreen(),
         routes: [
           GoRoute(
             path: 'not-backed-up',
-            parentNavigatorKey: _rootKey,
+            parentNavigatorKey: rootNavigatorKey,
             builder: (_, _) => const NotBackedUpScreen(),
           ),
         ],
       ),
       GoRoute(
         path: '/albums',
-        parentNavigatorKey: _rootKey,
+        parentNavigatorKey: rootNavigatorKey,
         builder: (_, _) => const AlbumsScreen(),
         routes: [
           GoRoute(
             path: ':albumId',
-            parentNavigatorKey: _rootKey,
+            parentNavigatorKey: rootNavigatorKey,
             builder: (_, state) =>
                 AlbumScreen(albumId: state.pathParameters['albumId']!),
             routes: [
               GoRoute(
                 path: 'add',
-                parentNavigatorKey: _rootKey,
+                parentNavigatorKey: rootNavigatorKey,
                 builder: (_, state) =>
                     AddToAlbumScreen(albumId: state.pathParameters['albumId']!),
               ),
@@ -159,7 +161,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/import/:chatId',
-        parentNavigatorKey: _rootKey,
+        parentNavigatorKey: rootNavigatorKey,
         builder: (_, state) => ImportScreen(
           chatId: int.parse(state.pathParameters['chatId']!),
           title: state.uri.queryParameters['title'] ?? '',
@@ -169,50 +171,50 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/play/:fileId',
-        parentNavigatorKey: _rootKey,
+        parentNavigatorKey: rootNavigatorKey,
         builder: (_, state) => PlayerScreen(fileId: state.pathParameters['fileId']!),
       ),
       GoRoute(
         path: '/preview/:fileId',
-        parentNavigatorKey: _rootKey,
+        parentNavigatorKey: rootNavigatorKey,
         builder: (_, state) =>
             DocumentPreviewScreen(fileId: state.pathParameters['fileId']!),
       ),
       GoRoute(
         path: '/trash',
-        parentNavigatorKey: _rootKey,
+        parentNavigatorKey: rootNavigatorKey,
         builder: (_, _) => const TrashScreen(),
       ),
       GoRoute(
         path: '/offline',
-        parentNavigatorKey: _rootKey,
+        parentNavigatorKey: rootNavigatorKey,
         builder: (_, _) => const OfflineScreen(),
       ),
       GoRoute(
         path: '/space',
-        parentNavigatorKey: _rootKey,
+        parentNavigatorKey: rootNavigatorKey,
         builder: (_, state) =>
             SpaceScreen(focusPhone: state.uri.queryParameters['focus'] == 'phone'),
       ),
       GoRoute(
         path: '/starred',
-        parentNavigatorKey: _rootKey,
+        parentNavigatorKey: rootNavigatorKey,
         builder: (_, _) => const FileListScreen.starred(),
       ),
       GoRoute(
         path: '/recent',
-        parentNavigatorKey: _rootKey,
+        parentNavigatorKey: rootNavigatorKey,
         builder: (_, _) => const FileListScreen.recent(),
       ),
       GoRoute(
         path: '/category/:kind',
-        parentNavigatorKey: _rootKey,
+        parentNavigatorKey: rootNavigatorKey,
         builder: (_, state) =>
             FileListScreen.kind(FileKind.fromName(state.pathParameters['kind'])),
       ),
       GoRoute(
         path: '/viewer/:fileId',
-        parentNavigatorKey: _rootKey,
+        parentNavigatorKey: rootNavigatorKey,
         pageBuilder: (_, state) => _fade(
           state,
           ImageViewerScreen(

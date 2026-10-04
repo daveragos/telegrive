@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../app/theme/tokens.dart';
 import '../../../core/format/formatters.dart';
 import '../../../core/widgets/brand_mark.dart';
 import '../../auth/data/auth_controller.dart';
 import '../../drive/data/drive_sync.dart';
+import '../../network/presentation/connection_notice.dart';
 import '../data/drive_setup.dart';
 
 /// Shown between sign-in and the drive. For a returning user it is a blink;
@@ -73,6 +75,10 @@ class _SetupScreenState extends ConsumerState<SetupScreen> {
                           ? _RowState.active
                           : _RowState.waiting,
                     ),
+                  ConnectionNotice(
+                    margin: const EdgeInsets.only(top: Space.xxl),
+                    timedOut: setup.timedOut,
+                  ),
                   if (setup.error != null) ...[
                     const SizedBox(height: 16),
                     Text(

@@ -54,6 +54,9 @@ abstract final class Formatters {
     return count((seconds / 3600).round(), 'hour');
   }
 
+  /// `0.2404 s` → `240 ms`: how long a network round trip took.
+  static String latency(Duration duration) => '${number(duration.inMilliseconds)} ms';
+
   /// Today → time, this year → day and month, otherwise the full date.
   static String date(DateTime value, {DateTime? now}) {
     final reference = now ?? DateTime.now();

@@ -4,6 +4,7 @@ import 'package:telegrive/core/format/formatters.dart';
 import 'package:telegrive/features/backup/data/backup_controller.dart';
 import 'package:telegrive/features/drive/data/drive_sync.dart';
 import 'package:telegrive/features/home/presentation/drive_health.dart';
+import 'package:telegrive/features/network/data/connection_health.dart';
 import 'package:telegrive/features/transfers/data/transfer_queue.dart';
 import 'package:telegrive/features/transfers/domain/transfer_wait.dart';
 import 'package:telegrive/infrastructure/database/app_database.dart';
@@ -95,6 +96,8 @@ DriveHealth _top({
   DateTime? lastFullSync,
   double backupSpeed = 0,
   int renewDay = 1,
+  ConnectionHealth connection = ConnectionHealth.ok,
+  String? proxy,
 }) => describeDriveHealth(
   backup: backup,
   sync: sync ?? _synced,
@@ -102,6 +105,8 @@ DriveHealth _top({
   lastFullSync: lastFullSync,
   backupSpeed: backupSpeed,
   renewDay: renewDay,
+  connection: connection,
+  proxy: proxy,
   now: _now,
 );
 
@@ -417,6 +422,48 @@ void main() {
         expect(health.tone, HealthTone.neutral);
         expect(health.target, HealthTarget.refresh);
       }
+    });
+
+    test('a connection stuck on this network beats even a failed sync, and offers a proxy', () {
+      for (final backup in const [
+        BackupState(phase: BackupPhase.uploading, total: 20, done: 3),
+        BackupState(phase: BackupPhase.stopped),
+        _off,
+      ]) {
+        final health = _top(
+          backup: backup,
+          sync: SyncState(error: 'No connection', lastSynced: _now),
+          transfers: TransfersState([_needsRoom('a.zip', _gb)]),
+          connection: ConnectionHealth.stuck,
+        );
+        expect(health.text, 'Telegram isn\'t reachable on this network');
+        expect(health.detail, 'Still trying. A proxy often helps where Telegram is blocked.');
+        expect(health.icon, Icons.cloud_off_rounded);
+        expect(health.tone, HealthTone.neutral);
+        expect(health.progress, isNull);
+        expect(health.action, HealthAction.useProxy);
+        expect(health.target, HealthTarget.proxy);
+        expect(health.topic, HealthTopic.sync);
+      }
+    });
+
+    test('a proxy that isn\'t answering is named, with Change proxy', () {
+      final health = _top(connection: ConnectionHealth.proxyStuck, proxy: '1.2.3.4:443');
+      expect(health.text, 'Can\'t reach the proxy');
+      expect(health.detail, '1.2.3.4:443 isn\'t answering.');
+      expect(health.action, HealthAction.changeProxy);
+      expect(health.target, HealthTarget.proxy);
+      expect(
+        _top(connection: ConnectionHealth.proxyStuck).detail,
+        'The proxy isn\'t answering.',
+      );
+    });
+
+    test('a connection that is fine, or has no network, leaves the line to the rest', () {
+      expect(_top(connection: ConnectionHealth.ok).text, 'Backed up and in sync');
+      expect(_top(connection: ConnectionHealth.noNetwork).text, 'Backed up and in sync');
+      expect(describeConnection(ConnectionHealth.ok), isNull);
+      expect(describeConnection(ConnectionHealth.noNetwork), isNull);
     });
 
     test('not reaching Telegram stays while another try runs', () {
@@ -799,6 +846,17 @@ void main() {
         ]),
       );
       expect(row?.action, HealthAction.retryTransfers);
+    });
+
+    test('a backup concern sits under a stuck connection', () {
+      const backup = BackupState(phase: BackupPhase.stopped, error: 'Out of space.');
+      final row = secondaryHealth(
+        _top(backup: backup, connection: ConnectionHealth.stuck),
+        backup: backup,
+        transfers: TransfersState.empty,
+        now: _now,
+      );
+      expect(row?.text, 'Backup stopped');
     });
 
     test('a backup concern sits under a sync line', () {

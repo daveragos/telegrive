@@ -21,7 +21,10 @@ import '../../drive/data/drive_sync.dart';
 import '../../drive/domain/drive_models.dart';
 import '../../files/presentation/file_actions.dart';
 import '../../files/presentation/file_tiles.dart';
+import '../../network/data/connection_health.dart';
 import '../../network/data/mobile_data.dart';
+import '../../network/data/proxies.dart';
+import '../../network/presentation/proxy_sheet.dart';
 import '../../offline/data/offline_sync.dart';
 import '../../transfers/data/transfer_queue.dart';
 import 'drive_health.dart';
@@ -222,6 +225,7 @@ class _Activity extends ConsumerWidget {
     final transfers = ref.watch(transferQueueProvider);
     final chatId = ref.watch(driveSessionProvider)?.chatId;
     final renewDay = ref.watch(mobileDataProvider.select((d) => d.renewDay));
+    final connection = ref.watch(connectionHealthProvider);
 
     final top = describeDriveHealth(
       backup: backup,
@@ -230,6 +234,12 @@ class _Activity extends ConsumerWidget {
       lastFullSync: chatId == null ? null : ref.read(preferencesProvider).lastFullSync(chatId),
       backupSpeed: transfers.backupActive.fold<double>(0, (sum, t) => sum + t.bytesPerSecond),
       renewDay: renewDay,
+      connection: connection,
+      // Read only when the line names it, so Home doesn't ask TDLib for
+      // the saved proxies on every visit.
+      proxy: connection == ConnectionHealth.proxyStuck
+          ? ref.watch(enabledProxyProvider)?.label
+          : null,
     );
     final second = secondaryHealth(
       top,
@@ -312,6 +322,14 @@ class _Activity extends ConsumerWidget {
           onPressed: () => showFreeUpSpace(context, ref),
           child: const Text('Free up space'),
         ),
+        HealthAction.useProxy => TextButton(
+          onPressed: () => showProxySheet(context),
+          child: const Text('Use a proxy'),
+        ),
+        HealthAction.changeProxy => TextButton(
+          onPressed: () => showProxySheet(context),
+          child: const Text('Change proxy'),
+        ),
         HealthAction.none => null,
       },
       onTap: switch (health.target) {
@@ -319,6 +337,7 @@ class _Activity extends ConsumerWidget {
         HealthTarget.notBackedUp => () => context.push('/backup/not-backed-up'),
         HealthTarget.transfers => () => context.push('/transfers'),
         HealthTarget.refresh => () => ref.read(driveSyncProvider.notifier).refresh(),
+        HealthTarget.proxy => () => showProxySheet(context),
       },
     );
   }
