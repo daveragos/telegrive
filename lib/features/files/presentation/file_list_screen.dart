@@ -7,6 +7,7 @@ import '../../../core/files/file_kind.dart';
 import '../../../core/format/formatters.dart';
 import '../../../core/widgets/common.dart';
 import '../../../core/widgets/selection_bar.dart';
+import '../../../infrastructure/database/app_database.dart' show FolderSize;
 import '../../../infrastructure/storage/preferences.dart';
 import '../../drive/data/drive_repository.dart';
 import '../../drive/domain/drive_models.dart';
@@ -23,7 +24,8 @@ final recentOpenedProvider = StreamProvider.autoDispose<List<RecentEntry>>(
       .watchRecentOpens(limit: 200)
       .map(
         (opens) => [
-          for (final (file, at) in opens) RecentEntry(file, at: at, opened: true),
+          for (final (file, at) in opens)
+            RecentEntry(file, at: at, opened: true),
         ],
       ),
 );
@@ -37,12 +39,18 @@ final recentAddedProvider = StreamProvider.autoDispose<List<DriveFile>>(
 );
 
 /// A flat list of files across folders: a category, Starred or Recent.
+/// Starred lists the starred folders first, each with what it holds.
 /// Long-press a file, or tap Select, to pick several and act on them at
 /// once from the bar at the foot.
 class FileListScreen extends ConsumerStatefulWidget {
-  const FileListScreen.kind(FileKind this.kind, {super.key}) : mode = FileListMode.kind;
-  const FileListScreen.starred({super.key}) : kind = null, mode = FileListMode.starred;
-  const FileListScreen.recent({super.key}) : kind = null, mode = FileListMode.recent;
+  const FileListScreen.kind(FileKind this.kind, {super.key})
+    : mode = FileListMode.kind;
+  const FileListScreen.starred({super.key})
+    : kind = null,
+      mode = FileListMode.starred;
+  const FileListScreen.recent({super.key})
+    : kind = null,
+      mode = FileListMode.recent;
 
   final FileKind? kind;
   final FileListMode mode;
@@ -88,11 +96,22 @@ class _FileListScreenState extends ConsumerState<FileListScreen> {
       FileListMode.kind => ref.watch(kindFilesProvider(kind!)),
       FileListMode.recent => null,
     };
-    final opened = widget.mode == FileListMode.recent ? ref.watch(recentOpenedProvider) : null;
-    final added = widget.mode == FileListMode.recent ? ref.watch(recentAddedProvider) : null;
+    final opened = widget.mode == FileListMode.recent
+        ? ref.watch(recentOpenedProvider)
+        : null;
+    final added = widget.mode == FileListMode.recent
+        ? ref.watch(recentAddedProvider)
+        : null;
     final recent = _recentShown(opened?.value, added?.value);
     final loaded = listed?.value ?? recent?.entries.map((e) => e.file).toList();
     final shown = loaded ?? const <DriveFile>[];
+    final starred = widget.mode == FileListMode.starred;
+    final starredFolders = starred
+        ? ref.watch(starredFoldersProvider).value ?? const <DriveFolder>[]
+        : const <DriveFolder>[];
+    final folderSizes = starred
+        ? ref.watch(starredFolderSizesProvider).value
+        : null;
 
     // Drop selections that vanished: unstarred, deleted, or in the other
     // half of Recent.
@@ -105,15 +124,18 @@ class _FileListScreenState extends ConsumerState<FileListScreen> {
         if (_selected.contains(file.id)) file,
     ];
 
-    Widget list(List<DriveFile> files, {Key? key, List<String>? subtitles}) => _Files(
-      key: key,
-      files: files,
-      subtitles: subtitles,
-      grid: grid,
-      selected: _selected,
-      selecting: _selecting,
-      onToggle: _toggle,
-    );
+    Widget list(List<DriveFile> files, {Key? key, List<String>? subtitles}) =>
+        _Files(
+          key: key,
+          files: files,
+          folders: starredFolders,
+          folderSizes: folderSizes,
+          subtitles: subtitles,
+          grid: grid,
+          selected: _selected,
+          selecting: _selecting,
+          onToggle: _toggle,
+        );
 
     return PopScope(
       canPop: !_selecting,
@@ -133,7 +155,9 @@ class _FileListScreenState extends ConsumerState<FileListScreen> {
                 actions: [
                   IconButton(
                     onPressed: () => context.push(
-                      widget.mode == FileListMode.kind ? '/search?kind=${kind!.name}' : '/search',
+                      widget.mode == FileListMode.kind
+                          ? '/search?kind=${kind!.name}'
+                          : '/search',
                     ),
                     icon: const Icon(Icons.search_rounded),
                     tooltip: 'Search',
@@ -144,14 +168,17 @@ class _FileListScreenState extends ConsumerState<FileListScreen> {
                     tooltip: 'Select',
                   ),
                   IconButton(
-                    onPressed: () =>
-                        ref.read(browsePreferencesProvider.notifier).toggleViewMode(),
+                    onPressed: () => ref
+                        .read(browsePreferencesProvider.notifier)
+                        .toggleViewMode(),
                     icon: Icon(
                       prefs.viewMode == ViewMode.list
                           ? Icons.grid_view_rounded
                           : Icons.view_agenda_outlined,
                     ),
-                    tooltip: prefs.viewMode == ViewMode.list ? 'Grid view' : 'List view',
+                    tooltip: prefs.viewMode == ViewMode.list
+                        ? 'Grid view'
+                        : 'List view',
                   ),
                   const SizedBox(width: 4),
                 ],
@@ -162,20 +189,23 @@ class _FileListScreenState extends ConsumerState<FileListScreen> {
                 ref,
                 files: picked,
                 onDone: _clearSelection,
-                onSelectAll: () => setState(() => _selected.addAll(shown.map((f) => f.id))),
+                onSelectAll: () =>
+                    setState(() => _selected.addAll(shown.map((f) => f.id))),
               )
             : null,
         body: switch (widget.mode) {
           FileListMode.recent => _recentBody(opened!, added!, recent, list),
-          FileListMode.kind || FileListMode.starred => AsyncView<List<DriveFile>>(
+          FileListMode.kind ||
+          FileListMode.starred => AsyncView<List<DriveFile>>(
             value: listed!,
             data: (files) {
-              if (files.isEmpty) {
-                return widget.mode == FileListMode.starred
+              if (files.isEmpty && starredFolders.isEmpty) {
+                return starred
                     ? const EmptyState(
-                        title: 'No starred files',
+                        title: 'Nothing starred yet',
                         message:
-                            'Star the files you reach for often and they\'ll wait here.',
+                            'Star the files and folders you reach for often and '
+                            'they\'ll wait here.',
                       )
                     : EmptyState(
                         title: 'No ${kind!.label.toLowerCase()} yet',
@@ -197,13 +227,16 @@ class _FileListScreenState extends ConsumerState<FileListScreen> {
     List<DriveFile>? added,
   ) {
     if (opened == null || added == null) return null;
-    final mode = _recent ??= opened.isNotEmpty ? RecentMode.opened : RecentMode.added;
+    final mode = _recent ??= opened.isNotEmpty
+        ? RecentMode.opened
+        : RecentMode.added;
     return (
       mode: mode,
       entries: switch (mode) {
         RecentMode.opened => opened,
         RecentMode.added => [
-          for (final file in added) RecentEntry(file, at: file.createdAt, opened: false),
+          for (final file in added)
+            RecentEntry(file, at: file.createdAt, opened: false),
         ],
       },
     );
@@ -215,7 +248,8 @@ class _FileListScreenState extends ConsumerState<FileListScreen> {
     AsyncValue<List<RecentEntry>> opened,
     AsyncValue<List<DriveFile>> added,
     ({RecentMode mode, List<RecentEntry> entries})? recent,
-    Widget Function(List<DriveFile> files, {Key? key, List<String>? subtitles}) list,
+    Widget Function(List<DriveFile> files, {Key? key, List<String>? subtitles})
+    list,
   ) {
     return AsyncView<List<RecentEntry>>(
       value: opened,
@@ -235,12 +269,20 @@ class _FileListScreenState extends ConsumerState<FileListScreen> {
                 ),
                 child: SegmentedButton<RecentMode>(
                   segments: const [
-                    ButtonSegment(value: RecentMode.opened, label: Text('Opened')),
-                    ButtonSegment(value: RecentMode.added, label: Text('Added')),
+                    ButtonSegment(
+                      value: RecentMode.opened,
+                      label: Text('Opened'),
+                    ),
+                    ButtonSegment(
+                      value: RecentMode.added,
+                      label: Text('Added'),
+                    ),
                   ],
                   selected: {mode},
                   showSelectedIcon: false,
-                  style: const ButtonStyle(visualDensity: VisualDensity.compact),
+                  style: const ButtonStyle(
+                    visualDensity: VisualDensity.compact,
+                  ),
                   onSelectionChanged: (value) =>
                       setState(() => _recent = value.first),
                 ),
@@ -250,7 +292,8 @@ class _FileListScreenState extends ConsumerState<FileListScreen> {
                     ? switch (mode) {
                         RecentMode.opened => const EmptyState(
                           title: 'Nothing opened yet',
-                          message: 'Files you open, share or send show up here.',
+                          message:
+                              'Files you open, share or send show up here.',
                         ),
                         RecentMode.added => const EmptyState(
                           title: 'Nothing yet',
@@ -276,10 +319,13 @@ class _FileListScreenState extends ConsumerState<FileListScreen> {
   }
 }
 
-/// A count line, then [files] as rows or a grid. Each row ends with the
-/// folder its file lives in, since the list mixes files from everywhere.
-/// While [selecting], a tap picks a file rather than opening it; a
-/// long-press always does.
+/// A count line, then [folders] and [files] as rows or a grid, the folders
+/// under their own label when there are any. Each file row ends with the
+/// folder its file lives in, since the list mixes files from everywhere,
+/// and a folder row says what the folder holds. While [selecting], a tap
+/// picks a file rather than opening it; a long-press always does. Folders
+/// open where they are in Files, and sit still while selecting, since only
+/// files are picked here.
 class _Files extends ConsumerWidget {
   const _Files({
     super.key,
@@ -288,10 +334,16 @@ class _Files extends ConsumerWidget {
     required this.selected,
     required this.selecting,
     required this.onToggle,
+    this.folders = const [],
+    this.folderSizes,
     this.subtitles,
   });
 
   final List<DriveFile> files;
+  final List<DriveFolder> folders;
+
+  /// Each folder's id to what it holds, for its row; null until counted.
+  final Map<String, FolderSize>? folderSizes;
   final bool grid;
   final Set<String> selected;
   final bool selecting;
@@ -304,24 +356,89 @@ class _Files extends ConsumerWidget {
   void _tap(BuildContext context, WidgetRef ref, DriveFile file) =>
       selecting ? onToggle(file) : FileActions.open(context, ref, file);
 
+  VoidCallback? _openFolder(BuildContext context, DriveFolder folder) =>
+      selecting ? null : () => context.go('/files/${folder.id}');
+
+  /// The label over the folders, close under the count line.
+  static const _firstHeader = EdgeInsets.fromLTRB(
+    Space.gutter,
+    Space.s,
+    Space.m,
+    Space.s,
+  );
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final total = files.fold<int>(0, (sum, f) => sum + f.size);
+    // With folders alone the line names just them, rather than '0 files'.
+    final countFiles = files.isNotEmpty || folders.isEmpty;
     final header = Padding(
       padding: const EdgeInsets.fromLTRB(24, 4, 24, 8),
       child: Text(
-        '${Formatters.count(files.length, 'file')} · ${Formatters.bytes(total)}',
-        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-          color: Theme.of(context).colorScheme.onSurfaceVariant,
-        ),
+        [
+          if (folders.isNotEmpty) Formatters.count(folders.length, 'folder'),
+          if (countFiles) Formatters.count(files.length, 'file'),
+          if (countFiles) Formatters.bytes(total),
+        ].join(' · '),
+        style: Theme.of(context).textTheme.bodySmall
+            ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
       ),
     );
-    if (grid) {
-      return CustomScrollView(
-        slivers: [
-          SliverToBoxAdapter(child: header),
+    final labelled = folders.isNotEmpty && files.isNotEmpty;
+    // Null until the folders are read; rows then go without a place rather
+    // than all reading 'Files'.
+    final byId = grid ? null : ref.watch(folderIndexProvider).value;
+    return CustomScrollView(
+      slivers: [
+        SliverToBoxAdapter(child: header),
+        if (folders.isNotEmpty) ...[
+          if (labelled)
+            const SliverToBoxAdapter(
+              child: SectionHeader('Folders', padding: _firstHeader),
+            ),
+          if (grid)
+            SliverPadding(
+              padding: const EdgeInsets.symmetric(horizontal: Space.l),
+              sliver: SliverGrid.builder(
+                gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                  maxCrossAxisExtent: 240,
+                  mainAxisExtent: 52,
+                  crossAxisSpacing: Space.s,
+                  mainAxisSpacing: Space.s,
+                ),
+                itemCount: folders.length,
+                itemBuilder: (context, index) {
+                  final folder = folders[index];
+                  return FolderGridCard(
+                    folder: folder,
+                    selecting: selecting,
+                    onTap: _openFolder(context, folder),
+                    onMore: () =>
+                        FileActions.showFolderSheet(context, ref, folder),
+                  );
+                },
+              ),
+            )
+          else
+            SliverList.builder(
+              itemCount: folders.length,
+              itemBuilder: (context, index) {
+                final folder = folders[index];
+                return FolderListTile(
+                  folder: folder,
+                  subtitle: folderContentsLine(folderSizes?[folder.id]),
+                  selecting: selecting,
+                  onTap: _openFolder(context, folder),
+                  onMore: () =>
+                      FileActions.showFolderSheet(context, ref, folder),
+                );
+              },
+            ),
+          if (labelled) const SliverToBoxAdapter(child: SectionHeader('Files')),
+        ],
+        if (grid)
           SliverPadding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+            padding: const EdgeInsets.symmetric(horizontal: 16),
             sliver: SliverGrid.builder(
               gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
                 maxCrossAxisExtent: 200,
@@ -342,33 +459,30 @@ class _Files extends ConsumerWidget {
                 );
               },
             ),
+          )
+        else
+          SliverList.builder(
+            itemCount: files.length,
+            itemBuilder: (context, index) {
+              final file = files[index];
+              return FileListTile(
+                file: file,
+                subtitle: [
+                  subtitles?[index] ??
+                      '${Formatters.bytes(file.size)} · ${Formatters.date(file.modifiedAt)}',
+                  if (byId != null) locationOf(byId, file.folderId),
+                ].join(' · '),
+                selected: selected.contains(file.id),
+                selecting: selecting,
+                onTap: () => _tap(context, ref, file),
+                onLongPress: () => onToggle(file),
+                onMore: () => FileActions.showFileSheet(context, ref, file),
+              );
+            },
           ),
-        ],
-      );
-    }
-    // Null until the folders are read; rows then go without a place rather
-    // than all reading 'Files'.
-    final byId = ref.watch(folderIndexProvider).value;
-    return ListView.builder(
-      padding: const EdgeInsets.only(bottom: 24),
-      itemCount: files.length + 1,
-      itemBuilder: (context, index) {
-        if (index == 0) return header;
-        final file = files[index - 1];
-        return FileListTile(
-          file: file,
-          subtitle: [
-            subtitles?[index - 1] ??
-                '${Formatters.bytes(file.size)} · ${Formatters.date(file.modifiedAt)}',
-            if (byId != null) locationOf(byId, file.folderId),
-          ].join(' · '),
-          selected: selected.contains(file.id),
-          selecting: selecting,
-          onTap: () => _tap(context, ref, file),
-          onLongPress: () => onToggle(file),
-          onMore: () => FileActions.showFileSheet(context, ref, file),
-        );
-      },
+        // Room under the last row or card, whichever list ends the screen.
+        const SliverPadding(padding: EdgeInsets.only(bottom: 24)),
+      ],
     );
   }
 }

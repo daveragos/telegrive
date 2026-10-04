@@ -165,7 +165,11 @@ abstract final class FileActions {
     final (items, free) = await (
       ref
           .read(driveRepositoryProvider)
-          .collectForSaving(files: files, folders: folders, everything: everything),
+          .collectForSaving(
+            files: files,
+            folders: folders,
+            everything: everything,
+          ),
       storage.freeBytes(),
     ).wait;
     if (!context.mounted) return false;
@@ -202,7 +206,8 @@ abstract final class FileActions {
 
     final bigWait = ref.read(preferencesProvider).bigTransfersWifiOnly;
     bool wifiOnly(DriveFile file) =>
-        choice.wifiOnly ?? TransferPolicy.wifiOnlyFor(file.size, bigWaitForWifi: bigWait);
+        choice.wifiOnly ??
+        TransferPolicy.wifiOnlyFor(file.size, bigWaitForWifi: bigWait);
     final requests = [
       for (final item in items)
         if (useGallery && fitsGallery(item.file))
@@ -245,7 +250,9 @@ abstract final class FileActions {
   /// `Photo backup/Camera/…` → `Camera`: the phone folder a backed-up photo
   /// came from, so it goes back there.
   static String? _backupAlbum(List<String> path) =>
-      path.length >= 2 && path.first == BackupController.rootFolder ? path[1] : null;
+      path.length >= 2 && path.first == BackupController.rootFolder
+      ? path[1]
+      : null;
 
   // ---------------------------------------------------------------------------
   // Available offline
@@ -338,7 +345,9 @@ abstract final class FileActions {
     if (pinned && context.mounted) {
       showSnack(
         context,
-        waits ? '"$name" will download over Wi-Fi' : '"$name" will be available offline',
+        waits
+            ? '"$name" will download over Wi-Fi'
+            : '"$name" will be available offline',
         actionLabel: 'View',
         onAction: () => router.push('/offline'),
       );
@@ -396,7 +405,8 @@ abstract final class FileActions {
       note: [
         '${bundle.fileCount == 1 ? size : '$count · $size'}. '
             'Nothing is uploaded again, so this uses almost no data.',
-        if (bundle.anySplit) 'Files over 2 GB are kept in parts, and arrive as numbered parts.',
+        if (bundle.anySplit)
+          'Files over 2 GB are kept in parts, and arrive as numbered parts.',
       ].join(' '),
       messageInitial: name,
     );
@@ -407,17 +417,13 @@ abstract final class FileActions {
         ? pick.chats.single.title
         : Formatters.count(pick.chats.length, 'chat');
     if (bundle.fileCount > 100) showSnack(context, 'Sending $count to $to…');
-    final sent = await _guard(
-      context,
-      () async {
-        await telegram.sendBundle(bundle, pick.chats, message: pick.message);
-        await preferences.rememberSentTo(ids);
-        if (bundleName == null) {
-          await repository.recordOpens([for (final f in files) f.id]);
-        }
-      },
-      success: 'Sent $count to $to',
-    );
+    final sent = await _guard(context, () async {
+      await telegram.sendBundle(bundle, pick.chats, message: pick.message);
+      await preferences.rememberSentTo(ids);
+      if (bundleName == null) {
+        await repository.recordOpens([for (final f in files) f.id]);
+      }
+    }, success: 'Sent $count to $to');
     if (sent && context.mounted) ref.invalidate(recentChatsProvider);
     return sent;
   }
@@ -462,7 +468,9 @@ abstract final class FileActions {
         type: mediaOnly ? FileType.media : FileType.any,
       );
     } catch (e) {
-      if (context.mounted) showSnack(context, 'Couldn\'t open the file picker.');
+      if (context.mounted) {
+        showSnack(context, 'Couldn\'t open the file picker.');
+      }
       return;
     }
     if (picked.isEmpty) return;
@@ -478,7 +486,10 @@ abstract final class FileActions {
         : Formatters.count(picked.length, 'file');
 
     DataChoice? choice;
-    if (TransferPolicy.shouldAsk(network: ref.read(networkStatusProvider), bytes: bytes)) {
+    if (TransferPolicy.shouldAsk(
+      network: ref.read(networkStatusProvider),
+      bytes: bytes,
+    )) {
       if (context.mounted) {
         choice = await askAboutMobileData(
           context,
@@ -510,7 +521,10 @@ abstract final class FileActions {
           ownsSource: owned(file),
           wifiOnly:
               wifiOnlyFrom(choice) ??
-              TransferPolicy.wifiOnlyFor(sizes[index] ?? 0, bigWaitForWifi: bigWait),
+              TransferPolicy.wifiOnlyFor(
+                sizes[index] ?? 0,
+                bigWaitForWifi: bigWait,
+              ),
         ),
     ];
     final recent = ref.read(recentDestinationsProvider.notifier);
@@ -524,7 +538,9 @@ abstract final class FileActions {
     final router = GoRouter.of(context);
     showSnack(
       context,
-      choice == DataChoice.later ? 'Waiting for Wi-Fi to upload $what' : 'Uploading $what',
+      choice == DataChoice.later
+          ? 'Waiting for Wi-Fi to upload $what'
+          : 'Uploading $what',
       actionLabel: 'View',
       onAction: () => router.push('/transfers'),
     );
@@ -544,7 +560,9 @@ abstract final class FileActions {
     if (name == null || !context.mounted) return;
     await _guard(
       context,
-      () => ref.read(driveRepositoryProvider).createFolder(name, parentId: parentId),
+      () => ref
+          .read(driveRepositoryProvider)
+          .createFolder(name, parentId: parentId),
     );
   }
 
@@ -578,7 +596,9 @@ abstract final class FileActions {
           'This phone can\'t scan documents right now.',
           actionLabel: 'Take a photo',
           onAction: () {
-            if (context.mounted) capture(context, ref, CaptureKind.photo, folderId: folderId);
+            if (context.mounted) {
+              capture(context, ref, CaptureKind.photo, folderId: folderId);
+            }
           },
         );
       } else if (scan) {
@@ -605,31 +625,34 @@ abstract final class FileActions {
     );
     if (chosen == null) {
       await _discardCapture(shot);
-      if (context.mounted) showSnack(context, scan ? 'Scan discarded' : 'Photo discarded');
+      if (context.mounted) {
+        showSnack(context, scan ? 'Scan discarded' : 'Photo discarded');
+      }
       return;
     }
 
     final extension = p.extension(shot.name);
-    final typed = extension.isEmpty ? chosen : withExtension(chosen, extension.substring(1));
+    final typed = extension.isEmpty
+        ? chosen
+        : withExtension(chosen, extension.substring(1));
     final [name] = await namesKeepingBoth(
       repository,
       container.read(transferQueueProvider),
       [typed],
       folderId: folderId,
     );
-    final path = name == shot.name ? shot.path : await renamedOnDisk(shot.path, name);
-    final ids = await queue.enqueueUploads(
-      [
-        UploadRequest(
-          name: name,
-          path: path,
-          size: shot.size,
-          ownsSource: true,
-          takenAt: shot.takenAt,
-        ),
-      ],
-      folderId: folderId,
-    );
+    final path = name == shot.name
+        ? shot.path
+        : await renamedOnDisk(shot.path, name);
+    final ids = await queue.enqueueUploads([
+      UploadRequest(
+        name: name,
+        path: path,
+        size: shot.size,
+        ownsSource: true,
+        takenAt: shot.takenAt,
+      ),
+    ], folderId: folderId);
     unawaited(recent.note(folderId));
     // Once the upload is through the queue is done with the file, so the
     // capture's own folder goes with it; a failed or cancelled one keeps
@@ -775,9 +798,13 @@ abstract final class FileActions {
             child: Consumer(
               builder: (_, sheetRef, _) {
                 final support =
-                    sheetRef.watch(captureSupportProvider).value ?? CaptureSupport.none;
-                final folder =
-                    sheetRef.watch(breadcrumbsProvider(folderId)).value?.lastOrNull?.name;
+                    sheetRef.watch(captureSupportProvider).value ??
+                    CaptureSupport.none;
+                final folder = sheetRef
+                    .watch(breadcrumbsProvider(folderId))
+                    .value
+                    ?.lastOrNull
+                    ?.name;
                 return SingleChildScrollView(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
@@ -801,14 +828,20 @@ abstract final class FileActions {
                         icon: Icons.upload_file_outlined,
                         label: 'Upload files',
                         detail: 'Anything on this phone, any size',
-                        onTap: () => run(() => upload(context, ref, folderId: folderId)),
+                        onTap: () =>
+                            run(() => upload(context, ref, folderId: folderId)),
                       ),
                       _CreateOption(
                         icon: Icons.photo_library_outlined,
                         label: 'Upload photos and videos',
                         detail: 'Originals, uncompressed',
                         onTap: () => run(
-                          () => upload(context, ref, folderId: folderId, mediaOnly: true),
+                          () => upload(
+                            context,
+                            ref,
+                            folderId: folderId,
+                            mediaOnly: true,
+                          ),
                         ),
                       ),
                       if (support.scan)
@@ -817,7 +850,12 @@ abstract final class FileActions {
                           label: 'Scan a document',
                           detail: 'Straightened and cropped into a PDF',
                           onTap: () => run(
-                            () => capture(context, ref, CaptureKind.scan, folderId: folderId),
+                            () => capture(
+                              context,
+                              ref,
+                              CaptureKind.scan,
+                              folderId: folderId,
+                            ),
                           ),
                         ),
                       if (support.photo)
@@ -826,19 +864,29 @@ abstract final class FileActions {
                           label: 'Take a photo',
                           detail: 'Goes straight here, not to your gallery',
                           onTap: () => run(
-                            () => capture(context, ref, CaptureKind.photo, folderId: folderId),
+                            () => capture(
+                              context,
+                              ref,
+                              CaptureKind.photo,
+                              folderId: folderId,
+                            ),
                           ),
                         ),
                       _CreateOption(
                         icon: Icons.create_new_folder_outlined,
                         label: 'New folder',
-                        onTap: () => run(() => createFolder(context, ref, parentId: folderId)),
+                        onTap: () => run(
+                          () => createFolder(context, ref, parentId: folderId),
+                        ),
                       ),
                       _CreateOption(
                         icon: Icons.telegram,
                         label: 'Save from a Telegram chat',
-                        detail: 'Copies files already in Telegram, with no upload',
-                        onTap: () => run(() => saveFromChat(context, ref, folderId: folderId)),
+                        detail:
+                            'Copies files already in Telegram, with no upload',
+                        onTap: () => run(
+                          () => saveFromChat(context, ref, folderId: folderId),
+                        ),
                       ),
                     ],
                   ),
@@ -938,14 +986,18 @@ abstract final class FileActions {
         for (final file in files)
           (
             apply: () => repository.moveFiles([file], target),
-            undo: () async =>
-                repository.moveFiles(await _current(repository, [file]), file.folderId),
+            undo: () async => repository.moveFiles(
+              await _current(repository, [file]),
+              file.folderId,
+            ),
           ),
         for (final folder in folders)
           (
             apply: () => repository.moveFolder(folder, target),
             undo: () async {
-              for (final current in await _currentFolders(repository, [folder])) {
+              for (final current in await _currentFolders(repository, [
+                folder,
+              ])) {
                 await repository.moveFolder(current, folder.parentId);
               }
             },
@@ -961,32 +1013,49 @@ abstract final class FileActions {
     return outcome?.complete ?? false;
   }
 
-  /// Stars or unstars [files], with Undo. Returns whether every file
-  /// changed.
+  /// Stars or unstars [files] and [folders], with Undo. Returns whether
+  /// every item changed.
   static Future<bool> setStarred(
     BuildContext context,
     WidgetRef ref,
     List<DriveFile> files, {
+    List<DriveFolder> folders = const [],
     required bool starred,
   }) async {
     final repository = ref.read(driveRepositoryProvider);
     String label(int count, {required bool starring}) => starring
         ? 'Starring ${Formatters.count(count, 'item')}'
         : 'Removing ${Formatters.count(count, 'item')} from Starred';
-    final outcome = await runBulk<DriveFile>(
+    final items = <Object>[...files, ...folders];
+    final outcome = await runBulk<Object>(
       context,
       ref.read(bulkEditsProvider.notifier),
-      label: label(files.length, starring: starred),
+      label: label(items.length, starring: starred),
       icon: Icons.star_outline_rounded,
-      items: files,
-      apply: (file) => repository.setStarred([file], starred: starred),
+      items: items,
+      apply: (item) => switch (item) {
+        DriveFile file => repository.setStarred([file], starred: starred),
+        DriveFolder folder => repository.setFolderStarred([
+          folder,
+        ], starred: starred),
+        _ => Future.value(),
+      },
       success: starred ? 'Added to Starred' : 'Removed from Starred',
-      // Each file goes back to how it was, so one that was starred before
+      // Each item goes back to how it was, so one that was starred before
       // stays starred.
       undo: (
         label: (done) => label(done, starring: !starred),
-        apply: (file) async =>
-            repository.setStarred(await _current(repository, [file]), starred: file.starred),
+        apply: (item) async => switch (item) {
+          DriveFile file => repository.setStarred(
+            await _current(repository, [file]),
+            starred: file.starred,
+          ),
+          DriveFolder folder => repository.setFolderStarred(
+            await _currentFolders(repository, [folder]),
+            starred: folder.starred,
+          ),
+          _ => null,
+        },
       ),
     );
     return outcome?.complete ?? false;
@@ -1051,13 +1120,15 @@ abstract final class FileActions {
         for (final folder in folders)
           (
             apply: () => repository.trash(folders: [folder]),
-            undo: () async =>
-                repository.restore(folders: await _currentFolders(repository, [folder])),
+            undo: () async => repository.restore(
+              folders: await _currentFolders(repository, [folder]),
+            ),
           ),
         for (final file in files)
           (
             apply: () => repository.trash(files: [file]),
-            undo: () async => repository.restore(files: await _current(repository, [file])),
+            undo: () async =>
+                repository.restore(files: await _current(repository, [file])),
           ),
       ],
       apply: (step) => step.apply(),
@@ -1096,7 +1167,10 @@ abstract final class FileActions {
           // Checked again, since this can run long after the sheet asked
           // and one the gallery let go meanwhile would fail them all.
           final still = await stillOnPhone(assetIds);
-          final going = [for (final id in assetIds) if (still.contains(id)) id];
+          final going = [
+            for (final id in assetIds)
+              if (still.contains(id)) id,
+          ];
           if (going.isNotEmpty) await deleteFromPhone(going);
           container.invalidate(freeableProvider);
         },
@@ -1128,7 +1202,10 @@ abstract final class FileActions {
     }
     final copies = <String, List<String>>{};
     for (final MapEntry(key: fileId, value: assetIds) in recorded.entries) {
-      final here = [for (final id in assetIds) if (present.contains(id)) id];
+      final here = [
+        for (final id in assetIds)
+          if (present.contains(id)) id,
+      ];
       if (here.isNotEmpty) copies[fileId] = here;
     }
     return copies;
@@ -1146,7 +1223,9 @@ abstract final class FileActions {
     List<DriveFolder> folders = const [],
   }) {
     final repository = ref.read(driveRepositoryProvider);
-    ref.read(pendingDeletesProvider.notifier).keepPhoneCopies(files.map((file) => file.id));
+    ref
+        .read(pendingDeletesProvider.notifier)
+        .keepPhoneCopies(files.map((file) => file.id));
     return _guard(
       context,
       () => repository.restore(files: files, folders: folders),
@@ -1197,7 +1276,8 @@ abstract final class FileActions {
       folderIds: {for (final folder in contents.folders) folder.id},
       label: count,
       message: 'Emptying the trash · $count',
-      run: () => repository.delete(files: contents.files, folders: contents.folders),
+      run: () =>
+          repository.delete(files: contents.files, folders: contents.folders),
     );
   }
 
@@ -1290,7 +1370,8 @@ abstract final class FileActions {
                 _SheetAction(
                   icon: Icons.download_rounded,
                   label: 'Download to this phone',
-                  onTap: () => run(() => saveToDevice(context, ref, files: [file])),
+                  onTap: () =>
+                      run(() => saveToDevice(context, ref, files: [file])),
                 ),
                 _SheetAction(
                   icon: Icons.send_outlined,
@@ -1299,7 +1380,9 @@ abstract final class FileActions {
                 ),
                 _OfflineAction(
                   itemId: file.id,
-                  onTap: (pinned) => run(() => setOffline(context, ref, file: file, keep: !pinned)),
+                  onTap: (pinned) => run(
+                    () => setOffline(context, ref, file: file, keep: !pinned),
+                  ),
                 ),
                 _SheetAction(
                   icon: Icons.ios_share_rounded,
@@ -1307,10 +1390,16 @@ abstract final class FileActions {
                   onTap: () => run(() => share(context, ref, file)),
                 ),
                 _SheetAction(
-                  icon: file.starred ? Icons.star_rounded : Icons.star_outline_rounded,
-                  label: file.starred ? 'Remove from Starred' : 'Add to Starred',
+                  icon: file.starred
+                      ? Icons.star_rounded
+                      : Icons.star_outline_rounded,
+                  label: file.starred
+                      ? 'Remove from Starred'
+                      : 'Add to Starred',
                   onTap: () => run(
-                    () => setStarred(context, ref, [file], starred: !file.starred),
+                    () => setStarred(context, ref, [
+                      file,
+                    ], starred: !file.starred),
                   ),
                 ),
                 _SheetAction(
@@ -1379,17 +1468,37 @@ abstract final class FileActions {
               _SheetAction(
                 icon: Icons.download_rounded,
                 label: 'Download to this phone',
-                onTap: () => run(() => saveToDevice(context, ref, folders: [folder])),
+                onTap: () =>
+                    run(() => saveToDevice(context, ref, folders: [folder])),
               ),
               _SheetAction(
                 icon: Icons.send_outlined,
                 label: 'Send in Telegram',
-                onTap: () => run(() => sendToChats(context, ref, const [], folders: [folder])),
+                onTap: () => run(
+                  () => sendToChats(context, ref, const [], folders: [folder]),
+                ),
               ),
               _OfflineAction(
                 itemId: folder.id,
                 onTap: (pinned) => run(
                   () => setOffline(context, ref, folder: folder, keep: !pinned),
+                ),
+              ),
+              _SheetAction(
+                icon: folder.starred
+                    ? Icons.star_rounded
+                    : Icons.star_outline_rounded,
+                label: folder.starred
+                    ? 'Remove from Starred'
+                    : 'Add to Starred',
+                onTap: () => run(
+                  () => setStarred(
+                    context,
+                    ref,
+                    const [],
+                    folders: [folder],
+                    starred: !folder.starred,
+                  ),
                 ),
               ),
               _SheetAction(
@@ -1456,7 +1565,8 @@ abstract final class FileActions {
                   style: Theme.of(sheetContext).textTheme.titleMedium,
                 ),
                 const SizedBox(height: 16),
-                for (final line in lines) _DetailRow(line.label, line.value, onTap: line.onTap),
+                for (final line in lines)
+                  _DetailRow(line.label, line.value, onTap: line.onTap),
                 const SizedBox(height: Space.l),
                 SizedBox(
                   width: double.infinity,
@@ -1495,8 +1605,12 @@ abstract final class FileActions {
           ? file.mimeType
           : '${file.kind.label.replaceAll(RegExp(r's$'), '')} · ${file.extension}',
     ),
-    DetailLine('Size', '${Formatters.bytes(file.size)} (${Formatters.count(file.size, 'byte')})'),
-    if (file.takenAt case final taken?) DetailLine('Taken', Formatters.fullDate(taken)),
+    DetailLine(
+      'Size',
+      '${Formatters.bytes(file.size)} (${Formatters.count(file.size, 'byte')})',
+    ),
+    if (file.takenAt case final taken?)
+      DetailLine('Taken', Formatters.fullDate(taken)),
     DetailLine('Location', ['Files', ...path].join(' › '), onTap: showFolder),
     DetailLine('Added', Formatters.fullDate(file.createdAt)),
     DetailLine('Modified', Formatters.fullDate(file.modifiedAt)),
@@ -1507,7 +1621,10 @@ abstract final class FileActions {
         null => 'This phone',
       }),
     if (file.isSplit)
-      DetailLine('Stored as', '${file.partCount} parts. Telegram caps one message at 2 GB.'),
+      DetailLine(
+        'Stored as',
+        '${file.partCount} parts. Telegram caps one message at 2 GB.',
+      ),
   ];
 
   /// Opens the folder [file] lives in, where its row is tinted for a
@@ -1559,7 +1676,9 @@ abstract final class FileActions {
       Uri.parse('https://t.me/c/$channel/${messageId >> 20}'),
       mode: LaunchMode.externalApplication,
     );
-    if (!opened && context.mounted) showSnack(context, 'Couldn\'t open Telegram.');
+    if (!opened && context.mounted) {
+      showSnack(context, 'Couldn\'t open Telegram.');
+    }
   }
 
   /// Runs [action], turning failures into a snackbar. With [undo], the
@@ -1589,7 +1708,12 @@ abstract final class FileActions {
           showUndoSnack(
             context,
             success,
-            onUndo: () => _guard(lasting, undo, success: 'Undone', failurePrefix: _undoFailed),
+            onUndo: () => _guard(
+              lasting,
+              undo,
+              success: 'Undone',
+              failurePrefix: _undoFailed,
+            ),
           );
         }
       }
@@ -1625,7 +1749,9 @@ abstract final class FileActions {
   static Future<List<DriveFolder>> _currentFolders(
     DriveRepository repository,
     Iterable<DriveFolder> folders,
-  ) async => [for (final folder in folders) ?await repository.folderById(folder.id)];
+  ) async => [
+    for (final folder in folders) ?await repository.folderById(folder.id),
+  ];
 
   /// Why [error] stopped an action, in the words every snack here uses.
   static String failureOf(Object error) => switch (error) {
@@ -1655,19 +1781,26 @@ abstract final class FileActions {
     required List<T> items,
     required Future<void> Function(T item) apply,
     String? success,
-    ({String Function(int done) label, Future<void> Function(T item) apply})? undo,
+    ({String Function(int done) label, Future<void> Function(T item) apply})?
+    undo,
     ValueChanged<SnackBarClosedReason>? onUndoClosed,
     String failurePrefix = '',
   }) async {
     BulkOutcome? outcome;
     await _guard(context, () async {
-      outcome = await edits.run(label: label, icon: icon, items: items, apply: apply);
+      outcome = await edits.run(
+        label: label,
+        icon: icon,
+        items: items,
+        apply: apply,
+      );
     }, failurePrefix: failurePrefix);
     final ended = outcome;
     if (ended == null) return null;
     final error = ended.error;
     final wait = error == null ? null : telegramWaitOf(error);
-    final done = '${Formatters.number(ended.done)} of ${Formatters.number(ended.total)}';
+    final done =
+        '${Formatters.number(ended.done)} of ${Formatters.number(ended.total)}';
     final String? message;
     if (ended.stopped) {
       message = 'Stopped after $done. The rest are unchanged.';
@@ -1741,7 +1874,10 @@ class _DownloadDialogState extends ConsumerState<_DownloadDialog> {
         if (error is SendCancelled) {
           showSnack(context, 'Cancelled ${widget.file.name}');
         } else if (error is! DriveException || error.message != 'Signed out.') {
-          showSnack(context, 'Download failed: ${error is DriveException ? error.message : error}');
+          showSnack(
+            context,
+            'Download failed: ${error is DriveException ? error.message : error}',
+          );
         }
       },
     );
@@ -1773,13 +1909,12 @@ class _DownloadDialogState extends ConsumerState<_DownloadDialog> {
       _ => null,
     };
     final waiting = waitingUntil != null || offline || room != null;
-    final detailStyle = theme.textTheme.bodySmall?.copyWith(fontFeatures: tabularFigures);
+    final detailStyle = theme.textTheme.bodySmall?.copyWith(
+      fontFeatures: tabularFigures,
+    );
 
     return AlertDialog(
-      title: Text(
-        'Downloading',
-        style: theme.textTheme.titleMedium,
-      ),
+      title: Text('Downloading', style: theme.textTheme.titleMedium),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1825,7 +1960,8 @@ class _DownloadDialogState extends ConsumerState<_DownloadDialog> {
                   : [
                       if (offline) 'Waiting for network',
                       '${Formatters.bytes(item.row.doneBytes)} of ${Formatters.bytes(item.row.totalBytes)}',
-                      if (!offline && item.bytesPerSecond > 0) Formatters.speed(item.bytesPerSecond),
+                      if (!offline && item.bytesPerSecond > 0)
+                        Formatters.speed(item.bytesPerSecond),
                     ].join(' · '),
               style: detailStyle,
             ),
@@ -1844,7 +1980,10 @@ class _DownloadDialogState extends ConsumerState<_DownloadDialog> {
         TextButton(
           onPressed: () {
             Navigator.of(context).pop();
-            showSnack(context, 'Still downloading. You\'ll find it in Transfers.');
+            showSnack(
+              context,
+              'Still downloading. You\'ll find it in Transfers.',
+            );
           },
           child: const Text('Hide'),
         ),
@@ -1886,23 +2025,34 @@ class _SaveSheetState extends State<_SaveSheet> {
     final colors = context.colors;
     final items = widget.items;
     final bytes = items.fold<int>(0, (sum, i) => sum + i.file.size);
-    final largest = items.fold<int>(0, (max, i) => i.file.size > max ? i.file.size : max);
+    final largest = items.fold<int>(
+      0,
+      (max, i) => i.file.size > max ? i.file.size : max,
+    );
     final media = items.where((i) => FileActions.fitsGallery(i.file)).length;
     final free = widget.freeBytes;
     // Android holds a second copy of the file being saved for a moment.
     final needed = bytes + (Platform.isAndroid ? largest : 0);
     final tooBig = free != null && needed > free;
-    final onData = TransferPolicy.shouldAsk(network: widget.network, bytes: bytes);
+    final onData = TransferPolicy.shouldAsk(
+      network: widget.network,
+      bytes: bytes,
+    );
     final single = items.length == 1;
     final library = Platform.isIOS ? 'photo library' : 'gallery';
-    void choose({bool? wifiOnly}) =>
-        Navigator.pop<_SaveChoice>(context, (gallery: _gallery, wifiOnly: wifiOnly));
+    void choose({bool? wifiOnly}) => Navigator.pop<_SaveChoice>(context, (
+      gallery: _gallery,
+      wifiOnly: wifiOnly,
+    ));
 
     final String where;
     if (_gallery && media == items.length) {
-      where = single ? 'It goes to your $library.' : 'They go to your $library.';
+      where = single
+          ? 'It goes to your $library.'
+          : 'They go to your $library.';
     } else if (_gallery && media > 0) {
-      where = 'Photos and videos go to your $library; everything else to '
+      where =
+          'Photos and videos go to your $library; everything else to '
           '${DeviceStorage.location}.';
     } else {
       where = single
@@ -1913,13 +2063,20 @@ class _SaveSheetState extends State<_SaveSheet> {
 
     return SafeArea(
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(Space.gutter, 0, Space.gutter, Space.l),
+        padding: const EdgeInsets.fromLTRB(
+          Space.gutter,
+          0,
+          Space.gutter,
+          Space.l,
+        ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              single ? 'Download to this phone' : 'Download ${Formatters.count(items.length, 'file')}',
+              single
+                  ? 'Download to this phone'
+                  : 'Download ${Formatters.count(items.length, 'file')}',
               style: context.text.titleMedium,
             ),
             const SizedBox(height: 2),
@@ -1929,7 +2086,9 @@ class _SaveSheetState extends State<_SaveSheet> {
                   : '${Formatters.bytes(bytes)} in total',
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
-              style: context.text.bodyMedium?.copyWith(fontFeatures: tabularFigures),
+              style: context.text.bodyMedium?.copyWith(
+                fontFeatures: tabularFigures,
+              ),
             ),
             const SizedBox(height: Space.l),
             if (media > 0)
@@ -1940,7 +2099,9 @@ class _SaveSheetState extends State<_SaveSheet> {
                     ? null
                     : Text(
                         '${Formatters.number(media)} of these',
-                        style: context.text.bodySmall?.copyWith(fontFeatures: tabularFigures),
+                        style: context.text.bodySmall?.copyWith(
+                          fontFeatures: tabularFigures,
+                        ),
                       ),
                 value: _gallery,
                 onChanged: (value) => setState(() => _gallery = value),
@@ -1977,7 +2138,9 @@ class _SaveSheetState extends State<_SaveSheet> {
                 Expanded(
                   child: onData
                       ? OutlinedButton(
-                          onPressed: tooBig ? null : () => choose(wifiOnly: true),
+                          onPressed: tooBig
+                              ? null
+                              : () => choose(wifiOnly: true),
                           child: const Text('Later, on Wi-Fi'),
                         )
                       : OutlinedButton(
@@ -1988,7 +2151,9 @@ class _SaveSheetState extends State<_SaveSheet> {
                 const SizedBox(width: Space.m),
                 Expanded(
                   child: FilledButton(
-                    onPressed: tooBig ? null : () => choose(wifiOnly: onData ? false : null),
+                    onPressed: tooBig
+                        ? null
+                        : () => choose(wifiOnly: onData ? false : null),
                     child: Text(onData ? 'Download now' : 'Download'),
                   ),
                 ),
@@ -2026,7 +2191,11 @@ class _CreateOption extends StatelessWidget {
 }
 
 class _SheetHeader extends StatelessWidget {
-  const _SheetHeader({required this.leading, required this.title, required this.subtitle});
+  const _SheetHeader({
+    required this.leading,
+    required this.title,
+    required this.subtitle,
+  });
 
   final Widget leading;
   final String title;
@@ -2035,7 +2204,12 @@ class _SheetHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(Space.gutter, 0, Space.gutter, Space.m),
+      padding: const EdgeInsets.fromLTRB(
+        Space.gutter,
+        0,
+        Space.gutter,
+        Space.m,
+      ),
       child: Row(
         children: [
           leading,
@@ -2053,7 +2227,9 @@ class _SheetHeader extends StatelessWidget {
                 const SizedBox(height: 2),
                 Text(
                   subtitle,
-                  style: context.text.bodySmall?.copyWith(fontFeatures: tabularFigures),
+                  style: context.text.bodySmall?.copyWith(
+                    fontFeatures: tabularFigures,
+                  ),
                 ),
               ],
             ),
@@ -2104,7 +2280,9 @@ class _OfflineAction extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final pinned = ref.watch(
-      offlinePinsProvider.select((pins) => pins.value?.contains(itemId) ?? false),
+      offlinePinsProvider.select(
+        (pins) => pins.value?.contains(itemId) ?? false,
+      ),
     );
     return _SheetAction(
       icon: pinned ? Icons.offline_pin_rounded : Icons.offline_pin_outlined,
@@ -2140,7 +2318,10 @@ class _DetailRow extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SizedBox(width: 96, child: Text(label, style: context.text.bodyMedium)),
+          SizedBox(
+            width: 96,
+            child: Text(label, style: context.text.bodyMedium),
+          ),
           Expanded(
             child: Text(
               value,
@@ -2151,7 +2332,11 @@ class _DetailRow extends StatelessWidget {
             ),
           ),
           if (onTap != null)
-            Icon(Icons.chevron_right_rounded, size: 20, color: context.colors.text3),
+            Icon(
+              Icons.chevron_right_rounded,
+              size: 20,
+              color: context.colors.text3,
+            ),
         ],
       ),
     );

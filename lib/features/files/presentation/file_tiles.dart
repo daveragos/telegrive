@@ -4,8 +4,20 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../app/theme/tokens.dart';
 import '../../../core/format/formatters.dart';
 import '../../../core/widgets/file_visuals.dart';
+import '../../../infrastructure/database/app_database.dart' show FolderSize;
 import '../../drive/domain/drive_models.dart';
 import '../../offline/data/offline_sync.dart';
+
+/// What a folder holds, in it and below it, as a row's meta line: '12 items
+/// · 340 MB', or 'Empty folder' when nothing is in it. Null while it hasn't
+/// been counted yet, so the row keeps its plain 'Folder · date' line
+/// instead of calling a full folder empty for a moment.
+String? folderContentsLine(FolderSize? size) => switch (size) {
+  null => null,
+  FolderSize(count: 0) => 'Empty folder',
+  _ =>
+    '${Formatters.count(size.count, 'item')} · ${Formatters.bytes(size.bytes)}',
+};
 
 /// A file as a list row: picture slot, name, size and date, and a menu.
 class FileListTile extends ConsumerWidget {
@@ -45,16 +57,22 @@ class FileListTile extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final offline = ref.watch(
-      offlineCopiesProvider.select((copies) => copies.value?.containsKey(file.id) ?? false),
+      offlineCopiesProvider.select(
+        (copies) => copies.value?.containsKey(file.id) ?? false,
+      ),
     );
     return _Row(
       selected: selected,
       highlighted: highlighted,
       onTap: onTap,
       onLongPress: onLongPress,
-      slot: _Selectable(selected: selected, child: FileThumbnail(file: file)),
+      slot: _Selectable(
+        selected: selected,
+        child: FileThumbnail(file: file),
+      ),
       title: file.name,
-      meta: subtitle ??
+      meta:
+          subtitle ??
           '${Formatters.bytes(file.size)} · ${Formatters.date(file.modifiedAt)}',
       metaColor: subtitleColor,
       starred: file.starred,
@@ -65,7 +83,8 @@ class FileListTile extends ConsumerWidget {
   }
 }
 
-/// A folder as a list row.
+/// A folder as a list row. With no [onTap], [onLongPress] or [onMore] it
+/// is inert, for a list where folders can't be picked while selecting.
 class FolderListTile extends ConsumerWidget {
   const FolderListTile({
     super.key,
@@ -90,7 +109,7 @@ class FolderListTile extends ConsumerWidget {
 
   /// An action of the row's own, before the menu.
   final Widget? trailing;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
   final VoidCallback? onLongPress;
   final VoidCallback? onMore;
   final bool selected;
@@ -99,7 +118,9 @@ class FolderListTile extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final offline = ref.watch(
-      offlinePinsProvider.select((pins) => pins.value?.contains(folder.id) ?? false),
+      offlinePinsProvider.select(
+        (pins) => pins.value?.contains(folder.id) ?? false,
+      ),
     );
     return _Row(
       selected: selected,
@@ -110,6 +131,7 @@ class FolderListTile extends ConsumerWidget {
       title: folder.name,
       meta: subtitle ?? 'Folder · ${Formatters.date(folder.modifiedAt)}',
       metaColor: subtitleColor,
+      starred: folder.starred,
       trailing: trailing,
       onMore: selecting ? null : onMore,
     );
@@ -134,7 +156,7 @@ class _Row extends StatelessWidget {
 
   final bool selected;
   final bool highlighted;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
   final VoidCallback? onLongPress;
   final Widget slot;
   final String title;
@@ -182,11 +204,19 @@ class _Row extends StatelessWidget {
                       Row(
                         children: [
                           if (starred) ...[
-                            Icon(Icons.star_rounded, size: 14, color: colors.text2),
+                            Icon(
+                              Icons.star_rounded,
+                              size: 14,
+                              color: colors.text2,
+                            ),
                             const SizedBox(width: Space.xs),
                           ],
                           if (offline) ...[
-                            Icon(Icons.offline_pin_rounded, size: 14, color: colors.text2),
+                            Icon(
+                              Icons.offline_pin_rounded,
+                              size: 14,
+                              color: colors.text2,
+                            ),
                             const SizedBox(width: Space.xs),
                           ],
                           Flexible(
@@ -242,7 +272,10 @@ class _Selectable extends StatelessWidget {
                 color: colors.accent,
                 borderRadius: BorderRadius.circular(Radii.thumb),
               ),
-              child: Icon(Icons.check_rounded, color: Theme.of(context).colorScheme.onPrimary),
+              child: Icon(
+                Icons.check_rounded,
+                color: Theme.of(context).colorScheme.onPrimary,
+              ),
             )
           : KeyedSubtree(key: const ValueKey('normal'), child: child),
     );
@@ -302,7 +335,9 @@ class FileGridCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.colors;
     final offline = ref.watch(
-      offlineCopiesProvider.select((copies) => copies.value?.containsKey(file.id) ?? false),
+      offlineCopiesProvider.select(
+        (copies) => copies.value?.containsKey(file.id) ?? false,
+      ),
     );
     return _Tint(
       on: highlighted,
@@ -318,7 +353,11 @@ class FileGridCard extends ConsumerWidget {
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  FileThumbnail(file: file, expand: true, radius: Radii.control),
+                  FileThumbnail(
+                    file: file,
+                    expand: true,
+                    radius: Radii.control,
+                  ),
                   if (selected)
                     DecoratedBox(
                       decoration: BoxDecoration(
@@ -330,7 +369,10 @@ class FileGridCard extends ConsumerWidget {
                     Positioned(
                       top: 8,
                       left: 8,
-                      child: Icon(Icons.check_circle_rounded, color: colors.accent),
+                      child: Icon(
+                        Icons.check_circle_rounded,
+                        color: colors.accent,
+                      ),
                     ),
                 ],
               ),
@@ -352,7 +394,11 @@ class FileGridCard extends ConsumerWidget {
                       Row(
                         children: [
                           if (offline) ...[
-                            Icon(Icons.offline_pin_rounded, size: 14, color: colors.text2),
+                            Icon(
+                              Icons.offline_pin_rounded,
+                              size: 14,
+                              color: colors.text2,
+                            ),
                             const SizedBox(width: Space.xs),
                           ],
                           Flexible(
@@ -394,7 +440,8 @@ class FileGridCard extends ConsumerWidget {
 }
 
 /// A folder in grid view: an outlined row, lighter than a file, with the
-/// same mark as the list row when it is kept offline.
+/// same marks as the list row when it is starred or kept offline. Inert
+/// without [onTap], [onLongPress] and [onMore], like the list row.
 class FolderGridCard extends ConsumerWidget {
   const FolderGridCard({
     super.key,
@@ -407,7 +454,7 @@ class FolderGridCard extends ConsumerWidget {
   });
 
   final DriveFolder folder;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
   final VoidCallback? onLongPress;
   final VoidCallback? onMore;
   final bool selected;
@@ -417,7 +464,9 @@ class FolderGridCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = context.colors;
     final offline = ref.watch(
-      offlinePinsProvider.select((pins) => pins.value?.contains(folder.id) ?? false),
+      offlinePinsProvider.select(
+        (pins) => pins.value?.contains(folder.id) ?? false,
+      ),
     );
     return Material(
       color: selected ? colors.accentSoft : colors.surface,
@@ -453,6 +502,15 @@ class FolderGridCard extends ConsumerWidget {
                   style: context.text.titleSmall?.copyWith(fontSize: 14),
                 ),
               ),
+              if (folder.starred)
+                Padding(
+                  padding: const EdgeInsets.only(left: Space.s),
+                  child: Icon(
+                    Icons.star_rounded,
+                    size: 14,
+                    color: colors.text2,
+                  ),
+                ),
               if (!selecting && onMore != null)
                 IconButton(
                   onPressed: onMore,

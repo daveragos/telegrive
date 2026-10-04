@@ -15,7 +15,8 @@ import 'package:telegrive/features/files/presentation/file_list_screen.dart';
 import 'package:telegrive/features/home/presentation/home_screen.dart';
 import 'package:telegrive/features/offline/data/offline_sync.dart';
 import 'package:telegrive/features/transfers/data/transfer_queue.dart';
-import 'package:telegrive/infrastructure/database/app_database.dart' show KindTotal;
+import 'package:telegrive/infrastructure/database/app_database.dart'
+    show FolderSize, KindTotal;
 import 'package:telegrive/infrastructure/storage/preferences.dart';
 
 import 'support/fake_telegram.dart';
@@ -59,7 +60,13 @@ void main() {
   }
 
   group('Home', () {
-    Future<void> pumpHome(WidgetTester tester, Stream<StorageSummary> summary) async {
+    Future<void> pumpHome(
+      WidgetTester tester,
+      Stream<StorageSummary> summary, {
+      List<DriveFolder> starredFolders = const [],
+      // Null stands for sizes that haven't arrived yet.
+      Map<String, FolderSize>? starredSizes = const {},
+    }) async {
       final shared = await prefs();
       await tester.pumpWidget(
         ProviderScope(
@@ -71,8 +78,17 @@ void main() {
             transferQueueProvider.overrideWith(_Queue.new),
             storageSummaryProvider.overrideWith((ref) => summary),
             // Nothing opened, and nothing added by hand.
-            recentActivityProvider(12).overrideWith((ref) => Stream.value(const [])),
+            recentActivityProvider(12)
+                .overrideWith((ref) => Stream.value(const [])),
             starredFilesProvider.overrideWith((ref) => Stream.value(const [])),
+            starredFoldersProvider.overrideWith(
+              (ref) => Stream.value(starredFolders),
+            ),
+            starredFolderSizesProvider.overrideWith(
+              (ref) => starredSizes == null
+                  ? const Stream.empty()
+                  : Stream.value(starredSizes),
+            ),
             // Nothing kept offline either.
             offlinePinsProvider.overrideWith((ref) => Stream.value(const {})),
             offlineUsageProvider.overrideWith((ref) => Stream.value((0, 0))),
@@ -83,28 +99,138 @@ void main() {
       await tester.pump();
     }
 
-    testWidgets('says nothing about an empty drive until it has been counted', (tester) async {
+    DriveFolder folder(String name, {bool starred = false}) => DriveFolder(
+      id: name,
+      parentId: null,
+      name: name,
+      createdAt: DateTime(2026, 9),
+      modifiedAt: DateTime(2026, 9),
+      starred: starred,
+    );
+
+    testWidgets('starred folders sit above Recent, each with what it holds', (
+      tester,
+    ) async {
+      // Tall enough that the whole of Home is laid out.
+      tester.view.physicalSize = const Size(800, 2400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await pumpHome(
+        tester,
+        Stream.value(
+          const StorageSummary(totals: [KindTotal(FileKind.document, 3, 3000)]),
+        ),
+        starredFolders: [
+          folder('Invoices', starred: true),
+          folder('Drafts', starred: true),
+        ],
+        starredSizes: {
+          'Invoices': const FolderSize(
+            'Invoices',
+            'Invoices',
+            12,
+            340 * 1024 * 1024,
+          ),
+          'Drafts': const FolderSize('Drafts', 'Drafts', 0, 0),
+        },
+      );
+      await tester.pump();
+
+      expect(find.text('Starred', skipOffstage: false), findsWidgets);
+      expect(find.text('Invoices', skipOffstage: false), findsOneWidget);
+      expect(
+        find.text('12 items · 340 MB', skipOffstage: false),
+        findsOneWidget,
+      );
+      expect(find.text('Empty folder', skipOffstage: false), findsOneWidget);
+      expect(
+        tester.getTopLeft(find.text('Invoices', skipOffstage: false)).dy,
+        lessThan(
+          tester.getTopLeft(find.text('Recent', skipOffstage: false)).dy,
+        ),
+      );
+      // The row under Recent counts the folders among what is starred.
+      expect(find.text('2', skipOffstage: false), findsOneWidget);
+    });
+
+    testWidgets('a starred folder keeps its plain line until it is counted', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(800, 2400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await pumpHome(
+        tester,
+        Stream.value(
+          const StorageSummary(totals: [KindTotal(FileKind.document, 3, 3000)]),
+        ),
+        starredFolders: [folder('Invoices', starred: true)],
+        starredSizes: null,
+      );
+      await tester.pump();
+      expect(find.text('Empty folder', skipOffstage: false), findsNothing);
+      expect(
+        find.textContaining('Folder · ', skipOffstage: false),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('with nothing starred Home has no Starred group', (
+      tester,
+    ) async {
+      await pumpHome(
+        tester,
+        Stream.value(
+          const StorageSummary(totals: [KindTotal(FileKind.document, 3, 3000)]),
+        ),
+      );
+      await tester.pump();
+      expect(find.text('Starred', skipOffstage: false), findsNothing);
+    });
+
+    testWidgets('says nothing about an empty drive until it has been counted', (
+      tester,
+    ) async {
       final summary = StreamController<StorageSummary>();
       addTearDown(summary.close);
       await pumpHome(tester, summary.stream);
-      expect(find.text('Your drive is empty', skipOffstage: false), findsNothing);
-      expect(find.text('Nothing opened yet', skipOffstage: false), findsNothing);
+      expect(
+        find.text('Your drive is empty', skipOffstage: false),
+        findsNothing,
+      );
+      expect(
+        find.text('Nothing opened yet', skipOffstage: false),
+        findsNothing,
+      );
 
       // Only backup photos, which Photos shows rather than Recent.
-      summary.add(const StorageSummary(totals: [KindTotal(FileKind.image, 40, 40000)]));
+      summary.add(
+        const StorageSummary(totals: [KindTotal(FileKind.image, 40, 40000)]),
+      );
       await tester.pump();
-      expect(find.text('Your drive is empty', skipOffstage: false), findsNothing);
-      expect(find.text('Nothing opened yet', skipOffstage: false), findsOneWidget);
+      expect(
+        find.text('Your drive is empty', skipOffstage: false),
+        findsNothing,
+      );
+      expect(
+        find.text('Nothing opened yet', skipOffstage: false),
+        findsOneWidget,
+      );
     });
 
     testWidgets('an empty drive says so once counted', (tester) async {
       await pumpHome(tester, Stream.value(const StorageSummary(totals: [])));
       await tester.pump();
-      expect(find.text('Your drive is empty', skipOffstage: false), findsOneWidget);
+      expect(
+        find.text('Your drive is empty', skipOffstage: false),
+        findsOneWidget,
+      );
     });
   });
 
-  testWidgets('each half of Recent opens at the top of its own list', (tester) async {
+  testWidgets('each half of Recent opens at the top of its own list', (
+    tester,
+  ) async {
     final shared = await prefs();
     final files = [for (var i = 0; i < 40; i++) document(i)];
     await tester.pumpWidget(
@@ -115,20 +241,30 @@ void main() {
           recentOpenedProvider.overrideWith(
             (ref) => Stream.value([
               for (final file in files)
-                RecentEntry(file, at: file.createdAt.add(const Duration(minutes: 30)), opened: true),
+                RecentEntry(
+                  file,
+                  at: file.createdAt.add(const Duration(minutes: 30)),
+                  opened: true,
+                ),
             ]),
           ),
-          recentAddedProvider.overrideWith((ref) => Stream.value(files.reversed.toList())),
+          recentAddedProvider.overrideWith(
+            (ref) => Stream.value(files.reversed.toList()),
+          ),
         ],
-        child: MaterialApp(theme: AppTheme.light(), home: const FileListScreen.recent()),
+        child: MaterialApp(
+          theme: AppTheme.light(),
+          home: const FileListScreen.recent(),
+        ),
       ),
     );
     await tester.pump();
     await tester.pump();
 
-    double offset() => tester.state<ScrollableState>(find.byType(Scrollable)).position.pixels;
+    double offset() =>
+        tester.state<ScrollableState>(find.byType(Scrollable)).position.pixels;
 
-    await tester.drag(find.byType(ListView), const Offset(0, -1500));
+    await tester.drag(find.byType(CustomScrollView), const Offset(0, -1500));
     await tester.pumpAndSettle();
     expect(offset(), greaterThan(0));
 
@@ -137,7 +273,7 @@ void main() {
     expect(offset(), 0);
     expect(find.text('Report 39.pdf'), findsOneWidget);
 
-    await tester.drag(find.byType(ListView), const Offset(0, -1500));
+    await tester.drag(find.byType(CustomScrollView), const Offset(0, -1500));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Opened'));
     await tester.pumpAndSettle();

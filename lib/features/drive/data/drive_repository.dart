@@ -139,8 +139,9 @@ class DriveRepository {
   /// [recordOpen] for files sent together, in one write.
   Future<void> recordOpens(List<String> fileIds) => _db.recordOpens(fileIds);
 
-  Stream<List<(DriveFile, DateTime)>> watchRecentOpens({int limit = 20}) =>
-      _db.watchRecentOpens(limit: limit).map(
+  Stream<List<(DriveFile, DateTime)>> watchRecentOpens({int limit = 20}) => _db
+      .watchRecentOpens(limit: limit)
+      .map(
         (rows) => [for (final (row, at) in rows) (DriveFile.fromRow(row), at)],
       );
 
@@ -155,6 +156,17 @@ class DriveRepository {
       );
 
   Stream<List<DriveFile>> watchStarred() => _db.watchStarred().map(_files);
+
+  /// Starred folders that aren't in the trash, in name order.
+  Stream<List<DriveFolder>> watchStarredFolders() => _db
+      .watchStarredFolders()
+      .map((rows) => rows.map(DriveFolder.fromRow).toList());
+
+  /// Each starred folder's id to how many files it holds, in it or below
+  /// it, and their size.
+  Stream<Map<String, FolderSize>> watchStarredFolderSizes() => _db
+      .watchStarredFolderSizes()
+      .map((sizes) => {for (final size in sizes) size.folderId!: size});
 
   /// Every photo and video, newest moment first, read without their
   /// inline previews, which tiles fetch for themselves. While backup adds
@@ -399,12 +411,32 @@ class DriveRepository {
     await _rewriteFolder(folder, name: folder.name, parentId: parentId);
   }
 
+  /// Stars or unstars [folders], one message edit each. A folder already
+  /// the way it is asked for is passed over.
+  Future<void> setFolderStarred(
+    List<DriveFolder> folders, {
+    required bool starred,
+  }) async {
+    for (final folder in folders) {
+      if (folder.starred == starred) continue;
+      await _rewriteFolder(
+        folder,
+        name: folder.name,
+        parentId: folder.parentId,
+        starred: starred,
+      );
+    }
+  }
+
+  /// Rewrites a folder's message from what the index holds, so a rename or
+  /// move keeps the star and the keys only a newer version knows.
   Future<void> _rewriteFolder(
     DriveFolder folder, {
     required String name,
     required String? parentId,
     DateTime? trashedAt,
     bool restore = false,
+    bool? starred,
   }) async {
     final row = await _db.folderById(folder.id);
     if (row == null) return;
@@ -415,7 +447,7 @@ class DriveRepository {
       createdAt: folder.createdAt,
       modifiedAt: DateTime.now(),
       trashedAt: restore ? null : (trashedAt ?? row.trashedAt),
-      starred: row.starred,
+      starred: starred ?? row.starred,
       extra: ManifestCodec.decodeExtra(row.manifestExtra),
     );
     final message = await _ignoreUnchanged(
@@ -522,7 +554,10 @@ class DriveRepository {
     }
   }
 
-  Future<void> setStarred(List<DriveFile> files, {required bool starred}) async {
+  Future<void> setStarred(
+    List<DriveFile> files, {
+    required bool starred,
+  }) async {
     for (final file in files) {
       if (file.starred == starred) continue;
       await _rewriteFile(file, (m) => m.copyWith(starred: starred));
@@ -563,7 +598,9 @@ class DriveRepository {
     // so a split file never ends up with parts that disagree.
     var stoppable = true;
     for (final part in parts) {
-      final caption = ManifestCodec.encodeFile(base.copyWith(partIndex: part.partIndex));
+      final caption = ManifestCodec.encodeFile(
+        base.copyWith(partIndex: part.partIndex),
+      );
       td.Message? message;
       try {
         message = await _ignoreUnchanged(
@@ -574,7 +611,11 @@ class DriveRepository {
         );
       } on TelegramException catch (e) {
         if (!e.isNotEditable) rethrow;
-        message = await _replaceWithOwnCopy(part.messageId, caption, stoppable: stoppable);
+        message = await _replaceWithOwnCopy(
+          part.messageId,
+          caption,
+          stoppable: stoppable,
+        );
       }
       if (message != null) await ingest(message);
       stoppable = false;
@@ -636,7 +677,12 @@ class DriveRepository {
   }) async {
     final now = DateTime.now();
     for (final folder in folders) {
-      await _rewriteFolder(folder, name: folder.name, parentId: folder.parentId, trashedAt: now);
+      await _rewriteFolder(
+        folder,
+        name: folder.name,
+        parentId: folder.parentId,
+        trashedAt: now,
+      );
     }
     for (final file in files) {
       await _rewriteFile(file, (m) => m.copyWith(trashedAt: now));
@@ -648,7 +694,12 @@ class DriveRepository {
     List<DriveFolder> folders = const [],
   }) async {
     for (final folder in folders) {
-      await _rewriteFolder(folder, name: folder.name, parentId: folder.parentId, restore: true);
+      await _rewriteFolder(
+        folder,
+        name: folder.name,
+        parentId: folder.parentId,
+        restore: true,
+      );
     }
     for (final file in files) {
       await _rewriteFile(file, (m) => m.copyWith(restore: true));
@@ -677,11 +728,19 @@ class DriveRepository {
   /// Photos under the [rootName] folders with the same name and size as
   /// another, and any second [rootName] folder made beside the first.
   Future<DuplicateBackups> findDuplicateBackups(String rootName) async {
-    final all = [for (final f in await _db.allFolders()) if (!f.hidden) f];
-    final roots = all
-        .where((f) => f.parentId == null && f.name.toLowerCase() == rootName.toLowerCase())
-        .toList()
-      ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+    final all = [
+      for (final f in await _db.allFolders())
+        if (!f.hidden) f,
+    ];
+    final roots =
+        all
+            .where(
+              (f) =>
+                  f.parentId == null &&
+                  f.name.toLowerCase() == rootName.toLowerCase(),
+            )
+            .toList()
+          ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
     if (roots.isEmpty) return DuplicateBackups.none;
 
     final children = <String, List<FolderRow>>{};
@@ -745,7 +804,9 @@ class DriveRepository {
       for (final sub in await _db.watchChildFolders(root.id).first) {
         final target = await _childFolder(primary.id, sub.name);
         await moveFiles(
-          (await _db.watchFilesIn(sub.id).first).map(DriveFile.fromRow).toList(),
+          (await _db.watchFilesIn(sub.id).first)
+              .map(DriveFile.fromRow)
+              .toList(),
           target,
         );
       }
@@ -759,8 +820,9 @@ class DriveRepository {
 
   /// The folder called [name] in [parentId], made if it isn't there.
   Future<String> _childFolder(String parentId, String name) async {
-    final existing = (await _db.watchChildFolders(parentId).first)
-        .where((f) => f.name.toLowerCase() == name.toLowerCase());
+    final existing = (await _db.watchChildFolders(parentId).first).where(
+      (f) => f.name.toLowerCase() == name.toLowerCase(),
+    );
     if (existing.isNotEmpty) return existing.first.id;
     final now = DateTime.now();
     final manifest = FolderManifest(
@@ -770,7 +832,9 @@ class DriveRepository {
       createdAt: now,
       modifiedAt: now,
     );
-    await ingest(await _messenger.sendText(_chatId, ManifestCodec.encodeFolder(manifest)));
+    await ingest(
+      await _messenger.sendText(_chatId, ManifestCodec.encodeFolder(manifest)),
+    );
     return manifest.id;
   }
 
@@ -845,7 +909,10 @@ class DriveRepository {
     for (final file in files) {
       final current = await _db.albumIdsOf(file.id);
       if (current.contains(albumId)) continue;
-      await _rewriteFile(file, (m) => m.copyWith(albums: [...current, albumId]));
+      await _rewriteFile(
+        file,
+        (m) => m.copyWith(albums: [...current, albumId]),
+      );
     }
     if (touch) await touchAlbum(albumId);
   }
@@ -856,7 +923,8 @@ class DriveRepository {
       if (!current.contains(albumId)) continue;
       await _rewriteFile(
         file,
-        (m) => m.copyWith(albums: current.where((id) => id != albumId).toList()),
+        (m) =>
+            m.copyWith(albums: current.where((id) => id != albumId).toList()),
       );
     }
   }
@@ -915,7 +983,8 @@ class DriveRepository {
     };
 
     final messageIds = <int>[
-      for (final id in fileIds) ...(await _db.partsOf(id)).map((p) => p.messageId),
+      for (final id in fileIds)
+        ...(await _db.partsOf(id)).map((p) => p.messageId),
       ...allFolders
           .where((f) => folderIds.contains(f.id))
           .map((f) => f.messageId),
@@ -942,12 +1011,14 @@ class DriveRepository {
   /// instead of failing, so a long run of edits carries on by itself. The
   /// wait is announced through [telegramWaitProvider], whose Stop can cut
   /// it short when [stoppable].
-  Future<T> _patiently<T>(Future<T> Function() action, {bool stoppable = true}) =>
-      _messenger.patiently(
-        action,
-        longestWait: const Duration(seconds: _longestWaitSeconds),
-        stoppable: stoppable,
-      );
+  Future<T> _patiently<T>(
+    Future<T> Function() action, {
+    bool stoppable = true,
+  }) => _messenger.patiently(
+    action,
+    longestWait: const Duration(seconds: _longestWaitSeconds),
+    stoppable: stoppable,
+  );
 
   Future<td.Message?> _ignoreUnchanged(
     Future<td.Message> Function() edit,
@@ -1006,6 +1077,19 @@ final starredFilesProvider = StreamProvider.autoDispose<List<DriveFile>>(
   (ref) => ref.watch(driveRepositoryProvider).watchStarred(),
 );
 
+/// Starred folders that aren't in the trash, in name order.
+final starredFoldersProvider = StreamProvider.autoDispose<List<DriveFolder>>(
+  (ref) => ref.watch(driveRepositoryProvider).watchStarredFolders(),
+);
+
+/// Each starred folder's id to what it holds, in it or below it. Alive only
+/// while Home or Starred is on screen, since every change to a file
+/// recounts it.
+final starredFolderSizesProvider =
+    StreamProvider.autoDispose<Map<String, FolderSize>>(
+      (ref) => ref.watch(driveRepositoryProvider).watchStarredFolderSizes(),
+    );
+
 final trashProvider = StreamProvider.autoDispose<TrashContents>(
   (ref) => ref.watch(driveRepositoryProvider).watchTrash(),
 );
@@ -1016,7 +1100,8 @@ final albumsProvider = StreamProvider.autoDispose<List<DriveAlbum>>(
 
 final albumFilesProvider = StreamProvider.autoDispose
     .family<List<DriveFile>, String>(
-      (ref, albumId) => ref.watch(driveRepositoryProvider).watchAlbumFiles(albumId),
+      (ref, albumId) =>
+          ref.watch(driveRepositoryProvider).watchAlbumFiles(albumId),
     );
 
 final kindFilesProvider = StreamProvider.autoDispose

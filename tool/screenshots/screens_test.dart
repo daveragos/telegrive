@@ -230,8 +230,16 @@ class _Bulk extends BulkEdits {
 class _Intake extends ShareIntake {
   @override
   List<SharedFile> build() => const [
-    SharedFile(path: '/cache/shared/1/Receipt.png', name: 'Receipt.png', size: 2 * _mb + 310000),
-    SharedFile(path: '/cache/shared/2/Lunch receipt.pdf', name: 'Lunch receipt.pdf', size: 184000),
+    SharedFile(
+      path: '/cache/shared/1/Receipt.png',
+      name: 'Receipt.png',
+      size: 2 * _mb + 310000,
+    ),
+    SharedFile(
+      path: '/cache/shared/2/Lunch receipt.pdf',
+      name: 'Lunch receipt.pdf',
+      size: 184000,
+    ),
   ];
 }
 
@@ -239,7 +247,11 @@ class _Intake extends ShareIntake {
 class _IntakeTooBig extends ShareIntake {
   @override
   List<SharedFile> build() => const [
-    SharedFile(path: '/cache/shared/1/Receipt.png', name: 'Receipt.png', size: 2 * _mb + 310000),
+    SharedFile(
+      path: '/cache/shared/1/Receipt.png',
+      name: 'Receipt.png',
+      size: 2 * _mb + 310000,
+    ),
     SharedFile(
       path: null,
       name: 'Wedding.mp4',
@@ -388,7 +400,12 @@ Freeable _backedUp(int count, int each, {int fromDaysAgo = 0}) => Freeable([
     ),
 ]);
 
-DriveFolder _folder(String name, int daysAgo, {String? parentId}) {
+DriveFolder _folder(
+  String name,
+  int daysAgo, {
+  String? parentId,
+  bool starred = false,
+}) {
   final at = DateTime.now().subtract(Duration(days: daysAgo));
   return DriveFolder(
     id: name,
@@ -396,6 +413,7 @@ DriveFolder _folder(String name, int daysAgo, {String? parentId}) {
     name: name,
     createdAt: at,
     modifiedAt: at,
+    starred: starred,
   );
 }
 
@@ -537,7 +555,10 @@ void main() {
                 folderId: null,
                 name: name,
                 mimeType: mimeTypeFor(name),
-                kind: FileKind.detect(fileName: name, mimeType: mimeTypeFor(name)),
+                kind: FileKind.detect(
+                  fileName: name,
+                  mimeType: mimeTypeFor(name),
+                ),
                 size: size,
                 createdAt: DateTime.now().subtract(Duration(days: daysAgo)),
                 modifiedAt: DateTime.now().subtract(Duration(days: daysAgo)),
@@ -576,13 +597,19 @@ void main() {
     // Opened on this phone, most recent first, each some time after it was
     // added.
     opens = [
-      for (final (index, hoursAgo) in [(2, 20), (4, 44), (5, 60), (6, 84), (7, 110)])
+      for (final (index, hoursAgo) in [
+        (2, 20),
+        (4, 44),
+        (5, 60),
+        (6, 84),
+        (7, 110),
+      ])
         (files[index], DateTime.now().subtract(Duration(hours: hoursAgo))),
     ];
     folders = [
       _folder('Documents', 3),
       _folder('Photos', 1),
-      _folder('Work', 9),
+      _folder('Work', 9, starred: true),
     ];
     transfers = TransfersState([
       TransferItem(
@@ -661,7 +688,10 @@ void main() {
     DateTime? telegramWait,
     NetworkState network = NetworkState.unknown,
     MobileDataState? mobileData,
-    CaptureSupport captureSupport = const CaptureSupport(scan: true, photo: true),
+    CaptureSupport captureSupport = const CaptureSupport(
+      scan: true,
+      photo: true,
+    ),
     bool notificationsEnabled = true,
     List<Override> overrides = const [],
     Future<void> Function(AppDatabase db)? seed,
@@ -745,19 +775,29 @@ void main() {
             initialFolderId: state.uri.queryParameters['folder'],
           ),
         ),
-        GoRoute(path: '/free-up', builder: (_, _) => const FreeUpPreviewScreen()),
+        GoRoute(
+          path: '/free-up',
+          builder: (_, _) => const FreeUpPreviewScreen(),
+        ),
         GoRoute(path: '/trash', builder: (_, _) => const TrashScreen()),
         GoRoute(path: '/offline', builder: (_, _) => const OfflineScreen()),
         GoRoute(
           path: '/space',
-          builder: (_, state) =>
-              SpaceScreen(focusPhone: state.uri.queryParameters['focus'] == 'phone'),
+          builder: (_, state) => SpaceScreen(
+            focusPhone: state.uri.queryParameters['focus'] == 'phone',
+          ),
         ),
         GoRoute(path: '/albums', builder: (_, _) => const AlbumsScreen()),
         GoRoute(path: '/transfers', builder: (_, _) => const TransfersScreen()),
         GoRoute(path: '/settings', builder: (_, _) => const SettingsScreen()),
-        GoRoute(path: '/recent', builder: (_, _) => const FileListScreen.recent()),
-        GoRoute(path: '/starred', builder: (_, _) => const FileListScreen.starred()),
+        GoRoute(
+          path: '/recent',
+          builder: (_, _) => const FileListScreen.recent(),
+        ),
+        GoRoute(
+          path: '/starred',
+          builder: (_, _) => const FileListScreen.starred(),
+        ),
         GoRoute(
           path: '/import/:chatId',
           builder: (_, state) => ImportScreen(
@@ -784,7 +824,11 @@ void main() {
           deviceStorageProvider.overrideWithValue(_Storage()),
           // A phone with plenty of memory, so Save memory starts off.
           deviceProfileProvider.overrideWithValue(
-            const DeviceProfile(lowRam: false, memoryClassMb: 256, totalRamBytes: 8 << 30),
+            const DeviceProfile(
+              lowRam: false,
+              memoryClassMb: 256,
+              totalRamBytes: 8 << 30,
+            ),
           ),
           driveSessionProvider.overrideWith(_Session.new),
           driveSyncProvider.overrideWith(_Sync.new),
@@ -801,7 +845,8 @@ void main() {
           ),
           recentOpenedProvider.overrideWith(
             (ref) => Stream.value([
-              for (final (file, at) in opens) RecentEntry(file, at: at, opened: true),
+              for (final (file, at) in opens)
+                RecentEntry(file, at: at, opened: true),
             ]),
           ),
           recentAddedProvider.overrideWith(
@@ -810,18 +855,31 @@ void main() {
           starredFilesProvider.overrideWith(
             (ref) => Stream.value(files.where((f) => f.starred).toList()),
           ),
+          starredFoldersProvider.overrideWith(
+            (ref) => Stream.value(folders.where((f) => f.starred).toList()),
+          ),
+          starredFolderSizesProvider.overrideWith(
+            (ref) => Stream.value({
+              'Work': const FolderSize('Work', 'Work', 12, 340 * _mb),
+            }),
+          ),
           folderContentsProvider(null).overrideWith(
             (ref) =>
                 Stream.value(FolderContents(folders: folders, files: files)),
           ),
-          folderInfoProvider('Work').overrideWith((ref) => Stream.value(folders[2])),
+          folderInfoProvider('Work')
+              .overrideWith((ref) => Stream.value(folders[2])),
           cacheSizeProvider.overrideWith((ref) async => 734 * _mb),
-          notificationsEnabledProvider.overrideWith((ref) async => notificationsEnabled),
+          notificationsEnabledProvider.overrideWith(
+            (ref) async => notificationsEnabled,
+          ),
           backupControllerProvider.overrideWith(() => _Backup(backup)),
           bulkEditsProvider.overrideWith(() => _Bulk(bulk)),
           telegramWaitProvider.overrideWith(() => _Wait(telegramWait)),
           networkStatusProvider.overrideWith(() => _Network(network)),
-          mobileDataProvider.overrideWith(() => _MobileData(mobileData ?? _noLimit)),
+          mobileDataProvider.overrideWith(
+            () => _MobileData(mobileData ?? _noLimit),
+          ),
           captureSupportProvider.overrideWith((ref) async => captureSupport),
           mediaTimelineProvider.overrideWith((ref) => Stream.value(photos)),
           // Every sample photo is still on the phone and safely backed up.
@@ -829,7 +887,8 @@ void main() {
             (ref) async =>
                 freeable ??
                 Freeable([
-                  for (final photo in photos) FreeableItem(assetId: 'a-${photo.id}', file: photo),
+                  for (final photo in photos)
+                    FreeableItem(assetId: 'a-${photo.id}', file: photo),
                 ]),
           ),
           trashProvider.overrideWith(
@@ -842,30 +901,62 @@ void main() {
                     name: 'Old taxes',
                     createdAt: DateTime(2024),
                     modifiedAt: DateTime(2024),
-                    trashedAt: DateTime.now().subtract(const Duration(days: 12)),
+                    trashedAt: DateTime.now().subtract(
+                      const Duration(days: 12),
+                    ),
                   ),
                 ],
-                files: [
-                  _file('Draft v1.docx', 900000, 40),
-                  _file('Screen recording.mp4', 84 * _mb, 300),
-                ].map((f) => DriveFile(
-                  id: f.id, folderId: f.size > _mb ? null : 'Clients', name: f.name, mimeType: f.mimeType,
-                  kind: f.kind, size: f.size, createdAt: f.createdAt,
-                  modifiedAt: f.modifiedAt, partCount: 1, starred: false,
-                  trashedAt: DateTime.now().subtract(Duration(days: f.size > _mb ? 26 : 2)),
-                )).toList(),
+                files:
+                    [
+                          _file('Draft v1.docx', 900000, 40),
+                          _file('Screen recording.mp4', 84 * _mb, 300),
+                        ]
+                        .map(
+                          (f) => DriveFile(
+                            id: f.id,
+                            folderId: f.size > _mb ? null : 'Clients',
+                            name: f.name,
+                            mimeType: f.mimeType,
+                            kind: f.kind,
+                            size: f.size,
+                            createdAt: f.createdAt,
+                            modifiedAt: f.modifiedAt,
+                            partCount: 1,
+                            starred: false,
+                            trashedAt: DateTime.now().subtract(
+                              Duration(days: f.size > _mb ? 26 : 2),
+                            ),
+                          ),
+                        )
+                        .toList(),
               ),
             ),
           ),
           albumsProvider.overrideWith(
             (ref) => Stream.value([
-              DriveAlbum(id: 'a1', name: 'Lalibela 2026', count: 48, coverFileId: photos[1].id),
-              DriveAlbum(id: 'a2', name: 'Family', count: 212, coverFileId: photos[6].id),
-              DriveAlbum(id: 'a3', name: 'Receipts', count: 17, coverFileId: photos[9].id),
+              DriveAlbum(
+                id: 'a1',
+                name: 'Lalibela 2026',
+                count: 48,
+                coverFileId: photos[1].id,
+              ),
+              DriveAlbum(
+                id: 'a2',
+                name: 'Family',
+                count: 212,
+                coverFileId: photos[6].id,
+              ),
+              DriveAlbum(
+                id: 'a3',
+                name: 'Receipts',
+                count: 17,
+                coverFileId: photos[9].id,
+              ),
             ]),
           ),
           for (final photo in photos)
-            fileInfoProvider(photo.id).overrideWith((ref) => Stream.value(photo)),
+            fileInfoProvider(photo.id)
+                .overrideWith((ref) => Stream.value(photo)),
           recentChatsProvider.overrideWith(
             (ref) async => const [
               TelegramChat(id: 1, title: 'Saved Messages', isSelf: true),
@@ -881,15 +972,25 @@ void main() {
               TelegramChat(id: 2, title: 'Selam Tesfaye'),
               TelegramChat(id: 3, title: 'Family', isGroup: true),
               TelegramChat(id: 6, title: 'Addis photographers', isGroup: true),
-              TelegramChat(id: 7, title: 'Exam answers', isGroup: true, canSave: false),
+              TelegramChat(
+                id: 7,
+                title: 'Exam answers',
+                isGroup: true,
+                canSave: false,
+              ),
               TelegramChat(id: 4, title: 'Abebe Kebede'),
             ],
           ),
           chatMediaProvider.overrideWith2(
-            (source) => _ChatMedia(source, documents: chatDocuments, photos: chatPhotos),
+            (source) => _ChatMedia(
+              source,
+              documents: chatDocuments,
+              photos: chatPhotos,
+            ),
           ),
           for (final entry in _thumbPaths.entries)
-            thumbnailPathProvider(entry.key).overrideWith((ref) async => entry.value),
+            thumbnailPathProvider(entry.key)
+                .overrideWith((ref) async => entry.value),
           ...overrides,
         ],
         child: MaterialApp.router(
@@ -928,8 +1029,10 @@ void main() {
   }
 
   /// An action in the bar at the foot of a screen that is selecting.
-  Finder barAction(String label) =>
-      find.descendant(of: find.byType(SelectionActionBar), matching: find.text(label));
+  Finder barAction(String label) => find.descendant(
+    of: find.byType(SelectionActionBar),
+    matching: find.text(label),
+  );
 
   /// Shadows are drawn for real here (tests flatten them by default), then
   /// switched back so the framework's end-of-test checks pass.
@@ -975,11 +1078,16 @@ void main() {
       overrides: [
         // Something is kept offline, so Storage offers the way there.
         offlinePinsProvider.overrideWith((ref) => Stream.value({'Work'})),
-        offlineUsageProvider.overrideWith((ref) => Stream.value((19, 353 * _mb))),
+        offlineUsageProvider.overrideWith(
+          (ref) => Stream.value((19, 353 * _mb)),
+        ),
       ],
     );
     // Scrolled so the row sits above the New button.
-    await tester.drag(find.byType(CustomScrollView).first, const Offset(0, -400));
+    await tester.drag(
+      find.byType(CustomScrollView).first,
+      const Offset(0, -400),
+    );
     for (var i = 0; i < 4; i++) {
       await tester.pump(const Duration(milliseconds: 200));
     }
@@ -989,7 +1097,10 @@ void main() {
   testWidgets('home recent', (tester) async {
     await prepareData(tester);
     await pumpApp(tester, location: '/home');
-    await tester.drag(find.byType(CustomScrollView).first, const Offset(0, -900));
+    await tester.drag(
+      find.byType(CustomScrollView).first,
+      const Offset(0, -900),
+    );
     for (var i = 0; i < 4; i++) {
       await tester.pump(const Duration(milliseconds: 200));
     }
@@ -1054,7 +1165,14 @@ void main() {
         ('Course notes.pdf', 60 * _mb, 0),
       ])
         TransferItem(
-          _transfer(name, TransferKind.download, TransferStatus.queued, total, done, wifiOnly: true),
+          _transfer(
+            name,
+            TransferKind.download,
+            TransferStatus.queued,
+            total,
+            done,
+            wifiOnly: true,
+          ),
           wait: const WaitingForWifi(),
         ),
     ]);
@@ -1080,7 +1198,13 @@ void main() {
         ('Course notes.pdf', 60 * _mb),
       ])
         TransferItem(
-          _transfer(name, TransferKind.download, TransferStatus.queued, total, 0),
+          _transfer(
+            name,
+            TransferKind.download,
+            TransferStatus.queued,
+            total,
+            0,
+          ),
           wait: WaitingForRoom((1.2 * _gb).round() + 64 * _mb, 180 * _mb),
         ),
     ]);
@@ -1136,24 +1260,39 @@ void main() {
         size: file.size,
       ),
     );
-    DriveFile invoice(String name, String folderId, int size, DateTime at) => DriveFile(
-      id: name,
-      folderId: folderId,
-      name: name,
-      mimeType: mimeTypeFor(name),
-      kind: FileKind.document,
-      size: size,
-      createdAt: at,
-      modifiedAt: at,
-      partCount: 1,
-      starred: false,
-    );
+    DriveFile invoice(String name, String folderId, int size, DateTime at) =>
+        DriveFile(
+          id: name,
+          folderId: folderId,
+          name: name,
+          mimeType: mimeTypeFor(name),
+          kind: FileKind.document,
+          size: size,
+          createdAt: at,
+          modifiedAt: at,
+          partCount: 1,
+          starred: false,
+        );
     final trekked = DateTime.now().subtract(const Duration(days: 300));
 
     await addFolder('Work');
     await addFolder('Invoices', parentId: 'Work');
-    await addFile(invoice('Invoice March.pdf', 'Invoices', 1200000, DateTime(2024, 3, 14, 10)));
-    await addFile(invoice('Invoice March hotel.pdf', 'Work', 380000, DateTime(2024, 3, 28, 16)));
+    await addFile(
+      invoice(
+        'Invoice March.pdf',
+        'Invoices',
+        1200000,
+        DateTime(2024, 3, 14, 10),
+      ),
+    );
+    await addFile(
+      invoice(
+        'Invoice March hotel.pdf',
+        'Work',
+        380000,
+        DateTime(2024, 3, 28, 16),
+      ),
+    );
     await addFile(files[3]);
     await addFile(
       DriveFile(
@@ -1178,6 +1317,7 @@ void main() {
   testWidgets('home empty', (tester) async {
     await prepareData(tester);
     files = [];
+    folders = [];
     opens = [];
     transfers = TransfersState.empty;
     await pumpApp(tester, location: '/home');
@@ -1211,7 +1351,8 @@ void main() {
   testWidgets('search in folder', (tester) async {
     await prepareData(tester);
     await pumpApp(tester, location: '/files');
-    GoRouter.of(tester.element(find.byType(FilesScreen))).push('/search?folder=Work');
+    GoRouter.of(tester.element(find.byType(FilesScreen)))
+        .push('/search?folder=Work');
     for (var i = 0; i < 6; i++) {
       await tester.pump(const Duration(milliseconds: 100));
     }
@@ -1269,7 +1410,9 @@ void main() {
       overrides: [
         offlinePinsProvider.overrideWith((ref) => Stream.value({'Work'})),
         offlineCopiesProvider.overrideWith(
-          (ref) => Stream.value({'Budget 2026.xlsx': '/offline/budget/Budget 2026.xlsx'}),
+          (ref) => Stream.value({
+            'Budget 2026.xlsx': '/offline/budget/Budget 2026.xlsx',
+          }),
         ),
       ],
     );
@@ -1280,7 +1423,8 @@ void main() {
     await prepareData(tester);
     await pumpApp(tester, location: '/files');
     final highlight = Uri.encodeQueryComponent('Tax return 2025.pdf');
-    GoRouter.of(tester.element(find.byType(FilesScreen))).go('/files?highlight=$highlight');
+    GoRouter.of(tester.element(find.byType(FilesScreen)))
+        .go('/files?highlight=$highlight');
     for (var i = 0; i < 3; i++) {
       await tester.pump(const Duration(milliseconds: 100));
     }
@@ -1305,6 +1449,12 @@ void main() {
     await tester.tap(find.text('Lalibela sunrise.jpg'));
     await tester.pump(const Duration(milliseconds: 300));
     await snap(tester, 'files_selection');
+  });
+
+  testWidgets('starred', (tester) async {
+    await prepareData(tester);
+    await pumpApp(tester, location: '/starred');
+    await snap(tester, 'starred');
   });
 
   testWidgets('starred selection', (tester) async {
@@ -1381,7 +1531,14 @@ void main() {
       int done, {
       bool waitsForWifi = false,
     }) => TransferItem(
-      _transfer(name, TransferKind.download, status, total, done, wifiOnly: waitsForWifi).copyWith(
+      _transfer(
+        name,
+        TransferKind.download,
+        status,
+        total,
+        done,
+        wifiOnly: waitsForWifi,
+      ).copyWith(
         origin: TransferOrigin.save,
         saveTo: const Value(SaveTarget.files),
       ),
@@ -1411,7 +1568,10 @@ void main() {
   /// The folders Trash's items came from, for their location lines.
   Override trashPlaces() => folderIndexProvider.overrideWith(
     (ref) => Stream.value({
-      for (final folder in [...folders, _folder('Clients', 9, parentId: 'Work')])
+      for (final folder in [
+        ...folders,
+        _folder('Clients', 9, parentId: 'Work'),
+      ])
         folder.id: folder,
     }),
   );
@@ -1476,15 +1636,16 @@ void main() {
   }
 
   /// The photo has come down from Telegram, so the viewer shows it whole.
-  Override fetched(DriveFile photo) => filePreviewProvider(photo.id).overrideWith(
-    (ref) => Stream.value(
-      PreviewProgress(
-        received: photo.size,
-        total: photo.size,
-        path: _thumbPaths[photo.thumbnailFileId],
-      ),
-    ),
-  );
+  Override fetched(DriveFile photo) =>
+      filePreviewProvider(photo.id).overrideWith(
+        (ref) => Stream.value(
+          PreviewProgress(
+            received: photo.size,
+            total: photo.size,
+            path: _thumbPaths[photo.thumbnailFileId],
+          ),
+        ),
+      );
 
   /// Opens the third photo from the Photos tab, as a tap on its tile does.
   Future<void> openViewer(WidgetTester tester) async {
@@ -1548,11 +1709,19 @@ void main() {
     tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
       library,
       (call) async => call.method == 'fetchEntityProperties'
-          ? {'id': (call.arguments as Map)['id'], 'type': 1, 'width': 4000, 'height': 3000}
+          ? {
+              'id': (call.arguments as Map)['id'],
+              'type': 1,
+              'width': 4000,
+              'height': 3000,
+            }
           : null,
     );
     addTearDown(
-      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(library, null),
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        library,
+        null,
+      ),
     );
     final tiles = find.byType(FileThumbnail);
     final gesture = await tester.startGesture(tester.getCenter(tiles.at(1)));
@@ -1658,7 +1827,11 @@ void main() {
   testWidgets('import documents', (tester) async {
     await prepareData(tester);
     await pumpApp(tester, location: '/import/1?title=Saved%20Messages');
-    for (final name in ['Lease 2023.pdf', 'Wedding photos.zip', 'Thesis draft v3.docx']) {
+    for (final name in [
+      'Lease 2023.pdf',
+      'Wedding photos.zip',
+      'Thesis draft v3.docx',
+    ]) {
       await tester.tap(find.text(name));
       await tester.pump(const Duration(milliseconds: 100));
     }
@@ -1726,9 +1899,15 @@ void main() {
     await snap(tester, 'share_sheet_too_big');
   });
 
-  testWidgets('a phone that can\'t scan or take a photo gets neither row', (tester) async {
+  testWidgets('a phone that can\'t scan or take a photo gets neither row', (
+    tester,
+  ) async {
     await prepareData(tester);
-    await pumpApp(tester, location: '/files', captureSupport: CaptureSupport.none);
+    await pumpApp(
+      tester,
+      location: '/files',
+      captureSupport: CaptureSupport.none,
+    );
     await tester.tap(find.text('New'));
     for (var i = 0; i < 6; i++) {
       await tester.pump(const Duration(milliseconds: 100));
@@ -1744,14 +1923,22 @@ void main() {
     await tester.pump(const Duration(seconds: 1));
   });
 
-  testWidgets('every row of the create sheet fits a 360 by 800 phone', (tester) async {
+  testWidgets('every row of the create sheet fits a 360 by 800 phone', (
+    tester,
+  ) async {
     await prepareData(tester);
     await pumpApp(tester, location: '/files');
     // 360 x 800 dp, with a status bar and a gesture bar of 24 dp each.
     const ratio = 2.625;
     tester.view.physicalSize = const Size(360 * ratio, 800 * ratio);
-    tester.view.padding = const FakeViewPadding(top: 24 * ratio, bottom: 24 * ratio);
-    tester.view.viewPadding = const FakeViewPadding(top: 24 * ratio, bottom: 24 * ratio);
+    tester.view.padding = const FakeViewPadding(
+      top: 24 * ratio,
+      bottom: 24 * ratio,
+    );
+    tester.view.viewPadding = const FakeViewPadding(
+      top: 24 * ratio,
+      bottom: 24 * ratio,
+    );
     await tester.pump(const Duration(milliseconds: 100));
     await tester.tap(find.text('New'));
     for (var i = 0; i < 6; i++) {
@@ -1820,7 +2007,13 @@ void main() {
         ),
       ),
       TransferItem(
-        _transfer('Family trip.mp4', TransferKind.upload, TransferStatus.queued, (1.2 * _gb).round(), 0),
+        _transfer(
+          'Family trip.mp4',
+          TransferKind.upload,
+          TransferStatus.queued,
+          (1.2 * _gb).round(),
+          0,
+        ),
         wait: WaitingForRoom((1.2 * _gb).round() + 64 * _mb, 180 * _mb),
       ),
     ]);
@@ -2024,7 +2217,12 @@ void main() {
       final inside = largest.where(
         (f) => id == 'Videos' ? f.folderId == 'Trips' : f.folderId == id,
       );
-      return FolderSize(id, name, inside.length, inside.fold(0, (s, f) => s + f.size));
+      return FolderSize(
+        id,
+        name,
+        inside.length,
+        inside.fold(0, (s, f) => s + f.size),
+      );
     }
 
     return [
@@ -2048,7 +2246,9 @@ void main() {
           sum(null, ''),
         ]),
       ),
-      trashTotalsProvider.overrideWith((ref) => Stream.value((3, (85.2 * _mb).round()))),
+      trashTotalsProvider.overrideWith(
+        (ref) => Stream.value((3, (85.2 * _mb).round())),
+      ),
       phoneUsageProvider.overrideWith(
         (ref) async => PhoneUsage(
           openedFiles: 420 * _mb,
@@ -2060,7 +2260,9 @@ void main() {
           budget: _gb,
         ),
       ),
-      offlineUsageProvider.overrideWith((ref) => Stream.value((19, (1.1 * _gb).round()))),
+      offlineUsageProvider.overrideWith(
+        (ref) => Stream.value((19, (1.1 * _gb).round())),
+      ),
     ];
   }
 
@@ -2100,7 +2302,9 @@ void main() {
           (ref) => Stream.value({'Trips', 'Receipts', 'Tax return 2025.pdf'}),
         ),
         offlineCopiesProvider.overrideWith(
-          (ref) => Stream.value({'Tax return 2025.pdf': '/offline/tax/Tax return 2025.pdf'}),
+          (ref) => Stream.value({
+            'Tax return 2025.pdf': '/offline/tax/Tax return 2025.pdf',
+          }),
         ),
       ],
     );
@@ -2138,7 +2342,10 @@ void main() {
   });
 
   /// The sheet that keeps Trips offline, over Files, on [network].
-  Future<void> keepOfflineSheet(WidgetTester tester, NetworkState network) async {
+  Future<void> keepOfflineSheet(
+    WidgetTester tester,
+    NetworkState network,
+  ) async {
     await prepareData(tester);
     await pumpApp(tester, location: '/files', network: network);
     unawaited(
@@ -2166,7 +2373,10 @@ void main() {
   });
 
   testWidgets('keep offline sheet on mobile data', (tester) async {
-    await keepOfflineSheet(tester, const NetworkState(online: true, metered: true));
+    await keepOfflineSheet(
+      tester,
+      const NetworkState(online: true, metered: true),
+    );
     await snap(tester, 'keep_offline_sheet_mobile_data');
   });
 
@@ -2200,10 +2410,14 @@ void main() {
     // The handle shows once the grid has scrolled.
     await tester.dragFrom(grid.center, const Offset(0, -200));
     await tester.pump(const Duration(milliseconds: 100));
-    final gesture = await tester.startGesture(Offset(grid.right - 12, grid.top + 160));
+    final gesture = await tester.startGesture(
+      Offset(grid.right - 12, grid.top + 160),
+    );
     await gesture.moveBy(const Offset(0, 40));
     await tester.pump();
-    await gesture.moveTo(Offset(grid.right - 12, grid.top + grid.height * 0.85));
+    await gesture.moveTo(
+      Offset(grid.right - 12, grid.top + grid.height * 0.85),
+    );
     await tester.pump(const Duration(milliseconds: 300));
     await snap(tester, 'photos_scrub');
     await gesture.up();
@@ -2357,8 +2571,10 @@ void main() {
         skippedBackupCountProvider.overrideWith((ref) => Stream.value(1)),
         assetThumbnailProvider('failed-1').overrideWith((ref) async => null),
         assetTitleProvider('failed-1').overrideWith((ref) async => null),
-        for (final (index, MapEntry(key: id, value: name)) in names.entries.indexed) ...[
-          assetThumbnailProvider(id).overrideWith((ref) async => scenes![index % 3]),
+        for (final (index, MapEntry(key: id, value: name))
+            in names.entries.indexed) ...[
+          assetThumbnailProvider(id)
+              .overrideWith((ref) async => scenes![index % 3]),
           assetTitleProvider(id).overrideWith((ref) async => name),
         ],
       ],
@@ -2424,7 +2640,10 @@ void main() {
     final shared = await SharedPreferences.getInstance();
     await tester.pumpWidget(
       ProviderScope(
-        overrides: [sharedPreferencesProvider.overrideWithValue(shared), ...overrides],
+        overrides: [
+          sharedPreferencesProvider.overrideWithValue(shared),
+          ...overrides,
+        ],
         child: MaterialApp(
           debugShowCheckedModeBanner: false,
           theme: AppTheme.light(),
@@ -2452,7 +2671,9 @@ void main() {
       tester,
       const PhoneScreen(),
       overrides: [
-        connectionHealthProvider.overrideWith(() => _Health(ConnectionHealth.stuck)),
+        connectionHealthProvider.overrideWith(
+          () => _Health(ConnectionHealth.stuck),
+        ),
       ],
     );
     await snap(tester, 'phone_stuck');

@@ -9,9 +9,9 @@ enum _More { star, selectAll }
 
 /// What can be done with the selected [files] and [folders], in the bar at
 /// the foot of Files and of Starred, Recent and the categories. Starring is
-/// offered for files alone, since folders carry no star. [onDone] ends the
-/// selection once an action has gone through, and [onSelectAll] selects
-/// everything on screen.
+/// offered for files and folders alike, and reads Remove from Starred once
+/// everything picked is starred. [onDone] ends the selection once an action
+/// has gone through, and [onSelectAll] selects everything on screen.
 Widget fileSelectionActions(
   BuildContext context,
   WidgetRef ref, {
@@ -21,8 +21,8 @@ Widget fileSelectionActions(
   required VoidCallback onSelectAll,
 }) {
   final none = files.isEmpty && folders.isEmpty;
-  final onlyFiles = files.isNotEmpty && folders.isEmpty;
-  final allStarred = onlyFiles && files.every((f) => f.starred);
+  final allStarred =
+      !none && files.every((f) => f.starred) && folders.every((f) => f.starred);
 
   Future<void> then(Future<bool> action) async {
     if (await action && context.mounted) onDone();
@@ -37,27 +37,39 @@ Widget fileSelectionActions(
         icon: Icons.download_rounded,
         label: 'Download',
         onTap: unlessNone(
-          () => FileActions.saveToDevice(context, ref, files: files, folders: folders),
+          () => FileActions.saveToDevice(
+            context,
+            ref,
+            files: files,
+            folders: folders,
+          ),
         ),
       ),
       SelectionAction(
         icon: Icons.send_outlined,
         label: 'Send',
-        onTap: unlessNone(() => FileActions.sendToChats(context, ref, files, folders: folders)),
+        onTap: unlessNone(
+          () => FileActions.sendToChats(context, ref, files, folders: folders),
+        ),
       ),
       SelectionAction(
         icon: Icons.drive_file_move_outline,
         label: 'Move',
-        onTap: unlessNone(() => FileActions.move(context, ref, files: files, folders: folders)),
+        onTap: unlessNone(
+          () => FileActions.move(context, ref, files: files, folders: folders),
+        ),
       ),
       SelectionAction(
         icon: Icons.delete_outline_rounded,
         label: 'Trash',
-        onTap: unlessNone(() => FileActions.delete(context, ref, files: files, folders: folders)),
+        onTap: unlessNone(
+          () =>
+              FileActions.delete(context, ref, files: files, folders: folders),
+        ),
       ),
     ],
     more: [
-      if (onlyFiles)
+      if (!none)
         PopupMenuItem(
           value: _More.star,
           child: Text(allStarred ? 'Remove from Starred' : 'Add to Starred'),
@@ -67,7 +79,15 @@ Widget fileSelectionActions(
     onMore: (choice) {
       switch (choice) {
         case _More.star:
-          then(FileActions.setStarred(context, ref, files, starred: !allStarred));
+          then(
+            FileActions.setStarred(
+              context,
+              ref,
+              files,
+              folders: folders,
+              starred: !allStarred,
+            ),
+          );
         case _More.selectAll:
           onSelectAll();
       }

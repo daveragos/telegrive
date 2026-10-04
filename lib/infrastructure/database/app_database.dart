@@ -126,7 +126,9 @@ class AppDatabase extends _$AppDatabase {
       await customStatement(
         'CREATE INDEX files_created ON drive_files (created_at)',
       );
-      await customStatement('CREATE INDEX folders_parent ON folders (parent_id)');
+      await customStatement(
+        'CREATE INDEX folders_parent ON folders (parent_id)',
+      );
     },
     onUpgrade: (m, from, to) async {
       if (from < 2) {
@@ -212,7 +214,8 @@ class AppDatabase extends _$AppDatabase {
       f.partsPresent.isBiggerOrEqual(f.partCount);
 
   /// Complete and not in the trash: what every view but Trash shows.
-  Expression<bool> _shown(DriveFiles f) => _complete(f) & f.hidden.equals(false);
+  Expression<bool> _shown(DriveFiles f) =>
+      _complete(f) & f.hidden.equals(false);
 
   /// Items whose parent is gone (deleted from another device, or forwarded
   /// in without one) are shown at the root rather than lost.
@@ -224,14 +227,17 @@ class AppDatabase extends _$AppDatabase {
 
   Stream<List<FolderRow>> watchChildFolders(String? parentId) =>
       (select(folders)
-            ..where((f) => f.hidden.equals(false) & _inFolder(f.parentId, parentId))
-            ..orderBy([(f) => OrderingTerm.asc(f.name.collate(Collate.noCase))]))
+            ..where(
+              (f) => f.hidden.equals(false) & _inFolder(f.parentId, parentId),
+            )
+            ..orderBy([
+              (f) => OrderingTerm.asc(f.name.collate(Collate.noCase)),
+            ]))
           .watch();
 
-  Stream<List<FileRow>> watchFilesIn(String? folderId) =>
-      (select(driveFiles)
-            ..where((f) => _shown(f) & _inFolder(f.folderId, folderId)))
-          .watch();
+  Stream<List<FileRow>> watchFilesIn(String? folderId) => (select(
+    driveFiles,
+  )..where((f) => _shown(f) & _inFolder(f.folderId, folderId))).watch();
 
   /// Newest additions first. With [excludeCameraRoll], only files added by
   /// hand or forwarded in: photo backup is the only thing that records a
@@ -242,7 +248,9 @@ class AppDatabase extends _$AppDatabase {
   }) =>
       (select(driveFiles)
             ..where(
-              (f) => excludeCameraRoll ? _shown(f) & f.takenAt.isNull() : _shown(f),
+              (f) => excludeCameraRoll
+                  ? _shown(f) & f.takenAt.isNull()
+                  : _shown(f),
             )
             ..orderBy([(f) => OrderingTerm.desc(f.createdAt)])
             ..limit(limit))
@@ -261,7 +269,8 @@ class AppDatabase extends _$AppDatabase {
     final now = DateTime.now();
     await batch(
       (b) => b.insertAllOnConflictUpdate(fileOpens, [
-        for (final id in fileIds) FileOpensCompanion.insert(fileId: id, openedAt: now),
+        for (final id in fileIds)
+          FileOpensCompanion.insert(fileId: id, openedAt: now),
       ]),
     );
     await customUpdate(
@@ -273,12 +282,13 @@ class AppDatabase extends _$AppDatabase {
 
   /// Files this phone opened, shared or sent, with when, most recent first.
   Stream<List<(FileRow, DateTime)>> watchRecentOpens({int limit = 20}) {
-    final query = select(fileOpens).join([
-      innerJoin(driveFiles, driveFiles.id.equalsExp(fileOpens.fileId)),
-    ])
-      ..where(_shown(driveFiles))
-      ..orderBy([OrderingTerm.desc(fileOpens.openedAt)])
-      ..limit(limit);
+    final query =
+        select(fileOpens).join([
+            innerJoin(driveFiles, driveFiles.id.equalsExp(fileOpens.fileId)),
+          ])
+          ..where(_shown(driveFiles))
+          ..orderBy([OrderingTerm.desc(fileOpens.openedAt)])
+          ..limit(limit);
     return query.watch().map(
       (rows) => [
         for (final row in rows)
@@ -291,6 +301,15 @@ class AppDatabase extends _$AppDatabase {
       (select(driveFiles)
             ..where((f) => _shown(f) & f.starred.equals(true))
             ..orderBy([(f) => OrderingTerm.desc(f.modifiedAt)]))
+          .watch();
+
+  /// Starred folders that aren't in the trash, in name order.
+  Stream<List<FolderRow>> watchStarredFolders() =>
+      (select(folders)
+            ..where((f) => f.hidden.equals(false) & f.starred.equals(true))
+            ..orderBy([
+              (f) => OrderingTerm.asc(f.name.collate(Collate.noCase)),
+            ]))
           .watch();
 
   /// [_shown] as SQL, for the lite queries.
@@ -337,10 +356,11 @@ class AppDatabase extends _$AppDatabase {
 
   /// Telegram's inline preview of file [id], base64 as stored, or null.
   Future<String?> minithumbnailOf(String id) async {
-    final row = await (selectOnly(driveFiles)
-          ..addColumns([driveFiles.minithumbnail])
-          ..where(driveFiles.id.equals(id)))
-        .getSingleOrNull();
+    final row =
+        await (selectOnly(driveFiles)
+              ..addColumns([driveFiles.minithumbnail])
+              ..where(driveFiles.id.equals(id)))
+            .getSingleOrNull();
     return row?.read(driveFiles.minithumbnail);
   }
 
@@ -348,15 +368,21 @@ class AppDatabase extends _$AppDatabase {
   /// newest capture first, the order the Photos timeline shows them in.
   Future<List<({String fileId, int thumbnailFileId})>> mediaThumbnails() async {
     final when = coalesce([driveFiles.takenAt, driveFiles.createdAt]);
-    final rows = await (selectOnly(driveFiles)
-          ..addColumns([driveFiles.id, driveFiles.thumbnailFileId])
-          ..where(
-            _shown(driveFiles) &
-                driveFiles.kind.isIn([FileKind.image.name, FileKind.video.name]) &
-                driveFiles.thumbnailFileId.isNotNull(),
-          )
-          ..orderBy([OrderingTerm(expression: when, mode: OrderingMode.desc)]))
-        .get();
+    final rows =
+        await (selectOnly(driveFiles)
+              ..addColumns([driveFiles.id, driveFiles.thumbnailFileId])
+              ..where(
+                _shown(driveFiles) &
+                    driveFiles.kind.isIn([
+                      FileKind.image.name,
+                      FileKind.video.name,
+                    ]) &
+                    driveFiles.thumbnailFileId.isNotNull(),
+              )
+              ..orderBy([
+                OrderingTerm(expression: when, mode: OrderingMode.desc),
+              ]))
+            .get();
     return [
       for (final row in rows)
         (
@@ -372,23 +398,24 @@ class AppDatabase extends _$AppDatabase {
   /// photo uploaded by hand, or one whose type was guessed differently,
   /// isn't sent again either.
   Future<Map<String, String>> mediaFingerprints() async {
-    final rows = await (selectOnly(driveFiles)
-          ..addColumns([driveFiles.id, driveFiles.name, driveFiles.size]))
-        .get();
+    final rows = await (selectOnly(
+      driveFiles,
+    )..addColumns([driveFiles.id, driveFiles.name, driveFiles.size])).get();
     return {
       for (final row in rows)
-        '${row.read(driveFiles.name)}|${row.read(driveFiles.size)}':
-            row.read(driveFiles.id)!,
+        '${row.read(driveFiles.name)}|${row.read(driveFiles.size)}': row.read(
+          driveFiles.id,
+        )!,
     };
   }
 
   /// Drive file id to the phone's media id, for every backed-up photo this
   /// phone still knows. Lets the app show the phone's own sharp copy.
   Stream<Map<String, String>> watchLocalAssets() {
-    return (select(backupAssets)
-          ..where(
-            (a) => a.state.equalsValue(BackupAssetState.done) & a.fileId.isNotNull(),
-          ))
+    return (select(backupAssets)..where(
+          (a) =>
+              a.state.equalsValue(BackupAssetState.done) & a.fileId.isNotNull(),
+        ))
         .watch()
         .map((rows) => {for (final row in rows) row.fileId!: row.assetId});
   }
@@ -412,18 +439,20 @@ class AppDatabase extends _$AppDatabase {
   /// drive copy isn't whole is never offered for deleting from the phone.
   /// In slices, since a big selection is more ids than SQLite takes in one
   /// statement.
-  Future<Map<String, List<String>>> localAssetsOf(Iterable<String> fileIds) async {
+  Future<Map<String, List<String>>> localAssetsOf(
+    Iterable<String> fileIds,
+  ) async {
     final ids = fileIds.toList();
     final found = <String, List<String>>{};
     for (var i = 0; i < ids.length; i += 500) {
       final slice = ids.sublist(i, (i + 500).clamp(0, ids.length));
-      final rows = await (select(backupAssets)
-            ..where(
-              (a) =>
-                  a.fileId.isIn(slice) &
-                  a.state.equalsValue(BackupAssetState.done),
-            ))
-          .get();
+      final rows =
+          await (select(backupAssets)..where(
+                (a) =>
+                    a.fileId.isIn(slice) &
+                    a.state.equalsValue(BackupAssetState.done),
+              ))
+              .get();
       for (final row in rows) {
         (found[row.fileId!] ??= []).add(row.assetId);
       }
@@ -469,16 +498,22 @@ class AppDatabase extends _$AppDatabase {
               final inContent = selectOnly(fileContents)
                 ..addColumns([fileContents.fileId])
                 ..where(
-                  fileContents.content.like(_like(words.toLowerCase()), escapeChar: r'\'),
+                  fileContents.content.like(
+                    _like(words.toLowerCase()),
+                    escapeChar: r'\',
+                  ),
                 );
               condition &=
-                  f.name.like(_like(words), escapeChar: r'\') | f.id.isInQuery(inContent);
+                  f.name.like(_like(words), escapeChar: r'\') |
+                  f.id.isInQuery(inContent);
             }
             if (range != null) {
               condition &= when.isBetweenValues(range.$1, range.$2);
             }
-            if (typed.isNotEmpty && typed.toLowerCase() != words.toLowerCase()) {
-              condition |= _shown(f) & f.name.like(_like(typed), escapeChar: r'\');
+            if (typed.isNotEmpty &&
+                typed.toLowerCase() != words.toLowerCase()) {
+              condition |=
+                  _shown(f) & f.name.like(_like(typed), escapeChar: r'\');
             }
             if (kinds != null) {
               condition &= f.kind.isIn([for (final kind in kinds) kind.name]);
@@ -496,7 +531,11 @@ class AppDatabase extends _$AppDatabase {
   }
 
   /// Folders named like [query], only those among [within] when given.
-  Stream<List<FolderRow>> watchFolderSearch(String query, {Iterable<String>? within}) {
+  /// Starred folders come first, then the rest by name.
+  Stream<List<FolderRow>> watchFolderSearch(
+    String query, {
+    Iterable<String>? within,
+  }) {
     final pattern = _like(query);
     return (select(folders)
           ..where((f) {
@@ -505,7 +544,10 @@ class AppDatabase extends _$AppDatabase {
             if (within != null) condition &= f.id.isIn(within);
             return condition;
           })
-          ..orderBy([(f) => OrderingTerm.asc(f.name)])
+          ..orderBy([
+            (f) => OrderingTerm.desc(f.starred),
+            (f) => OrderingTerm.asc(f.name),
+          ])
           ..limit(50))
         .watch();
   }
@@ -550,37 +592,69 @@ class AppDatabase extends _$AppDatabase {
   /// are any. A folder or file whose parent is gone counts as top-level, as
   /// Files lists it at the root, so the rows add up to the drive's total.
   /// UNION rather than UNION ALL, so a folder tree that loops ends anyway.
-  Stream<List<FolderSize>> watchFolderSizes() => customSelect(
-    'WITH RECURSIVE tree(root, id) AS ('
-    'SELECT id, id FROM folders WHERE hidden = 0 '
-    'AND (parent_id IS NULL OR parent_id NOT IN (SELECT id FROM folders)) '
-    'UNION SELECT t.root, f.id FROM folders f JOIN tree t ON f.parent_id = t.id '
-    'WHERE f.hidden = 0) '
-    'SELECT * FROM ('
-    'SELECT t.root AS id, r.name AS name, COUNT(d.id) AS n, '
-    'COALESCE(SUM(d.size), 0) AS bytes '
-    'FROM tree t JOIN drive_files d ON d.folder_id = t.id '
-    'JOIN folders r ON r.id = t.root '
-    'WHERE d.hidden = 0 AND d.parts_present >= d.part_count '
-    'GROUP BY t.root '
-    'UNION ALL '
-    "SELECT NULL, '', COUNT(*), COALESCE(SUM(size), 0) FROM drive_files "
-    'WHERE hidden = 0 AND parts_present >= part_count '
-    'AND (folder_id IS NULL OR folder_id NOT IN (SELECT id FROM folders))'
-    ') ORDER BY id IS NULL, bytes DESC, name',
-    readsFrom: {folders, driveFiles},
-  ).watch().map(
-    (rows) => [
-      for (final row in rows)
-        if (row.read<String?>('id') != null || row.read<int>('n') > 0)
-          FolderSize(
-            row.read<String?>('id'),
-            row.read<String>('name'),
-            row.read<int>('n'),
-            row.read<int>('bytes'),
-          ),
-    ],
-  );
+  Stream<List<FolderSize>> watchFolderSizes() =>
+      customSelect(
+        'WITH RECURSIVE tree(root, id) AS ('
+        'SELECT id, id FROM folders WHERE hidden = 0 '
+        'AND (parent_id IS NULL OR parent_id NOT IN (SELECT id FROM folders)) '
+        'UNION SELECT t.root, f.id FROM folders f JOIN tree t ON f.parent_id = t.id '
+        'WHERE f.hidden = 0) '
+        'SELECT * FROM ('
+        'SELECT t.root AS id, r.name AS name, COUNT(d.id) AS n, '
+        'COALESCE(SUM(d.size), 0) AS bytes '
+        'FROM tree t JOIN drive_files d ON d.folder_id = t.id '
+        'JOIN folders r ON r.id = t.root '
+        'WHERE d.hidden = 0 AND d.parts_present >= d.part_count '
+        'GROUP BY t.root '
+        'UNION ALL '
+        "SELECT NULL, '', COUNT(*), COALESCE(SUM(size), 0) FROM drive_files "
+        'WHERE hidden = 0 AND parts_present >= part_count '
+        'AND (folder_id IS NULL OR folder_id NOT IN (SELECT id FROM folders))'
+        ') ORDER BY id IS NULL, bytes DESC, name',
+        readsFrom: {folders, driveFiles},
+      ).watch().map(
+        (rows) => [
+          for (final row in rows)
+            if (row.read<String?>('id') != null || row.read<int>('n') > 0)
+              FolderSize(
+                row.read<String?>('id'),
+                row.read<String>('name'),
+                row.read<int>('n'),
+                row.read<int>('bytes'),
+              ),
+        ],
+      );
+
+  /// Every starred folder that isn't in the trash, with how many files it
+  /// holds, in it or in any folder below it, and their size; a starred
+  /// folder with nothing in it has a row of zeros. The same tree walk as
+  /// [watchFolderSizes], rooted at the starred folders rather than the
+  /// top-level ones, since a starred folder can sit anywhere. UNION rather
+  /// than UNION ALL, so a folder tree that loops ends anyway.
+  Stream<List<FolderSize>> watchStarredFolderSizes() =>
+      customSelect(
+        'WITH RECURSIVE tree(root, id) AS ('
+        'SELECT id, id FROM folders WHERE hidden = 0 AND starred = 1 '
+        'UNION SELECT t.root, f.id FROM folders f JOIN tree t ON f.parent_id = t.id '
+        'WHERE f.hidden = 0) '
+        'SELECT t.root AS id, r.name AS name, COUNT(d.id) AS n, '
+        'COALESCE(SUM(d.size), 0) AS bytes '
+        'FROM tree t JOIN folders r ON r.id = t.root '
+        'LEFT JOIN drive_files d ON d.folder_id = t.id '
+        'AND d.hidden = 0 AND d.parts_present >= d.part_count '
+        'GROUP BY t.root ORDER BY r.name COLLATE NOCASE',
+        readsFrom: {folders, driveFiles},
+      ).watch().map(
+        (rows) => [
+          for (final row in rows)
+            FolderSize(
+              row.read<String>('id'),
+              row.read<String>('name'),
+              row.read<int>('n'),
+              row.read<int>('bytes'),
+            ),
+        ],
+      );
 
   /// How many files the trash holds, those inside trashed folders included,
   /// and their size.
@@ -647,14 +721,14 @@ class AppDatabase extends _$AppDatabase {
 
   /// Every channel message the index knows about, for reconciliation.
   Future<Set<int>> knownMessageIds() async {
-    final partIds = await (selectOnly(fileParts)
-          ..addColumns([fileParts.messageId]))
-        .map((r) => r.read(fileParts.messageId)!)
-        .get();
-    final folderIds = await (selectOnly(folders)
-          ..addColumns([folders.messageId]))
-        .map((r) => r.read(folders.messageId)!)
-        .get();
+    final partIds =
+        await (selectOnly(fileParts)..addColumns([fileParts.messageId]))
+            .map((r) => r.read(fileParts.messageId)!)
+            .get();
+    final folderIds =
+        await (selectOnly(folders)..addColumns([folders.messageId]))
+            .map((r) => r.read(folders.messageId)!)
+            .get();
     final albumIds = await (selectOnly(albums)..addColumns([albums.messageId]))
         .map((r) => r.read(albums.messageId)!)
         .get();
@@ -716,7 +790,9 @@ class AppDatabase extends _$AppDatabase {
       (select(driveFiles)
             ..where(
               (f) =>
-                  _complete(f) & f.trashedAt.isNotNull() & _parentShown(f.folderId),
+                  _complete(f) &
+                  f.trashedAt.isNotNull() &
+                  _parentShown(f.folderId),
             )
             ..orderBy([(f) => OrderingTerm.desc(f.trashedAt)]))
           .watch();
@@ -746,19 +822,19 @@ class AppDatabase extends _$AppDatabase {
         );
       });
 
-  Future<List<String>> albumIdsOf(String fileId) =>
-      (select(albumFiles)..where((a) => a.fileId.equals(fileId)))
-          .map((a) => a.albumId)
-          .get();
+  Future<List<String>> albumIdsOf(String fileId) => (select(
+    albumFiles,
+  )..where((a) => a.fileId.equals(fileId))).map((a) => a.albumId).get();
 
   /// The names of the albums [fileId] is in, in name order, for Details.
   /// An album whose message is gone drops out even while its links remain.
   Future<List<String>> albumNamesOf(String fileId) async {
-    final query = select(albums).join([
-      innerJoin(albumFiles, albumFiles.albumId.equalsExp(albums.id)),
-    ])
-      ..where(albumFiles.fileId.equals(fileId))
-      ..orderBy([OrderingTerm.asc(albums.name)]);
+    final query =
+        select(albums).join([
+            innerJoin(albumFiles, albumFiles.albumId.equalsExp(albums.id)),
+          ])
+          ..where(albumFiles.fileId.equals(fileId))
+          ..orderBy([OrderingTerm.asc(albums.name)]);
     return [for (final row in await query.get()) row.readTable(albums).name];
   }
 
@@ -808,7 +884,9 @@ class AppDatabase extends _$AppDatabase {
                     ..where(albumFiles.albumId.equals(albumId)),
                 ),
           )
-          ..orderBy([(_) => OrderingTerm(expression: when, mode: OrderingMode.desc)]))
+          ..orderBy([
+            (_) => OrderingTerm(expression: when, mode: OrderingMode.desc),
+          ]))
         .watch();
   }
 
@@ -830,19 +908,21 @@ class AppDatabase extends _$AppDatabase {
 
   Future<List<OfflinePinRow>> offlinePinList() => select(offlinePins).get();
 
-  Stream<Set<String>> watchOfflinePins() => select(
-    offlinePins,
-  ).watch().map((rows) => {for (final row in rows) row.itemId});
+  Stream<Set<String>> watchOfflinePins() =>
+      select(offlinePins)
+          .watch()
+          .map((rows) => {for (final row in rows) row.itemId});
 
   Future<List<OfflineCopyRow>> offlineCopyList() => select(offlineCopies).get();
 
-  Stream<Map<String, String>> watchOfflineCopies() => select(
-    offlineCopies,
-  ).watch().map((rows) => {for (final row in rows) row.fileId: row.path});
+  Stream<Map<String, String>> watchOfflineCopies() =>
+      select(offlineCopies)
+          .watch()
+          .map((rows) => {for (final row in rows) row.fileId: row.path});
 
-  Future<OfflineCopyRow?> offlineCopyOf(String fileId) =>
-      (select(offlineCopies)..where((c) => c.fileId.equals(fileId)))
-          .getSingleOrNull();
+  Future<OfflineCopyRow?> offlineCopyOf(String fileId) => (select(
+    offlineCopies,
+  )..where((c) => c.fileId.equals(fileId))).getSingleOrNull();
 
   Future<void> saveOfflineCopy(String fileId, String path, int size) =>
       into(offlineCopies).insertOnConflictUpdate(
@@ -863,9 +943,9 @@ class AppDatabase extends _$AppDatabase {
 
   /// Files already read by indexer [version] or later.
   Future<Set<String>> indexedFileIds(int version) async => {
-    for (final row in await (select(fileContents)
-          ..where((c) => c.version.isBiggerOrEqualValue(version)))
-        .get())
+    for (final row in await (select(
+      fileContents,
+    )..where((c) => c.version.isBiggerOrEqualValue(version))).get())
       row.fileId,
   };
 
@@ -881,14 +961,15 @@ class AppDatabase extends _$AppDatabase {
 
   /// Forgets what older indexer versions read, so it is read again (or,
   /// for kinds no longer read, not at all).
-  Future<void> dropContentBefore(int version) =>
-      (delete(fileContents)..where((c) => c.version.isSmallerThanValue(version))).go();
+  Future<void> dropContentBefore(int version) => (delete(
+    fileContents,
+  )..where((c) => c.version.isSmallerThanValue(version))).go();
 
   Stream<int> watchIndexedCount() {
     final count = fileContents.fileId.count();
-    return (selectOnly(fileContents)..addColumns([count]))
-        .map((r) => r.read(count) ?? 0)
-        .watchSingle();
+    return (selectOnly(
+      fileContents,
+    )..addColumns([count])).map((r) => r.read(count) ?? 0).watchSingle();
   }
 
   // ---------------------------------------------------------------------------
@@ -900,12 +981,13 @@ class AppDatabase extends _$AppDatabase {
   /// safe to delete from the phone. The row carries the copy's size and
   /// when the photo was taken, which Free up space counts and dates by.
   Future<Map<String, FileRow>> safelyBackedUp() async {
-    final query = select(backupAssets).join([
-      innerJoin(driveFiles, driveFiles.id.equalsExp(backupAssets.fileId)),
-    ])..where(
-        backupAssets.state.equalsValue(BackupAssetState.done) &
-            _shown(driveFiles),
-      );
+    final query =
+        select(backupAssets).join([
+          innerJoin(driveFiles, driveFiles.id.equalsExp(backupAssets.fileId)),
+        ])..where(
+          backupAssets.state.equalsValue(BackupAssetState.done) &
+              _shown(driveFiles),
+        );
     return {
       for (final row in await query.get())
         row.readTable(backupAssets).assetId: row.readTable(driveFiles),
@@ -935,9 +1017,9 @@ class AppDatabase extends _$AppDatabase {
       Expression<bool> stale($FilePartsTable p) =>
           p.messageId.equals(part.messageId.value) &
           p.fileId.equals(part.fileId.value).not();
-      final previousOwners = await (select(fileParts)..where(stale))
-          .map((p) => p.fileId)
-          .get();
+      final previousOwners = await (select(
+        fileParts,
+      )..where(stale)).map((p) => p.fileId).get();
       await (delete(fileParts)..where(stale)).go();
       for (final owner in previousOwners) {
         await _recountParts(owner);
@@ -952,11 +1034,12 @@ class AppDatabase extends _$AppDatabase {
 
   Future<void> _recountParts(String fileId) async {
     final count = fileParts.fileId.count();
-    final present = await (selectOnly(fileParts)
-          ..addColumns([count])
-          ..where(fileParts.fileId.equals(fileId)))
-        .map((r) => r.read(count) ?? 0)
-        .getSingle();
+    final present =
+        await (selectOnly(fileParts)
+              ..addColumns([count])
+              ..where(fileParts.fileId.equals(fileId)))
+            .map((r) => r.read(count) ?? 0)
+            .getSingle();
     if (present == 0) {
       await (delete(driveFiles)..where((f) => f.id.equals(fileId))).go();
       await (delete(albumFiles)..where((a) => a.fileId.equals(fileId))).go();
@@ -979,11 +1062,12 @@ class AppDatabase extends _$AppDatabase {
     final ids = messageIds.toList();
     if (ids.isEmpty) return Future.value();
     return transaction(() async {
-      final affected = await (selectOnly(fileParts, distinct: true)
-            ..addColumns([fileParts.fileId])
-            ..where(fileParts.messageId.isIn(ids)))
-          .map((r) => r.read(fileParts.fileId)!)
-          .get();
+      final affected =
+          await (selectOnly(fileParts, distinct: true)
+                ..addColumns([fileParts.fileId])
+                ..where(fileParts.messageId.isIn(ids)))
+              .map((r) => r.read(fileParts.fileId)!)
+              .get();
       await (delete(fileParts)..where((p) => p.messageId.isIn(ids))).go();
       for (final fileId in affected) {
         await _recountParts(fileId);
@@ -1069,20 +1153,24 @@ class AppDatabase extends _$AppDatabase {
 
   /// Records a failed attempt, with [reason] as the sentence the Not backed
   /// up screen shows for it.
-  Future<void> markAssetFailed(String assetId, int failures, {String? reason}) =>
-      into(backupAssets).insertOnConflictUpdate(
-        BackupAssetsCompanion.insert(
-          assetId: assetId,
-          state: BackupAssetState.failed,
-          failures: Value(failures),
-          updatedAt: DateTime.now(),
-          reason: Value(reason),
-        ),
-      );
+  Future<void> markAssetFailed(
+    String assetId,
+    int failures, {
+    String? reason,
+  }) => into(backupAssets).insertOnConflictUpdate(
+    BackupAssetsCompanion.insert(
+      assetId: assetId,
+      state: BackupAssetState.failed,
+      failures: Value(failures),
+      updatedAt: DateTime.now(),
+      reason: Value(reason),
+    ),
+  );
 
   /// What backup knows of one photo, or null when it was never tried.
-  Future<BackupAssetRow?> backupAssetOf(String assetId) =>
-      (select(backupAssets)..where((a) => a.assetId.equals(assetId))).getSingleOrNull();
+  Future<BackupAssetRow?> backupAssetOf(String assetId) => (select(
+    backupAssets,
+  )..where((a) => a.assetId.equals(assetId))).getSingleOrNull();
 
   /// Sets a failed photo aside until the person brings it back; it keeps
   /// its failures and reason meanwhile. Returns 0 when the photo wasn't
@@ -1126,16 +1214,14 @@ class AppDatabase extends _$AppDatabase {
           ))
           .go();
 
-  Future<void> clearBackupFailures() =>
-      (delete(backupAssets)
-            ..where((a) => a.state.equalsValue(BackupAssetState.failed)))
-          .go();
+  Future<void> clearBackupFailures() => (delete(
+    backupAssets,
+  )..where((a) => a.state.equalsValue(BackupAssetState.failed))).go();
 
   /// Brings every skipped photo back into backup.
-  Future<void> clearSkipped() =>
-      (delete(backupAssets)
-            ..where((a) => a.state.equalsValue(BackupAssetState.skipped)))
-          .go();
+  Future<void> clearSkipped() => (delete(
+    backupAssets,
+  )..where((a) => a.state.equalsValue(BackupAssetState.skipped))).go();
 
   /// Photos that failed at least [minFailures] times, most recent first.
   Stream<List<BackupAssetRow>> watchFailedAssets({required int minFailures}) =>
@@ -1160,20 +1246,28 @@ class AppDatabase extends _$AppDatabase {
   // Transfers
   // ---------------------------------------------------------------------------
 
-  Future<List<TransferRow>> allTransfers() =>
-      (select(transfers)..orderBy([(t) => OrderingTerm.asc(t.createdAt)])).get();
+  Future<List<TransferRow>> allTransfers() => (select(
+    transfers,
+  )..orderBy([(t) => OrderingTerm.asc(t.createdAt)])).get();
 
   /// The files that transfers not yet completed or cancelled still need:
   /// what each sends, its thumbnail and where a download lands. A failed
   /// one counts, since Retry starts it from the same files.
   Future<Set<String>> pathsInUse() async {
-    final rows = await (select(transfers)
-          ..where(
-            (t) => t.status.isNotInValues([TransferStatus.completed, TransferStatus.cancelled]),
-          ))
-        .get();
+    final rows =
+        await (select(transfers)..where(
+              (t) => t.status.isNotInValues([
+                TransferStatus.completed,
+                TransferStatus.cancelled,
+              ]),
+            ))
+            .get();
     return {
-      for (final row in rows) ...[?row.sourcePath, ?row.thumbnailPath, ?row.resultPath],
+      for (final row in rows) ...[
+        ?row.sourcePath,
+        ?row.thumbnailPath,
+        ?row.resultPath,
+      ],
     };
   }
 

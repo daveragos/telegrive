@@ -64,6 +64,12 @@ phone number.
   and points it out for a moment. Starred, Recent and each category say
   which folder each file is in, and Trash says where each item goes back
   to.
+- **Star a folder.** A folder can be starred like a file, from its menu or
+  the selection bar. Starred folders sit in a Starred group at the top of
+  Home, each saying how many files it holds, in it and below it, and how
+  big they are, so a folder four levels down is one tap away. They come
+  first in Starred and in search results, and the star travels with the
+  folder to your other phones.
 - **Act on many at once.** Long-press a file, folder or photo, or tap
   Select, and the actions move to a bar along the bottom, each with its
   name: Download, Send, Move and Trash for files, Album, Send, Download
@@ -314,9 +320,9 @@ Telegram (source of truth)                 This device
 
 - **Files** carry a manifest in their caption: id, name, folder, MIME type,
   size, dates, star, and `partIndex`/`partCount` for split files.
-- **Folders** are small text messages carrying their own id, name and parent,
-  so renames and moves are a single edit and two devices never overwrite each
-  other's folder tree.
+- **Folders** are small text messages carrying their own id, name, parent
+  and star, so renames, moves and stars are a single edit and two devices
+  never overwrite each other's folder tree.
 - **Newer versions can add to a manifest.** Keys this install doesn't know
   are kept in the index and written back on its own edits, so a rename or
   move made here doesn't lose what a newer version stored.
