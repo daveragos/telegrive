@@ -1727,6 +1727,7 @@ abstract final class FileActions {
     return showModalBottomSheet<void>(
       context: context,
       useRootNavigator: true,
+      isScrollControlled: true,
       builder: (sheetContext) {
         void run(Future<void> Function() action) {
           Navigator.pop(sheetContext);
@@ -1734,68 +1735,70 @@ abstract final class FileActions {
         }
 
         return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _SheetHeader(
-                leading: const FolderIconTile(size: 52),
-                title: folder.name,
-                subtitle: 'Folder · ${Formatters.date(folder.modifiedAt)}',
-              ),
-              const Divider(height: 16),
-              _SheetAction(
-                icon: Icons.download_rounded,
-                label: 'Download to this phone',
-                onTap: () =>
-                    run(() => saveToDevice(context, ref, folders: [folder])),
-              ),
-              _SheetAction(
-                icon: Icons.send_outlined,
-                label: 'Send in Telegram',
-                onTap: () => run(
-                  () => sendToChats(context, ref, const [], folders: [folder]),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _SheetHeader(
+                  leading: const FolderIconTile(size: 52),
+                  title: folder.name,
+                  subtitle: 'Folder · ${Formatters.date(folder.modifiedAt)}',
                 ),
-              ),
-              _OfflineAction(
-                itemId: folder.id,
-                onTap: (pinned) => run(
-                  () => setOffline(context, ref, folder: folder, keep: !pinned),
+                const Divider(height: 16),
+                _SheetAction(
+                  icon: Icons.download_rounded,
+                  label: 'Download to this phone',
+                  onTap: () =>
+                      run(() => saveToDevice(context, ref, folders: [folder])),
                 ),
-              ),
-              _SheetAction(
-                icon: folder.starred
-                    ? Icons.star_rounded
-                    : Icons.star_outline_rounded,
-                label: folder.starred
-                    ? 'Remove from Starred'
-                    : 'Add to Starred',
-                onTap: () => run(
-                  () => setStarred(
-                    context,
-                    ref,
-                    const [],
-                    folders: [folder],
-                    starred: !folder.starred,
+                _SheetAction(
+                  icon: Icons.send_outlined,
+                  label: 'Send in Telegram',
+                  onTap: () => run(
+                    () => sendToChats(context, ref, const [], folders: [folder]),
                   ),
                 ),
-              ),
-              _SheetAction(
-                icon: Icons.drive_file_rename_outline_rounded,
-                label: 'Rename',
-                onTap: () => run(() => renameFolder(context, ref, folder)),
-              ),
-              _SheetAction(
-                icon: Icons.drive_file_move_outline,
-                label: 'Move',
-                onTap: () => run(() => move(context, ref, folders: [folder])),
-              ),
-              _SheetAction(
-                icon: Icons.delete_outline_rounded,
-                label: 'Move to Trash',
-                destructive: true,
-                onTap: () => run(() => delete(context, ref, folders: [folder])),
-              ),
-            ],
+                _OfflineAction(
+                  itemId: folder.id,
+                  onTap: (pinned) => run(
+                    () => setOffline(context, ref, folder: folder, keep: !pinned),
+                  ),
+                ),
+                _SheetAction(
+                  icon: folder.starred
+                      ? Icons.star_rounded
+                      : Icons.star_outline_rounded,
+                  label: folder.starred
+                      ? 'Remove from Starred'
+                      : 'Add to Starred',
+                  onTap: () => run(
+                    () => setStarred(
+                      context,
+                      ref,
+                      const [],
+                      folders: [folder],
+                      starred: !folder.starred,
+                    ),
+                  ),
+                ),
+                _SheetAction(
+                  icon: Icons.drive_file_rename_outline_rounded,
+                  label: 'Rename',
+                  onTap: () => run(() => renameFolder(context, ref, folder)),
+                ),
+                _SheetAction(
+                  icon: Icons.drive_file_move_outline,
+                  label: 'Move',
+                  onTap: () => run(() => move(context, ref, folders: [folder])),
+                ),
+                _SheetAction(
+                  icon: Icons.delete_outline_rounded,
+                  label: 'Move to Trash',
+                  destructive: true,
+                  onTap: () => run(() => delete(context, ref, folders: [folder])),
+                ),
+              ],
+            ),
           ),
         );
       },

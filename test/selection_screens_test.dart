@@ -497,4 +497,40 @@ void main() {
       },
     );
   }
+
+  testWidgets('a folder sheet on a short screen scrolls down to Move to Trash', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(360, 560);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final folder = _folder('Work');
+    await pumpApp(
+      tester,
+      MaterialApp(
+        theme: AppTheme.light(),
+        home: Consumer(
+          builder: (context, ref, _) => Scaffold(
+            body: TextButton(
+              onPressed: () => FileActions.showFolderSheet(context, ref, folder),
+              child: const Text('More'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('More'));
+    await settle(tester);
+    await tester.scrollUntilVisible(
+      find.text('Move to Trash'),
+      100,
+      scrollable: find.descendant(
+        of: find.byType(BottomSheet),
+        matching: find.byType(Scrollable),
+      ),
+    );
+    final row = tester.getRect(find.text('Move to Trash'));
+    expect(row.bottom, lessThanOrEqualTo(560));
+  });
 }
