@@ -147,6 +147,16 @@ abstract final class ManifestCodec {
     return json == null ? null : DriveManifest.tryFromJson(json);
   }
 
+  /// Whether [text] is written in the current layout, a details line of
+  /// one of the kinds above, rather than the older name over JSON.
+  static bool isCurrent(String text) => [
+    fileKind,
+    folderKind,
+    albumKind,
+    partKind,
+    driveKind,
+  ].any((kind) => DetailsLine.read(kind, text) != null);
+
   /// Unknown keys as the index stores them: JSON, or null when there are
   /// none.
   static String? encodeExtra(Map<String, Object?> extra) =>

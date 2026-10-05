@@ -57,9 +57,9 @@ class BulkOutcome {
 /// the bar can say how far it got and Stop can end it between items. Stop
 /// also cuts short a Telegram wait the item in hand is sitting out or runs
 /// into later, but only before any of it has changed: a split file whose
-/// first part took the change finishes its other parts first, so stopping
-/// never leaves one half changed. One change runs at a time. Nothing is
-/// kept across a restart.
+/// first part is gone, which takes the change on each part it has left,
+/// finishes them first, so stopping never leaves one half changed. One
+/// change runs at a time. Nothing is kept across a restart.
 class BulkEdits extends Notifier<BulkEdit?> {
   @override
   BulkEdit? build() => null;

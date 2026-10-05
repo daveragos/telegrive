@@ -32,6 +32,9 @@ class Folders extends Table {
   /// star follows the drive to another phone.
   BoolColumn get starred => boolean().withDefault(const Constant(false))();
 
+  /// The layout its message is written in; see [FileParts.captionLayout].
+  IntColumn get captionLayout => integer().nullable()();
+
   @override
   Set<Column> get primaryKey => {id};
 }
@@ -103,6 +106,9 @@ class Albums extends Table {
   IntColumn get messageId => integer()();
   DateTimeColumn get createdAt => dateTime()();
   DateTimeColumn get modifiedAt => dateTime()();
+
+  /// The layout its message is written in; see [FileParts.captionLayout].
+  IntColumn get captionLayout => integer().nullable()();
 
   @override
   Set<Column> get primaryKey => {id};
@@ -195,8 +201,22 @@ class FileParts extends Table {
   IntColumn get tdFileId => integer()();
   IntColumn get size => integer()();
 
+  /// The layout this part's caption is written in, so Check my drive can
+  /// offer to write the older ones again: [CaptionLayouts.current], or
+  /// [CaptionLayouts.older] for a name over JSON, or for a later part that
+  /// carries the whole manifest. Null for a message without one of the
+  /// drive's own, and for a part an indexer older than version 4 read.
+  IntColumn get captionLayout => integer().nullable()();
+
   @override
   Set<Column> get primaryKey => {fileId, partIndex};
+}
+
+/// The values of [FileParts.captionLayout], [Folders.captionLayout] and
+/// [Albums.captionLayout].
+abstract final class CaptionLayouts {
+  static const int older = 1;
+  static const int current = 2;
 }
 
 enum TransferKind { upload, download }

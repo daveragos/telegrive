@@ -664,7 +664,7 @@ void main() {
       file('c').copyWith(takenAt: Value(DateTime(2026, 9, 20))),
       part('c', 0, 12),
     );
-    expect(db.schemaVersion, 10);
+    expect(db.schemaVersion, 11);
 
     await db.recordOpen('a');
     expect((await db.watchRecentOpens().first).map((o) => o.$1.id), ['a']);

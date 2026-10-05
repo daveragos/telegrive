@@ -120,6 +120,17 @@ class $FoldersTable extends Folders with TableInfo<$FoldersTable, FolderRow> {
     ),
     defaultValue: const Constant(false),
   );
+  static const VerificationMeta _captionLayoutMeta = const VerificationMeta(
+    'captionLayout',
+  );
+  @override
+  late final GeneratedColumn<int> captionLayout = GeneratedColumn<int>(
+    'caption_layout',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -132,6 +143,7 @@ class $FoldersTable extends Folders with TableInfo<$FoldersTable, FolderRow> {
     hidden,
     manifestExtra,
     starred,
+    captionLayout,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -215,6 +227,15 @@ class $FoldersTable extends Folders with TableInfo<$FoldersTable, FolderRow> {
         starred.isAcceptableOrUnknown(data['starred']!, _starredMeta),
       );
     }
+    if (data.containsKey('caption_layout')) {
+      context.handle(
+        _captionLayoutMeta,
+        captionLayout.isAcceptableOrUnknown(
+          data['caption_layout']!,
+          _captionLayoutMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -264,6 +285,10 @@ class $FoldersTable extends Folders with TableInfo<$FoldersTable, FolderRow> {
         DriftSqlType.bool,
         data['${effectivePrefix}starred'],
       )!,
+      captionLayout: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}caption_layout'],
+      ),
     );
   }
 
@@ -296,6 +321,9 @@ class FolderRow extends DataClass implements Insertable<FolderRow> {
   /// Starred like a file is, and kept in the folder's own message, so the
   /// star follows the drive to another phone.
   final bool starred;
+
+  /// The layout its message is written in; see [FileParts.captionLayout].
+  final int? captionLayout;
   const FolderRow({
     required this.id,
     this.parentId,
@@ -307,6 +335,7 @@ class FolderRow extends DataClass implements Insertable<FolderRow> {
     required this.hidden,
     this.manifestExtra,
     required this.starred,
+    this.captionLayout,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -327,6 +356,9 @@ class FolderRow extends DataClass implements Insertable<FolderRow> {
       map['manifest_extra'] = Variable<String>(manifestExtra);
     }
     map['starred'] = Variable<bool>(starred);
+    if (!nullToAbsent || captionLayout != null) {
+      map['caption_layout'] = Variable<int>(captionLayout);
+    }
     return map;
   }
 
@@ -348,6 +380,9 @@ class FolderRow extends DataClass implements Insertable<FolderRow> {
           ? const Value.absent()
           : Value(manifestExtra),
       starred: Value(starred),
+      captionLayout: captionLayout == null && nullToAbsent
+          ? const Value.absent()
+          : Value(captionLayout),
     );
   }
 
@@ -367,6 +402,7 @@ class FolderRow extends DataClass implements Insertable<FolderRow> {
       hidden: serializer.fromJson<bool>(json['hidden']),
       manifestExtra: serializer.fromJson<String?>(json['manifestExtra']),
       starred: serializer.fromJson<bool>(json['starred']),
+      captionLayout: serializer.fromJson<int?>(json['captionLayout']),
     );
   }
   @override
@@ -383,6 +419,7 @@ class FolderRow extends DataClass implements Insertable<FolderRow> {
       'hidden': serializer.toJson<bool>(hidden),
       'manifestExtra': serializer.toJson<String?>(manifestExtra),
       'starred': serializer.toJson<bool>(starred),
+      'captionLayout': serializer.toJson<int?>(captionLayout),
     };
   }
 
@@ -397,6 +434,7 @@ class FolderRow extends DataClass implements Insertable<FolderRow> {
     bool? hidden,
     Value<String?> manifestExtra = const Value.absent(),
     bool? starred,
+    Value<int?> captionLayout = const Value.absent(),
   }) => FolderRow(
     id: id ?? this.id,
     parentId: parentId.present ? parentId.value : this.parentId,
@@ -410,6 +448,9 @@ class FolderRow extends DataClass implements Insertable<FolderRow> {
         ? manifestExtra.value
         : this.manifestExtra,
     starred: starred ?? this.starred,
+    captionLayout: captionLayout.present
+        ? captionLayout.value
+        : this.captionLayout,
   );
   FolderRow copyWithCompanion(FoldersCompanion data) {
     return FolderRow(
@@ -427,6 +468,9 @@ class FolderRow extends DataClass implements Insertable<FolderRow> {
           ? data.manifestExtra.value
           : this.manifestExtra,
       starred: data.starred.present ? data.starred.value : this.starred,
+      captionLayout: data.captionLayout.present
+          ? data.captionLayout.value
+          : this.captionLayout,
     );
   }
 
@@ -442,7 +486,8 @@ class FolderRow extends DataClass implements Insertable<FolderRow> {
           ..write('trashedAt: $trashedAt, ')
           ..write('hidden: $hidden, ')
           ..write('manifestExtra: $manifestExtra, ')
-          ..write('starred: $starred')
+          ..write('starred: $starred, ')
+          ..write('captionLayout: $captionLayout')
           ..write(')'))
         .toString();
   }
@@ -459,6 +504,7 @@ class FolderRow extends DataClass implements Insertable<FolderRow> {
     hidden,
     manifestExtra,
     starred,
+    captionLayout,
   );
   @override
   bool operator ==(Object other) =>
@@ -473,7 +519,8 @@ class FolderRow extends DataClass implements Insertable<FolderRow> {
           other.trashedAt == this.trashedAt &&
           other.hidden == this.hidden &&
           other.manifestExtra == this.manifestExtra &&
-          other.starred == this.starred);
+          other.starred == this.starred &&
+          other.captionLayout == this.captionLayout);
 }
 
 class FoldersCompanion extends UpdateCompanion<FolderRow> {
@@ -487,6 +534,7 @@ class FoldersCompanion extends UpdateCompanion<FolderRow> {
   final Value<bool> hidden;
   final Value<String?> manifestExtra;
   final Value<bool> starred;
+  final Value<int?> captionLayout;
   final Value<int> rowid;
   const FoldersCompanion({
     this.id = const Value.absent(),
@@ -499,6 +547,7 @@ class FoldersCompanion extends UpdateCompanion<FolderRow> {
     this.hidden = const Value.absent(),
     this.manifestExtra = const Value.absent(),
     this.starred = const Value.absent(),
+    this.captionLayout = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   FoldersCompanion.insert({
@@ -512,6 +561,7 @@ class FoldersCompanion extends UpdateCompanion<FolderRow> {
     this.hidden = const Value.absent(),
     this.manifestExtra = const Value.absent(),
     this.starred = const Value.absent(),
+    this.captionLayout = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        name = Value(name),
@@ -529,6 +579,7 @@ class FoldersCompanion extends UpdateCompanion<FolderRow> {
     Expression<bool>? hidden,
     Expression<String>? manifestExtra,
     Expression<bool>? starred,
+    Expression<int>? captionLayout,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -542,6 +593,7 @@ class FoldersCompanion extends UpdateCompanion<FolderRow> {
       if (hidden != null) 'hidden': hidden,
       if (manifestExtra != null) 'manifest_extra': manifestExtra,
       if (starred != null) 'starred': starred,
+      if (captionLayout != null) 'caption_layout': captionLayout,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -557,6 +609,7 @@ class FoldersCompanion extends UpdateCompanion<FolderRow> {
     Value<bool>? hidden,
     Value<String?>? manifestExtra,
     Value<bool>? starred,
+    Value<int?>? captionLayout,
     Value<int>? rowid,
   }) {
     return FoldersCompanion(
@@ -570,6 +623,7 @@ class FoldersCompanion extends UpdateCompanion<FolderRow> {
       hidden: hidden ?? this.hidden,
       manifestExtra: manifestExtra ?? this.manifestExtra,
       starred: starred ?? this.starred,
+      captionLayout: captionLayout ?? this.captionLayout,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -607,6 +661,9 @@ class FoldersCompanion extends UpdateCompanion<FolderRow> {
     if (starred.present) {
       map['starred'] = Variable<bool>(starred.value);
     }
+    if (captionLayout.present) {
+      map['caption_layout'] = Variable<int>(captionLayout.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -626,6 +683,7 @@ class FoldersCompanion extends UpdateCompanion<FolderRow> {
           ..write('hidden: $hidden, ')
           ..write('manifestExtra: $manifestExtra, ')
           ..write('starred: $starred, ')
+          ..write('captionLayout: $captionLayout, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -1902,6 +1960,17 @@ class $FilePartsTable extends FileParts
     type: DriftSqlType.int,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _captionLayoutMeta = const VerificationMeta(
+    'captionLayout',
+  );
+  @override
+  late final GeneratedColumn<int> captionLayout = GeneratedColumn<int>(
+    'caption_layout',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     fileId,
@@ -1909,6 +1978,7 @@ class $FilePartsTable extends FileParts
     messageId,
     tdFileId,
     size,
+    captionLayout,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -1962,6 +2032,15 @@ class $FilePartsTable extends FileParts
     } else if (isInserting) {
       context.missing(_sizeMeta);
     }
+    if (data.containsKey('caption_layout')) {
+      context.handle(
+        _captionLayoutMeta,
+        captionLayout.isAcceptableOrUnknown(
+          data['caption_layout']!,
+          _captionLayoutMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -1991,6 +2070,10 @@ class $FilePartsTable extends FileParts
         DriftSqlType.int,
         data['${effectivePrefix}size'],
       )!,
+      captionLayout: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}caption_layout'],
+      ),
     );
   }
 
@@ -2009,12 +2092,20 @@ class PartRow extends DataClass implements Insertable<PartRow> {
   /// ids last one run, so the file is read from [messageId] instead.
   final int tdFileId;
   final int size;
+
+  /// The layout this part's caption is written in, so Check my drive can
+  /// offer to write the older ones again: [CaptionLayouts.current], or
+  /// [CaptionLayouts.older] for a name over JSON, or for a later part that
+  /// carries the whole manifest. Null for a message without one of the
+  /// drive's own, and for a part an indexer older than version 4 read.
+  final int? captionLayout;
   const PartRow({
     required this.fileId,
     required this.partIndex,
     required this.messageId,
     required this.tdFileId,
     required this.size,
+    this.captionLayout,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -2024,6 +2115,9 @@ class PartRow extends DataClass implements Insertable<PartRow> {
     map['message_id'] = Variable<int>(messageId);
     map['td_file_id'] = Variable<int>(tdFileId);
     map['size'] = Variable<int>(size);
+    if (!nullToAbsent || captionLayout != null) {
+      map['caption_layout'] = Variable<int>(captionLayout);
+    }
     return map;
   }
 
@@ -2034,6 +2128,9 @@ class PartRow extends DataClass implements Insertable<PartRow> {
       messageId: Value(messageId),
       tdFileId: Value(tdFileId),
       size: Value(size),
+      captionLayout: captionLayout == null && nullToAbsent
+          ? const Value.absent()
+          : Value(captionLayout),
     );
   }
 
@@ -2048,6 +2145,7 @@ class PartRow extends DataClass implements Insertable<PartRow> {
       messageId: serializer.fromJson<int>(json['messageId']),
       tdFileId: serializer.fromJson<int>(json['tdFileId']),
       size: serializer.fromJson<int>(json['size']),
+      captionLayout: serializer.fromJson<int?>(json['captionLayout']),
     );
   }
   @override
@@ -2059,6 +2157,7 @@ class PartRow extends DataClass implements Insertable<PartRow> {
       'messageId': serializer.toJson<int>(messageId),
       'tdFileId': serializer.toJson<int>(tdFileId),
       'size': serializer.toJson<int>(size),
+      'captionLayout': serializer.toJson<int?>(captionLayout),
     };
   }
 
@@ -2068,12 +2167,16 @@ class PartRow extends DataClass implements Insertable<PartRow> {
     int? messageId,
     int? tdFileId,
     int? size,
+    Value<int?> captionLayout = const Value.absent(),
   }) => PartRow(
     fileId: fileId ?? this.fileId,
     partIndex: partIndex ?? this.partIndex,
     messageId: messageId ?? this.messageId,
     tdFileId: tdFileId ?? this.tdFileId,
     size: size ?? this.size,
+    captionLayout: captionLayout.present
+        ? captionLayout.value
+        : this.captionLayout,
   );
   PartRow copyWithCompanion(FilePartsCompanion data) {
     return PartRow(
@@ -2082,6 +2185,9 @@ class PartRow extends DataClass implements Insertable<PartRow> {
       messageId: data.messageId.present ? data.messageId.value : this.messageId,
       tdFileId: data.tdFileId.present ? data.tdFileId.value : this.tdFileId,
       size: data.size.present ? data.size.value : this.size,
+      captionLayout: data.captionLayout.present
+          ? data.captionLayout.value
+          : this.captionLayout,
     );
   }
 
@@ -2092,13 +2198,15 @@ class PartRow extends DataClass implements Insertable<PartRow> {
           ..write('partIndex: $partIndex, ')
           ..write('messageId: $messageId, ')
           ..write('tdFileId: $tdFileId, ')
-          ..write('size: $size')
+          ..write('size: $size, ')
+          ..write('captionLayout: $captionLayout')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(fileId, partIndex, messageId, tdFileId, size);
+  int get hashCode =>
+      Object.hash(fileId, partIndex, messageId, tdFileId, size, captionLayout);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -2107,7 +2215,8 @@ class PartRow extends DataClass implements Insertable<PartRow> {
           other.partIndex == this.partIndex &&
           other.messageId == this.messageId &&
           other.tdFileId == this.tdFileId &&
-          other.size == this.size);
+          other.size == this.size &&
+          other.captionLayout == this.captionLayout);
 }
 
 class FilePartsCompanion extends UpdateCompanion<PartRow> {
@@ -2116,6 +2225,7 @@ class FilePartsCompanion extends UpdateCompanion<PartRow> {
   final Value<int> messageId;
   final Value<int> tdFileId;
   final Value<int> size;
+  final Value<int?> captionLayout;
   final Value<int> rowid;
   const FilePartsCompanion({
     this.fileId = const Value.absent(),
@@ -2123,6 +2233,7 @@ class FilePartsCompanion extends UpdateCompanion<PartRow> {
     this.messageId = const Value.absent(),
     this.tdFileId = const Value.absent(),
     this.size = const Value.absent(),
+    this.captionLayout = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   FilePartsCompanion.insert({
@@ -2131,6 +2242,7 @@ class FilePartsCompanion extends UpdateCompanion<PartRow> {
     required int messageId,
     required int tdFileId,
     required int size,
+    this.captionLayout = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : fileId = Value(fileId),
        partIndex = Value(partIndex),
@@ -2143,6 +2255,7 @@ class FilePartsCompanion extends UpdateCompanion<PartRow> {
     Expression<int>? messageId,
     Expression<int>? tdFileId,
     Expression<int>? size,
+    Expression<int>? captionLayout,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -2151,6 +2264,7 @@ class FilePartsCompanion extends UpdateCompanion<PartRow> {
       if (messageId != null) 'message_id': messageId,
       if (tdFileId != null) 'td_file_id': tdFileId,
       if (size != null) 'size': size,
+      if (captionLayout != null) 'caption_layout': captionLayout,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -2161,6 +2275,7 @@ class FilePartsCompanion extends UpdateCompanion<PartRow> {
     Value<int>? messageId,
     Value<int>? tdFileId,
     Value<int>? size,
+    Value<int?>? captionLayout,
     Value<int>? rowid,
   }) {
     return FilePartsCompanion(
@@ -2169,6 +2284,7 @@ class FilePartsCompanion extends UpdateCompanion<PartRow> {
       messageId: messageId ?? this.messageId,
       tdFileId: tdFileId ?? this.tdFileId,
       size: size ?? this.size,
+      captionLayout: captionLayout ?? this.captionLayout,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -2191,6 +2307,9 @@ class FilePartsCompanion extends UpdateCompanion<PartRow> {
     if (size.present) {
       map['size'] = Variable<int>(size.value);
     }
+    if (captionLayout.present) {
+      map['caption_layout'] = Variable<int>(captionLayout.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -2205,6 +2324,7 @@ class FilePartsCompanion extends UpdateCompanion<PartRow> {
           ..write('messageId: $messageId, ')
           ..write('tdFileId: $tdFileId, ')
           ..write('size: $size, ')
+          ..write('captionLayout: $captionLayout, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -4269,6 +4389,17 @@ class $AlbumsTable extends Albums with TableInfo<$AlbumsTable, AlbumRow> {
     type: DriftSqlType.dateTime,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _captionLayoutMeta = const VerificationMeta(
+    'captionLayout',
+  );
+  @override
+  late final GeneratedColumn<int> captionLayout = GeneratedColumn<int>(
+    'caption_layout',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -4276,6 +4407,7 @@ class $AlbumsTable extends Albums with TableInfo<$AlbumsTable, AlbumRow> {
     messageId,
     createdAt,
     modifiedAt,
+    captionLayout,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -4326,6 +4458,15 @@ class $AlbumsTable extends Albums with TableInfo<$AlbumsTable, AlbumRow> {
     } else if (isInserting) {
       context.missing(_modifiedAtMeta);
     }
+    if (data.containsKey('caption_layout')) {
+      context.handle(
+        _captionLayoutMeta,
+        captionLayout.isAcceptableOrUnknown(
+          data['caption_layout']!,
+          _captionLayoutMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -4355,6 +4496,10 @@ class $AlbumsTable extends Albums with TableInfo<$AlbumsTable, AlbumRow> {
         DriftSqlType.dateTime,
         data['${effectivePrefix}modified_at'],
       )!,
+      captionLayout: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}caption_layout'],
+      ),
     );
   }
 
@@ -4370,12 +4515,16 @@ class AlbumRow extends DataClass implements Insertable<AlbumRow> {
   final int messageId;
   final DateTime createdAt;
   final DateTime modifiedAt;
+
+  /// The layout its message is written in; see [FileParts.captionLayout].
+  final int? captionLayout;
   const AlbumRow({
     required this.id,
     required this.name,
     required this.messageId,
     required this.createdAt,
     required this.modifiedAt,
+    this.captionLayout,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -4385,6 +4534,9 @@ class AlbumRow extends DataClass implements Insertable<AlbumRow> {
     map['message_id'] = Variable<int>(messageId);
     map['created_at'] = Variable<DateTime>(createdAt);
     map['modified_at'] = Variable<DateTime>(modifiedAt);
+    if (!nullToAbsent || captionLayout != null) {
+      map['caption_layout'] = Variable<int>(captionLayout);
+    }
     return map;
   }
 
@@ -4395,6 +4547,9 @@ class AlbumRow extends DataClass implements Insertable<AlbumRow> {
       messageId: Value(messageId),
       createdAt: Value(createdAt),
       modifiedAt: Value(modifiedAt),
+      captionLayout: captionLayout == null && nullToAbsent
+          ? const Value.absent()
+          : Value(captionLayout),
     );
   }
 
@@ -4409,6 +4564,7 @@ class AlbumRow extends DataClass implements Insertable<AlbumRow> {
       messageId: serializer.fromJson<int>(json['messageId']),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
       modifiedAt: serializer.fromJson<DateTime>(json['modifiedAt']),
+      captionLayout: serializer.fromJson<int?>(json['captionLayout']),
     );
   }
   @override
@@ -4420,6 +4576,7 @@ class AlbumRow extends DataClass implements Insertable<AlbumRow> {
       'messageId': serializer.toJson<int>(messageId),
       'createdAt': serializer.toJson<DateTime>(createdAt),
       'modifiedAt': serializer.toJson<DateTime>(modifiedAt),
+      'captionLayout': serializer.toJson<int?>(captionLayout),
     };
   }
 
@@ -4429,12 +4586,16 @@ class AlbumRow extends DataClass implements Insertable<AlbumRow> {
     int? messageId,
     DateTime? createdAt,
     DateTime? modifiedAt,
+    Value<int?> captionLayout = const Value.absent(),
   }) => AlbumRow(
     id: id ?? this.id,
     name: name ?? this.name,
     messageId: messageId ?? this.messageId,
     createdAt: createdAt ?? this.createdAt,
     modifiedAt: modifiedAt ?? this.modifiedAt,
+    captionLayout: captionLayout.present
+        ? captionLayout.value
+        : this.captionLayout,
   );
   AlbumRow copyWithCompanion(AlbumsCompanion data) {
     return AlbumRow(
@@ -4445,6 +4606,9 @@ class AlbumRow extends DataClass implements Insertable<AlbumRow> {
       modifiedAt: data.modifiedAt.present
           ? data.modifiedAt.value
           : this.modifiedAt,
+      captionLayout: data.captionLayout.present
+          ? data.captionLayout.value
+          : this.captionLayout,
     );
   }
 
@@ -4455,13 +4619,15 @@ class AlbumRow extends DataClass implements Insertable<AlbumRow> {
           ..write('name: $name, ')
           ..write('messageId: $messageId, ')
           ..write('createdAt: $createdAt, ')
-          ..write('modifiedAt: $modifiedAt')
+          ..write('modifiedAt: $modifiedAt, ')
+          ..write('captionLayout: $captionLayout')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(id, name, messageId, createdAt, modifiedAt);
+  int get hashCode =>
+      Object.hash(id, name, messageId, createdAt, modifiedAt, captionLayout);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -4470,7 +4636,8 @@ class AlbumRow extends DataClass implements Insertable<AlbumRow> {
           other.name == this.name &&
           other.messageId == this.messageId &&
           other.createdAt == this.createdAt &&
-          other.modifiedAt == this.modifiedAt);
+          other.modifiedAt == this.modifiedAt &&
+          other.captionLayout == this.captionLayout);
 }
 
 class AlbumsCompanion extends UpdateCompanion<AlbumRow> {
@@ -4479,6 +4646,7 @@ class AlbumsCompanion extends UpdateCompanion<AlbumRow> {
   final Value<int> messageId;
   final Value<DateTime> createdAt;
   final Value<DateTime> modifiedAt;
+  final Value<int?> captionLayout;
   final Value<int> rowid;
   const AlbumsCompanion({
     this.id = const Value.absent(),
@@ -4486,6 +4654,7 @@ class AlbumsCompanion extends UpdateCompanion<AlbumRow> {
     this.messageId = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.modifiedAt = const Value.absent(),
+    this.captionLayout = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   AlbumsCompanion.insert({
@@ -4494,6 +4663,7 @@ class AlbumsCompanion extends UpdateCompanion<AlbumRow> {
     required int messageId,
     required DateTime createdAt,
     required DateTime modifiedAt,
+    this.captionLayout = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        name = Value(name),
@@ -4506,6 +4676,7 @@ class AlbumsCompanion extends UpdateCompanion<AlbumRow> {
     Expression<int>? messageId,
     Expression<DateTime>? createdAt,
     Expression<DateTime>? modifiedAt,
+    Expression<int>? captionLayout,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -4514,6 +4685,7 @@ class AlbumsCompanion extends UpdateCompanion<AlbumRow> {
       if (messageId != null) 'message_id': messageId,
       if (createdAt != null) 'created_at': createdAt,
       if (modifiedAt != null) 'modified_at': modifiedAt,
+      if (captionLayout != null) 'caption_layout': captionLayout,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -4524,6 +4696,7 @@ class AlbumsCompanion extends UpdateCompanion<AlbumRow> {
     Value<int>? messageId,
     Value<DateTime>? createdAt,
     Value<DateTime>? modifiedAt,
+    Value<int?>? captionLayout,
     Value<int>? rowid,
   }) {
     return AlbumsCompanion(
@@ -4532,6 +4705,7 @@ class AlbumsCompanion extends UpdateCompanion<AlbumRow> {
       messageId: messageId ?? this.messageId,
       createdAt: createdAt ?? this.createdAt,
       modifiedAt: modifiedAt ?? this.modifiedAt,
+      captionLayout: captionLayout ?? this.captionLayout,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -4554,6 +4728,9 @@ class AlbumsCompanion extends UpdateCompanion<AlbumRow> {
     if (modifiedAt.present) {
       map['modified_at'] = Variable<DateTime>(modifiedAt.value);
     }
+    if (captionLayout.present) {
+      map['caption_layout'] = Variable<int>(captionLayout.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -4568,6 +4745,7 @@ class AlbumsCompanion extends UpdateCompanion<AlbumRow> {
           ..write('messageId: $messageId, ')
           ..write('createdAt: $createdAt, ')
           ..write('modifiedAt: $modifiedAt, ')
+          ..write('captionLayout: $captionLayout, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -7810,6 +7988,7 @@ typedef $$FoldersTableCreateCompanionBuilder = FoldersCompanion Function({
   Value<bool> hidden,
   Value<String?> manifestExtra,
   Value<bool> starred,
+  Value<int?> captionLayout,
   Value<int> rowid,
 });
 typedef $$FoldersTableUpdateCompanionBuilder = FoldersCompanion Function({
@@ -7823,6 +8002,7 @@ typedef $$FoldersTableUpdateCompanionBuilder = FoldersCompanion Function({
   Value<bool> hidden,
   Value<String?> manifestExtra,
   Value<bool> starred,
+  Value<int?> captionLayout,
   Value<int> rowid,
 });
 
@@ -7882,6 +8062,11 @@ class $$FoldersTableFilterComposer
 
   ColumnFilters<bool> get starred => $composableBuilder(
     column: $table.starred,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get captionLayout => $composableBuilder(
+    column: $table.captionLayout,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -7944,6 +8129,11 @@ class $$FoldersTableOrderingComposer
     column: $table.starred,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<int> get captionLayout => $composableBuilder(
+    column: $table.captionLayout,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$FoldersTableAnnotationComposer
@@ -7988,6 +8178,11 @@ class $$FoldersTableAnnotationComposer
 
   GeneratedColumn<bool> get starred =>
       $composableBuilder(column: $table.starred, builder: (column) => column);
+
+  GeneratedColumn<int> get captionLayout => $composableBuilder(
+    column: $table.captionLayout,
+    builder: (column) => column,
+  );
 }
 
 class $$FoldersTableTableManager
@@ -8028,6 +8223,7 @@ class $$FoldersTableTableManager
                 Value<bool> hidden = const Value.absent(),
                 Value<String?> manifestExtra = const Value.absent(),
                 Value<bool> starred = const Value.absent(),
+                Value<int?> captionLayout = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => FoldersCompanion(
                 id: id,
@@ -8040,6 +8236,7 @@ class $$FoldersTableTableManager
                 hidden: hidden,
                 manifestExtra: manifestExtra,
                 starred: starred,
+                captionLayout: captionLayout,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -8054,6 +8251,7 @@ class $$FoldersTableTableManager
                 Value<bool> hidden = const Value.absent(),
                 Value<String?> manifestExtra = const Value.absent(),
                 Value<bool> starred = const Value.absent(),
+                Value<int?> captionLayout = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => FoldersCompanion.insert(
                 id: id,
@@ -8066,6 +8264,7 @@ class $$FoldersTableTableManager
                 hidden: hidden,
                 manifestExtra: manifestExtra,
                 starred: starred,
+                captionLayout: captionLayout,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
@@ -8627,6 +8826,7 @@ typedef $$FilePartsTableCreateCompanionBuilder = FilePartsCompanion Function({
   required int messageId,
   required int tdFileId,
   required int size,
+  Value<int?> captionLayout,
   Value<int> rowid,
 });
 typedef $$FilePartsTableUpdateCompanionBuilder = FilePartsCompanion Function({
@@ -8635,6 +8835,7 @@ typedef $$FilePartsTableUpdateCompanionBuilder = FilePartsCompanion Function({
   Value<int> messageId,
   Value<int> tdFileId,
   Value<int> size,
+  Value<int?> captionLayout,
   Value<int> rowid,
 });
 
@@ -8669,6 +8870,11 @@ class $$FilePartsTableFilterComposer
 
   ColumnFilters<int> get size => $composableBuilder(
     column: $table.size,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get captionLayout => $composableBuilder(
+    column: $table.captionLayout,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -8706,6 +8912,11 @@ class $$FilePartsTableOrderingComposer
     column: $table.size,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<int> get captionLayout => $composableBuilder(
+    column: $table.captionLayout,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$FilePartsTableAnnotationComposer
@@ -8731,6 +8942,11 @@ class $$FilePartsTableAnnotationComposer
 
   GeneratedColumn<int> get size =>
       $composableBuilder(column: $table.size, builder: (column) => column);
+
+  GeneratedColumn<int> get captionLayout => $composableBuilder(
+    column: $table.captionLayout,
+    builder: (column) => column,
+  );
 }
 
 class $$FilePartsTableTableManager
@@ -8766,6 +8982,7 @@ class $$FilePartsTableTableManager
                 Value<int> messageId = const Value.absent(),
                 Value<int> tdFileId = const Value.absent(),
                 Value<int> size = const Value.absent(),
+                Value<int?> captionLayout = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => FilePartsCompanion(
                 fileId: fileId,
@@ -8773,6 +8990,7 @@ class $$FilePartsTableTableManager
                 messageId: messageId,
                 tdFileId: tdFileId,
                 size: size,
+                captionLayout: captionLayout,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -8782,6 +9000,7 @@ class $$FilePartsTableTableManager
                 required int messageId,
                 required int tdFileId,
                 required int size,
+                Value<int?> captionLayout = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => FilePartsCompanion.insert(
                 fileId: fileId,
@@ -8789,6 +9008,7 @@ class $$FilePartsTableTableManager
                 messageId: messageId,
                 tdFileId: tdFileId,
                 size: size,
+                captionLayout: captionLayout,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
@@ -9729,6 +9949,7 @@ typedef $$AlbumsTableCreateCompanionBuilder = AlbumsCompanion Function({
   required int messageId,
   required DateTime createdAt,
   required DateTime modifiedAt,
+  Value<int?> captionLayout,
   Value<int> rowid,
 });
 typedef $$AlbumsTableUpdateCompanionBuilder = AlbumsCompanion Function({
@@ -9737,6 +9958,7 @@ typedef $$AlbumsTableUpdateCompanionBuilder = AlbumsCompanion Function({
   Value<int> messageId,
   Value<DateTime> createdAt,
   Value<DateTime> modifiedAt,
+  Value<int?> captionLayout,
   Value<int> rowid,
 });
 
@@ -9771,6 +9993,11 @@ class $$AlbumsTableFilterComposer
 
   ColumnFilters<DateTime> get modifiedAt => $composableBuilder(
     column: $table.modifiedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get captionLayout => $composableBuilder(
+    column: $table.captionLayout,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -9808,6 +10035,11 @@ class $$AlbumsTableOrderingComposer
     column: $table.modifiedAt,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<int> get captionLayout => $composableBuilder(
+    column: $table.captionLayout,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$AlbumsTableAnnotationComposer
@@ -9833,6 +10065,11 @@ class $$AlbumsTableAnnotationComposer
 
   GeneratedColumn<DateTime> get modifiedAt => $composableBuilder(
     column: $table.modifiedAt,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get captionLayout => $composableBuilder(
+    column: $table.captionLayout,
     builder: (column) => column,
   );
 }
@@ -9870,6 +10107,7 @@ class $$AlbumsTableTableManager
                 Value<int> messageId = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime> modifiedAt = const Value.absent(),
+                Value<int?> captionLayout = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => AlbumsCompanion(
                 id: id,
@@ -9877,6 +10115,7 @@ class $$AlbumsTableTableManager
                 messageId: messageId,
                 createdAt: createdAt,
                 modifiedAt: modifiedAt,
+                captionLayout: captionLayout,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -9886,6 +10125,7 @@ class $$AlbumsTableTableManager
                 required int messageId,
                 required DateTime createdAt,
                 required DateTime modifiedAt,
+                Value<int?> captionLayout = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => AlbumsCompanion.insert(
                 id: id,
@@ -9893,6 +10133,7 @@ class $$AlbumsTableTableManager
                 messageId: messageId,
                 createdAt: createdAt,
                 modifiedAt: modifiedAt,
+                captionLayout: captionLayout,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0

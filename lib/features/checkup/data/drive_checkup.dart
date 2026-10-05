@@ -106,6 +106,23 @@ class SplitFinding extends CheckFinding {
   CheckSeverity get severity => incomplete.isEmpty ? CheckSeverity.fine : CheckSeverity.action;
 }
 
+/// How many of the drive's messages are still written in the older layout,
+/// a name over JSON, which reads less well in Telegram than the current
+/// one. Writing them again is offered, never done unasked.
+@immutable
+class CaptionFinding extends CheckFinding {
+  const CaptionFinding({required this.older});
+
+  final int older;
+
+  /// About how long writing them all again takes, one every
+  /// [DriveCheckup.captionPace].
+  Duration get takes => DriveCheckup.captionPace * older;
+
+  @override
+  CheckSeverity get severity => CheckSeverity.neutral;
+}
+
 /// Whether the photos backed up from this phone are all still in the drive.
 @immutable
 class BackupFinding extends CheckFinding {
@@ -233,6 +250,10 @@ class DriveCheckup extends AsyncNotifier<CheckupReport> {
   /// only under way.
   static const Duration settlesWithin = Duration(hours: 24);
 
+  /// The gap between two messages written again in the current layout, so
+  /// a long run stays well inside what Telegram lets one account edit.
+  static Duration captionPace = const Duration(seconds: 2);
+
   @override
   Future<CheckupReport> build() async {
     final session = ref.read(driveSessionProvider);
@@ -241,6 +262,7 @@ class DriveCheckup extends AsyncNotifier<CheckupReport> {
       await _channel(session.chatId),
       _index(session.chatId),
       ?await _split(),
+      ?await _captions(),
       await _backup(),
       ?await _trash(),
       await _twoStep(),
@@ -314,6 +336,18 @@ class DriveCheckup extends AsyncNotifier<CheckupReport> {
       return SplitFinding(total: total, incomplete: incomplete);
     } catch (e) {
       debugPrint('[Checkup] split files: $e');
+      return null;
+    }
+  }
+
+  /// Null when every message is in the current layout, so the row isn't
+  /// shown.
+  Future<CaptionFinding?> _captions() async {
+    try {
+      final older = (await _repository.olderCaptions()).length;
+      return older == 0 ? null : CaptionFinding(older: older);
+    } catch (e) {
+      debugPrint('[Checkup] captions: $e');
       return null;
     }
   }

@@ -73,6 +73,14 @@ class AlbumSummary {
   final String? coverFileId;
 }
 
+/// What a message still in the older layout holds; see [OlderCaption].
+enum OlderCaptionKind { file, laterPart, folder, album }
+
+/// A message of the drive's still written in the older layout: a file's
+/// first part, a later part of a split file, a folder or an album, by its
+/// item's [id].
+typedef OlderCaption = ({OlderCaptionKind kind, String id, int partIndex, int messageId});
+
 /// When one part's message may write its file's row.
 enum FileRowWrite {
   /// The file's first part, or its only one: its caption says what the
@@ -147,7 +155,7 @@ class AppDatabase extends _$AppDatabase {
   }
 
   @override
-  int get schemaVersion => 10;
+  int get schemaVersion => 11;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -234,6 +242,12 @@ class AppDatabase extends _$AppDatabase {
       if (from < 10) {
         await m.createTable(pendingEdits);
         await m.addColumn(driveFiles, driveFiles.originalSize);
+      }
+      if (from < 11) {
+        await m.addColumn(fileParts, fileParts.captionLayout);
+        await m.addColumn(folders, folders.captionLayout);
+        // Albums made at version 3 above already have the column.
+        if (from >= 3) await m.addColumn(albums, albums.captionLayout);
       }
     },
   );
@@ -1206,6 +1220,53 @@ class AppDatabase extends _$AppDatabase {
       await _refreshHiddenFile(fileId);
       return writes;
     });
+  }
+
+  /// The drive's messages still written in the older layout: folders,
+  /// albums, each file's first part, and the later parts of split files
+  /// whose first part is here. A later part of a file without one carries
+  /// the only manifest the file has left, so it stays as it is.
+  Future<List<OlderCaption>> olderCaptions() async {
+    const older = CaptionLayouts.older;
+    final parts = await customSelect(
+      'SELECT p.file_id, p.part_index, p.message_id FROM file_parts p '
+      'WHERE p.caption_layout = ? AND (p.part_index = 0 OR EXISTS '
+      '(SELECT 1 FROM file_parts f WHERE f.file_id = p.file_id AND f.part_index = 0)) '
+      'ORDER BY p.message_id DESC',
+      variables: [Variable.withInt(older)],
+      readsFrom: {fileParts},
+    ).get();
+    return [
+      for (final row in await (select(folders)..where((f) => f.captionLayout.equals(older))).get())
+        (kind: OlderCaptionKind.folder, id: row.id, partIndex: 0, messageId: row.messageId),
+      for (final row in await (select(albums)..where((a) => a.captionLayout.equals(older))).get())
+        (kind: OlderCaptionKind.album, id: row.id, partIndex: 0, messageId: row.messageId),
+      for (final row in parts)
+        (
+          kind: row.read<int>('part_index') == 0
+              ? OlderCaptionKind.file
+              : OlderCaptionKind.laterPart,
+          id: row.read<String>('file_id'),
+          partIndex: row.read<int>('part_index'),
+          messageId: row.read<int>('message_id'),
+        ),
+    ];
+  }
+
+  /// Notes that [caption]'s message reads in the current layout.
+  Future<void> markCaptionCurrent(OlderCaption caption) async {
+    const current = Value(CaptionLayouts.current);
+    switch (caption.kind) {
+      case OlderCaptionKind.file || OlderCaptionKind.laterPart:
+        await (update(fileParts)..where((p) => p.messageId.equals(caption.messageId)))
+            .write(const FilePartsCompanion(captionLayout: current));
+      case OlderCaptionKind.folder:
+        await (update(folders)..where((f) => f.id.equals(caption.id)))
+            .write(const FoldersCompanion(captionLayout: current));
+      case OlderCaptionKind.album:
+        await (update(albums)..where((a) => a.id.equals(caption.id)))
+            .write(const AlbumsCompanion(captionLayout: current));
+    }
   }
 
   Future<bool> _hasFirstPart(String fileId) async =>

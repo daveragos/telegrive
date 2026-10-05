@@ -56,14 +56,18 @@ phone number.
 - **Check my drive.** Settings › Check my drive looks the drive over and
   says, one sentence per check, whether the channel is private and yours
   with no auto-delete timer, when the channel was last read in full, which
-  split files are missing a part, whether every photo backed up from this
+  split files are missing a part, how many messages are still in the
+  older caption layout, whether every photo backed up from this
   phone is still in the drive, what in the trash goes for good within a
   week, and whether two-step verification is on and how long the account
   may sit unused before Telegram deletes it. What needs you comes first,
   with the fix beside it: Turn off, Make private, Read everything again,
-  Delete parts, Back up again or Leave them out, Open Trash, Open Telegram
-  and Change. Settings › Security names this session as Telegram's Devices
-  list does and sets the inactive-account timer.
+  Delete parts, Update, Back up again or Leave them out, Open Trash, Open
+  Telegram and Change. Update writes each older message again, one every
+  two seconds in the status line where Stop ends it; Telegram marks each
+  one edited, and nothing in the drive changes. Settings › Security names
+  this session as Telegram's Devices list does and sets the
+  inactive-account timer.
 - **See where the space goes.** The storage total on Home, or Stored in
   Telegram in Settings, opens Space: the 50 biggest files, which you can
   select and move or put in the trash, each top-level folder with
@@ -479,7 +483,9 @@ Telegram (source of truth)                 This device
   1024-character limit, even on Premium: a long name is shortened on the
   bold line only. The older layout, a name over `tgr1:` and JSON, still
   reads, and a record takes the current layout the next time it is
-  written.
+  written, or all at once from Check my drive. The index notes the layout
+  of each message, so the check can count them without reading the
+  channel.
 - **Files** carry their manifest in their caption: id, name, folder, MIME
   type, size, dates, star, and `parts`/`part` for split files. A file
   that Replace sent to the trash also names the file that replaced it;

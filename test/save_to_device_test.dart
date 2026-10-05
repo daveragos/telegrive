@@ -118,7 +118,7 @@ void main() {
     addTearDown(() => dir.delete(recursive: true));
     final file = File('${dir.path}/telegrive.sqlite');
 
-    // Version 1 is today's schema without what versions 2 to 10 added.
+    // Version 1 is today's schema without what versions 2 to 11 added.
     var db = AppDatabase(NativeDatabase(file));
     await db.allTransfers();
     for (final statement in [
@@ -151,6 +151,8 @@ void main() {
       'DROP TABLE watched_files',
       'DROP TABLE pending_edits',
       'ALTER TABLE drive_files DROP COLUMN original_size',
+      'ALTER TABLE file_parts DROP COLUMN caption_layout',
+      'ALTER TABLE folders DROP COLUMN caption_layout',
       'PRAGMA user_version = 1',
     ]) {
       await db.customStatement(statement);

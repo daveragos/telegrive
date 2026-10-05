@@ -189,6 +189,52 @@ void main() {
       expect(entry.file.name.value, 'Old.mkv');
     });
 
+    test('each message is indexed with the layout it is written in', () {
+      int? partLayout(td.Message message) =>
+          (MessageIndexer.entryFor(message) as FilePartEntry).part.captionLayout.value;
+      expect(partLayout(documentMessage(30, firstPart)), CaptionLayouts.current);
+      expect(partLayout(documentMessage(32, laterPart)), CaptionLayouts.current);
+      expect(
+        partLayout(documentMessage(30, 'Holiday.mkv\ntgr1:{"id":"big","n":"Holiday.mkv","s":30}')),
+        CaptionLayouts.older,
+      );
+      // A later part with the whole manifest, even in the current layout,
+      // is to become a part record.
+      final wholeLaterPart = ManifestCodec.encodeFile(
+        FileManifest(
+          id: 'big',
+          name: 'Holiday.mkv',
+          folderId: null,
+          mimeType: 'video/x-matroska',
+          size: 30,
+          createdAt: at,
+          modifiedAt: at,
+          partCount: 3,
+          partIndex: 1,
+        ),
+      ).text;
+      expect(partLayout(documentMessage(31, wholeLaterPart)), CaptionLayouts.older);
+      expect(partLayout(_voice()), isNull, reason: 'a forward has no caption of the drive\'s');
+
+      final olderFolder = MessageIndexer.entryFor(
+        textMessage(40, '📁 Invoices\ntgrf1:{"id":"inv","n":"Invoices"}'),
+      ) as FolderEntry;
+      expect(olderFolder.folder.captionLayout.value, CaptionLayouts.older);
+      final folder = MessageIndexer.entryFor(
+        textMessage(
+          41,
+          ManifestCodec.encodeFolder(
+            FolderManifest(id: 'inv', name: 'Invoices', parentId: null, createdAt: at, modifiedAt: at),
+          ).text,
+        ),
+      ) as FolderEntry;
+      expect(folder.folder.captionLayout.value, CaptionLayouts.current);
+      final olderAlbum = MessageIndexer.entryFor(
+        textMessage(42, '🖼 Trip\ntgra1:{"id":"trip","n":"Trip"}'),
+      ) as AlbumEntry;
+      expect(olderAlbum.album.captionLayout.value, CaptionLayouts.older);
+    });
+
     test('a part record that makes no sense is no part', () {
       for (final line in [
         'tgpart2;file=big;part=1;parts=3;size=30',

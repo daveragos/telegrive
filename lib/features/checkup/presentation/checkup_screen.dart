@@ -7,8 +7,10 @@ import '../../../app/theme/tokens.dart';
 import '../../../core/format/formatters.dart';
 import '../../../core/widgets/common.dart';
 import '../../backup/data/backup_controller.dart';
+import '../../drive/data/drive_repository.dart';
 import '../../drive/data/drive_session.dart';
 import '../../drive/data/drive_sync.dart';
+import '../../files/data/bulk_edits.dart';
 import '../../files/presentation/file_actions.dart';
 import '../data/drive_checkup.dart';
 
@@ -275,6 +277,25 @@ class CheckupScreen extends ConsumerWidget {
             ),
         ];
 
+      case CaptionFinding():
+        return [
+          row(
+            finding.severity,
+            '${Formatters.count(finding.older, 'message')} in your channel '
+            '${finding.older == 1 ? 'is' : 'are'} in the older layout',
+            detail:
+                'Updating writes each again with the name in bold and the folder as a '
+                'tag to tap in Telegram, in about ${Formatters.inWords(finding.takes)}. '
+                'Telegram marks each one edited. Nothing in your drive changes.',
+            fixes: [
+              TextButton(
+                onPressed: () => _updateCaptions(context, ref),
+                child: const Text('Update'),
+              ),
+            ],
+          ),
+        ];
+
       case BackupFinding():
         final backup = ref.read(backupControllerProvider.notifier);
         if (!finding.enabled) {
@@ -418,6 +439,30 @@ class CheckupScreen extends ConsumerWidget {
           ),
         ];
     }
+  }
+
+  /// Writes every message still in the older layout again, one every
+  /// [DriveCheckup.captionPace], in the status line above the bar, where
+  /// Stop ends it. It goes on after this screen is left; what is done stays
+  /// done, and the check-up then counts what is left.
+  static Future<void> _updateCaptions(BuildContext context, WidgetRef ref) async {
+    final edits = ref.read(bulkEditsProvider.notifier);
+    final repository = ref.read(driveRepositoryProvider);
+    final older = await repository.olderCaptions();
+    if (!context.mounted || older.isEmpty) return;
+    await FileActions.runBulk(
+      context,
+      edits,
+      label: 'Updating ${Formatters.count(older.length, 'message')}',
+      icon: Icons.text_fields_rounded,
+      items: older,
+      apply: (caption) async {
+        await repository.rewriteInCurrentLayout(caption);
+        await Future<void>.delayed(DriveCheckup.captionPace);
+      },
+      success: 'Every message in your channel is in the current layout',
+    );
+    if (context.mounted) ref.invalidate(driveCheckupProvider);
   }
 
   /// `part 7`, `parts 7 and 9`, `parts 3, 7 and 9`.
