@@ -2354,7 +2354,7 @@ void main() {
   testWidgets('create sheet', (tester) async {
     await prepareData(tester);
     await pumpApp(tester, location: '/files');
-    await tester.tap(find.text('New'));
+    await tester.tap(find.byTooltip('New'));
     for (var i = 0; i < 6; i++) {
       await tester.pump(const Duration(milliseconds: 100));
     }
@@ -2364,7 +2364,7 @@ void main() {
   testWidgets('import chat picker', (tester) async {
     await prepareData(tester);
     await pumpApp(tester, location: '/files');
-    await tester.tap(find.text('New'));
+    await tester.tap(find.byTooltip('New'));
     for (var i = 0; i < 6; i++) {
       await tester.pump(const Duration(milliseconds: 100));
     }
@@ -2459,7 +2459,7 @@ void main() {
       location: '/files',
       captureSupport: CaptureSupport.none,
     );
-    await tester.tap(find.text('New'));
+    await tester.tap(find.byTooltip('New'));
     for (var i = 0; i < 6; i++) {
       await tester.pump(const Duration(milliseconds: 100));
     }
@@ -2491,7 +2491,7 @@ void main() {
       bottom: 24 * ratio,
     );
     await tester.pump(const Duration(milliseconds: 100));
-    await tester.tap(find.text('New'));
+    await tester.tap(find.byTooltip('New'));
     for (var i = 0; i < 6; i++) {
       await tester.pump(const Duration(milliseconds: 100));
     }

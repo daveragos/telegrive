@@ -213,7 +213,7 @@ void main() {
         expect(inBar(label), findsOneWidget);
       }
       expect(find.text('1 selected · 2.0 MB'), findsOneWidget);
-      expect(find.text('New'), findsNothing);
+      expect(find.byTooltip('New'), findsNothing);
       expect(selecting(), isTrue);
 
       await tester.tap(find.text('b.pdf'));

@@ -342,15 +342,15 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
             : null,
         floatingActionButton: _selecting
             ? null
-            : FloatingActionButton.extended(
+            : FloatingActionButton(
                 heroTag: 'files-fab-${widget.folderId}',
                 onPressed: () => FileActions.showCreateSheet(
                   context,
                   ref,
                   folderId: widget.folderId,
                 ),
-                icon: const Icon(Icons.add_rounded),
-                label: const Text('New'),
+                tooltip: 'New',
+                child: const Icon(Icons.add_rounded),
               ),
         body: RefreshIndicator(
           onRefresh: () => ref.read(driveSyncProvider.notifier).refresh(),

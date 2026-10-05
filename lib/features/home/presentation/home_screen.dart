@@ -73,11 +73,11 @@ class HomeScreen extends ConsumerWidget {
         : null;
 
     return Scaffold(
-      floatingActionButton: FloatingActionButton.extended(
+      floatingActionButton: FloatingActionButton(
         heroTag: 'home-fab',
         onPressed: () => FileActions.showCreateSheet(context, ref),
-        icon: const Icon(Icons.add_rounded),
-        label: const Text('New'),
+        tooltip: 'New',
+        child: const Icon(Icons.add_rounded),
       ),
       body: RefreshIndicator(
         onRefresh: () => ref.read(driveSyncProvider.notifier).refresh(),
