@@ -16,6 +16,7 @@ import 'package:telegrive/features/offline/data/offline_sync.dart';
 import 'package:telegrive/infrastructure/database/app_database.dart'
     show FolderSize;
 import 'package:telegrive/infrastructure/storage/preferences.dart';
+import 'package:telegrive/features/files/presentation/file_actions.dart';
 
 /// A drive with one folder, Work, and the files given. Starring is recorded
 /// in [starred] rather than sent anywhere.
@@ -464,4 +465,36 @@ void main() {
       expect(find.textContaining('selected'), findsNothing);
     },
   );
+
+  for (final fromViewer in [false, true]) {
+    testWidgets(
+      fromViewer
+          ? "a file's sheet shown from its own viewer has no Open"
+          : "a file's sheet from a list offers Open",
+      (tester) async {
+        final file = _file('clip.mp4');
+        await pumpApp(
+          tester,
+          MaterialApp(
+            theme: AppTheme.light(),
+            home: Consumer(
+              builder: (context, ref, _) => Scaffold(
+                body: TextButton(
+                  onPressed: () =>
+                      FileActions.showFileSheet(context, ref, file, fromViewer: fromViewer),
+                  child: const Text('More'),
+                ),
+              ),
+            ),
+          ),
+          files: [file],
+        );
+
+        await tester.tap(find.text('More'));
+        await settle(tester);
+        expect(find.text('Download to this phone'), findsOneWidget);
+        expect(find.text('Open'), fromViewer ? findsNothing : findsOneWidget);
+      },
+    );
+  }
 }

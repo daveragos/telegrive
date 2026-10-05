@@ -100,7 +100,7 @@ class PlayerControls extends ConsumerWidget {
                 if (file != null)
                   IconButton(
                     onPressed: () =>
-                        FileActions.showFileSheet(context, ref, file!),
+                        FileActions.showFileSheet(context, ref, file!, fromViewer: true),
                     icon: const Icon(Icons.more_vert_rounded, color: white),
                     tooltip: 'More',
                   ),

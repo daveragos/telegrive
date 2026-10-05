@@ -86,7 +86,7 @@ class DocumentPreviewScreen extends ConsumerWidget {
               tooltip: 'Open with another app',
             ),
             IconButton(
-              onPressed: () => FileActions.showFileSheet(context, ref, file),
+              onPressed: () => FileActions.showFileSheet(context, ref, file, fromViewer: true),
               icon: const Icon(Icons.more_vert_rounded),
               tooltip: 'More',
             ),

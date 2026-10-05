@@ -1599,12 +1599,15 @@ abstract final class FileActions {
   // ---------------------------------------------------------------------------
 
   /// The file's actions. With [onMarkFinished], the sheet opens with Mark
-  /// as finished, for a file Home offers to continue.
+  /// as finished, for a file Home offers to continue. From the file's own
+  /// viewer or player ([fromViewer]) there is no Open, which would open
+  /// the same file over itself.
   static Future<void> showFileSheet(
     BuildContext context,
     WidgetRef ref,
     DriveFile file, {
     VoidCallback? onMarkFinished,
+    bool fromViewer = false,
   }) {
     return showModalBottomSheet<void>(
       context: context,
@@ -1636,11 +1639,12 @@ abstract final class FileActions {
                       onMarkFinished();
                     },
                   ),
-                _SheetAction(
-                  icon: Icons.open_in_new_rounded,
-                  label: 'Open',
-                  onTap: () => run(() => open(context, ref, file)),
-                ),
+                if (!fromViewer)
+                  _SheetAction(
+                    icon: Icons.open_in_new_rounded,
+                    label: 'Open',
+                    onTap: () => run(() => open(context, ref, file)),
+                  ),
                 _SheetAction(
                   icon: Icons.download_rounded,
                   label: 'Download to this phone',
