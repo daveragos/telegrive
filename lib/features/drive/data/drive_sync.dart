@@ -11,6 +11,7 @@ import '../../../infrastructure/telegram/telegram_exception.dart';
 import 'drive_repository.dart';
 import 'drive_session.dart';
 import 'forward_filer.dart';
+import 'index_copies.dart';
 import 'message_indexer.dart';
 
 @immutable
@@ -67,7 +68,8 @@ class SyncState {
 ///   that the channel no longer does, then empties what has been in the
 ///   trash for 30 days. Runs on first open, daily, on the first open after
 ///   an update that changes [MessageIndexer.version], and from Settings →
-///   Rebuild index.
+///   Rebuild index. A full read is also when a copy of the index is written
+///   into the channel, when one is due ([IndexCopies]).
 ///
 /// Media that arrives without a manifest, a forward or a file sent from
 /// another Telegram app, is handed to the [ForwardFiler] after each read,
@@ -221,6 +223,7 @@ class DriveSync extends Notifier<SyncState> {
         lastFull: full ? now : null,
         clearError: true,
       );
+      if (full) unawaited(ref.read(indexCopiesProvider).writeIfDue(chatId));
     } on TelegramException catch (e) {
       state = state.copyWith(running: false, error: e.friendlyMessage);
       if (full) _retryFullSync();

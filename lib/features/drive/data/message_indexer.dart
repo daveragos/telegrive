@@ -116,6 +116,8 @@ abstract final class MessageIndexer {
 
     final media = describe(message);
     if (media == null) return null;
+    // The copy of the index is the drive's own, and no file in it.
+    if (_isIndexCopy(media)) return null;
 
     final decoded = ManifestCodec.decodeFile(media.caption);
     final record = decoded == null ? ManifestCodec.decodePart(media.caption) : null;
@@ -233,7 +235,8 @@ abstract final class MessageIndexer {
 
   /// The manifest [message] carries as the index reads it: a
   /// [FileManifest] for media, the one made up for it when it was adopted
-  /// without one; a [PartRecord] for a later part of a split file; a
+  /// without one; a [PartRecord] for a later part of a split file; an
+  /// [IndexRecord] for the copy of the index; a
   /// [FolderManifest] or [AlbumManifest] for the drive's text records; null
   /// for anything else.
   static Object? manifestOf(td.Message message) {
@@ -244,16 +247,19 @@ abstract final class MessageIndexer {
     if (media == null) return null;
     return ManifestCodec.decodeFile(media.caption) ??
         ManifestCodec.decodePart(media.caption) ??
+        ManifestCodec.decodeIndex(media.caption) ??
         _adoptedManifest(message, media);
   }
 
+  static bool _isIndexCopy(MediaInfo media) => ManifestCodec.decodeIndex(media.caption) != null;
+
   /// Whether [message] is media the drive adopts: delivered, with a file
-  /// the index keeps, and neither a manifest nor a part record in its
+  /// the index keeps, and no manifest, part record or index record in its
   /// caption.
   static bool isAdopted(td.Message message) {
     if (message.sendingState != null) return false;
     final media = describe(message);
-    return media != null && ManifestCodec.partOf(media.caption) == null;
+    return media != null && ManifestCodec.partOf(media.caption) == null && !_isIndexCopy(media);
   }
 
   /// [message] as the forward filer reads the channel: what it is, when it
@@ -269,7 +275,7 @@ abstract final class MessageIndexer {
         date: message.date,
         text: null,
         media: true,
-        manifest: ManifestCodec.partOf(media.caption) != null,
+        manifest: ManifestCodec.partOf(media.caption) != null || _isIndexCopy(media),
         forwarded: message.forwardInfo != null,
         caption: media.caption,
         albumId: message.mediaAlbumId,

@@ -16,6 +16,7 @@ import '../../auth/data/auth_controller.dart';
 import '../../drive/data/channel_messenger.dart';
 import '../../drive/data/drive_session.dart';
 import '../../drive/data/drive_sync.dart';
+import '../../drive/data/index_copies.dart';
 import '../../drive/domain/manifest.dart';
 
 enum SetupStep { account, channel, indexing, done }
@@ -134,9 +135,15 @@ class DriveSetup extends Notifier<SetupState> {
 
       if (_prefs.lastFullSync(chat.id) == null) {
         // First time on this device: build the index before showing an
-        // empty-looking drive.
+        // empty-looking drive. A copy of the index in the channel opens it
+        // at once, and the full read then runs behind Home, settling what
+        // changed since the copy was written.
         state = state.copyWith(step: SetupStep.indexing, createdChannel: created);
-        await sync.syncOnOpen();
+        if (!created && await ref.read(indexCopiesProvider).restore(chat.id)) {
+          unawaited(sync.syncOnOpen());
+        } else {
+          await sync.syncOnOpen();
+        }
       } else {
         // The index is already here; open straight away and catch up in the
         // background.

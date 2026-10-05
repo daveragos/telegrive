@@ -40,6 +40,7 @@ abstract final class ManifestCodec {
   static const String albumKind = 'tgalbum2';
   static const String driveKind = 'tgdrive2';
   static const String partKind = 'tgpart2';
+  static const String indexKind = 'tgindex2';
 
   /// [manifest] as its caption. [folderName] names the folder it is in, for
   /// the tag; without it the caption carries none. A split file carries its
@@ -105,6 +106,20 @@ abstract final class ManifestCodec {
     );
   }
 
+  /// The document holding a copy of the drive's index, for a new phone to
+  /// open the drive from without reading every message first.
+  static EncodedText encodeIndex(IndexRecord record) {
+    return CaptionLayout.build(
+      head: 'Telegrive index',
+      notes: [_indexNote],
+      details: _details(indexKind, record.toJson(), _indexFields),
+    );
+  }
+
+  static const String _indexNote =
+      'A copy of the drive\'s index, so a new phone opens the drive without '
+      'reading every message first. Deleting it changes nothing in the drive.';
+
   static const String _driveNote =
       'This channel is your Telegrive drive. Each file is a message here, so '
       'deleting or editing these messages changes the drive. Tap a hashtag '
@@ -142,6 +157,11 @@ abstract final class ManifestCodec {
     return null;
   }
 
+  static IndexRecord? decodeIndex(String caption) {
+    final json = _read(indexKind, caption, _indexFields);
+    return json == null ? null : IndexRecord.tryFromJson(json);
+  }
+
   static DriveManifest? decodeDrive(String text) {
     final json = _read(driveKind, text, _driveFields);
     return json == null ? null : DriveManifest.tryFromJson(json);
@@ -155,6 +175,7 @@ abstract final class ManifestCodec {
     albumKind,
     partKind,
     driveKind,
+    indexKind,
   ].any((kind) => DetailsLine.read(kind, text) != null);
 
   /// Unknown keys as the index stores them: JSON, or null when there are
@@ -229,6 +250,14 @@ abstract final class ManifestCodec {
 
   static const List<_Field> _driveFields = [
     _Field('id', 'id', _Value.text),
+    _Field('ix', 'index', _Value.number),
+    _Field('ct', 'added', _Value.number),
+  ];
+
+  static const List<_Field> _indexFields = [
+    _Field('d', 'drive', _Value.text),
+    _Field('th', 'through', _Value.number),
+    _Field('fc', 'files', _Value.number),
     _Field('ct', 'added', _Value.number),
   ];
 
@@ -670,20 +699,33 @@ class DriveManifest {
   const DriveManifest({
     required this.id,
     required this.createdAt,
+    this.indexMessageId,
     this.extra = const {},
   });
 
-  static const Set<String> _keys = {'id', 'ct'};
+  static const Set<String> _keys = {'id', 'ix', 'ct'};
 
   final String id;
   final DateTime createdAt;
 
+  /// The message holding the copy of the drive's index ([IndexRecord]),
+  /// once there is one.
+  final int? indexMessageId;
+
   /// Fields a newer version wrote; see [FileManifest.extra].
   final Map<String, Object?> extra;
+
+  DriveManifest copyWith({int? indexMessageId}) => DriveManifest(
+    id: id,
+    createdAt: createdAt,
+    indexMessageId: indexMessageId ?? this.indexMessageId,
+    extra: extra,
+  );
 
   Map<String, dynamic> toJson() => {
     ...extra,
     'id': id,
+    if (indexMessageId != null) 'ix': indexMessageId,
     'ct': createdAt.millisecondsSinceEpoch,
   };
 
@@ -692,6 +734,55 @@ class DriveManifest {
     if (id is! String || id.isEmpty) return null;
     return DriveManifest(
       id: id,
+      createdAt: _time(json['ct']),
+      indexMessageId: switch (json['ix']) {
+        final int messageId when messageId > 0 => messageId,
+        _ => null,
+      },
+      extra: Map.unmodifiable(_unknown(json, _keys)),
+    );
+  }
+}
+
+/// What the document holding a copy of the drive's index says of it: the
+/// drive it belongs to, the newest message the copy covers, how many files
+/// it holds, and when it was written.
+@immutable
+class IndexRecord {
+  const IndexRecord({
+    required this.driveId,
+    required this.throughMessageId,
+    required this.files,
+    required this.createdAt,
+    this.extra = const {},
+  });
+
+  static const Set<String> _keys = {'d', 'th', 'fc', 'ct'};
+
+  final String driveId;
+  final int throughMessageId;
+  final int files;
+  final DateTime createdAt;
+
+  /// Fields a newer version wrote; see [FileManifest.extra].
+  final Map<String, Object?> extra;
+
+  Map<String, dynamic> toJson() => {
+    ...extra,
+    'd': driveId,
+    'th': throughMessageId,
+    'fc': files,
+    'ct': createdAt.millisecondsSinceEpoch,
+  };
+
+  static IndexRecord? tryFromJson(Map<String, dynamic> json) {
+    final (driveId, through, files) = (json['d'], json['th'], json['fc']);
+    if (driveId is! String || driveId.isEmpty) return null;
+    if (through is! int || files is! int) return null;
+    return IndexRecord(
+      driveId: driveId,
+      throughMessageId: through,
+      files: files,
       createdAt: _time(json['ct']),
       extra: Map.unmodifiable(_unknown(json, _keys)),
     );

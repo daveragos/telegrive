@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/native.dart';
@@ -7,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:handy_tdlib/api.dart' as td;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:telegrive/features/drive/data/drive_session.dart';
+import 'package:telegrive/features/drive/data/drive_sync.dart';
 import 'package:telegrive/features/drive/data/message_indexer.dart';
 import 'package:telegrive/features/drive/domain/manifest.dart';
 import 'package:telegrive/features/setup/data/drive_setup.dart';
@@ -20,10 +22,11 @@ import 'support/fake_telegram.dart';
 /// A channel this account owns that isn't a drive.
 const _otherChatId = -300;
 
-/// The drive message as it sits in the channel, pinned or not.
-td.Message _card(int id, {bool pinned = true}) {
+/// The drive message as it sits in the channel, pinned or not, pointing
+/// at the copy of the index in [indexMessageId] when there is one.
+td.Message _card(int id, {bool pinned = true, int? indexMessageId}) {
   final text = ManifestCodec.encodeDrive(
-    DriveManifest(id: 'drive-1', createdAt: DateTime(2026, 10, 5)),
+    DriveManifest(id: 'drive-1', createdAt: DateTime(2026, 10, 5), indexMessageId: indexMessageId),
   );
   return channelMessage(
     id,
@@ -43,6 +46,7 @@ class _Telegram extends FakeTelegram {
     this.pinned,
     this.searchFinds = const [],
     this.pinnedFails = false,
+    this.downloads = const {},
   });
 
   final List<int> found;
@@ -50,6 +54,9 @@ class _Telegram extends FakeTelegram {
   final td.Message? pinned;
   final List<td.Message> searchFinds;
   final bool pinnedFails;
+
+  /// Where each TDLib file id downloads to.
+  final Map<int, String> downloads;
   final asked = <td.TdFunction>[];
 
   Iterable<T> askedFor<T>() => asked.whereType<T>();
@@ -86,6 +93,8 @@ class _Telegram extends FakeTelegram {
           messages: messages,
           nextFromMessageId: 0,
         );
+      case td.DownloadFile(:final fileId) when downloads.containsKey(fileId):
+        return tdFile(fileId, path: downloads[fileId]!, downloaded: true);
       case td.AddChatToList() ||
           td.SetChatPhoto() ||
           td.SetChatDescription() ||
@@ -249,6 +258,49 @@ void main() {
     expect(telegram.askedFor<td.SearchChatMessages>(), isEmpty);
     expect(telegram.askedFor<td.PinChatMessage>(), isEmpty);
     expect(cards(telegram).single.id, 70);
+  });
+
+  test('a drive with a copy of its index opens from it, before the channel is read', () async {
+    final copy = File('${support.path}/copy.json.gz')
+      ..writeAsBytesSync(
+        gzip.encode(
+          utf8.encode(
+            jsonEncode({
+              'format': 1,
+              'folders': [
+                {'id': 'docs', 'p': null, 'n': 'Docs', 'msg': 3, 'ct': 0, 'mt': 0, 'tr': null, 'st': false, 'x': null, 'ly': 2},
+              ],
+              'albums': <Object>[],
+              'files': <Object>[],
+            }),
+          ),
+        ),
+      );
+    final telegram = _Telegram(
+      found: [testChatId],
+      description: 'My own words',
+      pinned: _card(50, indexMessageId: 60),
+      downloads: {77: copy.path},
+    );
+    telegram.messages[50] = _card(50, indexMessageId: 60);
+    telegram.messages[60] = channelMessage(
+      60,
+      td.MessageDocument(
+        document: td.Document(fileName: 'telegrive-index.json.gz', mimeType: 'application/gzip', document: tdFile(77)),
+        caption: td.FormattedText(
+          text: ManifestCodec.encodeIndex(
+            IndexRecord(driveId: 'drive-1', throughMessageId: 900, files: 0, createdAt: DateTime(2026, 10, 5)),
+          ).text,
+          entities: const [],
+        ),
+      ),
+    );
+    final (container, _) = await open(telegram);
+
+    expect(telegram.askedFor<td.DownloadFile>().single.fileId, 77);
+    expect((await container.read(appDatabaseProvider).folderById('docs'))?.name, 'Docs');
+    // The full read went on behind; it ends before the phone does.
+    await container.read(driveSyncProvider.notifier).whenIdle();
   });
 
   test('the drive message is never read as a comment for forwards', () {

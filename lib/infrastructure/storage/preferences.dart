@@ -137,6 +137,21 @@ class Preferences {
   Future<void> setDriveCardId(int chatId, int messageId) =>
       _prefs.setInt('drive_card_$chatId', messageId);
 
+  /// When this phone last wrote the copy of the index into the channel,
+  /// and a fingerprint of what it held, so an unchanged index isn't sent
+  /// again.
+  DateTime? indexCopyAt(int chatId) {
+    final millis = _prefs.getInt('index_copy_at_$chatId');
+    return millis == null ? null : DateTime.fromMillisecondsSinceEpoch(millis);
+  }
+
+  int? indexCopyPrint(int chatId) => _prefs.getInt('index_copy_print_$chatId');
+
+  Future<void> setIndexCopy(int chatId, DateTime at, int print) async {
+    await _prefs.setInt('index_copy_at_$chatId', at.millisecondsSinceEpoch);
+    await _prefs.setInt('index_copy_print_$chatId', print);
+  }
+
   /// Per-channel keys that describe what this phone knows of the channel,
   /// so they go with the index.
   static const List<String> _syncKeys = [
@@ -145,6 +160,8 @@ class Preferences {
     'indexed_with_',
     'forward_filing_from_',
     'drive_card_',
+    'index_copy_at_',
+    'index_copy_print_',
   ];
 
   Future<void> clearSyncState(int chatId) async {

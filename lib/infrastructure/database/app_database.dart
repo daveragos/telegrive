@@ -1321,6 +1321,27 @@ class AppDatabase extends _$AppDatabase {
     });
   }
 
+  /// Swaps the whole index for the rows given, in one transaction: what a
+  /// copy of the index read from the channel holds.
+  Future<void> replaceIndex({
+    required List<FoldersCompanion> folderRows,
+    required List<AlbumsCompanion> albumRows,
+    required List<DriveFilesCompanion> fileRows,
+    required List<FilePartsCompanion> partRows,
+    required List<AlbumFilesCompanion> albumFileRows,
+  }) => transaction(() async {
+    await clearIndex();
+    await batch((b) {
+      b
+        ..insertAll(folders, folderRows)
+        ..insertAll(albums, albumRows)
+        ..insertAll(driveFiles, fileRows)
+        ..insertAll(fileParts, partRows)
+        ..insertAll(albumFiles, albumFileRows);
+    });
+    await refreshHidden();
+  });
+
   Future<void> clearIndex() => transaction(() async {
     await delete(fileParts).go();
     await delete(driveFiles).go();

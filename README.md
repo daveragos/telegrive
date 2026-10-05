@@ -530,6 +530,16 @@ Telegram (source of truth)                 This device
   and on pull-to-refresh, and does a full reconciliation daily, once on the
   first launch after an update that changes how messages are indexed, and
   from Settings → Rebuild index.
+- **A copy of the index** lives in the channel too, as one document,
+  `telegrive-index.json.gz`, that the pinned drive message points to. A
+  new phone, or a reinstall, fills its index from it and opens Home at
+  once, then reads the channel in full behind it to settle anything that
+  changed since. The copy is written after a full read, at most every
+  three days, only over a connection that isn't metered and only when the
+  index has changed, each time in place of the last one. It holds nothing
+  of the phone that wrote it, no previews and no TDLib file ids, and the
+  captions stay what the drive is: deleting the copy changes nothing but
+  how fast a new phone opens.
 - **The index belongs to one account.** Signing out wipes it along with the
   sync checkpoints, so signing back in reads the channel again instead of
   showing an empty drive. A different account signing in wipes the previous

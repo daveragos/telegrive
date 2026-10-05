@@ -142,6 +142,30 @@ class ChannelMessenger {
     );
   }
 
+  /// Puts the file at [path] in place of the document in [messageId], with
+  /// [caption], uploading it as part of the edit. The message keeps its id,
+  /// so whatever points at it still does.
+  Future<td.Message> replaceDocument(
+    int chatId,
+    int messageId, {
+    required String path,
+    required EncodedText caption,
+  }) {
+    return _client.send<td.Message>(
+      td.EditMessageMedia(
+        chatId: chatId,
+        messageId: messageId,
+        replyMarkup: null,
+        inputMessageContent: td.InputMessageDocument(
+          document: td.InputFileLocal(path: path),
+          disableContentTypeDetection: true,
+          caption: formatted(caption),
+        ),
+      ),
+      timeout: const Duration(hours: 1),
+    );
+  }
+
   /// Has Telegram copy [messageId] of [fromChatId] into [chatId] with
   /// [caption] in place of the original's, in one request: a photo stays a
   /// photo, a document a document, and the copy never sits in the channel
