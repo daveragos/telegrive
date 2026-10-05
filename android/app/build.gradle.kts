@@ -60,6 +60,10 @@ dependencies {
     // Google's on-device document scanner. Play services delivers the scanner
     // itself, so the app carries only the thin client.
     implementation("com.google.android.gms:play-services-mlkit-document-scanner:16.0.0")
+    // Text recognition for PDF pages that are pictures, such as scans. The
+    // Play services edition: the model comes with Play services rather than
+    // in the app, which carries only the thin client.
+    implementation("com.google.android.gms:play-services-mlkit-text-recognition:19.0.1")
     // Direct share targets on Android 7 to 9, which have no sharing shortcuts
     // of their own.
     implementation("androidx.sharetarget:sharetarget:1.2.0")

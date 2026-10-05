@@ -310,8 +310,8 @@ class SettingsScreen extends ConsumerWidget {
                 subtitle: Text(
                   indexer.running && indexer.left > 0
                       ? 'Reading · ${Formatters.count(indexer.left, 'file')} to go'
-                      : 'Finds PDFs and text files by the words in them. Read on '
-                            'this phone, on Wi-Fi. Keeps no copies'
+                      : 'Finds PDFs, scans included, and text files by the words '
+                            'in them. Read on this phone, on Wi-Fi. Keeps no copies'
                             '${indexed > 0 ? ' · ${Formatters.count(indexed, 'file')} read' : ''}.',
                 ),
                 value: indexer.enabled,

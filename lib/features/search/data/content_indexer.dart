@@ -21,6 +21,7 @@ import '../../drive/data/drive_sync.dart';
 import '../../drive/domain/drive_models.dart';
 import '../../transfers/data/room.dart';
 import '../../transfers/data/transfer_queue.dart';
+import 'page_reader.dart';
 
 @immutable
 class IndexerState {
@@ -40,7 +41,8 @@ class IndexerState {
 }
 
 /// Reads the words in PDFs and text files so search finds documents by
-/// what they say, not only by their names.
+/// what they say, not only by their names. PDF pages that are pictures, as
+/// a scan's are, are read with the phone's text recognition ([PageReader]).
 ///
 /// It happens on this phone, a file at a time while the app is open;
 /// nothing is sent anywhere. Documents not on the phone yet are fetched only
@@ -50,12 +52,17 @@ class IndexerState {
 /// to be read is deleted again once it has been, so reading leaves no
 /// copies behind.
 class ContentIndexer extends Notifier<IndexerState> {
-  /// 2: documents only; version 1 also read photos.
-  static const int version = 2;
+  /// 3: pages that are pictures, such as scans, are read with the phone's
+  /// text recognition; 2 read only a PDF's own text; 1 also read photos.
+  static const int version = 3;
   static const int _maxChars = 20000;
   static const int _pdfLimit = 25 * 1024 * 1024;
   static const int _textLimit = 1024 * 1024;
   static const int _pdfPages = 40;
+
+  /// Pages of one PDF read as pictures, which takes far longer than reading
+  /// a page's own text.
+  static const int _picturePages = 20;
 
   /// Room a fetched document leaves on the phone, so reading for search
   /// never fills a phone that is nearly full.
@@ -215,21 +222,35 @@ class ContentIndexer extends Notifier<IndexerState> {
     }
   }
 
-  Future<String> _readPdf(String path) async {
+  /// A PDF's own text, and the words on its pages that are pictures. Null
+  /// when those pages can't be read yet, so a later pass tries again.
+  Future<String?> _readPdf(String path) async {
     if (path.isEmpty) return '';
     await pdfrxFlutterInitialize();
     final document = await PdfDocument.openFile(path);
+    final buffer = StringBuffer();
+    final pictures = <int>[];
     try {
-      final buffer = StringBuffer();
-      for (final page in document.pages.take(_pdfPages)) {
-        final text = await page.loadText();
-        if (text != null) buffer.writeln(text.fullText);
+      for (final (index, page) in document.pages.take(_pdfPages).indexed) {
+        final text = (await page.loadText())?.fullText ?? '';
+        if (PageReader.isPicture(text)) {
+          pictures.add(index);
+        } else {
+          buffer.writeln(text);
+        }
         if (buffer.length > _maxChars) break;
       }
-      return buffer.toString();
     } finally {
       await document.dispose();
     }
+    if (pictures.isNotEmpty && buffer.length < _maxChars) {
+      final read = await ref
+          .read(pageReaderProvider)
+          .read(path, pictures.take(_picturePages).toList(), maxChars: _maxChars - buffer.length);
+      if (read == null) return null;
+      buffer.writeln(read);
+    }
+    return buffer.toString();
   }
 
   Future<String> _readText(String path) async {

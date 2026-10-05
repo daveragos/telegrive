@@ -258,7 +258,9 @@ phone number.
   and text files open in the app too. Everything else opens in the right
   app on your phone.
 - **Search inside documents.** The words in PDFs and text files are read on
-  the phone, so search finds documents by what they say. A document fetched
+  the phone, so search finds documents by what they say. Pages that are
+  pictures, as a scan's are, are read with the phone's own text
+  recognition (on Android, from Play services). A document fetched
   only to be read is deleted again once it has been, so reading keeps no
   copies, and reading waits while the phone has under 200 MB free. Words
   and a date narrow each other: "invoice march 2024" finds the invoices

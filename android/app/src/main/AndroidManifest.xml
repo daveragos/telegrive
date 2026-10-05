@@ -124,6 +124,12 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <!-- Asks Play services for the text recognition model when the app
+             is installed, so scanned PDFs can be read for search without
+             waiting for it to download on first use. -->
+        <meta-data
+            android:name="com.google.mlkit.vision.DEPENDENCIES"
+            android:value="ocr" />
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

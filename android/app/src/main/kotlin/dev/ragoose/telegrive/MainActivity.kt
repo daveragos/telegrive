@@ -188,6 +188,7 @@ class MainActivity : FlutterFragmentActivity() {
         }
         capture.attach(messenger)
         folders.attach(messenger)
+        TextChannel(main).attach(messenger)
         MethodChannel(messenger, "telegrive/security").setMethodCallHandler { call, result ->
             when (call.method) {
                 "setPrivateRecents" -> {
