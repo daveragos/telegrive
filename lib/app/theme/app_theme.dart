@@ -70,7 +70,7 @@ abstract final class AppTheme {
       outlineVariant: c.line,
       inverseSurface: isDark ? const Color(0xFFECEEF2) : const Color(0xFF22252B),
       onInverseSurface: isDark ? const Color(0xFF15171B) : const Color(0xFFF1F2F4),
-      inversePrimary: isDark ? const Color(0xFF2356E0) : const Color(0xFF8FA9FF),
+      inversePrimary: isDark ? const Color(0xFF1E6FE8) : const Color(0xFF3085FE),
       shadow: Colors.black,
       scrim: Colors.black,
       surfaceTint: Colors.transparent,

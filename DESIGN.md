@@ -21,7 +21,9 @@ upload something, free up the phone.
 
 ## Colour
 
-Neutral, cool greys (not cream) with one blue accent.
+Neutral, cool greys (not cream) with one blue accent. The accent is the
+mark's blue and success is its green; in the light theme both are a shade
+deeper, at the same hue, so text in them reads against white.
 
 | Token | Light | Dark | Use |
 | --- | --- | --- | --- |
@@ -32,8 +34,9 @@ Neutral, cool greys (not cream) with one blue accent.
 | `text` | `#15171B` | `#ECEEF2` | Primary text |
 | `text-2` | `#5A6170` | `#A3AAB6` | Secondary text, folders, icons |
 | `text-3` | `#868D9A` | `#737B88` | Meta, placeholders |
-| `accent` | `#2356E0` | `#8FA9FF` | Primary action, selection, progress |
-| `success` | `#1D8551` | `#5CC48E` | Done states |
+| `accent` | `#1E6FE8` | `#3085FE` | Primary action, selection, progress |
+| `accent-soft` | `#E6F0FF` | `#162439` | Selected rows, the active nav item |
+| `success` | `#08853F` | `#0EBC5F` | Done states |
 | `danger` | `#C23636` | `#FF8A80` | Destructive, failures |
 
 Kind hues colour a file's glyph only, never a surface: image `#7353C9`,
@@ -69,8 +72,8 @@ between them.
 | Body (right) | `#FDCD06` yellow | brightens outward |
 | Keel (left) | `#3085FE` blue | fades to `#7C9BFE` lavender at its tip |
 
-These colours and their shading belong to the mark alone; the UI keeps its
-one accent and no gradients.
+The blue and the green are the UI's accent and success; the yellow and the
+shading belong to the mark alone, and the UI has no gradients.
 
 - The artwork is `tool/icon/source/telegrive.png`. `tool/icon` renders
   every picture of it from that file: the app's own copy for `BrandMark`
