@@ -53,9 +53,9 @@ class AppColors extends ThemeExtension<AppColors> {
     text: Color(0xFF15171B),
     text2: Color(0xFF5A6170),
     text3: Color(0xFF868D9A),
-    accent: Color(0xFF1E6FE8),
-    accentSoft: Color(0xFFE6F0FF),
-    success: Color(0xFF08853F),
+    accent: Color(0xFF2356E0),
+    accentSoft: Color(0xFFE4EAFB),
+    success: Color(0xFF1D8551),
     danger: Color(0xFFC23636),
   );
 
