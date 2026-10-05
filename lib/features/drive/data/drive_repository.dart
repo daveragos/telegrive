@@ -553,6 +553,7 @@ class DriveRepository {
     try {
       await _writeFolderManifest(row.messageId, next);
     } on TelegramException catch (e) {
+      if (_isGone(e) && await _dropGone([row.messageId])) return;
       if (!e.isNetworkProblem) rethrow;
       await _queueFolder(row, next, patch);
     }
@@ -791,14 +792,41 @@ class DriveRepository {
     if (!patch.isEmpty && await _mustQueue(EditTarget.file, row.id)) {
       return _queueFile(row, next, patch);
     }
+    final parts = await _db.partsOf(row.id);
     try {
-      await _writeFileManifest(
-        await _db.partsOf(row.id),
-        next.copyWith(modifiedAt: DateTime.now()),
-      );
+      await _writeFileManifest(parts, next.copyWith(modifiedAt: DateTime.now()));
     } on TelegramException catch (e) {
+      if (_isGone(e) && await _dropGone([for (final p in parts) p.messageId])) return;
       if (!e.isNetworkProblem || patch.isEmpty) rethrow;
       await _queueFile(row, next, patch);
+    }
+  }
+
+  /// After Telegram turned an edit away as if [messageIds] weren't there,
+  /// asks for each again and drops from the index the ones it no longer
+  /// has: they went from the channel outside this phone, and there is
+  /// nothing left to change. True when any went; false leaves the refusal
+  /// to the caller.
+  Future<bool> _dropGone(List<int> messageIds) async {
+    final gone = [
+      for (final id in messageIds)
+        if (!await _stillThere(id)) id,
+    ];
+    if (gone.isEmpty) return false;
+    debugPrint('[Drive] messages $gone are gone from the channel; the index lets them go');
+    await forget(gone);
+    return true;
+  }
+
+  /// Whether Telegram still has message [messageId], asked after an edit
+  /// came back as if it didn't.
+  Future<bool> _stillThere(int messageId) async {
+    try {
+      await _client.send<td.Message>(td.GetMessage(chatId: _chatId, messageId: messageId));
+      return true;
+    } on TelegramException catch (e) {
+      if (_isGone(e)) return false;
+      rethrow;
     }
   }
 
@@ -846,7 +874,13 @@ class DriveRepository {
           () => patient ? _patiently(edit, stoppable: stoppable) : edit(),
         );
       } on TelegramException catch (e) {
-        if (!e.isNotEditable) rethrow;
+        // Telegram sometimes turns an edit away as if the message weren't
+        // there while it still holds it, and TDLib calls it editable. Such a
+        // message is swapped for an own copy, like one that can't be edited.
+        if (!e.isNotEditable && !(_isGone(e) && await _stillThere(part.messageId))) {
+          rethrow;
+        }
+        debugPrint('[Drive] message ${part.messageId} refused an edit ($e); swapped for a copy');
         message = await _replaceWithOwnCopy(
           part.messageId,
           caption,

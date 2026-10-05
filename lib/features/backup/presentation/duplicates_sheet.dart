@@ -7,6 +7,7 @@ import '../../../core/widgets/common.dart';
 import '../../drive/data/drive_repository.dart';
 import '../../drive/domain/drive_models.dart';
 import '../data/backup_controller.dart';
+import '../../transfers/domain/transfer_error.dart';
 
 /// Photos backed up more than once.
 final duplicateBackupsProvider = FutureProvider.autoDispose<DuplicateBackups>(
@@ -94,8 +95,9 @@ Future<void> removeDuplicateBackups(BuildContext context, WidgetRef ref) async {
       );
     }
   } catch (e) {
+    debugPrint('[Duplicates] $e');
     navigator.pop();
-    if (context.mounted) showSnack(context, 'Couldn\'t finish: $e');
+    if (context.mounted) showSnack(context, 'Couldn\'t finish. ${describeTransferError(e)}');
   } finally {
     progress.dispose();
   }

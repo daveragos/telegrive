@@ -95,7 +95,8 @@ class FakeTelegram extends TelegramClient {
         if (message == null) throw const TelegramException(400, 'MESSAGE_ID_INVALID');
         return message as T;
       case td.EditMessageCaption(:final messageId, :final caption?):
-        final old = messages[messageId]!;
+        final old = messages[messageId];
+        if (old == null) throw const TelegramException(400, 'MESSAGE_ID_INVALID');
         if (old.forwardInfo != null) {
           throw const TelegramException(400, "Message can't be edited");
         }
@@ -108,10 +109,9 @@ class FakeTelegram extends TelegramClient {
         :final messageId,
         inputMessageContent: td.InputMessageText(:final text),
       ):
-        return (messages[messageId] = messages[messageId]!.copyWith(
-              content: td.MessageText(text: text),
-            ))
-            as T;
+        final old = messages[messageId];
+        if (old == null) throw const TelegramException(400, 'MESSAGE_ID_INVALID');
+        return (messages[messageId] = old.copyWith(content: td.MessageText(text: text))) as T;
       case td.DeleteMessages(:final messageIds):
         messageIds.forEach(messages.remove);
         return const td.Ok() as T;
