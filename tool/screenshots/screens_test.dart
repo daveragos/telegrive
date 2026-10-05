@@ -140,9 +140,10 @@ class _AccountTtl extends AccountTtlNotifier {
 }
 
 /// A check-up with something to say in most rows: a one-month auto-delete
-/// timer on the channel, a split file missing a part, three backed-up
-/// photos gone from the drive, four items in the trash about to go, no
-/// two-step verification and a six-month inactivity timer.
+/// timer on the channel, a split file missing a part, captions still in
+/// the older layout, three backed-up photos gone from the drive, four
+/// items in the trash about to go, no two-step verification and a
+/// six-month inactivity timer.
 class _Checkup extends DriveCheckup {
   @override
   Future<CheckupReport> build() async {
@@ -177,6 +178,7 @@ class _Checkup extends DriveCheckup {
             ),
           ],
         ),
+        const CaptionFinding(older: 1240),
         BackupFinding(
           enabled: true,
           outcome: VerifyOutcome.gaps,
