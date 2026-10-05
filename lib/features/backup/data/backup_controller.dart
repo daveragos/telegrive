@@ -456,7 +456,7 @@ class BackupController extends Notifier<BackupState> {
     }, weak: true);
     if (enabled) {
       _watchLibrary();
-      // Re-arm the background checks (a no-op when they are already set).
+      // Arms the background checks as the app starts; see BackupWorker.schedule.
       unawaited(BackupWorker.schedule());
     }
 

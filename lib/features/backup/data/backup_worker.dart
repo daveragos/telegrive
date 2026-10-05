@@ -49,16 +49,21 @@ abstract final class BackupWorker {
     }
   }
 
-  /// Arms both jobs. Idempotent: existing registrations are kept.
+  /// Arms both jobs. The trigger already armed is kept; the periodic check
+  /// is registered again.
   static Future<void> schedule() async {
     if (!supported) return;
     await initialize();
     try {
+      // Handed over afresh each time rather than kept: a kept registration
+      // can sit enqueued without ever reaching Android's job scheduler, and
+      // then never runs. The four hours start again when the app opens,
+      // which costs nothing, since the app backs up by itself while open.
       await Workmanager().registerPeriodicTask(
         _periodicTask,
         _periodicTask,
         frequency: const Duration(hours: 4),
-        existingWorkPolicy: ExistingPeriodicWorkPolicy.keep,
+        existingWorkPolicy: ExistingPeriodicWorkPolicy.replace,
       );
       await _armTrigger(replace: false);
     } catch (e) {
