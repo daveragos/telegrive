@@ -12,6 +12,7 @@ import 'package:telegrive/core/files/file_kind.dart';
 import 'package:telegrive/features/drive/data/channel_messenger.dart';
 import 'package:telegrive/features/drive/data/drive_repository.dart';
 import 'package:telegrive/features/drive/data/drive_session.dart';
+import 'package:telegrive/features/drive/domain/manifest.dart';
 import 'package:telegrive/features/transfers/data/transfer_queue.dart';
 import 'package:telegrive/features/transfers/domain/transfer_wait.dart';
 import 'package:telegrive/infrastructure/database/app_database.dart';
@@ -77,6 +78,9 @@ class _UploadTelegram extends FakeTelegram {
   /// The file names sent, in order.
   final List<String> sent = [];
 
+  /// The caption each file name was last sent with.
+  final Map<String, String> captions = {};
+
   /// The messages TDLib kept after a failed send, and those delivered.
   final List<int> failedIds = [];
   final List<int> deliveredIds = [];
@@ -99,6 +103,7 @@ class _UploadTelegram extends FakeTelegram {
         ),
       ):
         sent.add(p.basename(path));
+        captions[p.basename(path)] = caption.text;
         final send = sent.length;
         td.Message message(int id) =>
             documentMessage(id, caption.text, fileName: p.basename(path), mimeType: 'text/plain');
@@ -403,6 +408,15 @@ void main() {
     expect((await queue.whenFinished('big')).status, TransferStatus.completed);
     expect((await queue.whenFinished(id)).status, TransferStatus.completed);
     expect(telegram.sent.skip(2), unorderedEquals(['big.pdf.003', 'notes.txt']));
+
+    // Later parts say only whose part they are.
+    for (final (name, index) in [('big.pdf.002', 1), ('big.pdf.003', 2)]) {
+      final caption = telegram.captions[name]!;
+      expect(caption.split('\n').first, 'Part ${index + 1} of 3');
+      expect(ManifestCodec.decodeFile(caption), isNull);
+      final record = ManifestCodec.decodePart(caption)!;
+      expect((record.fileId, record.index, record.count, record.size), ('big', index, 3, 30));
+    }
   });
 
   test('retryAll queues again only the failed transfers it picks', () async {

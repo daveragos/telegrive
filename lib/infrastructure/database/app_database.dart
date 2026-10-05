@@ -73,6 +73,22 @@ class AlbumSummary {
   final String? coverFileId;
 }
 
+/// When one part's message may write its file's row.
+enum FileRowWrite {
+  /// The file's first part, or its only one: its caption says what the
+  /// file is.
+  always,
+
+  /// A later part carrying the whole manifest, as split files once did on
+  /// every part: it stands in for the first part only while the index
+  /// doesn't hold that one.
+  unlessFirstPartKnown,
+
+  /// A later part that only says whose part it is: it makes a row when
+  /// there is none yet, for the first part to replace.
+  ifAbsent,
+}
+
 @DriftDatabase(
   tables: [
     Folders,
@@ -1156,12 +1172,14 @@ class AppDatabase extends _$AppDatabase {
     await refreshHidden();
   });
 
-  /// Inserts or refreshes a file and one of its parts, keeping
-  /// [DriveFiles.partsPresent] in step.
-  Future<void> upsertFilePart(
+  /// Inserts or refreshes one of a file's parts, keeping
+  /// [DriveFiles.partsPresent] in step, and writes the file's row as
+  /// [write] allows. True when the row was written from [file].
+  Future<bool> upsertFilePart(
     DriveFilesCompanion file,
-    FilePartsCompanion part,
-  ) {
+    FilePartsCompanion part, {
+    FileRowWrite write = FileRowWrite.always,
+  }) {
     return transaction(() async {
       // A message id belongs to exactly one part; if a caption edit moved it
       // (rare, but forwarded files get adopted this way) drop the stale row.
@@ -1175,13 +1193,26 @@ class AppDatabase extends _$AppDatabase {
       for (final owner in previousOwners) {
         await _recountParts(owner);
       }
+      final fileId = part.fileId.value;
+      final writes = switch (write) {
+        FileRowWrite.always => true,
+        FileRowWrite.unlessFirstPartKnown => !await _hasFirstPart(fileId),
+        FileRowWrite.ifAbsent => await fileById(fileId) == null,
+      };
       // partsPresent is absent from [file], so an update leaves it alone.
-      await into(driveFiles).insertOnConflictUpdate(file);
+      if (writes) await into(driveFiles).insertOnConflictUpdate(file);
       await into(fileParts).insertOnConflictUpdate(part);
-      await _recountParts(part.fileId.value);
-      await _refreshHiddenFile(part.fileId.value);
+      await _recountParts(fileId);
+      await _refreshHiddenFile(fileId);
+      return writes;
     });
   }
+
+  Future<bool> _hasFirstPart(String fileId) async =>
+      await (select(fileParts)
+            ..where((p) => p.fileId.equals(fileId) & p.partIndex.equals(0)))
+          .getSingleOrNull() !=
+      null;
 
   Future<void> _recountParts(String fileId) async {
     final count = fileParts.fileId.count();

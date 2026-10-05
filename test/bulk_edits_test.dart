@@ -9,6 +9,7 @@ import 'package:telegrive/features/drive/data/drive_repository.dart';
 import 'package:telegrive/features/drive/data/drive_session.dart';
 import 'package:telegrive/features/drive/data/telegram_wait.dart';
 import 'package:telegrive/features/drive/domain/drive_models.dart';
+import 'package:telegrive/features/drive/domain/manifest.dart';
 import 'package:telegrive/features/files/data/bulk_edits.dart';
 import 'package:telegrive/infrastructure/database/app_database.dart';
 import 'package:telegrive/infrastructure/telegram/telegram_client.dart';
@@ -277,11 +278,10 @@ void main() {
     expect(await folders(), ['trips', 'trips', 'trips']);
   });
 
-  test('stop lets a split file finish its parts before it ends', () async {
-    TelegramWait.unit = const Duration(milliseconds: 100);
-    // The second part's edit has to wait, after the first part has moved.
-    await open(floods: 1, floodOn: 21);
-    for (final index in [0, 1]) {
+  /// A file split in two the way older versions wrote it, the manifest on
+  /// both parts; [parts] picks which of them are in the channel.
+  Future<void> receiveSplit({List<int> parts = const [0, 1]}) async {
+    for (final index in parts) {
       await receive(
         documentMessage(
           20 + index,
@@ -291,29 +291,80 @@ void main() {
         ),
       );
     }
-    final edits = container.read(bulkEditsProvider.notifier);
+  }
 
-    final run = edits.run(
-      label: 'Moving 4 items',
-      icon: Icons.drive_file_move_outline,
-      items: [(await repository.fileById('big'))!, ...await files()],
-      apply: (file) => repository.moveFiles([file], 'trips'),
-    );
-    for (var i = 0; i < 100 && container.read(telegramWaitProvider) == null; i++) {
-      await Future<void>.delayed(const Duration(milliseconds: 10));
-    }
-    expect(container.read(telegramWaitProvider), isNotNull);
-    edits.stop();
-    final outcome = await run;
+  String captionOf(int id) =>
+      (telegram.messages[id]!.content as td.MessageDocument).caption.text;
 
-    expect(outcome.stopped, isTrue);
-    expect(outcome.done, 1);
+  test('a split file moves by its first part alone, and its later part never undoes it', () async {
+    await open();
+    await receiveSplit();
+    final laterPart = captionOf(21);
+
+    await repository.moveFiles([(await repository.fileById('big'))!], 'trips');
+
+    expect(telegram.captionEdits, 1);
+    expect(captionOf(20), contains(';folder=trips;'));
+    expect(captionOf(21), laterPart);
     expect((await repository.fileById('big'))!.folderId, 'trips');
-    for (final id in [20, 21]) {
-      final caption = (telegram.messages[id]!.content as td.MessageDocument).caption.text;
-      expect(caption, contains(';folder=trips;'));
-    }
-    expect(await folders(), [null, null, null]);
+
+    // Read again, the later part still names no folder; the first part's
+    // caption is the one that counts.
+    await repository.ingest(telegram.messages[21]!);
+    expect((await repository.fileById('big'))!.folderId, 'trips');
+    expect((await db.fileById('big'))!.partsPresent, 2);
+  });
+
+  test('a later part read before the first stands in, and the first part takes over', () async {
+    await open();
+    final created = DateTime.fromMillisecondsSinceEpoch(1_700_000_000_000);
+    await receive(
+      documentMessage(
+        41,
+        ManifestCodec.encodePart(
+          const PartRecord(fileId: 'movie', index: 1, count: 2, size: 18),
+        ).text,
+        fileName: 'Movie.mkv.002',
+      ),
+    );
+    expect((await repository.fileById('movie'))!.name, 'Movie.mkv');
+    expect((await repository.fileById('movie'))!.folderId, isNull);
+
+    await receive(
+      documentMessage(
+        40,
+        ManifestCodec.encodeFile(
+          FileManifest(
+            id: 'movie',
+            name: 'Lalibela.mkv',
+            folderId: 'trips',
+            mimeType: 'video/x-matroska',
+            size: 18,
+            createdAt: created,
+            modifiedAt: created,
+            partCount: 2,
+          ),
+        ).text,
+        fileName: 'Movie.mkv.001',
+      ),
+    );
+    await repository.ingest(telegram.messages[41]!);
+
+    final file = (await repository.fileById('movie'))!;
+    expect(file.name, 'Lalibela.mkv');
+    expect(file.folderId, 'trips');
+    expect((await db.fileById('movie'))!.partsPresent, 2);
+  });
+
+  test('a split file whose first part is gone is changed on the parts it has left', () async {
+    await open();
+    await receiveSplit(parts: [1]);
+
+    await repository.moveFiles([(await repository.fileById('big'))!], 'trips');
+
+    expect(telegram.captionEdits, 1);
+    expect(captionOf(21), contains(';folder=trips;'));
+    expect((await repository.fileById('big'))!.folderId, 'trips');
   });
 
   test('a second change waits for the first', () async {

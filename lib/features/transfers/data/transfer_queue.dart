@@ -1454,7 +1454,18 @@ class TransferQueue extends Notifier<TransfersState> {
           durationSeconds: row.durationSeconds,
           originalSize: _smallCopyOf[row.id],
         );
-        final caption = await _repository.fileCaption(manifest);
+        // The first part says what the file is; the others only whose part
+        // they are, so a rename or move later edits one message.
+        final caption = index == 0
+            ? await _repository.fileCaption(manifest)
+            : ManifestCodec.encodePart(
+                PartRecord(
+                  fileId: row.fileId,
+                  index: index,
+                  count: partCount,
+                  size: row.totalBytes,
+                ),
+              );
         final thumbnail = index == 0 ? row.thumbnailPath : null;
         try {
           // Cancelled while the part was being written: it isn't sent.
@@ -2113,9 +2124,8 @@ class TransferQueue extends Notifier<TransfersState> {
                 _ => null,
               };
         if (caption == null) return false;
-        final manifest = ManifestCodec.decodeFile(caption);
-        return manifest?.id == row.fileId &&
-            manifest?.partIndex == row.completedParts;
+        final part = ManifestCodec.partOf(caption);
+        return part?.fileId == row.fileId && part?.index == row.completedParts;
       }).firstOrNull;
       if (resumable != null &&
           resumable.sendingState is td.MessageSendingStatePending) {

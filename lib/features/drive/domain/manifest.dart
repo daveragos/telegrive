@@ -39,9 +39,11 @@ abstract final class ManifestCodec {
   static const String folderKind = 'tgfolder2';
   static const String albumKind = 'tgalbum2';
   static const String driveKind = 'tgdrive2';
+  static const String partKind = 'tgpart2';
 
   /// [manifest] as its caption. [folderName] names the folder it is in, for
-  /// the tag; without it the caption carries none.
+  /// the tag; without it the caption carries none. A split file carries its
+  /// manifest on its first part only; the others carry [encodePart].
   static EncodedText encodeFile(FileManifest manifest, {String? folderName}) {
     return CaptionLayout.build(
       head: manifest.name,
@@ -83,6 +85,15 @@ abstract final class ManifestCodec {
     );
   }
 
+  /// A later part of a split file: whose part it is, and nothing that ever
+  /// changes, so its caption is written once and never edited.
+  static EncodedText encodePart(PartRecord part) {
+    return CaptionLayout.build(
+      head: 'Part ${part.index + 1} of ${part.count}',
+      details: _details(partKind, part.toJson(), _partFields),
+    );
+  }
+
   /// The message pinned at the top of the channel: it tells someone
   /// browsing in Telegram what the channel is, and marks the channel as the
   /// drive for Telegrive looking for it on a new phone.
@@ -112,6 +123,23 @@ abstract final class ManifestCodec {
   static AlbumManifest? decodeAlbum(String text) {
     final json = _read(albumKind, text, _albumFields) ?? _legacy(_legacyAlbum, text);
     return json == null ? null : AlbumManifest.tryFromJson(json);
+  }
+
+  static PartRecord? decodePart(String caption) {
+    final json = _read(partKind, caption, _partFields);
+    return json == null ? null : PartRecord.tryFromJson(json);
+  }
+
+  /// Which file [caption] is a part of, and which part, whether it carries
+  /// the file's manifest or only a part record.
+  static ({String fileId, int index})? partOf(String caption) {
+    if (decodeFile(caption) case final manifest?) {
+      return (fileId: manifest.id, index: manifest.partIndex);
+    }
+    if (decodePart(caption) case final part?) {
+      return (fileId: part.fileId, index: part.index);
+    }
+    return null;
   }
 
   static DriveManifest? decodeDrive(String text) {
@@ -180,6 +208,13 @@ abstract final class ManifestCodec {
     _Field('n', 'name', _Value.text),
     _Field('ct', 'added', _Value.number),
     _Field('mt', 'changed', _Value.number),
+  ];
+
+  static const List<_Field> _partFields = [
+    _Field('f', 'file', _Value.text),
+    _Field('pi', 'part', _Value.partNumber),
+    _Field('pc', 'parts', _Value.number),
+    _Field('s', 'size', _Value.number),
   ];
 
   static const List<_Field> _driveFields = [
@@ -299,8 +334,10 @@ class _Field {
   };
 }
 
-/// Metadata for one message of a file. Split files repeat the same manifest
-/// in every part with a different [partIndex].
+/// Metadata for a file, as the caption of its first message carries it.
+/// The later parts of a split file carry a [PartRecord] instead; split
+/// files written before that repeat this manifest on every part, each with
+/// its own [partIndex].
 @immutable
 class FileManifest {
   const FileManifest({
@@ -562,6 +599,56 @@ class AlbumManifest {
       name: name,
       createdAt: _time(json['ct']),
       modifiedAt: _time(json['mt'] ?? json['ct']),
+    );
+  }
+}
+
+/// What a later part of a split file says of itself: the file it belongs
+/// to, which part it is of how many, and the whole file's size. The first
+/// part's manifest is what says what the file is.
+@immutable
+class PartRecord {
+  const PartRecord({
+    required this.fileId,
+    required this.index,
+    required this.count,
+    required this.size,
+    this.extra = const {},
+  });
+
+  static const Set<String> _keys = {'f', 'pi', 'pc', 's'};
+
+  final String fileId;
+
+  /// Counts from 0, as [FileManifest.partIndex] does; never 0 here.
+  final int index;
+  final int count;
+
+  /// Size of the whole file, not of this part.
+  final int size;
+
+  /// Fields a newer version wrote; see [FileManifest.extra].
+  final Map<String, Object?> extra;
+
+  Map<String, dynamic> toJson() => {
+    ...extra,
+    'f': fileId,
+    'pi': index,
+    'pc': count,
+    's': size,
+  };
+
+  static PartRecord? tryFromJson(Map<String, dynamic> json) {
+    final (fileId, index, count, size) = (json['f'], json['pi'], json['pc'], json['s']);
+    if (fileId is! String || fileId.isEmpty) return null;
+    if (index is! int || count is! int || size is! int) return null;
+    if (index < 1 || index >= count || size < 0) return null;
+    return PartRecord(
+      fileId: fileId,
+      index: index,
+      count: count,
+      size: size,
+      extra: Map.unmodifiable(_unknown(json, _keys)),
     );
   }
 }

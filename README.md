@@ -20,6 +20,8 @@ phone number.
   Telegrive creates (or finds again) on your account.
 - **Any size.** Telegram caps a message at 2000 MiB (4000 MiB with Premium).
   Bigger files are split into 512 MiB parts and joined back on download.
+  Only the first part's caption says what the file is, so renaming,
+  moving or starring a 40 GB file is one edit.
 - **Photo backup.** Turn it on once and the whole camera roll goes up in
   full quality — then every new photo and video follows on its own, and
   with Back up on its own, even with the app closed while the phone
@@ -495,6 +497,13 @@ Telegram (source of truth)                 This device
   message in it, pinned or not, and the description is left to people.
   Drives made before it are known by the `#telegrive` tag in their
   description and get the message the next time they open.
+- **Split files** carry that manifest on their first part only. Each later
+  part's caption is `tgpart2`, the file's id, which part it is of how many,
+  and the whole file's size, written once and never edited. Until the
+  index has read the first part, a later part stands in for the file under
+  the name it was sent with. Split files written before this carry the
+  manifest on every part; only the first part's counts, unless it is gone,
+  and then the parts left are edited instead.
 - **Folders** are small text messages carrying their own id, name, parent
   and star, so renames, moves and stars are a single edit and two devices
   never overwrite each other's folder tree. A folder's hashtag is made from

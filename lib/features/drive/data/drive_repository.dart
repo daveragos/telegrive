@@ -111,9 +111,10 @@ class DriveRepository {
   /// makes a change made on this phone look undone.
   Future<void> ingest(td.Message message) async {
     switch (await _withWaitingChange(MessageIndexer.entryFor(message))) {
-      case FilePartEntry(:final file, :final part, :final albums):
-        await _db.upsertFilePart(file, part);
-        await _db.setFileAlbums(part.fileId.value, albums);
+      case FilePartEntry(:final file, :final part, :final albums, :final write):
+        if (await _db.upsertFilePart(file, part, write: write)) {
+          await _db.setFileAlbums(part.fileId.value, albums);
+        }
         _ingested.add(part.fileId.value);
       case FolderEntry(:final folder):
         await _db.upsertFolder(folder);
@@ -774,7 +775,7 @@ class DriveRepository {
     }
   }
 
-  /// Rewrites the manifest on every part of [file], starting from what the
+  /// Rewrites the manifest of [file], starting from what the
   /// index holds so nothing the caller doesn't touch is lost, including
   /// keys only a newer version knows. While Telegram can't be reached, or
   /// the file already has a change waiting, the change is made on the phone
@@ -852,20 +853,24 @@ class DriveRepository {
     extra: ManifestCodec.decodeExtra(row.manifestExtra),
   );
 
-  /// Writes [manifest] onto each of [parts], with that part's index, and
-  /// indexes what Telegram hands back. Flood waits are sat out when
-  /// [patient]; a waiting change being sent lets them through, for the
-  /// outbox to pause on.
+  /// Writes [manifest] onto the first of [parts], whose caption is the one
+  /// that says what the file is, and indexes what Telegram hands back. The
+  /// later parts of a split file only say whose part they are, and are
+  /// never edited. A file whose first part is gone has the manifest written
+  /// onto each part it has left, with that part's index, so the index still
+  /// follows the change. Flood waits are sat out when [patient]; a waiting
+  /// change being sent lets them through, for the outbox to pause on.
   Future<void> _writeFileManifest(
     List<PartRow> parts,
     FileManifest manifest, {
     bool patient = true,
   }) async {
+    final first = parts.where((part) => part.partIndex == 0).toList();
     // Once one part carries the change, Stop no longer cuts a wait short,
-    // so a split file never ends up with parts that disagree.
+    // so parts written together never disagree.
     var stoppable = true;
     final folderName = await _folderName(manifest.folderId);
-    for (final part in parts) {
+    for (final part in first.isEmpty ? parts : first) {
       final caption = ManifestCodec.encodeFile(
         manifest.copyWith(partIndex: part.partIndex),
         folderName: folderName,
@@ -1589,7 +1594,7 @@ class DriveRepository {
     if (row == null) return entry;
     final patch = _decode(row.patch);
     switch (entry) {
-      case FilePartEntry(:final file, :final part, :final albums):
+      case FilePartEntry(:final file, :final part, :final albums, :final write):
         final shown = patch.over({
           'n': file.name.value,
           'f': file.folderId.value,
@@ -1610,6 +1615,7 @@ class DriveRepository {
           ),
           part,
           albums: (shown['al']! as List).cast<String>(),
+          write: write,
         );
       case FolderEntry(:final folder):
         final shown = patch.over({
@@ -1657,9 +1663,8 @@ class DriveRepository {
 
   /// Sends the waiting change [row] to Telegram, onto what the channel
   /// holds now, read again first: a field another device changed meanwhile
-  /// keeps that device's version, and the rest still goes. A split file has
-  /// the result written to every part, so parts a rewrite cut short agree
-  /// again. Returns what was left out, for the person to be told. A change
+  /// keeps that device's version, and the rest still goes. Returns what was
+  /// left out, for the person to be told. A change
   /// whose item is gone from the channel is dropped. Telegram's refusals,
   /// flood waits included, come back as they are, for the outbox to settle.
   ///
@@ -1694,15 +1699,12 @@ class DriveRepository {
           final (:apply, skipped: left) = patch.resolve(
             EditPatch.fileValues(remote),
           );
-          if (apply.isEmpty) await ingest(message);
-          final parts = await _db.partsOf(row.itemId);
-          if (apply.isNotEmpty || parts.length > 1) {
-            final merged = EditPatch.applyToFile(remote, apply);
+          if (apply.isEmpty) {
+            await ingest(message);
+          } else {
             await _writeFileManifest(
-              parts,
-              apply.isEmpty
-                  ? merged
-                  : merged.copyWith(modifiedAt: DateTime.now()),
+              await _db.partsOf(row.itemId),
+              EditPatch.applyToFile(remote, apply).copyWith(modifiedAt: DateTime.now()),
               patient: false,
             );
           }

@@ -3,6 +3,7 @@ import 'package:handy_tdlib/api.dart' as td;
 import 'package:telegrive/core/files/file_kind.dart';
 import 'package:telegrive/features/drive/data/message_indexer.dart';
 import 'package:telegrive/features/drive/domain/manifest.dart';
+import 'package:telegrive/infrastructure/database/app_database.dart';
 
 import 'support/fake_telegram.dart';
 
@@ -129,6 +130,78 @@ void main() {
     );
     expect(folder.text, isNull);
     expect(folder.manifest, isTrue);
+  });
+
+  group('split files', () {
+    final at = DateTime(2026, 10, 5);
+    final firstPart = ManifestCodec.encodeFile(
+      FileManifest(
+        id: 'big',
+        name: 'Holiday.mkv',
+        folderId: 'trips',
+        mimeType: 'video/x-matroska',
+        size: 30,
+        createdAt: at,
+        modifiedAt: at,
+        partCount: 3,
+        albums: const ['a1'],
+      ),
+    ).text;
+    final laterPart = ManifestCodec.encodePart(
+      const PartRecord(fileId: 'big', index: 2, count: 3, size: 30),
+    ).text;
+
+    test('the first part says what the file is', () {
+      final entry = MessageIndexer.entryFor(
+        documentMessage(30, firstPart, fileName: 'Holiday.mkv.001'),
+      ) as FilePartEntry;
+      expect(entry.write, FileRowWrite.always);
+      expect(entry.file.name.value, 'Holiday.mkv');
+      expect(entry.file.folderId.value, 'trips');
+      expect(entry.albums, ['a1']);
+      expect(entry.part.partIndex.value, 0);
+    });
+
+    test('a later part only adds itself, standing in for the file until the first is read', () {
+      final message = documentMessage(32, laterPart, fileName: 'Holiday.mkv.003', mimeType: '');
+      final entry = MessageIndexer.entryFor(message) as FilePartEntry;
+      expect(entry.write, FileRowWrite.ifAbsent);
+      expect(entry.part.fileId.value, 'big');
+      expect(entry.part.partIndex.value, 2);
+      expect(entry.file.name.value, 'Holiday.mkv');
+      expect(entry.file.size.value, 30);
+      expect(entry.file.partCount.value, 3);
+      expect(entry.file.adopted.value, isFalse);
+      expect(MessageIndexer.isAdopted(message), isFalse);
+      expect(MessageIndexer.postOf(message).manifest, isTrue);
+      expect(MessageIndexer.manifestOf(message), isA<PartRecord>());
+    });
+
+    test('a later part written whole by an older version stands in only while the first is missing', () {
+      final entry = MessageIndexer.entryFor(
+        documentMessage(
+          31,
+          'Holiday.mkv\ntgr1:{"id":"big","n":"Old.mkv","s":30,"pc":3,"pi":1}',
+          fileName: 'Holiday.mkv.002',
+        ),
+      ) as FilePartEntry;
+      expect(entry.write, FileRowWrite.unlessFirstPartKnown);
+      expect(entry.file.name.value, 'Old.mkv');
+    });
+
+    test('a part record that makes no sense is no part', () {
+      for (final line in [
+        'tgpart2;file=big;part=1;parts=3;size=30',
+        'tgpart2;file=big;part=4;parts=3;size=30',
+        'tgpart2;part=2;parts=3;size=30',
+        'tgpart2;file=big;part=2;parts=3',
+      ]) {
+        expect(ManifestCodec.decodePart(line), isNull, reason: line);
+      }
+      expect(ManifestCodec.partOf(laterPart), (fileId: 'big', index: 2));
+      expect(ManifestCodec.partOf(firstPart), (fileId: 'big', index: 0));
+      expect(ManifestCodec.partOf('a holiday video'), isNull);
+    });
   });
 
   test('a voice message with a manifest is read from it', () {

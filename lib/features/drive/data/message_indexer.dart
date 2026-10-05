@@ -14,13 +14,23 @@ sealed class IndexEntry {
 }
 
 class FilePartEntry extends IndexEntry {
-  const FilePartEntry(this.file, this.part, {this.albums = const []});
+  const FilePartEntry(
+    this.file,
+    this.part, {
+    this.albums = const [],
+    this.write = FileRowWrite.always,
+  });
 
   final DriveFilesCompanion file;
   final FilePartsCompanion part;
 
-  /// Albums the file is in, as its manifest says.
+  /// Albums the file is in, as its manifest says. They count only where
+  /// [write] lets the message write the file's row.
   final List<String> albums;
+
+  /// Whether this message says what the file is, or only that it is one
+  /// of its parts.
+  final FileRowWrite write;
 }
 
 class FolderEntry extends IndexEntry {
@@ -103,7 +113,10 @@ abstract final class MessageIndexer {
     if (media == null) return null;
 
     final decoded = ManifestCodec.decodeFile(media.caption);
-    final manifest = decoded ?? _adoptedManifest(message, media);
+    final record = decoded == null ? ManifestCodec.decodePart(media.caption) : null;
+    final manifest =
+        decoded ??
+        (record == null ? _adoptedManifest(message, media) : _laterPartManifest(message, media, record));
     final kind = FileKind.detect(
       fileName: manifest.name,
       mimeType: manifest.mimeType,
@@ -136,7 +149,7 @@ abstract final class MessageIndexer {
         // clears it.
         originalSize: Value(manifest.originalSize),
         manifestExtra: Value(ManifestCodec.encodeExtra(manifest.extra)),
-        adopted: Value(decoded == null),
+        adopted: Value(decoded == null && record == null),
         // Previews come from the first part only; later parts of a split
         // video have nothing meaningful to show.
         minithumbnail: isFirstPart
@@ -154,6 +167,34 @@ abstract final class MessageIndexer {
         size: media.file.size != 0 ? media.file.size : media.file.expectedSize,
       ),
       albums: manifest.albums,
+      write: switch ((isFirstPart, record)) {
+        (true, _) => FileRowWrite.always,
+        (false, null) => FileRowWrite.unlessFirstPartKnown,
+        (false, _) => FileRowWrite.ifAbsent,
+      },
+    );
+  }
+
+  /// A stand-in manifest for the file a later part [record] belongs to,
+  /// for the index to show until it reads the first part: the name the
+  /// part was sent under without its number, at the root.
+  static FileManifest _laterPartManifest(
+    td.Message message,
+    MediaInfo media,
+    PartRecord record,
+  ) {
+    final date = DateTime.fromMillisecondsSinceEpoch(message.date * 1000);
+    final name = media.fileName.replaceFirst(RegExp(r'\.\d{3}$'), '');
+    return FileManifest(
+      id: record.fileId,
+      name: name,
+      folderId: null,
+      mimeType: mimeTypeFor(name),
+      size: record.size,
+      createdAt: date,
+      modifiedAt: date,
+      partCount: record.count,
+      partIndex: record.index,
     );
   }
 
@@ -180,23 +221,27 @@ abstract final class MessageIndexer {
 
   /// The manifest [message] carries as the index reads it: a
   /// [FileManifest] for media, the one made up for it when it was adopted
-  /// without one; a [FolderManifest] or [AlbumManifest] for the drive's text
-  /// records; null for anything else.
+  /// without one; a [PartRecord] for a later part of a split file; a
+  /// [FolderManifest] or [AlbumManifest] for the drive's text records; null
+  /// for anything else.
   static Object? manifestOf(td.Message message) {
     if (message.content case td.MessageText(:final text)) {
       return ManifestCodec.decodeAlbum(text.text) ?? ManifestCodec.decodeFolder(text.text);
     }
     final media = describe(message);
     if (media == null) return null;
-    return ManifestCodec.decodeFile(media.caption) ?? _adoptedManifest(message, media);
+    return ManifestCodec.decodeFile(media.caption) ??
+        ManifestCodec.decodePart(media.caption) ??
+        _adoptedManifest(message, media);
   }
 
   /// Whether [message] is media the drive adopts: delivered, with a file
-  /// the index keeps, and no manifest in its caption.
+  /// the index keeps, and neither a manifest nor a part record in its
+  /// caption.
   static bool isAdopted(td.Message message) {
     if (message.sendingState != null) return false;
     final media = describe(message);
-    return media != null && ManifestCodec.decodeFile(media.caption) == null;
+    return media != null && ManifestCodec.partOf(media.caption) == null;
   }
 
   /// [message] as the forward filer reads the channel: what it is, when it
@@ -212,7 +257,7 @@ abstract final class MessageIndexer {
         date: message.date,
         text: null,
         media: true,
-        manifest: ManifestCodec.decodeFile(media.caption) != null,
+        manifest: ManifestCodec.partOf(media.caption) != null,
         forwarded: message.forwardInfo != null,
         caption: media.caption,
         albumId: message.mediaAlbumId,
