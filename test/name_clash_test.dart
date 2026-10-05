@@ -123,10 +123,10 @@ void main() {
     bool trashed = false,
   }) => documentMessage(
     id,
-    '$name\ntgr1:{"id":"$fileId","n":"$name"'
-    '${folderId == null ? '' : ',"f":"$folderId"'}'
-    ',"m":"application/octet-stream","s":9,"ct":1700000000000'
-    '${trashed ? ',"tr":1700000000000' : ''}}',
+    'tgfile2;id=$fileId;name=$name'
+    '${folderId == null ? '' : ';folder=$folderId'}'
+    ';type=application/octet-stream;size=9'
+    '${trashed ? ';trashed=1700000000000' : ''};added=1700000000000',
     fileName: name,
     mimeType: 'application/octet-stream',
   );
@@ -154,19 +154,19 @@ void main() {
     await receive(
       textMessage(
         1,
-        '📁 Work\ntgrf1:{"id":"work","n":"Work","ct":1700000000000}',
+        'tgfolder2;id=work;name=Work;added=1700000000000',
       ),
     );
     await receive(
       textMessage(
         2,
-        '📁 Home\ntgrf1:{"id":"home","n":"Home","p":"work","ct":1700000000000}',
+        'tgfolder2;id=home;name=Home;parent=work;added=1700000000000',
       ),
     );
     await receive(
       textMessage(
         3,
-        '📁 Archive\ntgrf1:{"id":"archive","n":"Archive","p":"work","ct":1700000000000}',
+        'tgfolder2;id=archive;name=Archive;parent=work;added=1700000000000',
       ),
     );
     await receive(document(10, 'a', 'Budget 2026.xlsx', folderId: 'work'));

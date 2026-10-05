@@ -11,6 +11,7 @@ import '../../../core/files/file_kind.dart';
 import '../../../infrastructure/database/app_database.dart';
 import '../../../infrastructure/network/network_status.dart';
 import '../../../infrastructure/storage/preferences.dart';
+import '../../../infrastructure/telegram/message_number.dart';
 import '../../../infrastructure/telegram/telegram_client.dart';
 import '../domain/manifest.dart';
 import 'channel_messenger.dart';
@@ -46,7 +47,7 @@ class IndexCopies {
 
   /// Bump when what a copy holds changes in a way an older version can't
   /// read; a copy of another format is passed over.
-  static const int format = 1;
+  static const int format = 2;
 
   static const Duration interval = Duration(days: 3);
   static const String fileName = 'telegrive-index.json.gz';
@@ -89,12 +90,15 @@ class IndexCopies {
       final caption = ManifestCodec.encodeIndex(
         IndexRecord(
           driveId: card.id,
-          throughMessageId: _prefs.lastSyncedMessageId(chatId),
+          throughMessageId: MessageNumber.of(_prefs.lastSyncedMessageId(chatId)),
           files: (json['files']! as List).length,
           createdAt: now,
         ),
       );
-      final existing = card.indexMessageId;
+      final existing = switch (card.indexMessageId) {
+        final number? => MessageNumber.idOf(number),
+        null => null,
+      };
       if (existing != null && await _indexCopyAt(chatId, existing) != null) {
         await _messenger.replaceDocument(chatId, existing, path: file.path, caption: caption);
       } else {
@@ -102,7 +106,7 @@ class IndexCopies {
         await _messenger.editText(
           chatId,
           cardId,
-          ManifestCodec.encodeDrive(card.copyWith(indexMessageId: sent.id)),
+          ManifestCodec.encodeDrive(card.copyWith(indexMessageId: MessageNumber.of(sent.id))),
         );
       }
       await _prefs.setIndexCopy(chatId, now, print);
@@ -129,9 +133,9 @@ class IndexCopies {
       final cardId = _prefs.driveCardId(chatId);
       if (cardId == null) return false;
       final card = await _driveManifest(chatId, cardId);
-      final indexId = card?.indexMessageId;
-      if (card == null || indexId == null) return false;
-      final copy = await _indexCopyAt(chatId, indexId);
+      final indexNumber = card?.indexMessageId;
+      if (card == null || indexNumber == null) return false;
+      final copy = await _indexCopyAt(chatId, MessageNumber.idOf(indexNumber));
       if (copy == null || copy.record.driveId != card.id) return false;
 
       final file = await _client.send<td.File>(
@@ -207,13 +211,12 @@ class IndexCopies {
             'id': f.id,
             'p': f.parentId,
             'n': f.name,
-            'msg': f.messageId,
+            'msg': MessageNumber.of(f.messageId),
             'ct': ms(f.createdAt),
             'mt': ms(f.modifiedAt),
             'tr': ms(f.trashedAt),
             'st': f.starred,
             'x': f.manifestExtra,
-            'ly': f.captionLayout,
           },
       ],
       'albums': [
@@ -221,10 +224,9 @@ class IndexCopies {
           {
             'id': a.id,
             'n': a.name,
-            'msg': a.messageId,
+            'msg': MessageNumber.of(a.messageId),
             'ct': ms(a.createdAt),
             'mt': ms(a.modifiedAt),
-            'ly': a.captionLayout,
           },
       ],
       'files': [
@@ -249,7 +251,7 @@ class IndexCopies {
             'al': [...?albumsOf[f.id]]..sort(),
             'parts': [
               for (final p in [...?parts[f.id]]..sort((a, b) => a.partIndex - b.partIndex))
-                {'i': p.partIndex, 'msg': p.messageId, 's': p.size, 'ly': p.captionLayout},
+                {'i': p.partIndex, 'msg': MessageNumber.of(p.messageId), 's': p.size},
             ],
           },
       ],
@@ -299,10 +301,9 @@ class IndexCopies {
             FilePartsCompanion.insert(
               fileId: id,
               partIndex: p['i'] as int,
-              messageId: p['msg'] as int,
+              messageId: MessageNumber.idOf(p['msg'] as int),
               tdFileId: 0,
               size: p['s'] as int,
-              captionLayout: Value(p['ly'] as int?),
             ),
           );
         }
@@ -317,13 +318,12 @@ class IndexCopies {
               id: f['id'] as String,
               parentId: Value(f['p'] as String?),
               name: f['n'] as String,
-              messageId: f['msg'] as int,
+              messageId: MessageNumber.idOf(f['msg'] as int),
               createdAt: time(f['ct']),
               modifiedAt: time(f['mt']),
               trashedAt: Value(maybe(f['tr'])),
               starred: Value(f['st'] as bool),
               manifestExtra: Value(f['x'] as String?),
-              captionLayout: Value(f['ly'] as int?),
             ),
         ],
         albums: [
@@ -331,10 +331,9 @@ class IndexCopies {
             AlbumsCompanion.insert(
               id: a['id'] as String,
               name: a['n'] as String,
-              messageId: a['msg'] as int,
+              messageId: MessageNumber.idOf(a['msg'] as int),
               createdAt: time(a['ct']),
               modifiedAt: time(a['mt']),
-              captionLayout: Value(a['ly'] as int?),
             ),
         ],
         files: files,

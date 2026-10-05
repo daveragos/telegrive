@@ -529,8 +529,7 @@ void main() {
     final repository = container.read(driveRepositoryProvider);
     final part = documentMessage(
       21,
-      'big.bin.001\ntgr1:{"id":"big","n":"big.bin","s":20,"ct":1700000000000,'
-      '"pc":2}',
+      'tgfile2;id=big;name=big.bin;size=20;parts=2;added=1700000000000',
       fileName: 'big.bin.001',
     );
     telegram.messages[part.id] = part;

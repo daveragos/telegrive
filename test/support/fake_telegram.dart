@@ -1,5 +1,6 @@
 import 'package:handy_tdlib/api.dart' as td;
 import 'package:telegrive/features/drive/data/drive_session.dart';
+import 'package:telegrive/features/drive/domain/manifest.dart';
 import 'package:telegrive/infrastructure/telegram/secure_store.dart';
 import 'package:telegrive/infrastructure/telegram/telegram_client.dart';
 import 'package:telegrive/infrastructure/telegram/telegram_exception.dart';
@@ -423,10 +424,23 @@ td.User testUser() => const td.User(
   addedToAttachmentMenu: false,
 );
 
-/// The drive channel's full record, its description carrying the tag that
-/// marks a Telegrive drive.
+/// The drive message, pinned unless [pinned] says otherwise, pointing at
+/// the copy of the index numbered [indexMessageId] when there is one.
+td.Message driveMessage(int id, {bool pinned = true, int? indexMessageId}) => channelMessage(
+  id,
+  td.MessageText(
+    text: td.FormattedText(
+      text: ManifestCodec.encodeDrive(
+        DriveManifest(id: 'drive-1', createdAt: DateTime(2026, 10, 5), indexMessageId: indexMessageId),
+      ).text,
+      entities: const [],
+    ),
+  ),
+).copyWith(isPinned: pinned);
+
+/// The drive channel's full record.
 td.SupergroupFullInfo channelInfo() => const td.SupergroupFullInfo(
-  description: 'Storage for the Telegrive app. #telegrive',
+  description: 'Storage for the Telegrive app.',
   memberCount: 1,
   administratorCount: 1,
   restrictedCount: 0,

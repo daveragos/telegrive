@@ -126,7 +126,7 @@ void main() {
     expect(comment.forwarded, isFalse);
 
     final folder = MessageIndexer.postOf(
-      textMessage(_id, '📁 Invoices\ntgrf1:{"id":"inv","n":"Invoices"}'),
+      textMessage(_id, 'tgfolder2;id=inv;name=Invoices'),
     );
     expect(folder.text, isNull);
     expect(folder.manifest, isTrue);
@@ -177,62 +177,16 @@ void main() {
       expect(MessageIndexer.manifestOf(message), isA<PartRecord>());
     });
 
-    test('a later part written whole by an older version stands in only while the first is missing', () {
+    test('a later part carrying the whole manifest stands in only while the first is missing', () {
       final entry = MessageIndexer.entryFor(
         documentMessage(
           31,
-          'Holiday.mkv\ntgr1:{"id":"big","n":"Old.mkv","s":30,"pc":3,"pi":1}',
+          'tgfile2;id=big;name=Old.mkv;size=30;parts=3;part=2',
           fileName: 'Holiday.mkv.002',
         ),
       ) as FilePartEntry;
       expect(entry.write, FileRowWrite.unlessFirstPartKnown);
       expect(entry.file.name.value, 'Old.mkv');
-    });
-
-    test('each message is indexed with the layout it is written in', () {
-      int? partLayout(td.Message message) =>
-          (MessageIndexer.entryFor(message) as FilePartEntry).part.captionLayout.value;
-      expect(partLayout(documentMessage(30, firstPart)), CaptionLayouts.current);
-      expect(partLayout(documentMessage(32, laterPart)), CaptionLayouts.current);
-      expect(
-        partLayout(documentMessage(30, 'Holiday.mkv\ntgr1:{"id":"big","n":"Holiday.mkv","s":30}')),
-        CaptionLayouts.older,
-      );
-      // A later part with the whole manifest, even in the current layout,
-      // is to become a part record.
-      final wholeLaterPart = ManifestCodec.encodeFile(
-        FileManifest(
-          id: 'big',
-          name: 'Holiday.mkv',
-          folderId: null,
-          mimeType: 'video/x-matroska',
-          size: 30,
-          createdAt: at,
-          modifiedAt: at,
-          partCount: 3,
-          partIndex: 1,
-        ),
-      ).text;
-      expect(partLayout(documentMessage(31, wholeLaterPart)), CaptionLayouts.older);
-      expect(partLayout(_voice()), isNull, reason: 'a forward has no caption of the drive\'s');
-
-      final olderFolder = MessageIndexer.entryFor(
-        textMessage(40, '📁 Invoices\ntgrf1:{"id":"inv","n":"Invoices"}'),
-      ) as FolderEntry;
-      expect(olderFolder.folder.captionLayout.value, CaptionLayouts.older);
-      final folder = MessageIndexer.entryFor(
-        textMessage(
-          41,
-          ManifestCodec.encodeFolder(
-            FolderManifest(id: 'inv', name: 'Invoices', parentId: null, createdAt: at, modifiedAt: at),
-          ).text,
-        ),
-      ) as FolderEntry;
-      expect(folder.folder.captionLayout.value, CaptionLayouts.current);
-      final olderAlbum = MessageIndexer.entryFor(
-        textMessage(42, '🖼 Trip\ntgra1:{"id":"trip","n":"Trip"}'),
-      ) as AlbumEntry;
-      expect(olderAlbum.album.captionLayout.value, CaptionLayouts.older);
     });
 
     test('a part record that makes no sense is no part', () {
@@ -376,15 +330,11 @@ void main() {
   });
 
   test('a starred folder is indexed starred', () {
-    FolderEntry entry(String json) =>
-        MessageIndexer.entryFor(textMessage(_id, '📁 Invoices\ntgrf1:$json'))
-            as FolderEntry;
+    FolderEntry entry(String details) =>
+        MessageIndexer.entryFor(textMessage(_id, details)) as FolderEntry;
 
-    expect(
-      entry('{"id":"inv","n":"Invoices","st":1}').folder.starred.value,
-      isTrue,
-    );
-    expect(entry('{"id":"inv","n":"Invoices"}').folder.starred.value, isFalse);
+    expect(entry('tgfolder2;id=inv;name=Invoices;star=1').folder.starred.value, isTrue);
+    expect(entry('tgfolder2;id=inv;name=Invoices').folder.starred.value, isFalse);
   });
 
   test('the voice file is what gets downloaded and streamed', () {

@@ -80,13 +80,12 @@ void main() {
     });
     repository = container.read(driveRepositoryProvider);
 
-    await receive(textMessage(1, '📁 Work\ntgrf1:{"id":"work","n":"Work","ct":1700000000000}'));
+    await receive(textMessage(1, 'tgfolder2;id=work;name=Work;added=1700000000000'));
     for (final (index, name) in ['a', 'b', 'c', 'gone'].indexed) {
       await receive(
         documentMessage(
           10 + index,
-          '$name.jpg\ntgr1:{"id":"$name","n":"$name.jpg","m":"image/jpeg","s":9,'
-          '"ct":1700000000000}',
+          'tgfile2;id=$name;name=$name.jpg;type=image/jpeg;size=9;added=1700000000000',
           fileName: '$name.jpg',
           mimeType: 'image/jpeg',
         ),
@@ -95,8 +94,7 @@ void main() {
     await receive(
       documentMessage(
         20,
-        'notes.pdf\ntgr1:{"id":"notes","n":"notes.pdf","m":"application/pdf","s":9,'
-        '"ct":1700000000000}',
+        'tgfile2;id=notes;name=notes.pdf;type=application/pdf;size=9;added=1700000000000',
         fileName: 'notes.pdf',
         mimeType: 'application/pdf',
       ),

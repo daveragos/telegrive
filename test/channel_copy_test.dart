@@ -198,7 +198,7 @@ void main() {
     _LoggingTelegram channel({Set<int> floods = const {}, int seconds = 2}) {
       final telegram = _LoggingTelegram(floods: floods, seconds: seconds);
       for (final id in ids) {
-        telegram.messages[id] = documentMessage(id, '$id.jpg\ntgr1:{"id":"$id"}');
+        telegram.messages[id] = documentMessage(id, '$id.jpg\ntgfile2;id=$id');
       }
       return telegram;
     }

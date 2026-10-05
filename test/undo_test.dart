@@ -73,17 +73,17 @@ void main() {
     // that a widget test's clock no longer runs by then.
     addTearDown(container.dispose);
     repository = container.read(driveRepositoryProvider);
-    await receive(textMessage(1, '📁 Work\ntgrf1:{"id":"work","n":"Work","ct":1700000000000}'));
-    await receive(textMessage(2, '📁 Home\ntgrf1:{"id":"home","n":"Home","ct":1700000000000}'));
+    await receive(textMessage(1, 'tgfolder2;id=work;name=Work;added=1700000000000'));
+    await receive(textMessage(2, 'tgfolder2;id=home;name=Home;added=1700000000000'));
     await receive(
-      textMessage(3, '📁 Sub\ntgrf1:{"id":"sub","n":"Sub","p":"work","ct":1700000000000}'),
+      textMessage(3, 'tgfolder2;id=sub;name=Sub;parent=work;added=1700000000000'),
     );
-    await receive(textMessage(4, '🖼 Trip\ntgra1:{"id":"trip","n":"Trip","ct":1700000000000}'));
+    await receive(textMessage(4, 'tgalbum2;id=trip;name=Trip;added=1700000000000'));
     await receive(
       documentMessage(
         10,
-        'Thesis final.docx\ntgr1:{"id":"a","n":"Thesis final.docx","f":"work",'
-        '"m":"application/msword","s":9,"ct":1700000000000}',
+        'tgfile2;id=a;name=Thesis final.docx;folder=work;type=application/msword;size=9;'
+        'added=1700000000000',
         fileName: 'Thesis final.docx',
         mimeType: 'application/msword',
       ),

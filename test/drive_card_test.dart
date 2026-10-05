@@ -22,17 +22,9 @@ import 'support/fake_telegram.dart';
 /// A channel this account owns that isn't a drive.
 const _otherChatId = -300;
 
-/// The drive message as it sits in the channel, pinned or not, pointing
-/// at the copy of the index in [indexMessageId] when there is one.
-td.Message _card(int id, {bool pinned = true, int? indexMessageId}) {
-  final text = ManifestCodec.encodeDrive(
-    DriveManifest(id: 'drive-1', createdAt: DateTime(2026, 10, 5), indexMessageId: indexMessageId),
-  );
-  return channelMessage(
-    id,
-    td.MessageText(text: td.FormattedText(text: text.text, entities: const [])),
-  ).copyWith(isPinned: pinned);
-}
+/// The drive message as it sits in the channel.
+td.Message _card(int id, {bool pinned = true, int? indexMessageId}) =>
+    driveMessage(id, pinned: pinned, indexMessageId: indexMessageId);
 
 /// TDLib for an account whose search finds [found], each an owned channel
 /// whose description is [description] and whose pinned message is
@@ -197,22 +189,7 @@ void main() {
     expect(prefs.driveCardId(testChatId), 50);
   });
 
-  test('a drive made before the drive message is found by its tag and gets one', () async {
-    final telegram = _Telegram(
-      found: [testChatId],
-      description: 'Storage for the Telegrive app. #telegrive',
-    );
-    final (container, prefs) = await open(telegram);
-
-    expect(container.read(driveSessionProvider)?.chatId, testChatId);
-    expect(telegram.askedFor<td.CreateNewSupergroupChat>(), isEmpty);
-    expect(telegram.askedFor<td.SetChatDescription>().single.description, isNot(contains('#')));
-    final card = cards(telegram).single;
-    expect(telegram.askedFor<td.PinChatMessage>().single.messageId, card.id);
-    expect(prefs.driveCardId(testChatId), card.id);
-  });
-
-  test('a channel of the account\'s with neither the message nor the tag is not taken', () async {
+  test('a channel of the account\'s without the drive message is not taken', () async {
     final telegram = _Telegram(found: [_otherChatId], description: 'Holiday plans');
     final (container, _) = await open(telegram);
 
@@ -266,7 +243,7 @@ void main() {
         gzip.encode(
           utf8.encode(
             jsonEncode({
-              'format': 1,
+              'format': 2,
               'folders': [
                 {'id': 'docs', 'p': null, 'n': 'Docs', 'msg': 3, 'ct': 0, 'mt': 0, 'tr': null, 'st': false, 'x': null, 'ly': 2},
               ],
@@ -283,8 +260,8 @@ void main() {
       downloads: {77: copy.path},
     );
     telegram.messages[50] = _card(50, indexMessageId: 60);
-    telegram.messages[60] = channelMessage(
-      60,
+    telegram.messages[60 << 20] = channelMessage(
+      60 << 20,
       td.MessageDocument(
         document: td.Document(fileName: 'telegrive-index.json.gz', mimeType: 'application/gzip', document: tdFile(77)),
         caption: td.FormattedText(

@@ -134,7 +134,7 @@ void main() {
             size: 10,
           ),
         );
-        telegram.messages[ids[index]] = documentMessage(ids[index], '$name\ntgr1:{}');
+        telegram.messages[ids[index]] = documentMessage(ids[index], '$name\ntgfile2');
       }
       channelIds.addAll(ids);
     }

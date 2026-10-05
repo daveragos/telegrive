@@ -91,7 +91,7 @@ void main() {
 
     test('a length that is zero or not a number is no length', () {
       for (final du in ['0', '"90"', '-5', '1.5']) {
-        final decoded = ManifestCodec.decodeFile('x\ntgr1:{"id":"a","n":"b","s":1,"du":$du}')!;
+        final decoded = ManifestCodec.decodeFile('tgfile2;id=a;name=b;size=1;length=$du')!;
         expect(decoded.durationSeconds, isNull, reason: du);
         expect(decoded.extra, isEmpty, reason: du);
       }
@@ -239,8 +239,7 @@ void main() {
     test('ordinary captions are not manifests', () {
       expect(ManifestCodec.decodeFile(''), isNull);
       expect(ManifestCodec.decodeFile('holiday photos'), isNull);
-      expect(ManifestCodec.decodeFile('tgr1:{not json}'), isNull);
-      expect(ManifestCodec.decodeFile('tgr1:{"id":"x"}'), isNull, reason: 'missing fields');
+      expect(ManifestCodec.decodeFile('tgfile2;id=x'), isNull, reason: 'missing fields');
       expect(ManifestCodec.decodeFile('tgfile2;id=x;name=y'), isNull, reason: 'missing size');
       expect(ManifestCodec.decodeFile('tgfile2;id=x;name=y;size=big'), isNull);
       expect(ManifestCodec.decodeFile('see tgfile2;id=x;name=y;size=1'), isNull);
@@ -248,21 +247,10 @@ void main() {
 
     test('an out-of-range part index is rejected', () {
       expect(
-        ManifestCodec.decodeFile(
-          'x\ntgr1:{"id":"a","n":"b","s":1,"pc":2,"pi":2}',
-        ),
+        ManifestCodec.decodeFile('tgfile2;id=a;name=b;size=1;parts=2;part=3'),
         isNull,
       );
     });
-  });
-
-  test('captions in the older layout still decode', () {
-    final file = ManifestCodec.decodeFile('a.txt\ngr1:{"id":"old","n":"a.txt","s":3}');
-    final folder = ManifestCodec.decodeFolder('📁 Old\ngrf1:{"id":"f","n":"Old"}');
-    expect(file?.id, 'old');
-    expect(folder?.name, 'Old');
-    expect(ManifestCodec.decodeFile('a.txt\ntgr1:{"id":"new","n":"a.txt","s":3}')?.id, 'new');
-    expect(ManifestCodec.decodeAlbum('🖼 Trip\ntgra1:{"id":"t","n":"Trip"}')?.name, 'Trip');
   });
 
   group('folder messages', () {
@@ -299,9 +287,9 @@ void main() {
       expect(plainText, isNot(contains('star=')));
       expect(ManifestCodec.decodeFolder(plainText)!.starred, isFalse);
 
-      final old = ManifestCodec.decodeFolder('📁 Old\ngrf1:{"id":"f","n":"Old"}')!;
-      expect(old.starred, isFalse);
-      expect(old.extra, isEmpty);
+      final unstarred = ManifestCodec.decodeFolder('tgfolder2;id=f;name=Old')!;
+      expect(unstarred.starred, isFalse);
+      expect(unstarred.extra, isEmpty);
     });
 
     test('file and folder formats never mistake each other', () {
@@ -323,7 +311,7 @@ void main() {
   group('keys from newer versions', () {
     test('an unknown file key survives decode, copyWith and encode', () {
       final decoded = ManifestCodec.decodeFile(
-        'clip.mp4\ntgr1:{"id":"v","n":"clip.mp4","s":9,"xv":123456,"x":{"a":[1,"b"]}}',
+        'tgfile2;xv=123456;x={"a":[1,"b"]};id=v;name=clip.mp4;size=9',
       )!;
       expect(decoded.extra, {'xv': 123456, 'x': {'a': [1, 'b']}});
 
@@ -351,9 +339,7 @@ void main() {
     });
 
     test('an unknown folder key survives decode and encode', () {
-      final decoded = ManifestCodec.decodeFolder(
-        '📁 Invoices\ntgrf1:{"id":"f","n":"Invoices","c":"blue"}',
-      )!;
+      final decoded = ManifestCodec.decodeFolder('tgfolder2;c=blue;id=f;name=Invoices')!;
       expect(decoded.extra, {'c': 'blue'});
       final text = ManifestCodec.encodeFolder(decoded).text;
       expect(ManifestCodec.decodeFolder(text)!.extra, {'c': 'blue'});
@@ -510,7 +496,7 @@ void main() {
       final decoded = ManifestCodec.decodeFile(ManifestCodec.encodeFile(file()).text)!;
       expect(decoded.originalSize, isNull);
       expect(
-        ManifestCodec.decodeFile('a.jpg\ntgr1:{"id":"a","n":"a.jpg","s":9,"lt":"big"}')!.originalSize,
+        ManifestCodec.decodeFile('tgfile2;id=a;name=a.jpg;size=9;original=big')!.originalSize,
         isNull,
       );
     });

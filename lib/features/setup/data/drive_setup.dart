@@ -60,8 +60,7 @@ class SetupState {
 /// Finding comes first on purpose. Someone signing in on a new phone, or
 /// after a reinstall, gets their existing drive back without doing anything.
 /// A channel is the drive when it is one this account created and the drive
-/// message ([ManifestCodec.encodeDrive]) is pinned in it, or, for drives
-/// made before that message, when its description carries the drive tag.
+/// message ([ManifestCodec.encodeDrive]) is in it, pinned or not.
 ///
 /// The setup screen runs it after sign-in. For someone whose drive this
 /// phone has opened before, the drive opener runs it behind Home instead,
@@ -69,14 +68,7 @@ class SetupState {
 class DriveSetup extends Notifier<SetupState> {
   static const String channelTitle = 'Telegrive';
 
-  /// What the app was called before; drives created then are adopted.
-  static const String _legacyTitle = 'Gramrive';
-
-  /// Tags in the description of a drive made before the drive message,
-  /// which still mark it as one.
-  static const List<String> _descriptionTags = ['#telegrive', '#gramrive'];
-
-  /// The description a drive channel gets. It is for people only.
+  /// The description a new drive channel gets. It is for people only.
   static const String _channelDescription =
       'Storage for the Telegrive app. Every file here is part of your drive, '
       'so deleting or editing these messages changes it.';
@@ -216,32 +208,16 @@ class DriveSetup extends Notifier<SetupState> {
     } catch (e) {
       debugPrint('[DriveSetup] Could not archive the channel: $e');
     }
-    return (
-      await _brand((chat: chat, description: _channelDescription, card: null)),
-      true,
-    );
+    return (await _brand((chat: chat, card: null)), true);
   }
 
   /// Brings a channel in line with how Telegrive presents it: the app icon as
-  /// its photo, the drive message pinned at the top and, for drives made
-  /// while the app was still called Gramrive, the new title. A title the
-  /// owner chose themselves is left alone, and so is a description they
-  /// wrote. Best-effort — none of this is needed for the drive to work.
+  /// its photo, and the drive message pinned at the top. The title and the
+  /// description are the owner's to change. Best-effort — none of this is
+  /// needed for the drive to work.
   Future<td.Chat> _brand(_DriveChannel channel) async {
     var chat = channel.chat;
     try {
-      if (chat.title == _legacyTitle) {
-        await _client.send<td.Ok>(
-          td.SetChatTitle(chatId: chat.id, title: channelTitle),
-        );
-      }
-      final description = channel.description;
-      if (description != _channelDescription &&
-          (description.isEmpty || _descriptionTags.any(description.contains))) {
-        await _client.send<td.Ok>(
-          td.SetChatDescription(chatId: chat.id, description: _channelDescription),
-        );
-      }
       if (chat.photo == null) {
         await _client.send<td.Ok>(
           td.SetChatPhoto(
@@ -375,8 +351,8 @@ class DriveSetup extends Notifier<SetupState> {
   /// A fresh sign-in knows none of the account's chats yet, and the drive
   /// sits in the Archive, so a title search alone can miss it. If it does,
   /// the chat lists are loaded and every archived channel this account owns
-  /// is checked for the drive message or tag — which also finds a drive
-  /// someone renamed.
+  /// is checked for the drive message — which also finds a drive someone
+  /// renamed.
   Future<_DriveChannel?> _search() async {
     final byTitle = await _searchByTitle();
     if (byTitle != null) return byTitle;
@@ -416,16 +392,14 @@ class DriveSetup extends Notifier<SetupState> {
 
   Future<_DriveChannel?> _searchByTitle() async {
     final candidates = <int>{};
-    for (final query in const [channelTitle, _legacyTitle]) {
-      for (final request in [
-        td.SearchChatsOnServer(query: query, limit: 50),
-        td.SearchChats(query: query, limit: 50),
-      ]) {
-        try {
-          candidates.addAll((await _client.send<td.Chats>(request)).chatIds);
-        } catch (e) {
-          debugPrint('[DriveSetup] ${request.runtimeType} failed: $e');
-        }
+    for (final request in const [
+      td.SearchChatsOnServer(query: channelTitle, limit: 50),
+      td.SearchChats(query: channelTitle, limit: 50),
+    ]) {
+      try {
+        candidates.addAll((await _client.send<td.Chats>(request)).chatIds);
+      } catch (e) {
+        debugPrint('[DriveSetup] ${request.runtimeType} failed: $e');
       }
     }
     for (final chatId in candidates) {
@@ -436,8 +410,7 @@ class DriveSetup extends Notifier<SetupState> {
   }
 
   /// [chatId] if it is a channel this account created (and, when searching,
-  /// one marked as a drive: by the drive message, or the tag in the
-  /// description of a drive made before it).
+  /// one with the drive message in it).
   Future<_DriveChannel?> _ownedDriveChannel(
     int chatId, {
     required bool requireMark,
@@ -451,17 +424,11 @@ class DriveSetup extends Notifier<SetupState> {
         td.GetSupergroup(supergroupId: type.supergroupId),
       );
       if (supergroup.status is! td.ChatMemberStatusCreator) return null;
+      if (!requireMark) return (chat: chat, card: null);
 
-      final info = await _client.send<td.SupergroupFullInfo>(
-        td.GetSupergroupFullInfo(supergroupId: type.supergroupId),
-      );
-      final tagged = _descriptionTags.any(info.description.contains);
-      if (!requireMark || tagged) {
-        return (chat: chat, description: info.description, card: null);
-      }
       final found = await _findDriveMessage(chat.id);
       if (found.card == null) return null;
-      return (chat: chat, description: info.description, card: found.card);
+      return (chat: chat, card: found.card);
     } catch (_) {
       return null;
     }
@@ -470,7 +437,7 @@ class DriveSetup extends Notifier<SetupState> {
 
 /// A channel taken for the drive, with its drive message when looking for
 /// the channel already met it.
-typedef _DriveChannel = ({td.Chat chat, String description, td.Message? card});
+typedef _DriveChannel = ({td.Chat chat, td.Message? card});
 
 final driveSetupProvider = NotifierProvider<DriveSetup, SetupState>(
   DriveSetup.new,

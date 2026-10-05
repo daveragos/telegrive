@@ -50,13 +50,13 @@ void main() {
       ],
     );
     repository = container.read(driveRepositoryProvider);
-    await receive(textMessage(1, '📁 Work\ntgrf1:{"id":"work","n":"Work","ct":1700000000000}'));
-    await receive(textMessage(2, '📁 Home\ntgrf1:{"id":"home","n":"Home","ct":1700000000000}'));
+    await receive(textMessage(1, 'tgfolder2;id=work;name=Work;added=1700000000000'));
+    await receive(textMessage(2, 'tgfolder2;id=home;name=Home;added=1700000000000'));
     await receive(
       documentMessage(
         10,
-        'Notes.pdf\ntgr1:{"id":"a","n":"Notes.pdf","f":"work",'
-        '"m":"application/pdf","s":9,"ct":1700000000000}',
+        'tgfile2;id=a;name=Notes.pdf;folder=work;type=application/pdf;size=9;'
+        'added=1700000000000',
         fileName: 'Notes.pdf',
         mimeType: 'application/pdf',
       ),

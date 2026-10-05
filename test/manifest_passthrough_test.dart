@@ -61,8 +61,8 @@ void main() {
       await receive(
         documentMessage(
           10,
-          'clip.mp4\ntgr1:{"id":"v","n":"clip.mp4","f":"docs","m":"video/mp4",'
-          '"s":9,"ct":1700000000000,"mt":1700000000000,"du":84,"xv":123456}',
+          'tgfile2;xv=123456;id=v;name=clip.mp4;folder=docs;type=video/mp4;size=9;'
+          'length=84;added=1700000000000;changed=1700000000000',
         ),
       );
       final row = (await db.fileById('v'))!;
@@ -94,8 +94,8 @@ void main() {
     await receive(
       documentMessage(
         10,
-        'IMG_1.HEIC (small copy)\ntgr1:{"id":"p","n":"IMG_1.HEIC","m":"image/jpeg",'
-        '"s":300,"ct":1700000000000,"lt":6100000}',
+        'tgfile2;id=p;name=IMG_1.HEIC;type=image/jpeg;size=300;original=6100000;'
+        'added=1700000000000',
         fileName: 'IMG_1.HEIC',
         mimeType: 'image/jpeg',
         size: 300,
@@ -128,7 +128,7 @@ void main() {
     await receive(
       documentMessage(
         10,
-        'clip.mp4\ntgr1:{"id":"v","n":"clip.mp4","s":9,"ct":1700000000000,"du":84}',
+        'tgfile2;id=v;name=clip.mp4;size=9;length=84;added=1700000000000',
       ),
     );
     await db.updateFile(
@@ -157,8 +157,8 @@ void main() {
       await receive(
         documentMessage(
           10,
-          'old.pdf\ntgr1:{"id":"a","n":"old.pdf","s":9,"ct":1700000000000,'
-          '"tr":1700000000000,"rb":"b"}',
+          'tgfile2;id=a;name=old.pdf;size=9;trashed=1700000000000;replacedby=b;'
+          'added=1700000000000',
         ),
       );
       final row = (await db.fileById('a'))!;
@@ -180,14 +180,14 @@ void main() {
       await receive(
         textMessage(
           1,
-          '📁 Invoices\ntgrf1:{"id":"inv","n":"Invoices","ct":1700000000000,'
-          '"mt":1700000000000,"st":1,"c":"blue"}',
+          'tgfolder2;c=blue;id=inv;name=Invoices;star=1;added=1700000000000;'
+          'changed=1700000000000',
         ),
       );
       await receive(
         textMessage(
           2,
-          '📁 Work\ntgrf1:{"id":"work","n":"Work","ct":1700000000000}',
+          'tgfolder2;id=work;name=Work;added=1700000000000',
         ),
       );
       expect((await db.folderById('inv'))!.starred, isTrue);
@@ -217,7 +217,7 @@ void main() {
     await receive(
       textMessage(
         2,
-        '📁 Work\ntgrf1:{"id":"work","n":"Work","ct":1700000000000,"c":"blue"}',
+        'tgfolder2;c=blue;id=work;name=Work;added=1700000000000',
       ),
     );
     Future<DriveFolder> work() async =>
@@ -245,11 +245,11 @@ void main() {
 
   test('an edit without extras clears them from the index', () async {
     await receive(
-      documentMessage(10, 'a.pdf\ntgr1:{"id":"a","n":"a.pdf","s":9,"xv":5}'),
+      documentMessage(10, 'tgfile2;xv=5;id=a;name=a.pdf;size=9'),
     );
     expect((await db.fileById('a'))!.manifestExtra, isNotNull);
     await receive(
-      documentMessage(10, 'a.pdf\ntgr1:{"id":"a","n":"a.pdf","s":9}'),
+      documentMessage(10, 'tgfile2;id=a;name=a.pdf;size=9'),
     );
     expect((await db.fileById('a'))!.manifestExtra, isNull);
   });

@@ -144,31 +144,11 @@ void main() {
     // Nothing in the trash and no split files, so neither has a row.
     expect(report.find<TrashFinding>(), isNull);
     expect(report.find<SplitFinding>(), isNull);
-    expect(report.find<CaptionFinding>(), isNull);
     // What needs the person comes first.
     expect(report.findings.first, isA<ChannelFinding>());
     expect(report.findings[1], isA<TwoStepFinding>());
     expect(container.read(preferencesProvider).checkupLastRun, isNotNull);
     expect(container.read(checkupLastRunProvider), isNotNull);
-  });
-
-  test('messages in the older layout are counted, with how long updating takes', () async {
-    final (container, _, _) = await open(
-      stored: {'full_sync_$testChatId': DateTime.now().millisecondsSinceEpoch},
-    );
-    final repository = container.read(driveRepositoryProvider);
-    await repository.ingest(textMessage(1, '📁 Work\ntgrf1:{"id":"work","n":"Work","ct":1700000000000}'));
-    await repository.ingest(
-      documentMessage(10, 'a.pdf\ntgr1:{"id":"a","n":"a.pdf","f":"work","s":9,"ct":1700000000000}'),
-    );
-    final keep = container.listen(driveCheckupProvider, (_, _) {});
-    addTearDown(keep.close);
-    final report = await container.read(driveCheckupProvider.future);
-
-    final captions = report.find<CaptionFinding>()!;
-    expect(captions.older, 2);
-    expect(captions.takes, DriveCheckup.captionPace * 2);
-    expect(captions.severity, CheckSeverity.neutral);
   });
 
   test('without a full read this run, backup is not checked, and the index not doubted', () async {

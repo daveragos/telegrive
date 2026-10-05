@@ -1237,68 +1237,6 @@ class DriveRepository {
   }
 
   // ---------------------------------------------------------------------------
-  // Caption layout
-  // ---------------------------------------------------------------------------
-
-  /// The drive's messages still written in the older layout, for Check my
-  /// drive to offer to write again.
-  Future<List<OlderCaption>> olderCaptions() => _db.olderCaptions();
-
-  /// Writes [caption]'s message again in the current layout, from what the
-  /// index holds, so nothing about the item changes but how it reads in
-  /// Telegram. An item with a change waiting is passed over, since sending
-  /// that change writes it anyway; so is one missing from the index, and
-  /// a message gone from the channel is let go. Flood waits are sat out.
-  Future<void> rewriteInCurrentLayout(OlderCaption caption) async {
-    if ((await _pending()).contains(caption.id)) return;
-    try {
-      switch (caption.kind) {
-        case OlderCaptionKind.file:
-          final row = await _db.fileById(caption.id);
-          if (row == null) return;
-          await _writeFileManifest(await _db.partsOf(row.id), await _fileManifest(row));
-        case OlderCaptionKind.laterPart:
-          final row = await _db.fileById(caption.id);
-          if (row == null) return;
-          final text = ManifestCodec.encodePart(
-            PartRecord(
-              fileId: row.id,
-              index: caption.partIndex,
-              count: row.partCount,
-              size: row.size,
-            ),
-          );
-          final message = await _ignoreUnchanged(
-            () => _patiently(() => _messenger.editCaption(_chatId, caption.messageId, text)),
-          );
-          if (message != null) await ingest(message);
-        case OlderCaptionKind.folder:
-          final row = await _db.folderById(caption.id);
-          if (row == null) return;
-          await _writeFolderManifest(row.messageId, _folderManifest(row));
-        case OlderCaptionKind.album:
-          final row = await _db.albumById(caption.id);
-          if (row == null) return;
-          await _writeAlbumManifest(
-            row.messageId,
-            AlbumManifest(
-              id: row.id,
-              name: row.name,
-              createdAt: row.createdAt,
-              modifiedAt: row.modifiedAt,
-            ),
-          );
-      }
-    } on TelegramException catch (e) {
-      if (_isGone(e) && await _dropGone([caption.messageId])) return;
-      rethrow;
-    }
-    // Telegram either handed back the message in the current layout, or
-    // found nothing to change because it already was.
-    await _db.markCaptionCurrent(caption);
-  }
-
-  // ---------------------------------------------------------------------------
   // Albums
   // ---------------------------------------------------------------------------
 

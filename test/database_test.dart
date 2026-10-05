@@ -536,8 +536,8 @@ void main() {
     /// original, in message 7.
     final small = documentMessage(
       7,
-      'IMG_1.HEIC (small copy)\ntgr1:{"id":"p","n":"IMG_1.HEIC","m":"image/jpeg",'
-      '"s":312000,"ct":1700000000000,"lt":6100000}',
+      'tgfile2;id=p;name=IMG_1.HEIC;type=image/jpeg;size=312000;original=6100000;'
+      'added=1700000000000',
       fileName: 'IMG_1.HEIC',
       mimeType: 'image/jpeg',
       size: 312000,
@@ -559,8 +559,8 @@ void main() {
           content: content.copyWith(
             document: content.document.copyWith(document: tdFile(9, size: 6100000)),
             caption: const td.FormattedText(
-              text: 'IMG_1.HEIC\ntgr1:{"id":"p","n":"IMG_1.HEIC","m":"image/heic",'
-                  '"s":6100000,"ct":1700000000000}',
+              text: 'tgfile2;id=p;name=IMG_1.HEIC;type=image/heic;size=6100000;'
+                  'added=1700000000000',
               entities: [],
             ),
           ),
@@ -608,8 +608,8 @@ void main() {
       await index(
         documentMessage(
           8,
-          'IMG_2.HEIC (small copy)\ntgr1:{"id":"q","n":"IMG_2.HEIC","m":"image/jpeg",'
-          '"s":290000,"ct":1700000000000,"lt":5000000}',
+          'tgfile2;id=q;name=IMG_2.HEIC;type=image/jpeg;size=290000;original=5000000;'
+          'added=1700000000000',
           size: 290000,
         ),
       );
@@ -617,8 +617,8 @@ void main() {
       await index(
         documentMessage(
           9,
-          'IMG_3.HEIC (small copy)\ntgr1:{"id":"r","n":"IMG_3.HEIC","m":"image/jpeg",'
-          '"s":300000,"ct":1700000000000,"tr":1700000000000,"lt":4000000}',
+          'tgfile2;id=r;name=IMG_3.HEIC;type=image/jpeg;size=300000;'
+          'trashed=1700000000000;original=4000000;added=1700000000000',
           size: 300000,
         ),
       );
@@ -664,7 +664,7 @@ void main() {
       file('c').copyWith(takenAt: Value(DateTime(2026, 9, 20))),
       part('c', 0, 12),
     );
-    expect(db.schemaVersion, 11);
+    expect(db.schemaVersion, 12);
 
     await db.recordOpen('a');
     expect((await db.watchRecentOpens().first).map((o) => o.$1.id), ['a']);

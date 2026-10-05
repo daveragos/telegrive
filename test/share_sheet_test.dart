@@ -181,20 +181,20 @@ void main() {
       for (final message in [
         textMessage(
           1,
-          '📁 Receipts\ntgrf1:{"id":"receipts","n":"Receipts","ct":1700000000000}',
+          'tgfolder2;id=receipts;name=Receipts;added=1700000000000',
         ),
         textMessage(
           2,
-          '📁 Invoices\ntgrf1:{"id":"invoices","n":"Invoices","ct":1700000000000}',
+          'tgfolder2;id=invoices;name=Invoices;added=1700000000000',
         ),
         textMessage(
           3,
-          '📁 Old\ntgrf1:{"id":"old","n":"Old","ct":1700000000000,"tr":1700000000000}',
+          'tgfolder2;id=old;name=Old;trashed=1700000000000;added=1700000000000',
         ),
         documentMessage(
           10,
-          'Receipt.png\ntgr1:{"id":"a","n":"Receipt.png","f":"receipts",'
-          '"m":"image/png","s":9,"ct":1700000000000}',
+          'tgfile2;id=a;name=Receipt.png;folder=receipts;type=image/png;size=9;'
+          'added=1700000000000',
           fileName: 'Receipt.png',
           mimeType: 'image/png',
         ),
@@ -377,8 +377,8 @@ void main() {
       () => repository.ingest(
         textMessage(
           1,
-          '📁 Receipts\ntgrf1:{"id":"receipts","n":"Receipts",'
-          '"ct":1700000000000,"tr":1700000000000}',
+          'tgfolder2;id=receipts;name=Receipts;trashed=1700000000000;'
+          'added=1700000000000',
         ),
       ),
     );

@@ -53,6 +53,7 @@ class _Telegram extends FakeTelegram {
       td.GetSupergroupFullInfo() => channelInfo(),
       td.SearchChatsOnServer() ||
       td.SearchChats() => const td.Chats(totalCount: 1, chatIds: [testChatId]),
+      td.GetChatPinnedMessage() => driveMessage(50 << 20),
       td.OpenChat() || td.SetChatPhoto() => const td.Ok(),
       _ => null,
     };
@@ -180,7 +181,7 @@ void main() {
 
     expect(
       telegram.asked,
-      containsAll([td.GetMe, td.GetChat, td.GetSupergroup, td.GetSupergroupFullInfo]),
+      containsAll([td.GetMe, td.GetChat, td.GetSupergroup]),
     );
     expect(container.read(driveSetupProvider).step, SetupStep.done);
     expect(container.read(driveSessionProvider)?.chatId, testChatId);

@@ -25,10 +25,8 @@ export 'caption_text.dart' show CaptionStyle, EncodedText, StyledRange;
 /// tgfile2;id=…;name=Quarterly report.pdf;folder=…;type=application/pdf;…
 /// ```
 ///
-/// Only the details line is read back. Records in the older layout, a name
-/// line over `tgr1:` (`gr1:`) and JSON, `tgrf1:` (`grf1:`) for folders and
-/// `tgra1:` for albums, still decode, and take the current layout the next
-/// time they are written.
+/// Only the details line is read back; TECHNICAL.md describes every kind
+/// and field.
 ///
 /// Fields a manifest carries that this version doesn't know were written by
 /// a newer one. They are kept in `extra`, stored in the index, and written
@@ -126,17 +124,17 @@ abstract final class ManifestCodec {
       'under a file to list everything that has it.';
 
   static FileManifest? decodeFile(String caption) {
-    final json = _read(fileKind, caption, _fileFields) ?? _legacy(_legacyFile, caption);
+    final json = _read(fileKind, caption, _fileFields);
     return json == null ? null : FileManifest.tryFromJson(json);
   }
 
   static FolderManifest? decodeFolder(String text) {
-    final json = _read(folderKind, text, _folderFields) ?? _legacy(_legacyFolder, text);
+    final json = _read(folderKind, text, _folderFields);
     return json == null ? null : FolderManifest.tryFromJson(json);
   }
 
   static AlbumManifest? decodeAlbum(String text) {
-    final json = _read(albumKind, text, _albumFields) ?? _legacy(_legacyAlbum, text);
+    final json = _read(albumKind, text, _albumFields);
     return json == null ? null : AlbumManifest.tryFromJson(json);
   }
 
@@ -166,17 +164,6 @@ abstract final class ManifestCodec {
     final json = _read(driveKind, text, _driveFields);
     return json == null ? null : DriveManifest.tryFromJson(json);
   }
-
-  /// Whether [text] is written in the current layout, a details line of
-  /// one of the kinds above, rather than the older name over JSON.
-  static bool isCurrent(String text) => [
-    fileKind,
-    folderKind,
-    albumKind,
-    partKind,
-    driveKind,
-    indexKind,
-  ].any((kind) => DetailsLine.read(kind, text) != null);
 
   /// Unknown keys as the index stores them: JSON, or null when there are
   /// none.
@@ -315,25 +302,6 @@ abstract final class ManifestCodec {
     }
     return json;
   }
-
-  static final RegExp _legacyFile = RegExp(
-    r'(?:^|\n)(?:tgr1|gr1):(\{[^\n]*\})\s*$',
-  );
-  static final RegExp _legacyFolder = RegExp(
-    r'(?:^|\n)(?:tgrf1|grf1):(\{[^\n]*\})\s*$',
-  );
-  static final RegExp _legacyAlbum = RegExp(r'(?:^|\n)tgra1:(\{[^\n]*\})\s*$');
-
-  static Map<String, dynamic>? _legacy(RegExp pattern, String text) {
-    final match = pattern.firstMatch(text);
-    if (match == null) return null;
-    try {
-      final decoded = jsonDecode(match.group(1)!);
-      return decoded is Map<String, dynamic> ? decoded : null;
-    } catch (_) {
-      return null;
-    }
-  }
 }
 
 enum _Value { text, number, partNumber, list }
@@ -374,9 +342,9 @@ class _Field {
 }
 
 /// Metadata for a file, as the caption of its first message carries it.
-/// The later parts of a split file carry a [PartRecord] instead; split
-/// files written before that repeat this manifest on every part, each with
-/// its own [partIndex].
+/// The later parts of a split file carry a [PartRecord] instead, except
+/// when the first part is gone: a change is then written onto each part
+/// left, each with its own [partIndex].
 @immutable
 class FileManifest {
   const FileManifest({
@@ -708,8 +676,9 @@ class DriveManifest {
   final String id;
   final DateTime createdAt;
 
-  /// The message holding the copy of the drive's index ([IndexRecord]),
-  /// once there is one.
+  /// The number of the message holding the copy of the drive's index
+  /// ([IndexRecord]), once there is one: Telegram's own number for it, as
+  /// its t.me link shows.
   final int? indexMessageId;
 
   /// Fields a newer version wrote; see [FileManifest.extra].
@@ -745,8 +714,9 @@ class DriveManifest {
 }
 
 /// What the document holding a copy of the drive's index says of it: the
-/// drive it belongs to, the newest message the copy covers, how many files
-/// it holds, and when it was written.
+/// drive it belongs to, the number of the newest message the copy covers
+/// (Telegram's own, as in t.me links), how many files it holds, and when it
+/// was written.
 @immutable
 class IndexRecord {
   const IndexRecord({

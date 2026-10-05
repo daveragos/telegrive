@@ -74,9 +74,6 @@ abstract final class MessageIndexer {
   /// in full.
   static const int version = 4;
 
-  static int _layoutOf(String text) =>
-      ManifestCodec.isCurrent(text) ? CaptionLayouts.current : CaptionLayouts.older;
-
   static IndexEntry? entryFor(td.Message message) {
     // Still sending: the permanent message will arrive separately.
     if (message.sendingState != null) return null;
@@ -92,7 +89,6 @@ abstract final class MessageIndexer {
             messageId: message.id,
             createdAt: album.createdAt,
             modifiedAt: album.modifiedAt,
-            captionLayout: Value(_layoutOf(text)),
           ),
         );
       }
@@ -109,7 +105,6 @@ abstract final class MessageIndexer {
           trashedAt: Value(folder.trashedAt),
           starred: Value(folder.starred),
           manifestExtra: Value(ManifestCodec.encodeExtra(folder.extra)),
-          captionLayout: Value(_layoutOf(text)),
         ),
       );
     }
@@ -172,13 +167,6 @@ abstract final class MessageIndexer {
         messageId: message.id,
         tdFileId: media.file.id,
         size: media.file.size != 0 ? media.file.size : media.file.expectedSize,
-        // A later part that carries the whole manifest is in the older
-        // layout whatever its text, since it should carry a part record.
-        captionLayout: Value(switch ((decoded, record)) {
-          (null, null) => null,
-          (_, null) when !isFirstPart => CaptionLayouts.older,
-          _ => _layoutOf(media.caption),
-        }),
       ),
       albums: manifest.albums,
       write: switch ((isFirstPart, record)) {

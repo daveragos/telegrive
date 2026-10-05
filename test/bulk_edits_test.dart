@@ -124,13 +124,12 @@ void main() {
       await db.close();
     });
     repository = container.read(driveRepositoryProvider);
-    await receive(textMessage(1, '📁 Trips\ntgrf1:{"id":"trips","n":"Trips","ct":1700000000000}'));
+    await receive(textMessage(1, 'tgfolder2;id=trips;name=Trips;added=1700000000000'));
     for (final (index, name) in ['a', 'b', 'c'].indexed) {
       await receive(
         documentMessage(
           10 + index,
-          '$name.jpg\ntgr1:{"id":"$name","n":"$name.jpg","m":"image/jpeg","s":9,'
-          '"ct":1700000000000}',
+          'tgfile2;id=$name;name=$name.jpg;type=image/jpeg;size=9;added=1700000000000',
           fileName: '$name.jpg',
           mimeType: 'image/jpeg',
         ),
@@ -278,15 +277,16 @@ void main() {
     expect(await folders(), ['trips', 'trips', 'trips']);
   });
 
-  /// A file split in two the way older versions wrote it, the manifest on
-  /// both parts; [parts] picks which of them are in the channel.
+  /// A file split in two, the manifest on its first part and a part record
+  /// on the second; [parts] picks which of them are in the channel.
   Future<void> receiveSplit({List<int> parts = const [0, 1]}) async {
     for (final index in parts) {
       await receive(
         documentMessage(
           20 + index,
-          'big.bin.00${index + 1}\ntgr1:{"id":"big","n":"big.bin","s":18,'
-          '"ct":1700000000000,"pc":2${index == 0 ? '' : ',"pi":$index'}}',
+          index == 0
+              ? 'tgfile2;id=big;name=big.bin;size=18;parts=2;added=1700000000000'
+              : 'tgpart2;file=big;part=2;parts=2;size=18',
           fileName: 'big.bin.00${index + 1}',
         ),
       );

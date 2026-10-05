@@ -62,7 +62,6 @@ void main() {
     final folder = (await db.folderById('docs'))!;
     expect(folder.manifestExtra, isNull);
     expect(folder.starred, isFalse);
-    expect(folder.captionLayout, isNull);
     expect(await db.select(db.fileOpens).get(), isEmpty);
     expect(await db.select(db.playPositions).get(), isEmpty);
     expect(await db.select(db.watchedFolders).get(), isEmpty);

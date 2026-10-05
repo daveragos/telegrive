@@ -18,8 +18,11 @@ import 'package:telegrive/infrastructure/telegram/telegram_client.dart';
 
 import 'support/fake_telegram.dart';
 
+/// TDLib's id for channel message [number], as it hands them out.
+int _m(int number) => number << 20;
+
 /// The pinned drive message, message 5.
-const _cardId = 5;
+final _cardId = _m(5);
 
 /// A connection the test picks.
 class _Network extends NetworkStatus {
@@ -40,6 +43,9 @@ class _Telegram extends FakeTelegram {
   final Directory stored;
   final requests = <td.TdFunction>[];
   int nextFileId = 500;
+
+  /// The number the next message sent here gets.
+  int nextNumber = 100;
 
   td.MessageDocument _document(String path, td.FormattedText caption) {
     final id = nextFileId++;
@@ -64,7 +70,7 @@ class _Telegram extends FakeTelegram {
           :final caption?,
         ),
       ):
-        final id = nextId++;
+        final id = _m(nextNumber++);
         return messages[id] = channelMessage(id, _document(path, caption));
       case td.EditMessageMedia(
         :final messageId,
@@ -116,7 +122,7 @@ void main() {
     // ignore: invalid_use_of_visible_for_testing_member
     SharedPreferences.setMockInitialValues({
       if (cardKnown) 'drive_card_$testChatId': _cardId,
-      'synced_upto_$testChatId': 900,
+      'synced_upto_$testChatId': _m(900),
     });
     final shared = await SharedPreferences.getInstance();
     final db = AppDatabase(NativeDatabase.memory());
@@ -160,29 +166,29 @@ void main() {
           partIndex: partIndex,
         );
     await repository.ingest(textMessage(
-      1,
+      _m(1),
       ManifestCodec.encodeFolder(
         FolderManifest(id: 'trips', name: 'Trips', parentId: null, createdAt: created, modifiedAt: created),
       ).text,
     ));
     await repository.ingest(textMessage(
-      2,
+      _m(2),
       ManifestCodec.encodeAlbum(AlbumManifest(id: 'lal', name: 'Lalibela', createdAt: created, modifiedAt: created)).text,
     ));
     await repository.ingest(documentMessage(
-      10,
+      _m(10),
       ManifestCodec.encodeFile(
         file('p', 'IMG_1.jpg').copyWith(starred: true, albums: ['lal']),
       ).text,
     ));
-    await repository.ingest(documentMessage(20, ManifestCodec.encodeFile(file('big', 'big.bin', partCount: 2)).text));
+    await repository.ingest(documentMessage(_m(20), ManifestCodec.encodeFile(file('big', 'big.bin', partCount: 2)).text));
     await repository.ingest(documentMessage(
-      21,
+      _m(21),
       ManifestCodec.encodePart(const PartRecord(fileId: 'big', index: 1, count: 2, size: 18)).text,
     ));
     await repository.ingest(documentMessage(
-      30,
-      'old.pdf\ntgr1:{"id":"old","n":"old.pdf","s":9,"ct":1700000000000,"tr":1700000500000,"xq":"later"}',
+      _m(30),
+      'tgfile2;xq=later;id=old;name=old.pdf;size=9;trashed=1700000500000;added=1700000000000',
     ));
   }
 
@@ -196,10 +202,11 @@ void main() {
 
     final restoredDb = AppDatabase(NativeDatabase.memory());
     addTearDown(restoredDb.close);
-    final copyId = ManifestCodec.decodeDrive(
+    final copyNumber = ManifestCodec.decodeDrive(
       (telegram.messages[_cardId]!.content as td.MessageText).text.text,
     )!.indexMessageId!;
-    final document = (telegram.messages[copyId]!.content as td.MessageDocument).document.document;
+    final document =
+        (telegram.messages[_m(copyNumber)]!.content as td.MessageDocument).document.document;
     final contents = IndexCopies.read(File('${stored.path}/${document.id}').readAsBytesSync())!;
     await restoredDb.replaceIndex(
       folderRows: contents.folders,
@@ -228,7 +235,9 @@ void main() {
     final card = ManifestCodec.decodeDrive(
       (telegram.messages[_cardId]!.content as td.MessageText).text.text,
     )!;
-    final copyId = card.indexMessageId!;
+    // The drive message names the copy by its number, as its t.me link does.
+    expect(card.indexMessageId, 100);
+    final copyId = _m(card.indexMessageId!);
     final caption = (telegram.messages[copyId]!.content as td.MessageDocument).caption.text;
     expect(caption.split('\n').first, 'Telegrive index');
     final record = ManifestCodec.decodeIndex(caption)!;
@@ -245,7 +254,7 @@ void main() {
 
     // Due and changed: the same message takes the new copy.
     await repository.ingest(textMessage(
-      3,
+      _m(3),
       ManifestCodec.encodeFolder(
         FolderManifest(id: 'work', name: 'Work', parentId: null, createdAt: DateTime(2026), modifiedAt: DateTime(2026)),
       ).text,
@@ -305,7 +314,7 @@ void main() {
     expect((photo.name, photo.folderId, photo.starred), ('IMG_1.jpg', 'trips', true));
     expect((await db.folderById('trips'))!.name, 'Trips');
     expect((await db.albumById('lal'))!.name, 'Lalibela');
-    expect((await db.partsOf('big')).map((p) => p.messageId), [20, 21]);
+    expect((await db.partsOf('big')).map((p) => p.messageId), [_m(20), _m(21)]);
   });
 
   test('a copy that belongs to another drive, or none at all, leaves the index alone', () async {
@@ -338,6 +347,11 @@ void main() {
   test('a copy that can\'t be read is no copy', () {
     expect(IndexCopies.read([1, 2, 3]), isNull);
     expect(IndexCopies.read(gzip.encode('{"format":99}'.codeUnits)), isNull);
+    // A copy of another format, such as the first, is passed over.
+    expect(
+      IndexCopies.read(gzip.encode('{"format":1,"folders":[],"albums":[],"files":[]}'.codeUnits)),
+      isNull,
+    );
   });
 
   test('the copy in the channel is never taken for a file', () {

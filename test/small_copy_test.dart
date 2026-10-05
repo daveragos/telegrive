@@ -178,9 +178,9 @@ void main() {
   /// The small copy's caption, in message 7: starred, in the Camera folder
   /// and an album.
   const smallCaption =
-      'IMG_1.HEIC (small copy)\ntgr1:{"id":"p","n":"IMG_1.HEIC","f":"camera",'
-      '"m":"image/jpeg","s":$_small,"ct":1700000000000,"mt":1700000000000,'
-      '"st":1,"tk":1690000000000,"al":["a1"],"lt":$_original}';
+      'tgfile2;id=p;name=IMG_1.HEIC;folder=camera;type=image/jpeg;size=$_small;star=1;'
+      'taken=1690000000000;albums=a1;original=$_original;added=1700000000000;'
+      'changed=1700000000000';
 
   Future<void> open({NetworkState network = NetworkState.unknown}) async {
     // ignore: invalid_use_of_visible_for_testing_member
