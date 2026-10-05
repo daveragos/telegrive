@@ -265,12 +265,16 @@ class AlbumCover extends ConsumerWidget {
     final child = file == null
         ? DecoratedBox(
             decoration: BoxDecoration(color: context.colors.surface2, borderRadius: radius),
-            child: Icon(Icons.photo_library_outlined, color: context.colors.text3),
+            child: Center(
+              child: Icon(Icons.photo_library_outlined, color: context.colors.text3),
+            ),
           )
         : ClipRRect(
             borderRadius: radius,
             child: FileThumbnail(file: file, expand: true, radius: 0, size: 40),
           );
-    return size == null ? child : SizedBox.square(dimension: size, child: child);
+    // Without a size it fills its place, so an empty album's grey square is
+    // as wide as a cover would be, not as wide as its icon.
+    return size == null ? SizedBox.expand(child: child) : SizedBox.square(dimension: size, child: child);
   }
 }
