@@ -134,10 +134,24 @@ void main() {
       expect(options.replaceCaption, isTrue);
       expect(options.newShowCaptionAboveMedia, isFalse);
       expect(options.newCaption?.text, caption.text);
-      final spoiler = options.newCaption!.entities.single;
-      expect(spoiler.type, isA<td.TextEntityTypeSpoiler>());
-      expect(spoiler.offset, caption.spoilerOffset);
-      expect(spoiler.length, caption.spoilerLength);
+      expect(
+        [
+          for (final entity in options.newCaption!.entities)
+            (entity.type.runtimeType, entity.offset, entity.length),
+        ],
+        [
+          for (final range in caption.styles)
+            (
+              switch (range.style) {
+                CaptionStyle.bold => td.TextEntityTypeBold,
+                CaptionStyle.spoiler => td.TextEntityTypeSpoiler,
+                CaptionStyle.expandableQuote => td.TextEntityTypeExpandableBlockQuote,
+              },
+              range.offset,
+              range.length,
+            ),
+        ],
+      );
       expect(copy.id, 1000);
       expect(copy.chatId, testChatId);
       expect(captionOf(copy), caption.text);

@@ -173,9 +173,13 @@ phone number.
   album take the items away at once but wait ten seconds, with Undo, before
   anything leaves Telegram; sending the app to the background deletes them
   straight away.
-- **Tidy in Telegram too.** Captions lead with the plain file name; the
-  machine-readable part sits in a spoiler, so the channel still reads like a
-  file list.
+- **Tidy in Telegram too.** In the Telegram app the channel reads like a
+  file list. Each file's caption starts with its name in bold, then its
+  folder as a hashtag: tap `#Invoices` to list that folder's files.
+  `#starred` and `#trash` work the same way. A line notes a split file's
+  part or a photo that is still a small copy. The details Telegrive reads
+  back sit at the bottom, folded into a quote under a spoiler. Each folder
+  is a message of its own, saying which folder it sits in.
 - **Transfers that survive.** A queue with live speed and ETA, cancel and
   retry, and a time when everything in progress should be done. A failed
   transfer says why in one sentence, and Home and Transfers retry it in
@@ -451,14 +455,29 @@ Telegram (source of truth)                 This device
 ┌──────────────────────────────┐    sync    ┌─────────────────────────────┐
 │ private channel "Telegrive"   │ ─────────▶ │ index (Drift/SQLite)        │
 │  • file message              │  live +    │  folders · files · parts    │
-│    caption: name + gr1:{…}   │  catch-up  │                             │
+│    caption: name, #folder,   │  catch-up  │                             │
+│    tgfile2;… details         │            │                             │
 │  • folder message            │ ◀───────── │ transfer queue (persisted)  │
-│    text: 📁 name + grf1:{…}  │  changes   │  uploads · downloads         │
+│    text: 📁 name, #tag,      │  changes   │  uploads · downloads         │
+│    tgfolder2;… details       │            │                             │
 └──────────────────────────────┘            └─────────────────────────────┘
 ```
 
-- **Files** carry a manifest in their caption: id, name, folder, MIME type,
-  size, dates, star, and `partIndex`/`partCount` for split files. A file
+- **Every record ends in a details line**, the only part Telegrive reads
+  back: a kind (`tgfile2`, `tgfolder2` or `tgalbum2`), then `key=value`
+  fields split by `;`, such as
+  `tgfile2;id=…;name=Quarterly report.pdf;folder=…;type=application/pdf;size=123456;added=…;changed=…`.
+  Values stay readable. Only `%`, `;`, `#`, `@`, `$`, line breaks and the
+  direction marks Telegram strips are written as `%` and UTF-8 hex, so the
+  line stays one line and makes no tags or mentions. Everything above it
+  (the bold name, the hashtags and the notes) is for people, and can
+  change without changing the format. Captions keep to Telegram's
+  1024-character limit, even on Premium: a long name is shortened on the
+  bold line only. The older layout, a name over `tgr1:` and JSON, still
+  reads, and a record takes the current layout the next time it is
+  written.
+- **Files** carry their manifest in their caption: id, name, folder, MIME
+  type, size, dates, star, and `parts`/`part` for split files. A file
   that Replace sent to the trash also names the file that replaced it;
   restoring it clears that again. A video or audio file carries its length
   in seconds when it is known: read from the file as it goes up, from the
@@ -470,7 +489,10 @@ Telegram (source of truth)                 This device
   one file never has two messages.
 - **Folders** are small text messages carrying their own id, name, parent
   and star, so renames, moves and stars are a single edit and two devices
-  never overwrite each other's folder tree.
+  never overwrite each other's folder tree. A folder's hashtag is made from
+  its name (`Tax returns 2026` is `#Tax_returns_2026`) and is only for
+  people browsing in Telegram: the drive goes by ids. Files take a renamed
+  folder's new tag the next time their caption is written.
 - **Newer versions can add to a manifest.** Keys this install doesn't know
   are kept in the index and written back on its own edits, so a rename or
   move made here doesn't lose what a newer version stored.

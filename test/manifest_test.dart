@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:telegrive/features/drive/domain/manifest.dart';
+import 'package:telegrive/features/drive/domain/caption_text.dart';
 
 void main() {
   final created = DateTime.fromMillisecondsSinceEpoch(1_700_000_000_000);
@@ -58,7 +59,7 @@ void main() {
         takenAt: taken,
       );
       expect(ManifestCodec.decodeFile(ManifestCodec.encodeFile(withTime).text)!.takenAt, taken);
-      expect(ManifestCodec.encodeFile(file()).text, isNot(contains('"tk"')));
+      expect(ManifestCodec.encodeFile(file()).text, isNot(contains('taken=')));
       expect(ManifestCodec.decodeFile(ManifestCodec.encodeFile(file()).text)!.takenAt, isNull);
     });
 
@@ -81,7 +82,7 @@ void main() {
       final clip = file(name: 'clip.mp4', durationSeconds: 84);
       final decoded = ManifestCodec.decodeFile(ManifestCodec.encodeFile(clip).text)!;
       expect(decoded.durationSeconds, 84);
-      expect(ManifestCodec.encodeFile(file()).text, isNot(contains('"du"')));
+      expect(ManifestCodec.encodeFile(file()).text, isNot(contains('length=')));
       expect(ManifestCodec.decodeFile(ManifestCodec.encodeFile(file()).text)!.durationSeconds, isNull);
 
       final moved = decoded.copyWith(name: 'trip.mp4', clearFolder: true);
@@ -105,8 +106,8 @@ void main() {
       final restored = decoded.copyWith(restore: true);
       expect(restored.replacedBy, isNull);
       expect(restored.trashedAt, isNull);
-      expect(ManifestCodec.encodeFile(restored).text, isNot(contains('"rb"')));
-      expect(ManifestCodec.encodeFile(file()).text, isNot(contains('"rb"')));
+      expect(ManifestCodec.encodeFile(restored).text, isNot(contains('replacedby=')));
+      expect(ManifestCodec.encodeFile(file()).text, isNot(contains('replacedby=')));
     });
 
     test('root files carry no folder', () {
@@ -116,19 +117,108 @@ void main() {
       expect(decoded.folderId, isNull);
     });
 
-    test('first line is the human-readable name, the rest is spoilered', () {
-      final encoded = ManifestCodec.encodeFile(file());
-      final lines = encoded.text.split('\n');
+    test('the name is bold, and the details are folded under a spoiler', () {
+      final encoded = ManifestCodec.encodeFile(file(), folderName: 'Invoices');
 
-      expect(lines.first, 'Quarterly report.pdf');
+      expect(encoded.text.split('\n'), [
+        'Quarterly report.pdf',
+        '#Invoices',
+        'Telegrive details',
+        startsWith('${ManifestCodec.fileKind};'),
+      ]);
+      expect(encoded.styled(CaptionStyle.bold), 'Quarterly report.pdf');
+      final details = encoded.styled(CaptionStyle.spoiler)!;
+      expect(details, startsWith('${ManifestCodec.fileKind};'));
+      expect(encoded.text, endsWith(details));
       expect(
-        encoded.text.substring(
-          encoded.spoilerOffset,
-          encoded.spoilerOffset + encoded.spoilerLength,
-        ),
-        startsWith(ManifestCodec.filePrefix),
+        encoded.styled(CaptionStyle.expandableQuote),
+        'Telegrive details\n$details',
       );
-      expect(encoded.spoilerOffset + encoded.spoilerLength, encoded.text.length);
+      expect(encoded.styles.map((range) => range.offset), orderedEquals([0, 31, 49]));
+    });
+
+    test('the details line spells its fields out', () {
+      final encoded = ManifestCodec.encodeFile(file(partCount: 3, partIndex: 1, starred: true));
+      expect(
+        encoded.styled(CaptionStyle.spoiler),
+        'tgfile2;id=file-1;name=Quarterly report.pdf;folder=folder-1;'
+        'type=application/pdf;size=123456;parts=3;part=2;star=1;'
+        'added=1700000000000;changed=1700000000000',
+      );
+    });
+
+    test('tags and notes say where a file is and what it is', () {
+      final split = ManifestCodec.encodeFile(
+        file(partCount: 3, partIndex: 1, starred: true).copyWith(trashedAt: created),
+        folderName: 'Tax returns 2026',
+      );
+      expect(split.text.split('\n').take(3), [
+        'Quarterly report.pdf',
+        '#Tax_returns_2026 #starred #trash',
+        'Part 2 of 3',
+      ]);
+
+      final root = ManifestCodec.encodeFile(file(folderId: null), folderName: 'ignored');
+      expect(root.text.split('\n')[1], 'Telegrive details');
+    });
+
+    test('a folder says what it is called and where it sits', () {
+      final folder = FolderManifest(
+        id: 'folder-2',
+        name: 'Invoices',
+        parentId: 'folder-1',
+        createdAt: created,
+        modifiedAt: created,
+        starred: true,
+      );
+      final encoded = ManifestCodec.encodeFolder(folder, parentName: 'Work');
+      expect(encoded.text.split('\n').take(2), ['📁 Invoices', '#Invoices #starred · in #Work']);
+      expect(encoded.styled(CaptionStyle.bold), '📁 Invoices');
+      expect(
+        encoded.styled(CaptionStyle.spoiler),
+        'tgfolder2;id=folder-2;name=Invoices;parent=folder-1;star=1;'
+        'added=1700000000000;changed=1700000000000',
+      );
+    });
+
+    test('values that would break the line or turn into links are escaped', () {
+      const name = 'Q3; 100% #final @ \$5\u202e.pdf';
+      final encoded = ManifestCodec.encodeFile(file(name: name));
+      expect(
+        encoded.styled(CaptionStyle.spoiler),
+        contains(';name=Q3%3B 100%25 %23final %40 %245%E2%80%AE.pdf;'),
+      );
+      expect(ManifestCodec.decodeFile(encoded.text)!.name, name);
+    });
+
+    test('a broken escape makes no manifest of the line', () {
+      expect(ManifestCodec.decodeFile('tgfile2;id=a;name=b%2;size=1'), isNull);
+      expect(ManifestCodec.decodeFile('tgfile2;id=a;name=b%ZZ;size=1'), isNull);
+      expect(ManifestCodec.decodeFile('tgfile2;id=a;name=b;size=1')!.name, 'b');
+    });
+
+    test('a field written twice keeps its last value', () {
+      expect(ManifestCodec.decodeFile('tgfile2;id=a;name=b;name=c;size=1')!.name, 'c');
+    });
+
+    test('the last details line is the one read', () {
+      final caption = 'tgfile2;id=a;name=first;size=1\nTelegrive details\ntgfile2;id=a;name=second;size=1';
+      expect(ManifestCodec.decodeFile(caption)!.name, 'second');
+    });
+
+    test('albums keep their ids and order', () {
+      final encoded = ManifestCodec.encodeFile(file().copyWith(albums: ['b9', 'a0']));
+      expect(encoded.text, contains(';albums=b9,a0;'));
+      expect(ManifestCodec.decodeFile(encoded.text)!.albums, ['b9', 'a0']);
+    });
+
+    test('long names and long folder names still fit the caption limit', () {
+      final encoded = ManifestCodec.encodeFile(
+        file(name: '${'#' * 250}.txt', partCount: 2, partIndex: 1),
+        folderName: 'f' * 128,
+      );
+      expect(encoded.text.length, lessThanOrEqualTo(CaptionLayout.limit));
+      expect(ManifestCodec.decodeFile(encoded.text)!.name, '${'#' * 250}.txt');
     });
 
     test('names with newlines and emoji survive', () {
@@ -151,6 +241,9 @@ void main() {
       expect(ManifestCodec.decodeFile('holiday photos'), isNull);
       expect(ManifestCodec.decodeFile('tgr1:{not json}'), isNull);
       expect(ManifestCodec.decodeFile('tgr1:{"id":"x"}'), isNull, reason: 'missing fields');
+      expect(ManifestCodec.decodeFile('tgfile2;id=x;name=y'), isNull, reason: 'missing size');
+      expect(ManifestCodec.decodeFile('tgfile2;id=x;name=y;size=big'), isNull);
+      expect(ManifestCodec.decodeFile('see tgfile2;id=x;name=y;size=1'), isNull);
     });
 
     test('an out-of-range part index is rejected', () {
@@ -163,11 +256,13 @@ void main() {
     });
   });
 
-  test('captions from before the rename still decode', () {
+  test('captions in the older layout still decode', () {
     final file = ManifestCodec.decodeFile('a.txt\ngr1:{"id":"old","n":"a.txt","s":3}');
     final folder = ManifestCodec.decodeFolder('📁 Old\ngrf1:{"id":"f","n":"Old"}');
     expect(file?.id, 'old');
     expect(folder?.name, 'Old');
+    expect(ManifestCodec.decodeFile('a.txt\ntgr1:{"id":"new","n":"a.txt","s":3}')?.id, 'new');
+    expect(ManifestCodec.decodeAlbum('🖼 Trip\ntgra1:{"id":"t","n":"Trip"}')?.name, 'Trip');
   });
 
   group('folder messages', () {
@@ -201,7 +296,7 @@ void main() {
       expect(ManifestCodec.decodeFolder(starredText)!.starred, isTrue);
 
       final plainText = ManifestCodec.encodeFolder(folder()).text;
-      expect(plainText, isNot(contains('"st"')));
+      expect(plainText, isNot(contains('star=')));
       expect(ManifestCodec.decodeFolder(plainText)!.starred, isFalse);
 
       final old = ManifestCodec.decodeFolder('📁 Old\ngrf1:{"id":"f","n":"Old"}')!;
@@ -236,6 +331,23 @@ void main() {
       final again = ManifestCodec.decodeFile(ManifestCodec.encodeFile(renamed).text)!;
       expect(again.name, 'trip.mp4');
       expect(again.extra, {'xv': 123456, 'x': {'a': [1, 'b']}});
+    });
+
+    test('an unknown field goes back onto the line exactly as it came', () {
+      const line = 'tgfile2;xq=blue;xn=12;xs="12";xj={"a":[1,"b"]};xe=%23x;id=v;name=a;size=9';
+      final decoded = ManifestCodec.decodeFile(line)!;
+      expect(decoded.extra, {'xq': 'blue', 'xn': 12, 'xs': '"12"', 'xj': {'a': [1, 'b']}, 'xe': '#x'});
+      expect(
+        ManifestCodec.encodeFile(decoded).styled(CaptionStyle.spoiler),
+        startsWith('tgfile2;xq=blue;xn=12;xs="12";xj={"a":[1,"b"]};xe=%23x;id=v;'),
+      );
+    });
+
+    test('an unknown field never stands in for a known key', () {
+      final decoded = ManifestCodec.decodeFile('tgfile2;id=v;name=a;size=9;s=big;n=other')!;
+      expect(decoded.name, 'a');
+      expect(decoded.size, 9);
+      expect(decoded.extra, isEmpty);
     });
 
     test('an unknown folder key survives decode and encode', () {
@@ -364,7 +476,7 @@ void main() {
 
     test('the original\'s size round-trips as lt, beside the copy\'s own', () {
       final encoded = ManifestCodec.encodeFile(smallCopy());
-      expect(encoded.text, contains('"lt":6100000'));
+      expect(encoded.text, contains(';original=6100000;'));
       final decoded = ManifestCodec.decodeFile(encoded.text)!;
       expect(decoded.originalSize, 6100000);
       expect(decoded.size, 312000);
@@ -373,14 +485,13 @@ void main() {
       expect(decoded.extra, isEmpty);
     });
 
-    test('the readable line says small copy, and the spoiler still covers the machine line', () {
-      final encoded = ManifestCodec.encodeFile(smallCopy());
-      expect(encoded.text.split('\n').first, 'IMG_1.HEIC (small copy)');
-      expect(
-        encoded.text.substring(encoded.spoilerOffset),
-        startsWith(ManifestCodec.filePrefix),
-      );
-      expect(encoded.spoilerOffset + encoded.spoilerLength, encoded.text.length);
+    test('a note says it is a small copy', () {
+      final encoded = ManifestCodec.encodeFile(smallCopy(), folderName: 'Camera');
+      expect(encoded.text.split('\n').take(3), [
+        'IMG_1.HEIC',
+        '#Camera',
+        'Small copy, the original follows',
+      ]);
     });
 
     test('copyWith keeps the original\'s size, and clearOriginalSize drops it', () {
@@ -392,7 +503,7 @@ void main() {
       expect(whole.originalSize, isNull);
       final encoded = ManifestCodec.encodeFile(whole);
       expect(encoded.text.split('\n').first, 'IMG_1.HEIC');
-      expect(encoded.text, isNot(contains('"lt"')));
+      expect(encoded.text, isNot(contains('original=')));
     });
 
     test('a caption without lt is no small copy', () {

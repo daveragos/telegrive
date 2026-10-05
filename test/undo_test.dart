@@ -109,7 +109,7 @@ void main() {
 
       await repository.moveFiles([await file()], before.folderId);
       expect((await file()).folderId, 'work');
-      expect(caption(), contains('"f":"work"'));
+      expect(caption(), contains(';folder=work;'));
     });
 
     test('a star is undone the same way', () async {
@@ -122,7 +122,7 @@ void main() {
 
       await repository.setStarred([await file()], starred: before.starred);
       expect((await file()).starred, isFalse);
-      expect(caption(), isNot(contains('"st"')));
+      expect(caption(), isNot(contains(';star=')));
     });
 
     test('a rename is undone the same way', () async {

@@ -311,7 +311,7 @@ void main() {
     expect((await repository.fileById('big'))!.folderId, 'trips');
     for (final id in [20, 21]) {
       final caption = (telegram.messages[id]!.content as td.MessageDocument).caption.text;
-      expect(caption, contains('"f":"trips"'));
+      expect(caption, contains(';folder=trips;'));
     }
     expect(await folders(), [null, null, null]);
   });

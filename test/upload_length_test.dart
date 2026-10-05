@@ -136,13 +136,13 @@ void main() {
   test('a length the caller knows goes up in the caption', () async {
     final manifest = await upload('clip.mp4', durationSeconds: 84);
     expect(manifest.durationSeconds, 84);
-    expect(telegram.captions['clip.mp4'], contains('"du":84'));
+    expect(telegram.captions['clip.mp4'], contains(';length=84;'));
   });
 
   test('a file whose length nobody knows carries none', () async {
     // Off Android the file isn't asked, so the caption says nothing.
     expect((await upload('clip.mp4')).durationSeconds, isNull);
-    expect(telegram.captions['clip.mp4'], isNot(contains('"du"')));
+    expect(telegram.captions['clip.mp4'], isNot(contains('length=')));
     expect((await upload('notes.txt')).durationSeconds, isNull);
   });
 }

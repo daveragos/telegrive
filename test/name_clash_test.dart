@@ -14,6 +14,7 @@ import 'package:telegrive/features/drive/data/channel_messenger.dart';
 import 'package:telegrive/features/drive/data/drive_repository.dart';
 import 'package:telegrive/features/drive/data/drive_session.dart';
 import 'package:telegrive/features/drive/domain/drive_models.dart';
+import 'package:telegrive/features/drive/domain/manifest.dart';
 import 'package:telegrive/features/files/presentation/file_actions.dart';
 import 'package:telegrive/features/transfers/data/transfer_queue.dart';
 import 'package:telegrive/infrastructure/database/app_database.dart';
@@ -242,7 +243,7 @@ void main() {
         ),
       );
       expect((await file('b')).name, 'Notes.txt');
-      expect(caption(11), contains('"n":"Notes.txt"'));
+      expect(ManifestCodec.decodeFile(caption(11))!.name, 'Notes.txt');
 
       // Its own name in another case is no clash, and nor is a trashed one.
       await repository.renameFile(await file('a'), 'BUDGET 2026.xlsx');
@@ -270,7 +271,7 @@ void main() {
       var moved = await file('a');
       expect(moved.folderId, 'home');
       expect(moved.name, 'Budget 2026 (2).xlsx');
-      expect(caption(10), contains('"f":"home"'));
+      expect(caption(10), contains(';folder=home;'));
 
       await repository.moveFiles(
         [moved],
@@ -293,7 +294,7 @@ void main() {
       final old = await file('h');
       expect(old.trashedAt, isNotNull);
       expect(old.replacedBy, 'a');
-      expect(caption(14), contains('"rb":"a"'));
+      expect(caption(14), contains(';replacedby=a;'));
       expect((await repository.previousVersionOf('a'))?.id, 'h');
       expect(await repository.previousVersionOf('h'), isNull);
 
@@ -307,7 +308,7 @@ void main() {
       final back = await file('h');
       expect(back.trashedAt, isNull);
       expect(back.replacedBy, isNull);
-      expect(caption(14), isNot(contains('"rb"')));
+      expect(caption(14), isNot(contains('replacedby=')));
       expect(await repository.previousVersionOf('a'), isNull);
     });
   });
@@ -686,7 +687,7 @@ void main() {
         final old = await file('a');
         expect(old.trashedAt, isNotNull);
         expect(old.replacedBy, newFileId);
-        expect(caption(10), contains('"rb":"$newFileId"'));
+        expect(caption(10), contains(';replacedby=$newFileId;'));
         expect((await repository.previousVersionOf(newFileId))!.id, 'a');
         expect(
           (await repository.nameClashes([

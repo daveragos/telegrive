@@ -1454,6 +1454,7 @@ class TransferQueue extends Notifier<TransfersState> {
           durationSeconds: row.durationSeconds,
           originalSize: _smallCopyOf[row.id],
         );
+        final caption = await _repository.fileCaption(manifest);
         final thumbnail = index == 0 ? row.thumbnailPath : null;
         try {
           // Cancelled while the part was being written: it isn't sent.
@@ -1463,7 +1464,7 @@ class TransferQueue extends Notifier<TransfersState> {
           delivered = await _messenger.sendDocument(
             session.chatId,
             path: path,
-            caption: ManifestCodec.encodeFile(manifest),
+            caption: caption,
             thumbnailPath: thumbnail != null && await File(thumbnail).exists()
                 ? thumbnail
                 : null,
@@ -1617,7 +1618,7 @@ class TransferQueue extends Notifier<TransfersState> {
           session.chatId,
           fromChatId: row.sourceChatId!,
           messageId: row.sourceMessageId!,
-          caption: ManifestCodec.encodeFile(manifest),
+          caption: await _repository.fileCaption(manifest),
           onPending: (pending) {
             _pendingMessages[row.id] = pending.id;
             // Paused in the moment the copy was starting.

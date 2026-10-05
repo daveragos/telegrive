@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/native.dart';
@@ -288,7 +287,7 @@ void main() {
   }
 
   Map<String, dynamic> machineLine(String caption) =>
-      jsonDecode(caption.substring(caption.indexOf('{'))) as Map<String, dynamic>;
+      ManifestCodec.decodeFile(caption)!.toJson();
 
   Future<void> until(bool Function() condition) async {
     for (var i = 0; i < 200 && !condition(); i++) {
@@ -338,7 +337,8 @@ void main() {
     expect(row.status, TransferStatus.completed);
     expect(row.mimeType, 'image/jpeg');
     final caption = telegram.captions.single;
-    expect(caption.split('\n').first, 'IMG_2.HEIC (small copy)');
+    expect(caption.split('\n').first, 'IMG_2.HEIC');
+    expect(caption, contains('\nSmall copy, the original follows\n'));
     final sent = machineLine(caption);
     expect(sent['n'], 'IMG_2.HEIC');
     expect(sent['m'], 'image/jpeg');
@@ -499,7 +499,8 @@ void main() {
 
     expect(row.status, TransferStatus.completed);
     final caption = telegram.captions.single;
-    expect(caption.split('\n').first, 'IMG_2.HEIC (small copy)');
+    expect(caption.split('\n').first, 'IMG_2.HEIC');
+    expect(caption, contains('\nSmall copy, the original follows\n'));
     expect(machineLine(caption)['lt'], _original);
     expect((await db.fileById('q'))!.originalSize, _original);
     // The copy was the queue's own, and goes once it is in the drive.
@@ -598,7 +599,7 @@ void main() {
             document: tdFile(9, size: _original),
           ),
           caption: td.FormattedText(
-            text: original.text.replaceFirst('"s":$_small', '"s":$_original'),
+            text: original.text.replaceFirst(';size=$_small;', ';size=$_original;'),
             entities: const [],
           ),
         ),

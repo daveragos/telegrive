@@ -87,6 +87,17 @@ class DriveRepository {
 
   String newId() => _uuid.v4();
 
+  /// [manifest] as its caption, tagged with the folder it is in.
+  Future<EncodedText> fileCaption(FileManifest manifest) async =>
+      ManifestCodec.encodeFile(manifest, folderName: await _folderName(manifest.folderId));
+
+  /// [manifest] as its message, saying which folder it sits in.
+  Future<EncodedText> _folderText(FolderManifest manifest) async =>
+      ManifestCodec.encodeFolder(manifest, parentName: await _folderName(manifest.parentId));
+
+  Future<String?> _folderName(String? folderId) async =>
+      folderId == null ? null : (await _db.folderById(folderId))?.name;
+
   /// Ids of files that just gained a part — how the transfer queue notices
   /// an upload TDLib finished on its own after a restart.
   Stream<String> get ingestedFileIds => _ingested.stream;
@@ -481,10 +492,7 @@ class DriveRepository {
       createdAt: now,
       modifiedAt: now,
     );
-    final message = await _messenger.sendText(
-      _chatId,
-      ManifestCodec.encodeFolder(manifest),
-    );
+    final message = await _messenger.sendText(_chatId, await _folderText(manifest));
     await ingest(message);
   }
 
@@ -578,11 +586,8 @@ class DriveRepository {
     FolderManifest manifest, {
     bool patient = true,
   }) async {
-    Future<td.Message> edit() => _messenger.editText(
-      _chatId,
-      messageId,
-      ManifestCodec.encodeFolder(manifest),
-    );
+    final text = await _folderText(manifest);
+    Future<td.Message> edit() => _messenger.editText(_chatId, messageId, text);
     final message = await _ignoreUnchanged(
       () => patient ? _patiently(edit) : edit(),
     );
@@ -611,10 +616,7 @@ class DriveRepository {
         createdAt: now,
         modifiedAt: now,
       );
-      final message = await _messenger.sendText(
-        _chatId,
-        ManifestCodec.encodeFolder(manifest),
-      );
+      final message = await _messenger.sendText(_chatId, await _folderText(manifest));
       await ingest(message);
       parentId = manifest.id;
     }
@@ -862,9 +864,11 @@ class DriveRepository {
     // Once one part carries the change, Stop no longer cuts a wait short,
     // so a split file never ends up with parts that disagree.
     var stoppable = true;
+    final folderName = await _folderName(manifest.folderId);
     for (final part in parts) {
       final caption = ManifestCodec.encodeFile(
         manifest.copyWith(partIndex: part.partIndex),
+        folderName: folderName,
       );
       Future<td.Message> edit() =>
           _messenger.editCaption(_chatId, part.messageId, caption);
@@ -992,7 +996,7 @@ class DriveRepository {
         smallMessageId,
         fileId: tdFileId,
         thumbnailPath: thumbnailPath,
-        caption: ManifestCodec.encodeFile(sent),
+        caption: await fileCaption(sent),
       );
       final meanwhile = await _db.fileById(fileId);
       final changed = meanwhile == null
@@ -1012,7 +1016,7 @@ class DriveRepository {
     final delivered = await _messenger.sendDocument(
       _chatId,
       path: path,
-      caption: ManifestCodec.encodeFile(replacement),
+      caption: await fileCaption(replacement),
       thumbnailPath: thumbnailPath,
     );
     await ingest(delivered);
@@ -1222,7 +1226,7 @@ class DriveRepository {
       modifiedAt: now,
     );
     await ingest(
-      await _messenger.sendText(_chatId, ManifestCodec.encodeFolder(manifest)),
+      await _messenger.sendText(_chatId, await _folderText(manifest)),
     );
     return manifest.id;
   }

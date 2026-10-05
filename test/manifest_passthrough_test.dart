@@ -8,6 +8,7 @@ import 'package:handy_tdlib/api.dart' as td;
 import 'package:telegrive/features/drive/data/drive_repository.dart';
 import 'package:telegrive/features/drive/data/drive_session.dart';
 import 'package:telegrive/features/drive/domain/drive_models.dart';
+import 'package:telegrive/features/drive/domain/manifest.dart';
 import 'package:telegrive/infrastructure/database/app_database.dart';
 import 'package:telegrive/infrastructure/telegram/telegram_client.dart';
 
@@ -40,14 +41,16 @@ void main() {
     await repository.ingest(message);
   }
 
+  /// The manifest [message] carries, under the manifest's own keys.
   Map<String, dynamic> machineLine(td.Message message) {
     final text = switch (message.content) {
       td.MessageDocument(:final caption) => caption.text,
       td.MessageText(:final text) => text.text,
       _ => '',
     };
-    return jsonDecode(text.substring(text.indexOf('{')))
-        as Map<String, dynamic>;
+    return ManifestCodec.decodeFile(text)?.toJson() ??
+        ManifestCodec.decodeFolder(text)?.toJson() ??
+        ManifestCodec.decodeAlbum(text)!.toJson();
   }
 
   test(
@@ -108,7 +111,8 @@ void main() {
     await repository.moveFiles([file], 'trip');
 
     final caption = (telegram.messages[10]!.content as td.MessageDocument).caption.text;
-    expect(caption.split('\n').first, 'Lalibela.HEIC (small copy)');
+    expect(caption.split('\n').first, 'Lalibela.HEIC');
+    expect(caption, contains('\nSmall copy, the original follows\n'));
     final sent = machineLine(telegram.messages[10]!);
     expect(sent['lt'], 6100000);
     expect(sent['s'], 300);

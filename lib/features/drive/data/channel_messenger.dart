@@ -59,14 +59,21 @@ class ChannelMessenger {
     onlyPreview: false,
   );
 
+  /// [encoded] with its styles as Telegram's entities. Hashtags aren't
+  /// among them: TDLib finds those in the text itself.
   static td.FormattedText formatted(EncodedText encoded) => td.FormattedText(
     text: encoded.text,
     entities: [
-      td.TextEntity(
-        offset: encoded.spoilerOffset,
-        length: encoded.spoilerLength,
-        type: const td.TextEntityTypeSpoiler(),
-      ),
+      for (final range in encoded.styles)
+        td.TextEntity(
+          offset: range.offset,
+          length: range.length,
+          type: switch (range.style) {
+            CaptionStyle.bold => const td.TextEntityTypeBold(),
+            CaptionStyle.spoiler => const td.TextEntityTypeSpoiler(),
+            CaptionStyle.expandableQuote => const td.TextEntityTypeExpandableBlockQuote(),
+          },
+        ),
     ],
   );
 
