@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../../app/theme/tokens.dart';
 import '../../../core/config/app_config.dart';
@@ -10,6 +9,7 @@ import '../../../core/widgets/common.dart';
 import '../../../infrastructure/notifications/app_notifications.dart';
 import '../../../infrastructure/storage/device_profile.dart';
 import '../../../infrastructure/storage/preferences.dart';
+import '../../../infrastructure/telegram/message_number.dart';
 import '../../auth/data/auth_controller.dart';
 import '../../backup/data/backup_controller.dart';
 import '../../checkup/data/drive_checkup.dart';
@@ -193,7 +193,7 @@ class SettingsScreen extends ConsumerWidget {
                 title: Text(session?.channelTitle ?? 'Drive channel'),
                 subtitle: const Text('The private channel that holds your files'),
                 trailing: Icon(Icons.open_in_new_rounded, size: 20, color: colors.text3),
-                onTap: openSession == null ? null : () => _openChannel(ref, openSession),
+                onTap: openSession == null ? null : () => _openChannel(context, ref, openSession),
               ),
               ListTile(
                 title: const Text('Rebuild index'),
@@ -497,13 +497,9 @@ class SettingsScreen extends ConsumerWidget {
 
   /// Private channels only have post links; the newest indexed post lands
   /// on the latest files.
-  static void _openChannel(WidgetRef ref, DriveSession session) {
+  static void _openChannel(BuildContext context, WidgetRef ref, DriveSession session) {
     final latest = ref.read(preferencesProvider).lastSyncedMessageId(session.chatId);
-    final post = latest > 0 ? latest >> 20 : 1;
-    launchUrl(
-      Uri.parse('https://t.me/c/${-session.chatId - 1000000000000}/$post'),
-      mode: LaunchMode.externalApplication,
-    );
+    FileActions.openInTelegram(context, ref, latest > 0 ? latest : MessageNumber.idOf(1));
   }
 
   void _showHowItWorks(BuildContext context) {

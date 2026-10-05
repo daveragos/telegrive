@@ -25,6 +25,7 @@ import '../../../infrastructure/storage/device_storage.dart';
 import '../../../infrastructure/storage/preferences.dart';
 import '../../../infrastructure/telegram/telegram_client.dart';
 import '../../../infrastructure/telegram/telegram_exception.dart';
+import '../../../infrastructure/telegram/telegram_links.dart';
 import '../../backup/data/backup_controller.dart';
 import '../../backup/data/free_up_space.dart';
 import '../../capture/data/device_capture.dart';
@@ -1981,14 +1982,15 @@ abstract final class FileActions {
   ) async {
     if (!_connected(context, ref)) return;
     final session = ref.read(driveSessionProvider)!;
-    // Private channel links use the bare channel id and the server message id.
-    final channel = -session.chatId - 1000000000000;
-    final opened = await launchUrl(
-      Uri.parse('https://t.me/c/$channel/${messageId >> 20}'),
-      mode: LaunchMode.externalApplication,
-    );
+    var opened = false;
+    try {
+      opened = await launchUrl(
+        TelegramLinks.post(session.chatId, messageId),
+        mode: LaunchMode.externalApplication,
+      );
+    } catch (_) {}
     if (!opened && context.mounted) {
-      showSnack(context, 'Couldn\'t open Telegram.');
+      showSnack(context, 'Telegram isn\'t installed on this phone.');
     }
   }
 

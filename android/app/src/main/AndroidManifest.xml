@@ -141,7 +141,7 @@
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
         </intent>
-        <!-- Opening my.telegram.org, t.me links and the Telegram app. -->
+        <!-- Opening web pages, and the Telegram app through tg:// links. -->
         <intent>
             <action android:name="android.intent.action.VIEW"/>
             <data android:scheme="https"/>
