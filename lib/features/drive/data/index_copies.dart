@@ -36,8 +36,9 @@ typedef IndexContents = ({
 /// changed since the copy was written.
 ///
 /// A copy is written after a full read of the channel, at most every
-/// [interval], over a connection that isn't metered, and only when the
-/// index has changed since the last one.
+/// [interval], and only when the index has changed since the last one. On
+/// a metered connection, mobile data or a hotspot, only a copy of up to
+/// [meteredLimit] bytes goes; a bigger one waits for one that isn't.
 class IndexCopies {
   IndexCopies(this._ref);
 
@@ -50,6 +51,10 @@ class IndexCopies {
   static const Duration interval = Duration(days: 3);
   static const String fileName = 'telegrive-index.json.gz';
 
+  /// The biggest copy that goes over a metered connection. A drive of a
+  /// few thousand files makes a copy of a few hundred kilobytes.
+  static int meteredLimit = 1024 * 1024;
+
   AppDatabase get _db => _ref.read(appDatabaseProvider);
   Preferences get _prefs => _ref.read(preferencesProvider);
   TelegramClient get _client => _ref.read(telegramClientProvider);
@@ -61,9 +66,9 @@ class IndexCopies {
     File? file;
     try {
       final cardId = _prefs.driveCardId(chatId);
-      if (cardId == null) return false;
+      if (cardId == null) return _skip('the drive message is not known yet');
       final network = _ref.read(networkStatusProvider);
-      if (!network.online || network.metered) return false;
+      if (!network.online) return _skip('offline');
       final now = DateTime.now();
       final last = _prefs.indexCopyAt(chatId);
       if (last != null && now.difference(last) < interval) return false;
@@ -72,11 +77,15 @@ class IndexCopies {
       final body = utf8.encode(jsonEncode(json));
       final print = fingerprint(body);
       if (last != null && print == _prefs.indexCopyPrint(chatId)) return false;
+      final gzipped = gzip.encode(body);
+      if (network.metered && gzipped.length > meteredLimit) {
+        return _skip('${gzipped.length} bytes wait for a connection that isn\'t metered');
+      }
       final card = await _driveManifest(chatId, cardId);
-      if (card == null) return false;
+      if (card == null) return _skip('the drive message is gone');
 
       file = File('${(await getTemporaryDirectory()).path}/$fileName');
-      await file.writeAsBytes(gzip.encode(body), flush: true);
+      await file.writeAsBytes(gzipped, flush: true);
       final caption = ManifestCodec.encodeIndex(
         IndexRecord(
           driveId: card.id,
@@ -106,6 +115,11 @@ class IndexCopies {
         if (file != null && await file.exists()) await file.delete();
       } catch (_) {}
     }
+  }
+
+  static bool _skip(String why) {
+    debugPrint('[IndexCopies] No copy written: $why');
+    return false;
   }
 
   /// Fills the index from the copy the drive message in [chatId] points to.

@@ -535,8 +535,10 @@ Telegram (source of truth)                 This device
   new phone, or a reinstall, fills its index from it and opens Home at
   once, then reads the channel in full behind it to settle anything that
   changed since. The copy is written after a full read, at most every
-  three days, only over a connection that isn't metered and only when the
-  index has changed, each time in place of the last one. It holds nothing
+  three days and only when the index has changed, each time in place of
+  the last one. On mobile data or a hotspot only a copy of up to 1 MB goes
+  (a few thousand files make a few hundred kilobytes); a bigger one waits
+  for Wi-Fi. It holds nothing
   of the phone that wrote it, no previews and no TDLib file ids, and the
   captions stay what the drive is: deleting the copy changes nothing but
   how fast a new phone opens.

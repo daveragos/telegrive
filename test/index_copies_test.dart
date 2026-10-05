@@ -256,14 +256,33 @@ void main() {
     expect(await db.folderById('work'), isNotNull);
   });
 
-  test('no copy goes on mobile data', () async {
-    final metered = _Telegram(stored);
-    final (meteredContainer, _, _) = await open(
-      metered,
+  test('on mobile data only a small copy goes', () async {
+    addTearDown(() => IndexCopies.meteredLimit = 1024 * 1024);
+    final telegram = _Telegram(stored);
+    final (container, _, _) = await open(
+      telegram,
       network: const NetworkState(online: true, metered: true),
     );
-    expect(await meteredContainer.read(indexCopiesProvider).writeIfDue(testChatId), isFalse);
-    expect(metered.requests.whereType<td.SendMessage>(), isEmpty);
+    await seed(container.read(driveRepositoryProvider));
+    final copies = container.read(indexCopiesProvider);
+
+    IndexCopies.meteredLimit = 100;
+    expect(await copies.writeIfDue(testChatId), isFalse);
+    expect(telegram.requests.whereType<td.SendMessage>(), isEmpty);
+
+    IndexCopies.meteredLimit = 1024 * 1024;
+    expect(await copies.writeIfDue(testChatId), isTrue);
+    expect(telegram.requests.whereType<td.SendMessage>(), hasLength(1));
+  });
+
+  test('offline, nothing is written', () async {
+    final telegram = _Telegram(stored);
+    final (container, _, _) = await open(
+      telegram,
+      network: const NetworkState(online: false, metered: false),
+    );
+    expect(await container.read(indexCopiesProvider).writeIfDue(testChatId), isFalse);
+    expect(telegram.requests, isEmpty);
   });
 
   test('without the drive message known, nothing is written', () async {
