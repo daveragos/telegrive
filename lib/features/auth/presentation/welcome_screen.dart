@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../app/theme/tokens.dart';
 import '../../../app/theme/file_style.dart';
@@ -94,63 +95,72 @@ class WelcomeScreen extends ConsumerWidget {
 }
 
 /// What the drive looks like, drawn with the app's own rows rather than an
-/// illustration: a few files, one of them bigger than Telegram allows.
+/// illustration: a few files, one of them bigger than Telegram allows. They
+/// are the author's own: a CV that opens the author's GitHub page, a photo
+/// of Irreecha, and The Ten Commandments in ten parts.
 class _Glimpse extends StatelessWidget {
   const _Glimpse();
 
   static const _files = [
-    ('Passport scan.pdf', '1.8 MB', FileKind.document),
-    ('Beach day.jpg', '4.2 MB', FileKind.image),
-    ('Summer holiday 4K.mp4', '5.6 GB, stored as 12 parts', FileKind.video),
+    ('Dawit Beyene CV.pdf', '240 KB', FileKind.document),
+    ('Irreecha 2026.jpg', '4.2 MB', FileKind.image),
+    ('The Ten Commandments 4K.mp4', '4.8 GB, stored as 10 parts', FileKind.video),
   ];
+
+  /// Where the CV leads.
+  static final Uri _author = Uri.parse('https://github.com/daveragos');
 
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return ExcludeSemantics(
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: colors.surface,
-          borderRadius: BorderRadius.circular(Radii.card),
-          border: Border.all(color: colors.line),
-        ),
-        child: Column(
-          children: [
-            for (final (index, (name, meta, kind)) in _files.indexed) ...[
-              if (index > 0) Divider(indent: 72, color: colors.line),
-              Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: Space.l,
-                  vertical: Space.m,
+    return Material(
+      color: colors.surface,
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(Radii.card),
+        side: BorderSide(color: colors.line),
+      ),
+      child: Column(
+        children: [
+          for (final (index, (name, meta, kind)) in _files.indexed) ...[
+            if (index > 0) Divider(indent: 72, color: colors.line),
+            if (index == 0)
+              Semantics(
+                link: true,
+                label: '$name, opens on GitHub',
+                excludeSemantics: true,
+                child: InkWell(
+                  onTap: () => launchUrl(_author, mode: LaunchMode.externalApplication),
+                  child: _row(context, name, meta, kind),
                 ),
-                child: Row(
-                  children: [
-                    FileIconTile(
-                      style: FileStyle.forFile(name, kind),
-                      size: 40,
-                    ),
-                    const SizedBox(width: Space.l),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(name, style: context.text.titleSmall),
-                          Text(
-                            meta,
-                            style: context.text.bodySmall?.copyWith(
-                              fontFeatures: tabularFigures,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
+              )
+            else
+              ExcludeSemantics(child: _row(context, name, meta, kind)),
           ],
-        ),
+        ],
       ),
     );
   }
+
+  static Widget _row(BuildContext context, String name, String meta, FileKind kind) => Padding(
+    padding: const EdgeInsets.symmetric(horizontal: Space.l, vertical: Space.m),
+    child: Row(
+      children: [
+        FileIconTile(style: FileStyle.forFile(name, kind), size: 40),
+        const SizedBox(width: Space.l),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(name, style: context.text.titleSmall),
+              Text(
+                meta,
+                style: context.text.bodySmall?.copyWith(fontFeatures: tabularFigures),
+              ),
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
 }
