@@ -7,14 +7,16 @@ import '../../files/presentation/file_actions.dart';
 import 'album_actions.dart';
 import 'media_grid.dart';
 
-enum _More { star, removeFromAlbum, selectAll }
+enum _More { star, removeFromAlbum, selectAll, deselectAll }
 
 /// The app bar while photos are selected, on the Photos tab and in albums:
-/// '6 selected · 48 MB', or 'Select photos' before any are picked.
+/// '6 selected · 48 MB', or 'Select photos' ('Select videos' for a [noun]
+/// of videos) before any are picked.
 PreferredSizeWidget mediaSelectionAppBar(
   BuildContext context, {
   required MediaSelection selection,
   required List<DriveFile> files,
+  String noun = 'photos',
 }) {
   final picked = selection.pick(files);
   return selectionAppBar(
@@ -22,7 +24,7 @@ PreferredSizeWidget mediaSelectionAppBar(
     count: picked.length,
     bytes: picked.fold(0, (sum, f) => sum + f.size),
     onClear: selection.clear,
-    noun: 'photos',
+    noun: noun,
   );
 }
 
@@ -39,6 +41,7 @@ Widget mediaSelectionActions(
   final picked = selection.pick(files);
   final none = picked.isEmpty;
   final allStarred = !none && picked.every((f) => f.starred);
+  final allPicked = !none && picked.length == files.length;
 
   Future<void> then(Future<bool> action) async {
     if (await action) selection.clear();
@@ -80,7 +83,10 @@ Widget mediaSelectionActions(
         ),
       if (!none && albumId != null)
         const PopupMenuItem(value: _More.removeFromAlbum, child: Text('Remove from album')),
-      const PopupMenuItem(value: _More.selectAll, child: Text('Select all')),
+      if (allPicked)
+        const PopupMenuItem(value: _More.deselectAll, child: Text('Deselect all'))
+      else
+        const PopupMenuItem(value: _More.selectAll, child: Text('Select all')),
     ],
     onMore: (choice) {
       switch (choice) {
@@ -90,6 +96,11 @@ Widget mediaSelectionActions(
           then(AlbumActions.removeFrom(context, ref, picked, albumId!));
         case _More.selectAll:
           selection.replace({for (final f in files) f.id});
+        case _More.deselectAll:
+          // Still selecting, with nothing picked, as after Select photos.
+          selection
+            ..begin()
+            ..replace({});
       }
     },
   );

@@ -200,6 +200,10 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
       listenable: _selection,
       builder: (context, _) {
         final picked = [for (final id in _selection.ids) ?_seen[id]];
+        final allPicked =
+            state != null &&
+            state.items.isNotEmpty &&
+            state.items.every((item) => _selection.contains(item.preview.id));
         return Scaffold(
           appBar: AppBar(
             title: Text(
@@ -209,8 +213,12 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
             actions: [
               if (state != null && state.items.isNotEmpty)
                 TextButton(
-                  onPressed: _loadingAll != null || _saving ? null : _selectAll,
-                  child: const Text('Select all'),
+                  onPressed: _loadingAll != null || _saving
+                      ? null
+                      : allPicked
+                      ? _selection.clear
+                      : _selectAll,
+                  child: Text(allPicked ? 'Deselect all' : 'Select all'),
                 ),
               const SizedBox(width: Space.s),
             ],

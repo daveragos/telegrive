@@ -453,6 +453,15 @@ void main() {
       await tester.tap(find.text('Select all'));
       await settle(tester);
       expect(find.text('3 selected · 6.0 MB'), findsOneWidget);
+
+      // With everything picked, the menu offers the way back.
+      await tester.tap(inBar('More'));
+      await settle(tester);
+      expect(find.text('Select all'), findsNothing);
+      await tester.tap(find.text('Deselect all'));
+      await settle(tester);
+      expect(find.text('Starred'), findsOneWidget);
+      expect(find.textContaining('selected'), findsNothing);
     },
   );
 }

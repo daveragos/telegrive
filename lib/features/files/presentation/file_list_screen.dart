@@ -191,6 +191,7 @@ class _FileListScreenState extends ConsumerState<FileListScreen> {
                 onDone: _clearSelection,
                 onSelectAll: () =>
                     setState(() => _selected.addAll(shown.map((f) => f.id))),
+                allSelected: shown.isNotEmpty && shown.every((f) => _selected.contains(f.id)),
               )
             : null,
         body: switch (widget.mode) {

@@ -338,6 +338,10 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
                 onSelectAll: () {
                   if (data != null) _selectAll(data);
                 },
+                allSelected:
+                    data != null &&
+                    data.files.every((f) => _files.contains(f.id)) &&
+                    data.folders.every((f) => _folders.contains(f.id)),
               )
             : null,
         floatingActionButton: _selecting

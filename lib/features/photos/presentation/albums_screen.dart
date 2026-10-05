@@ -148,6 +148,8 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> {
       SmartAlbum.videos => ('Videos', media?.where((f) => f.kind == FileKind.video).toList()),
       _ => (album?.name ?? 'Album', ref.watch(albumFilesProvider(id)).value),
     };
+    // What the album holds, as the menu and the selection bar name it.
+    final noun = id == SmartAlbum.videos ? 'videos' : 'photos';
     final source = album != null ? 'album:$id' : id;
 
     return ListenableBuilder(
@@ -159,7 +161,12 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> {
         },
         child: Scaffold(
           appBar: _selection.active
-              ? mediaSelectionAppBar(context, selection: _selection, files: files ?? const [])
+              ? mediaSelectionAppBar(
+                  context,
+                  selection: _selection,
+                  files: files ?? const [],
+                  noun: noun,
+                )
               : AppBar(
                   title: Text(title, overflow: TextOverflow.ellipsis),
                   actions: [
@@ -199,9 +206,9 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> {
                       // Favorites and Videos are the app's own, so they
                       // offer only Select.
                       itemBuilder: (_) => [
-                        const PopupMenuItem(
+                        PopupMenuItem(
                           value: _AlbumMenu.select,
-                          child: Text('Select photos'),
+                          child: Text('Select $noun'),
                         ),
                         if (album != null) ...const [
                           PopupMenuItem(

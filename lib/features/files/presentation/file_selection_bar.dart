@@ -5,13 +5,14 @@ import '../../../core/widgets/selection_bar.dart';
 import '../../drive/domain/drive_models.dart';
 import 'file_actions.dart';
 
-enum _More { star, selectAll }
+enum _More { star, selectAll, deselectAll }
 
 /// What can be done with the selected [files] and [folders], in the bar at
 /// the foot of Files and of Starred, Recent and the categories. Starring is
 /// offered for files and folders alike, and reads Remove from Starred once
 /// everything picked is starred. [onDone] ends the selection once an action
-/// has gone through, and [onSelectAll] selects everything on screen.
+/// has gone through, and [onSelectAll] selects everything on screen. Once
+/// [allSelected], the menu offers Deselect all instead, which ends it too.
 Widget fileSelectionActions(
   BuildContext context,
   WidgetRef ref, {
@@ -19,6 +20,7 @@ Widget fileSelectionActions(
   List<DriveFolder> folders = const [],
   required VoidCallback onDone,
   required VoidCallback onSelectAll,
+  bool allSelected = false,
 }) {
   final none = files.isEmpty && folders.isEmpty;
   final allStarred =
@@ -74,7 +76,10 @@ Widget fileSelectionActions(
           value: _More.star,
           child: Text(allStarred ? 'Remove from Starred' : 'Add to Starred'),
         ),
-      const PopupMenuItem(value: _More.selectAll, child: Text('Select all')),
+      if (allSelected)
+        const PopupMenuItem(value: _More.deselectAll, child: Text('Deselect all'))
+      else
+        const PopupMenuItem(value: _More.selectAll, child: Text('Select all')),
     ],
     onMore: (choice) {
       switch (choice) {
@@ -90,6 +95,8 @@ Widget fileSelectionActions(
           );
         case _More.selectAll:
           onSelectAll();
+        case _More.deselectAll:
+          onDone();
       }
     },
   );
