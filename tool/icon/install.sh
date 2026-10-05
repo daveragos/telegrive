@@ -1,6 +1,7 @@
 #!/bin/sh
 # Copies the renders that flutter_launcher_icons doesn't handle into place:
-# the status-bar icon at each density, and the drive channel's photo.
+# the status-bar icon at each density, the drive channel's photo, and the
+# mark the app shows.
 set -e
 cd "$(dirname "$0")/../.."
 for pair in mdpi:24 hdpi:36 xhdpi:48 xxhdpi:72 xxxhdpi:96; do
@@ -11,4 +12,5 @@ for pair in mdpi:24 hdpi:36 xhdpi:48 xxhdpi:72 xxxhdpi:96; do
 done
 sips -s format jpeg -s formatOptions 92 tool/icon/out/channel_photo.png \
   --out assets/brand/channel_photo.jpg >/dev/null
-echo "Installed notification icons and channel photo."
+cp tool/icon/out/mark.png assets/brand/mark.png
+echo "Installed notification icons, channel photo and the app's mark."

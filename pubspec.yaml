@@ -55,6 +55,8 @@ flutter:
   assets:
     # Profile photo given to the drive channel in Telegram.
     - assets/brand/channel_photo.jpg
+    # The mark, as BrandMark shows it.
+    - assets/brand/mark.png
 
   # IBM Plex Sans (SIL Open Font License, assets/fonts/OFL.txt): the one
   # typeface, see DESIGN.md.

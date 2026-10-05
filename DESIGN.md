@@ -60,24 +60,26 @@ Letter spacing stays at the font's default. Body text is never below 13.
 
 ## Mark
 
-A paper plane, the way Telegram sends, folded from three facets into one
-rounded triangle. Thin open creases separate them.
+A paper plane folded into a drive: three rounded facets with open gaps
+between them.
 
 | Facet | Colour | Shading |
 | --- | --- | --- |
-| Wing (top) | `#0EBC5F` green | cools to `#78C9FF` sky at its tail |
-| Body (right) | `#FECA03` yellow | brightens to `#FFE21A` outward |
-| Keel (bottom) | `#3186FF` blue | fades to `#A9A8FF` lavender at its tip |
+| Wing (top) | `#0EBC5F` green | cools to `#7FD4FF` sky at its tail |
+| Body (right) | `#FDCD06` yellow | brightens outward |
+| Keel (left) | `#3085FE` blue | fades to `#7C9BFE` lavender at its tip |
 
 These colours and their shading belong to the mark alone; the UI keeps its
 one accent and no gradients.
 
-- Drawn once, by `BrandPainter` in `lib/core/widgets/brand_mark.dart`;
-  `tool/icon` renders every icon and the channel photo from it.
+- The artwork is `tool/icon/source/telegrive.png`. `tool/icon` renders
+  every picture of it from that file: the app's own copy for `BrandMark`
+  (`assets/brand/mark.png`), the launcher icons, the notification icon and
+  the channel photo.
 - In the app it stands bare, with no tile. The launcher icon puts it on
-  white; the channel photo uses
-  a faint blue so Telegram's circle has an edge.
-- As a one-colour silhouette (notification, themed icon) the creases stay
+  white; the channel photo uses a faint blue so Telegram's circle has an
+  edge.
+- As a one-colour silhouette (notification, themed icon) the gaps stay
   open.
 - Never recoloured, outlined, or set on a coloured tile.
 

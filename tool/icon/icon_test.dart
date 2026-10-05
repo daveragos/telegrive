@@ -1,11 +1,12 @@
-// Renders the launcher icons from the mark in source/telegrive.png, and the
-// notification icon and the channel photo from the same drawing as
-// BrandMark:
+// Renders every picture of the mark from source/telegrive.png: the app's
+// own copy of it, the launcher icons, the notification icon and the channel
+// photo:
 //
 //   flutter test tool/icon/icon_test.dart --update-goldens
 //   dart run flutter_launcher_icons
 //   tool/icon/install.sh
 //
+// mark.png is the mark alone, filling its square, for BrandMark in the app.
 // icon.png is the full-bleed square (iOS, legacy Android); foreground.png is
 // the plane alone for Android's adaptive icon, and doubles as the themed
 // (monochrome) icon.
@@ -15,15 +16,14 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:telegrive/core/widgets/brand_mark.dart';
 
 const _size = 1024.0;
 
 /// White, so the blue of the plane reads as Telegram's.
 const _tile = Colors.white;
 
-/// The share of the icon the mark spans, across its longer side.
-const _markScale = 0.64;
+/// The share of a launcher icon the mark spans, across its longer side.
+const _iconScale = 0.64;
 
 void main() {
   Future<void> render(
@@ -74,68 +74,95 @@ void main() {
     );
   }
 
-  Future<void> renderMark(WidgetTester tester, String name, {Color? tile}) async {
+  Future<void> renderMark(
+    WidgetTester tester,
+    String name, {
+    required double scale,
+    Color? tile,
+    Color? silhouette,
+    double size = _size,
+  }) async {
     final (image, box) = await loadMark(tester);
-    await render(tester, _MarkPainter(image, box, tile: tile), name);
+    await render(
+      tester,
+      _MarkPainter(image, box, scale: scale, tile: tile, silhouette: silhouette),
+      name,
+      size: size,
+    );
   }
 
+  testWidgets('mark', (tester) async {
+    await renderMark(tester, 'mark', scale: 1, size: 512);
+  });
+
   testWidgets('full icon', (tester) async {
-    await renderMark(tester, 'icon', tile: _tile);
+    await renderMark(tester, 'icon', scale: _iconScale, tile: _tile);
   });
 
   testWidgets('adaptive foreground', (tester) async {
     // flutter_launcher_icons insets the foreground by 16% on each side,
     // which is already Android's visible area, so the mark is drawn at the
     // same size as on the full icon, inside the 66 dp safe circle.
-    await renderMark(tester, 'foreground');
+    await renderMark(tester, 'foreground', scale: _iconScale);
   });
 
   testWidgets('adaptive background', (tester) async {
-    await render(
-      tester,
-      const BrandPainter(scale: 0, tile: _tile),
-      'background',
-    );
+    await render(tester, const _Tile(_tile), 'background');
   });
 
   testWidgets('notification icon', (tester) async {
-    // Status-bar icons are white silhouettes; the creases stay open.
-    await render(
-      tester,
-      const BrandPainter(scale: 0.86, silhouette: Colors.white),
-      'notification',
-    );
+    // Status-bar icons are white silhouettes; the gaps between the facets
+    // stay open.
+    await renderMark(tester, 'notification', scale: 0.86, silhouette: Colors.white);
   });
 
   testWidgets('channel photo', (tester) async {
     // Telegram crops chat photos to a circle and shows them on white, so
-    // the plane sits well inside it on a faint blue.
-    await render(
+    // the mark sits well inside it on a faint blue.
+    await renderMark(
       tester,
-      const BrandPainter(scale: 0.54, tile: Color(0xFFEAF1FF)),
       'channel_photo',
+      scale: 0.54,
+      tile: const Color(0xFFEAF1FF),
       size: 640,
     );
   });
 }
 
+/// A square of one colour.
+class _Tile extends CustomPainter {
+  const _Tile(this.color);
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) =>
+      canvas.drawRect(Offset.zero & size, Paint()..color = color);
+
+  @override
+  bool shouldRepaint(_Tile old) => old.color != color;
+}
+
 /// [image]'s mark, the part of it inside [box], centred on a square and
-/// scaled so its longer side spans [_markScale] of it, on [tile] when given.
+/// scaled so its longer side spans [scale] of it, on [tile] when given, and
+/// in one colour when [silhouette] is.
 class _MarkPainter extends CustomPainter {
-  const _MarkPainter(this.image, this.box, {this.tile});
+  const _MarkPainter(this.image, this.box, {required this.scale, this.tile, this.silhouette});
 
   final ui.Image image;
   final Rect box;
+  final double scale;
   final Color? tile;
+  final Color? silhouette;
 
   @override
   void paint(Canvas canvas, Size size) {
     if (tile != null) canvas.drawRect(Offset.zero & size, Paint()..color = tile!);
-    final scale = size.shortestSide * _markScale / box.longestSide;
+    final factor = size.shortestSide * scale / box.longestSide;
     final drawn = Rect.fromCenter(
       center: size.center(Offset.zero),
-      width: box.width * scale,
-      height: box.height * scale,
+      width: box.width * factor,
+      height: box.height * factor,
     );
     canvas.drawImageRect(
       image,
@@ -143,11 +170,18 @@ class _MarkPainter extends CustomPainter {
       drawn,
       Paint()
         ..filterQuality = FilterQuality.high
-        ..isAntiAlias = true,
+        ..isAntiAlias = true
+        ..colorFilter = silhouette == null
+            ? null
+            : ColorFilter.mode(silhouette!, BlendMode.srcIn),
     );
   }
 
   @override
   bool shouldRepaint(_MarkPainter old) =>
-      old.image != image || old.box != box || old.tile != tile;
+      old.image != image ||
+      old.box != box ||
+      old.scale != scale ||
+      old.tile != tile ||
+      old.silhouette != silhouette;
 }
