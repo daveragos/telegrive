@@ -115,7 +115,7 @@ class DriveSetup extends Notifier<SetupState> {
         // and Home stops showing it while that runs.
         await ref.read(driveSnapshotProvider.notifier).clear();
         await ref.read(appDatabaseProvider).clearIndex();
-        await _prefs.clearSyncState(snapshot.chatId);
+        await _prefs.forgetChannel(snapshot.chatId);
       }
       await _prefs.setDriveChatId(me.id, chat.id);
 

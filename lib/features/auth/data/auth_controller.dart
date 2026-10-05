@@ -229,7 +229,7 @@ class AuthController extends Notifier<AuthUiState> {
     await ref.read(driveSnapshotProvider.notifier).clear();
     final prefs = ref.read(preferencesProvider);
     for (final chatId in prefs.syncedChatIds) {
-      await prefs.clearSyncState(chatId);
+      await prefs.forgetChannel(chatId);
     }
     await prefs.clearSessionEnded();
     await prefs.clearLastUserId();

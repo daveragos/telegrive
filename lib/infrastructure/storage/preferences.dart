@@ -152,29 +152,43 @@ class Preferences {
     await _prefs.setInt('index_copy_print_$chatId', print);
   }
 
-  /// Per-channel keys that describe what this phone knows of the channel,
-  /// so they go with the index.
+  /// Per-channel keys that describe what the local index holds, so they
+  /// are only true while it is.
   static const List<String> _syncKeys = [
     'synced_upto_',
     'full_sync_',
     'indexed_with_',
     'forward_filing_from_',
+  ];
+
+  /// Per-channel keys that describe the channel itself, which reading the
+  /// index again leaves true.
+  static const List<String> _channelKeys = [
     'drive_card_',
     'index_copy_at_',
     'index_copy_print_',
   ];
 
+  /// Forgets what the index holds of [chatId], for it to be read again.
   Future<void> clearSyncState(int chatId) async {
     for (final key in _syncKeys) {
       await _prefs.remove('$key$chatId');
     }
   }
 
-  /// Channels this phone keeps sync progress for, whichever account they
+  /// Forgets everything this phone keeps about [chatId]: the index's sync
+  /// state and what it knows of the channel.
+  Future<void> forgetChannel(int chatId) async {
+    for (final key in [..._syncKeys, ..._channelKeys]) {
+      await _prefs.remove('$key$chatId');
+    }
+  }
+
+  /// Channels this phone keeps anything about, whichever account they
   /// belong to.
   Set<int> get syncedChatIds => {
     for (final key in _prefs.getKeys())
-      for (final prefix in _syncKeys)
+      for (final prefix in [..._syncKeys, ..._channelKeys])
         if (key.startsWith(prefix)) ?int.tryParse(key.substring(prefix.length)),
   };
 
