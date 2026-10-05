@@ -38,6 +38,7 @@ abstract final class ManifestCodec {
   static const String fileKind = 'tgfile2';
   static const String folderKind = 'tgfolder2';
   static const String albumKind = 'tgalbum2';
+  static const String driveKind = 'tgdrive2';
 
   /// [manifest] as its caption. [folderName] names the folder it is in, for
   /// the tag; without it the caption carries none.
@@ -82,6 +83,22 @@ abstract final class ManifestCodec {
     );
   }
 
+  /// The message pinned at the top of the channel: it tells someone
+  /// browsing in Telegram what the channel is, and marks the channel as the
+  /// drive for Telegrive looking for it on a new phone.
+  static EncodedText encodeDrive(DriveManifest manifest) {
+    return CaptionLayout.build(
+      head: 'Telegrive drive',
+      notes: [_driveNote],
+      details: _details(driveKind, manifest.toJson(), _driveFields),
+    );
+  }
+
+  static const String _driveNote =
+      'This channel is your Telegrive drive. Each file is a message here, so '
+      'deleting or editing these messages changes the drive. Tap a hashtag '
+      'under a file to list everything that has it.';
+
   static FileManifest? decodeFile(String caption) {
     final json = _read(fileKind, caption, _fileFields) ?? _legacy(_legacyFile, caption);
     return json == null ? null : FileManifest.tryFromJson(json);
@@ -95,6 +112,11 @@ abstract final class ManifestCodec {
   static AlbumManifest? decodeAlbum(String text) {
     final json = _read(albumKind, text, _albumFields) ?? _legacy(_legacyAlbum, text);
     return json == null ? null : AlbumManifest.tryFromJson(json);
+  }
+
+  static DriveManifest? decodeDrive(String text) {
+    final json = _read(driveKind, text, _driveFields);
+    return json == null ? null : DriveManifest.tryFromJson(json);
   }
 
   /// Unknown keys as the index stores them: JSON, or null when there are
@@ -158,6 +180,11 @@ abstract final class ManifestCodec {
     _Field('n', 'name', _Value.text),
     _Field('ct', 'added', _Value.number),
     _Field('mt', 'changed', _Value.number),
+  ];
+
+  static const List<_Field> _driveFields = [
+    _Field('id', 'id', _Value.text),
+    _Field('ct', 'added', _Value.number),
   ];
 
   /// The details line for [json], a manifest's own map.
@@ -535,6 +562,41 @@ class AlbumManifest {
       name: name,
       createdAt: _time(json['ct']),
       modifiedAt: _time(json['mt'] ?? json['ct']),
+    );
+  }
+}
+
+/// The drive itself, as the pinned message at the top of its channel
+/// describes it.
+@immutable
+class DriveManifest {
+  const DriveManifest({
+    required this.id,
+    required this.createdAt,
+    this.extra = const {},
+  });
+
+  static const Set<String> _keys = {'id', 'ct'};
+
+  final String id;
+  final DateTime createdAt;
+
+  /// Fields a newer version wrote; see [FileManifest.extra].
+  final Map<String, Object?> extra;
+
+  Map<String, dynamic> toJson() => {
+    ...extra,
+    'id': id,
+    'ct': createdAt.millisecondsSinceEpoch,
+  };
+
+  static DriveManifest? tryFromJson(Map<String, dynamic> json) {
+    final id = json['id'];
+    if (id is! String || id.isEmpty) return null;
+    return DriveManifest(
+      id: id,
+      createdAt: _time(json['ct']),
+      extra: Map.unmodifiable(_unknown(json, _keys)),
     );
   }
 }

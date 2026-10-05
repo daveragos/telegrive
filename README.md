@@ -179,7 +179,8 @@ phone number.
   `#starred` and `#trash` work the same way. A line notes a split file's
   part or a photo that is still a small copy. The details Telegrive reads
   back sit at the bottom, folded into a quote under a spoiler. Each folder
-  is a message of its own, saying which folder it sits in.
+  is a message of its own, saying which folder it sits in, and a message
+  pinned at the top says what the channel is.
 - **Transfers that survive.** A queue with live speed and ETA, cancel and
   retry, and a time when everything in progress should be done. A failed
   transfer says why in one sentence, and Home and Transfers retry it in
@@ -341,7 +342,8 @@ phone number.
 3. Sign in with your phone number (or a QR code from another device). The
    first time, Telegrive creates a private channel called **Telegrive** with
    the app icon as its photo (archived in Telegram so it stays out of your
-   chat list) and offers to back up your photos.
+   chat list), pins a message at its top saying what the channel is, and
+   offers to back up your photos.
 
 ## Platform support
 
@@ -487,6 +489,12 @@ Telegram (source of truth)                 This device
   it never costs an edit of its own. A small copy of a photo carries its
   original's size until the original replaces it in the same message, so
   one file never has two messages.
+- **The drive message** pinned at the top of the channel carries
+  `tgdrive2` and the drive's id. It is how a new phone, or a reinstall,
+  knows the channel: the drive is a channel this account created with that
+  message in it, pinned or not, and the description is left to people.
+  Drives made before it are known by the `#telegrive` tag in their
+  description and get the message the next time they open.
 - **Folders** are small text messages carrying their own id, name, parent
   and star, so renames, moves and stars are a single edit and two devices
   never overwrite each other's folder tree. A folder's hashtag is made from

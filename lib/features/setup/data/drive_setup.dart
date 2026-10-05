@@ -6,14 +6,17 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:handy_tdlib/api.dart' as td;
 import 'package:path_provider/path_provider.dart';
+import 'package:uuid/uuid.dart';
 
 import '../../../infrastructure/database/app_database.dart';
 import '../../../infrastructure/storage/preferences.dart';
 import '../../../infrastructure/telegram/telegram_client.dart';
 import '../../../infrastructure/telegram/telegram_exception.dart';
 import '../../auth/data/auth_controller.dart';
+import '../../drive/data/channel_messenger.dart';
 import '../../drive/data/drive_session.dart';
 import '../../drive/data/drive_sync.dart';
+import '../../drive/domain/manifest.dart';
 
 enum SetupStep { account, channel, indexing, done }
 
@@ -55,6 +58,9 @@ class SetupState {
 ///
 /// Finding comes first on purpose. Someone signing in on a new phone, or
 /// after a reinstall, gets their existing drive back without doing anything.
+/// A channel is the drive when it is one this account created and the drive
+/// message ([ManifestCodec.encodeDrive]) is pinned in it, or, for drives
+/// made before that message, when its description carries the drive tag.
 ///
 /// The setup screen runs it after sign-in. For someone whose drive this
 /// phone has opened before, the drive opener runs it behind Home instead,
@@ -62,17 +68,17 @@ class SetupState {
 class DriveSetup extends Notifier<SetupState> {
   static const String channelTitle = 'Telegrive';
 
-  /// Tag in the channel description that marks it as ours, so a search for
-  /// the title never adopts some unrelated channel called "Telegrive".
-  static const String channelTag = '#telegrive';
-
   /// What the app was called before; drives created then are adopted.
   static const String _legacyTitle = 'Gramrive';
-  static const String _legacyTag = '#gramrive';
 
+  /// Tags in the description of a drive made before the drive message,
+  /// which still mark it as one.
+  static const List<String> _descriptionTags = ['#telegrive', '#gramrive'];
+
+  /// The description a drive channel gets. It is for people only.
   static const String _channelDescription =
       'Storage for the Telegrive app. Every file here is part of your drive, '
-      'so deleting or editing these messages changes it. $channelTag';
+      'so deleting or editing these messages changes it.';
 
   Future<void>? _running;
 
@@ -158,7 +164,7 @@ class DriveSetup extends Notifier<SetupState> {
     if (saved == null) return null;
     final me = await _client.send<td.User>(const td.GetMe());
     if (me.id != saved.userId || _prefs.lastUserId != me.id) return null;
-    final channel = await _ownedDriveChannel(saved.chatId, requireTag: false);
+    final channel = await _ownedDriveChannel(saved.chatId, requireMark: false);
     if (channel == null) return null;
     final session = DriveSession(
       userId: me.id,
@@ -178,7 +184,7 @@ class DriveSetup extends Notifier<SetupState> {
   Future<(td.Chat, bool)> _locateOrCreate(int userId) async {
     final saved = _prefs.driveChatId(userId);
     if (saved != null) {
-      final channel = await _ownedDriveChannel(saved, requireTag: false);
+      final channel = await _ownedDriveChannel(saved, requireMark: false);
       if (channel != null) return (await _brand(channel), false);
     }
 
@@ -203,13 +209,17 @@ class DriveSetup extends Notifier<SetupState> {
     } catch (e) {
       debugPrint('[DriveSetup] Could not archive the channel: $e');
     }
-    return (await _brand((chat: chat, description: _channelDescription)), true);
+    return (
+      await _brand((chat: chat, description: _channelDescription, card: null)),
+      true,
+    );
   }
 
   /// Brings a channel in line with how Telegrive presents it: the app icon as
-  /// its photo and, for drives made while the app was still called Gramrive,
-  /// the new title and description. A title the owner chose themselves is
-  /// left alone. Best-effort — none of this is needed for the drive to work.
+  /// its photo, the drive message pinned at the top and, for drives made
+  /// while the app was still called Gramrive, the new title. A title the
+  /// owner chose themselves is left alone, and so is a description they
+  /// wrote. Best-effort — none of this is needed for the drive to work.
   Future<td.Chat> _brand(_DriveChannel channel) async {
     var chat = channel.chat;
     try {
@@ -218,7 +228,9 @@ class DriveSetup extends Notifier<SetupState> {
           td.SetChatTitle(chatId: chat.id, title: channelTitle),
         );
       }
-      if (!channel.description.contains(channelTag)) {
+      final description = channel.description;
+      if (description != _channelDescription &&
+          (description.isEmpty || _descriptionTags.any(description.contains))) {
         await _client.send<td.Ok>(
           td.SetChatDescription(chatId: chat.id, description: _channelDescription),
         );
@@ -238,8 +250,109 @@ class DriveSetup extends Notifier<SetupState> {
     } catch (e) {
       debugPrint('[DriveSetup] Could not update the channel\'s look: $e');
     }
+    await _pinDriveMessage(chat.id, channel.card);
     return chat;
   }
+
+  /// Makes sure the drive message is pinned in [chatId]: [known] when the
+  /// search already met it, else the one this phone last saw, else one
+  /// Telegram finds, pinned again if it came unpinned. Only when Telegram
+  /// answers that there is none is a new one sent and pinned, so a lookup
+  /// that fails never leaves two.
+  Future<void> _pinDriveMessage(int chatId, td.Message? known) async {
+    try {
+      var card = known;
+      if (card == null) {
+        if (_prefs.driveCardId(chatId) case final savedId?) {
+          card = await _messageIfCard(chatId, savedId);
+        }
+      }
+      if (card == null) {
+        final found = await _findDriveMessage(chatId);
+        if (!found.sure) return;
+        card = found.card;
+      }
+      if (card == null) {
+        final manifest = DriveManifest(id: const Uuid().v4(), createdAt: DateTime.now());
+        card = await ref
+            .read(channelMessengerProvider)
+            .sendText(chatId, ManifestCodec.encodeDrive(manifest));
+      }
+      if (!card.isPinned) {
+        await _client.send<td.Ok>(
+          td.PinChatMessage(
+            chatId: chatId,
+            messageId: card.id,
+            disableNotification: true,
+            onlyForSelf: false,
+          ),
+        );
+      }
+      await _prefs.setDriveCardId(chatId, card.id);
+    } catch (e) {
+      debugPrint('[DriveSetup] Could not pin the drive message: $e');
+    }
+  }
+
+  /// Message [messageId] of [chatId] if it is still the drive message, null
+  /// when it is gone or something else. Any other failure is thrown.
+  Future<td.Message?> _messageIfCard(int chatId, int messageId) async {
+    try {
+      final message = await _client.send<td.Message>(
+        td.GetMessage(chatId: chatId, messageId: messageId),
+      );
+      return _isDriveMessage(message) ? message : null;
+    } on TelegramException catch (e) {
+      if (e.code == 404 || e.message.contains('MESSAGE_ID_INVALID')) return null;
+      rethrow;
+    }
+  }
+
+  /// The drive message in [chatId]: the message pinned last, or another
+  /// pinned one, or failing those one Telegram's search finds by its kind,
+  /// should it have come unpinned. [sure] is false when Telegram couldn't
+  /// be asked, so a missing message is never assumed.
+  Future<({td.Message? card, bool sure})> _findDriveMessage(int chatId) async {
+    try {
+      final pinned = await _client.send<td.Message>(
+        td.GetChatPinnedMessage(chatId: chatId),
+      );
+      if (_isDriveMessage(pinned)) return (card: pinned, sure: true);
+    } on TelegramException catch (e) {
+      if (e.code != 404) return (card: null, sure: false);
+    } catch (_) {
+      return (card: null, sure: false);
+    }
+    for (final (query, filter) in const [
+      ('', td.SearchMessagesFilterPinned()),
+      (ManifestCodec.driveKind, null),
+    ]) {
+      try {
+        final found = await _client.send<td.FoundChatMessages>(
+          td.SearchChatMessages(
+            chatId: chatId,
+            query: query,
+            fromMessageId: 0,
+            offset: 0,
+            limit: 50,
+            filter: filter,
+            messageThreadId: 0,
+            savedMessagesTopicId: 0,
+          ),
+        );
+        for (final message in found.messages) {
+          if (_isDriveMessage(message)) return (card: message, sure: true);
+        }
+      } catch (_) {
+        return (card: null, sure: false);
+      }
+    }
+    return (card: null, sure: true);
+  }
+
+  static bool _isDriveMessage(td.Message message) =>
+      message.content is td.MessageText &&
+      ManifestCodec.decodeDrive((message.content as td.MessageText).text.text) != null;
 
   /// The bundled channel photo, copied to disk where TDLib can read it.
   static Future<String> _channelPhotoFile() async {
@@ -255,7 +368,8 @@ class DriveSetup extends Notifier<SetupState> {
   /// A fresh sign-in knows none of the account's chats yet, and the drive
   /// sits in the Archive, so a title search alone can miss it. If it does,
   /// the chat lists are loaded and every archived channel this account owns
-  /// is checked for the drive tag — which also finds a drive someone renamed.
+  /// is checked for the drive message or tag — which also finds a drive
+  /// someone renamed.
   Future<_DriveChannel?> _search() async {
     final byTitle = await _searchByTitle();
     if (byTitle != null) return byTitle;
@@ -271,7 +385,7 @@ class DriveSetup extends Notifier<SetupState> {
         const td.GetChats(chatList: td.ChatListArchive(), limit: 500),
       );
       for (final chatId in archived.chatIds) {
-        final channel = await _ownedDriveChannel(chatId, requireTag: true);
+        final channel = await _ownedDriveChannel(chatId, requireMark: true);
         if (channel != null) return channel;
       }
     } catch (e) {
@@ -308,17 +422,18 @@ class DriveSetup extends Notifier<SetupState> {
       }
     }
     for (final chatId in candidates) {
-      final channel = await _ownedDriveChannel(chatId, requireTag: true);
+      final channel = await _ownedDriveChannel(chatId, requireMark: true);
       if (channel != null) return channel;
     }
     return null;
   }
 
   /// [chatId] if it is a channel this account created (and, when searching,
-  /// one tagged as a Telegrive — or pre-rename Gramrive — drive).
+  /// one marked as a drive: by the drive message, or the tag in the
+  /// description of a drive made before it).
   Future<_DriveChannel?> _ownedDriveChannel(
     int chatId, {
-    required bool requireTag,
+    required bool requireMark,
   }) async {
     try {
       final chat = await _client.send<td.Chat>(td.GetChat(chatId: chatId));
@@ -333,18 +448,22 @@ class DriveSetup extends Notifier<SetupState> {
       final info = await _client.send<td.SupergroupFullInfo>(
         td.GetSupergroupFullInfo(supergroupId: type.supergroupId),
       );
-      final tagged =
-          info.description.contains(channelTag) ||
-          info.description.contains(_legacyTag);
-      if (requireTag && !tagged) return null;
-      return (chat: chat, description: info.description);
+      final tagged = _descriptionTags.any(info.description.contains);
+      if (!requireMark || tagged) {
+        return (chat: chat, description: info.description, card: null);
+      }
+      final found = await _findDriveMessage(chat.id);
+      if (found.card == null) return null;
+      return (chat: chat, description: info.description, card: found.card);
     } catch (_) {
       return null;
     }
   }
 }
 
-typedef _DriveChannel = ({td.Chat chat, String description});
+/// A channel taken for the drive, with its drive message when looking for
+/// the channel already met it.
+typedef _DriveChannel = ({td.Chat chat, String description, td.Message? card});
 
 final driveSetupProvider = NotifierProvider<DriveSetup, SetupState>(
   DriveSetup.new,

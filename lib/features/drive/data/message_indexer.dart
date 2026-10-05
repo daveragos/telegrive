@@ -202,7 +202,8 @@ abstract final class MessageIndexer {
   /// [message] as the forward filer reads the channel: what it is, when it
   /// was posted, whether it was forwarded in and what text it carries. A
   /// text message's text is given only when it isn't a folder or album
-  /// manifest, so a comment can be told from the drive's own records.
+  /// manifest or the drive message, so a comment can be told from the
+  /// drive's own records.
   static ChannelPost postOf(td.Message message) {
     final media = describe(message);
     if (media != null) {
@@ -222,7 +223,8 @@ abstract final class MessageIndexer {
     if (message.content case td.MessageText(text: final formatted)) {
       manifest =
           ManifestCodec.decodeFolder(formatted.text) != null ||
-          ManifestCodec.decodeAlbum(formatted.text) != null;
+          ManifestCodec.decodeAlbum(formatted.text) != null ||
+          ManifestCodec.decodeDrive(formatted.text) != null;
       if (!manifest) text = formatted.text;
     }
     return (

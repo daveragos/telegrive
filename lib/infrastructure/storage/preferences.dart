@@ -130,13 +130,21 @@ class Preferences {
   Future<void> setForwardFilingFrom(int chatId, int messageId) =>
       _prefs.setInt('forward_filing_from_$chatId', messageId);
 
-  /// Per-channel keys that describe what the local index holds, so they
-  /// are only true while it is.
+  /// The drive message pinned in the channel, as this phone last saw it,
+  /// so opening the drive asks Telegram for that one message rather than
+  /// looking for it.
+  int? driveCardId(int chatId) => _prefs.getInt('drive_card_$chatId');
+  Future<void> setDriveCardId(int chatId, int messageId) =>
+      _prefs.setInt('drive_card_$chatId', messageId);
+
+  /// Per-channel keys that describe what this phone knows of the channel,
+  /// so they go with the index.
   static const List<String> _syncKeys = [
     'synced_upto_',
     'full_sync_',
     'indexed_with_',
     'forward_filing_from_',
+    'drive_card_',
   ];
 
   Future<void> clearSyncState(int chatId) async {

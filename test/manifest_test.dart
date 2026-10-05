@@ -587,6 +587,27 @@ void main() {
       expect(ManifestCodec.decodeFolder(text)!.trashedAt, created);
     });
 
+    test('the drive message says what the channel is and round-trips', () {
+      final drive = DriveManifest(
+        id: 'drive-1',
+        createdAt: created,
+        extra: const {'xq': 'later'},
+      );
+      final encoded = ManifestCodec.encodeDrive(drive);
+      expect(encoded.styled(CaptionStyle.bold), 'Telegrive drive');
+      expect(encoded.text.split('\n')[1], startsWith('This channel is your Telegrive drive.'));
+      expect(
+        encoded.styled(CaptionStyle.spoiler),
+        'tgdrive2;xq=later;id=drive-1;added=1700000000000',
+      );
+      final decoded = ManifestCodec.decodeDrive(encoded.text)!;
+      expect(decoded.id, 'drive-1');
+      expect(decoded.createdAt, created);
+      expect(decoded.extra, {'xq': 'later'});
+      expect(ManifestCodec.decodeFolder(encoded.text), isNull);
+      expect(ManifestCodec.decodeDrive('tgdrive2;added=1'), isNull, reason: 'no id');
+    });
+
     test('albums are their own message kind', () {
       final album = AlbumManifest(
         id: 'a1b2c3',
