@@ -12,6 +12,7 @@ import '../../core/config/app_config.dart';
 import '../../core/config/telegram_api.dart';
 import 'device_info.dart';
 import 'secure_store.dart';
+import 'td_library.dart';
 import 'td_ownership.dart';
 import 'td_receiver.dart';
 import 'telegram_exception.dart';
@@ -171,7 +172,7 @@ class TelegramClient {
       if (leftOpen != null && role == TdRole.worker) {
         throw const TdBusy('A client opened in this process is still open.');
       }
-      await TdPlugin.initialize();
+      await openTdLibrary();
       // Keep TDLib's own logging to errors only; it is chatty by default and
       // writes to logcat on every network hiccup.
       TdPlugin.instance.tdExecute(

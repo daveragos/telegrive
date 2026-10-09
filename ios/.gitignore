@@ -32,3 +32,6 @@ Runner/GeneratedPluginRegistrant.*
 !default.mode2v3
 !default.pbxuser
 !default.perspectivev3
+
+# TDLib for iOS, built by tool/build_tdlib_ios.sh.
+Frameworks/tdjson.xcframework/

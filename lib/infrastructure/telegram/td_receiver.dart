@@ -5,6 +5,8 @@ import 'dart:isolate';
 import 'package:flutter/foundation.dart';
 import 'package:handy_tdlib/handy_tdlib.dart';
 
+import 'td_library.dart';
+
 /// Runs TDLib's blocking `td_receive` on a background isolate.
 ///
 /// TDLib's client registry is process-global, so an isolate that opens the
@@ -91,7 +93,7 @@ class TdReceiver {
 
   static Future<void> _receiveLoop(SendPort sendPort) async {
     try {
-      await TdPlugin.initialize();
+      await openTdLibrary();
     } catch (e) {
       sendPort.send(e.toString());
       return;
