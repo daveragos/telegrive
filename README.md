@@ -41,7 +41,8 @@ number, and your files stay in Telegram, where you can see them too.
 
 ## Getting started
 
-1. Telegrive runs on Android. It isn't in a store yet; to build it, see
+1. Telegrive runs on Android and iPhone. It isn't in a store yet; to
+   build it, and for what the iPhone doesn't do yet, see
    [TECHNICAL.md](TECHNICAL.md).
 2. Sign in with your phone number, or scan a QR code from Telegram on
    another device.

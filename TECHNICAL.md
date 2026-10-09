@@ -573,6 +573,22 @@ flutter pub get
 flutter run
 ```
 
+On iOS, TDLib comes from the app itself: handy_tdlib ships no iOS build.
+Before the first iOS build, with Xcode, CMake and gperf installed, run:
+
+```bash
+tool/build_tdlib_ios.sh
+```
+
+It builds the TDLib commit handy_tdlib was generated from, with OpenSSL,
+for iPhones and for the simulator on Apple silicon, into
+`ios/Frameworks/tdjson.xcframework`, which git ignores. Runner links and
+embeds it, and `openTdLibrary()` loads it as `tdjson.framework/tdjson`.
+When handy_tdlib moves to a new TDLib, set `TD_COMMIT` in the script to
+match and run it again. Then `flutter run` on an iPhone as usual; a
+release build (`flutter run --release`) keeps opening from the home screen
+once it is unplugged.
+
 Tests and generated code:
 
 ```bash
@@ -595,13 +611,16 @@ the two commands are at the top of that test.
 | Platform | Status |
 | --- | --- |
 | Android (arm64, armv7, x86, x86_64) | Supported |
-| iOS and macOS | Not yet. The UI is ready, but `handy_tdlib` ships Android binaries only. |
+| iOS (arm64, and the Apple silicon simulator) | Runs, with TDLib built by `tool/build_tdlib_ios.sh`. Photo backup runs while the app is open; the features below that need Android are off. |
+| macOS | Not yet. |
 
 - **Newer TDLib and 16 KB pages.** `handy_tdlib` bundles TDLib 1.8.36, whose
   binaries aren't 16 KB-page aligned, so Android 15+ devices with 16 KB
   pages run the app in compatibility mode. The plan is to vendor current
   `libtdjson` builds.
-- **iOS and macOS**, with prebuilt TDLib frameworks through the same FFI
-  binding, and a share extension on iOS.
+- **iOS**: backup in the background, a share extension, and the features
+  that use Android's own channels: watched folders, the Google Photos
+  import, the drive in the system file picker, and the scanner and camera.
+- **macOS**, with a TDLib framework through the same FFI binding.
 - **End-to-end encryption** of file contents and details, with a recovery
   passphrase.
