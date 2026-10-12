@@ -13,13 +13,15 @@ import '../../network/data/mobile_data.dart';
 import '../../transfers/data/transfer_queue.dart';
 import '../data/backup_controller.dart';
 
-/// Where backup stands, said in one line — on Photos and Transfers. It
-/// opens the Backup screen, and carries at most one action: whatever would
-/// unblock backup right now.
+/// Where backup stands, said in one line — on Photos, Transfers and the
+/// Backup queue. It opens the queue while there are photos waiting or some
+/// went up since the app opened, the Backup screen otherwise, and carries
+/// at most one action: whatever would unblock backup right now.
 class BackupStatusLine extends ConsumerWidget {
-  const BackupStatusLine({super.key, this.linkToSettings = true});
+  const BackupStatusLine({super.key, this.linked = true});
 
-  final bool linkToSettings;
+  /// Whether a tap opens anything; not on the queue itself.
+  final bool linked;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -32,6 +34,7 @@ class BackupStatusLine extends ConsumerWidget {
     );
     final renewDay = ref.watch(mobileDataProvider.select((d) => d.renewDay));
     final status = describeBackup(backup, speed: speed, renewDay: renewDay);
+    final queue = backup.enabled && (backup.remaining > 0 || backup.recent.isNotEmpty);
 
     return StatusLine(
       icon: status.icon,
@@ -43,7 +46,7 @@ class BackupStatusLine extends ConsumerWidget {
       text: status.title,
       detail: status.detail,
       progress: status.progress,
-      onTap: linkToSettings ? () => context.push('/backup') : null,
+      onTap: linked ? () => context.push(queue ? '/backup/queue' : '/backup') : null,
       trailing: _action(context, ref, backup),
     );
   }

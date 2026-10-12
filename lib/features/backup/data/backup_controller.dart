@@ -18,6 +18,7 @@ import '../../../infrastructure/storage/preferences.dart';
 import '../../drive/data/drive_repository.dart';
 import '../../drive/data/drive_session.dart';
 import '../../drive/data/drive_sync.dart';
+import '../../drive/domain/drive_models.dart';
 import '../../network/data/mobile_data.dart';
 import '../../transfers/data/transfer_queue.dart';
 import '../../transfers/domain/transfer_error.dart';
@@ -110,6 +111,33 @@ class PendingAsset {
   final String folder;
 }
 
+/// A photo this run of the app sent up, as the Backup queue lists it.
+@immutable
+class RecentBackup {
+  const RecentBackup({required this.assetId, required this.fileId});
+
+  final String assetId;
+
+  /// The drive file it went up as: the original, or a small copy until the
+  /// original takes its place.
+  final String fileId;
+}
+
+/// A waiting photo the person took out of backup, with what Undo needs to
+/// put it back as it was.
+@immutable
+class SkippedWaiting {
+  const SkippedWaiting(this.assetId, this.previous, {required this.wasGoingUp});
+
+  final String assetId;
+
+  /// Its backup record before, or null when it had never been tried.
+  final BackupAssetRow? previous;
+
+  /// Its upload was under way and was called off.
+  final bool wasGoingUp;
+}
+
 @immutable
 class BackupState {
   const BackupState({
@@ -121,6 +149,7 @@ class BackupState {
     this.lastCompleted,
     this.error,
     this.waiting = const [],
+    this.recent = const [],
     this.failedIds = const {},
     this.skippedIds = const {},
     this.heldVideos = 0,
@@ -162,8 +191,15 @@ class BackupState {
   /// Why the last pass stopped, while [phase] is [BackupPhase.stopped].
   final String? error;
 
-  /// The newest photos still to go up, at most twenty, newest first.
+  /// The photos the last pass found still to go up, newest first, the ones
+  /// going up now among them. Each leaves once it is in the drive, out of
+  /// tries, or skipped.
   final List<PendingAsset> waiting;
+
+  /// What this run of the app sent up, the latest first, at most
+  /// [BackupController.recentKept]. A photo whose original followed its
+  /// small copy is listed once, as the original.
+  final List<RecentBackup> recent;
 
   /// Videos the last pass left for Wi-Fi, since mobile data is for photos
   /// only.
@@ -207,6 +243,7 @@ class BackupState {
     String? error,
     bool clearError = false,
     List<PendingAsset>? waiting,
+    List<RecentBackup>? recent,
     Set<String>? failedIds,
     Set<String>? skippedIds,
     int? heldVideos,
@@ -224,6 +261,7 @@ class BackupState {
     lastCompleted: lastCompleted ?? this.lastCompleted,
     error: clearError ? null : (error ?? this.error),
     waiting: waiting ?? this.waiting,
+    recent: recent ?? this.recent,
     failedIds: failedIds ?? this.failedIds,
     skippedIds: skippedIds ?? this.skippedIds,
     heldVideos: heldVideos ?? this.heldVideos,
@@ -295,8 +333,8 @@ class BackupController extends Notifier<BackupState> {
   /// listed under Not backed up instead.
   static const int maxFailures = 3;
 
-  /// How many of the photos still to go up the state lists by name.
-  static const int _waitingShown = 20;
+  /// How many of the photos this run sent up the state lists.
+  static const int recentKept = 500;
 
   static const PermissionRequestOption permissionOption =
       PermissionRequestOption(
@@ -323,6 +361,16 @@ class BackupController extends Notifier<BackupState> {
   /// pass or needs another. Null until the pass has scanned, since the scan
   /// takes every request made before it into account.
   Set<String>? _passIds;
+
+  /// The photos the last pass found still to go up, newest first, and
+  /// those of them settled since: in the drive, out of tries, or skipped.
+  /// [BackupState.waiting] is the one less the other.
+  List<PendingAsset> _listed = const [];
+  final Set<String> _settled = {};
+
+  /// Photos [skipWaiting] is taking out of backup, so a second tap while
+  /// the first is under way does nothing.
+  final Set<String> _skipping = {};
 
   /// A photo failed in the running pass with tries left.
   bool _retryLater = false;
@@ -643,6 +691,76 @@ class BackupController extends Notifier<BackupState> {
     await _forgetFullScan();
     schedule(immediate: true);
   }
+
+  /// Takes a photo still waiting to go up out of backup, from the Backup
+  /// queue: it is skipped, like a failed photo set aside, and its upload is
+  /// called off if it is under way. A photo with a small copy keeps it.
+  /// Answers what [undoSkip] puts back, or null when the photo wasn't
+  /// waiting: in the drive already, out of tries, or skipped by a tap a
+  /// moment ago. One whose upload lands before it can be called off is in
+  /// the drive, and stays backed up.
+  Future<SkippedWaiting?> skipWaiting(String assetId) async {
+    if (!_skipping.add(assetId)) return null;
+    try {
+      final previous = await _db.backupAssetOf(assetId);
+      if (classify(previous) != BackupDisposition.pending) return null;
+      // Set aside before the upload is called off, so the worker that has
+      // the photo sees as much and lets it go rather than trying again.
+      await _db.setAssetSkipped(assetId);
+      _heldUploads.remove(assetId);
+      final upload = ref
+          .read(transferQueueProvider)
+          .items
+          .where((t) => t.row.assetId == assetId && t.status.isPending)
+          .firstOrNull;
+      if (upload != null) await _queue.remove(upload.id);
+      if ((await _db.backupAssetOf(assetId))?.state != BackupAssetState.skipped) {
+        return null;
+      }
+      _settled.add(assetId);
+      state = state.copyWith(
+        total: math.max(0, state.total - 1),
+        skippedIds: {...state.skippedIds, assetId},
+        smallCopies: previous?.state == BackupAssetState.smallCopy
+            ? math.max(0, state.smallCopies - 1)
+            : null,
+        waiting: _shown(),
+      );
+      return SkippedWaiting(assetId, previous, wasGoingUp: upload != null);
+    } finally {
+      _skipping.remove(assetId);
+    }
+  }
+
+  /// Puts a photo [skipWaiting] took out back as it was, and sends it up
+  /// ahead of the rest: it was in line, or going up, a moment ago. One no
+  /// longer skipped (Bring back ran, and it may have gone up since) stays
+  /// as it is.
+  Future<void> undoSkip(SkippedWaiting skipped) async {
+    final id = skipped.assetId;
+    if (await _db.unskipAsset(id, skipped.previous) == 0) return;
+    if (state.skippedIds.contains(id)) {
+      _settled.remove(id);
+      state = state.copyWith(
+        total: state.total + 1,
+        skippedIds: {...state.skippedIds}..remove(id),
+        smallCopies: skipped.previous?.state == BackupAssetState.smallCopy
+            ? state.smallCopies + 1
+            : null,
+        waiting: _shown(),
+      );
+    }
+    // A photo the scans between full looks wouldn't find again, being
+    // older than the last pass that dealt with everything, is found as one
+    // asked for.
+    backUpNow(id);
+  }
+
+  /// The photos still to go up, as [BackupState.waiting] lists them.
+  List<PendingAsset> _shown() => [
+    for (final asset in _listed)
+      if (!_settled.contains(asset.assetId)) asset,
+  ];
 
   /// Matches the photos backed up from this phone against the index, and
   /// records the ones whose files are no longer in the drive, so the person
@@ -1018,27 +1136,17 @@ class BackupController extends Notifier<BackupState> {
     }
 
     // The list stays newest first while Back up now changes the order the
-    // photos go up in. Photos leave it once they are in the drive or out of
-    // tries, and the next ones move up.
-    final settled = <String>{};
-    var from = 0;
-    List<PendingAsset> shown() {
-      while (from < waiting.length && settled.contains(waiting[from].id)) {
-        from++;
-      }
-      return [
-        for (final asset
-            in waiting
-                .skip(from)
-                .where((a) => !settled.contains(a.id))
-                .take(_waitingShown))
-          PendingAsset(
-            assetId: asset.id,
-            takenAt: asset.createDateTime,
-            folder: _folderName(asset),
-          ),
-      ];
-    }
+    // photos go up in. Photos leave it once they are in the drive, out of
+    // tries or skipped.
+    _listed = [
+      for (final asset in waiting)
+        PendingAsset(
+          assetId: asset.id,
+          takenAt: asset.createDateTime,
+          folder: _folderName(asset),
+        ),
+    ];
+    _settled.clear();
 
     final asked = _priority.toSet();
     var pending = orderPending(waiting, asked, (a) => a.id);
@@ -1118,7 +1226,7 @@ class BackupController extends Notifier<BackupState> {
         ._withFailed(failedIds, total: total)
         .copyWith(
           done: done,
-          waiting: shown(),
+          waiting: _shown(),
           skippedIds: skippedIds,
           heldVideos: heldVideos,
           smallCopies: smallCopies,
@@ -1172,7 +1280,12 @@ class BackupController extends Notifier<BackupState> {
         // Read when its turn comes rather than at the scan: Retry may have
         // cleared it since, or an earlier request sent the photo up.
         final record = await _db.backupAssetOf(asset.id);
-        if (!_due(record)) continue;
+        if (!_due(record)) {
+          // Skipped since the scan, or sent up by an earlier request: it
+          // isn't waiting any more.
+          if (_settled.add(asset.id)) state = state.copyWith(waiting: _shown());
+          continue;
+        }
         final wasSmall = record?.state == BackupAssetState.smallCopy;
         int? fewerSmall() => wasSmall ? math.max(0, state.smallCopies - 1) : null;
         // A held item stays on the list of what is waiting, and the worker
@@ -1183,25 +1296,31 @@ class BackupController extends Notifier<BackupState> {
             continue;
           case _Outcome.skipped:
             // A failed try for the original records the photo as failed,
-            // with tries left, so it stops counting as a small copy.
+            // with tries left, so it stops counting as a small copy. One
+            // the person skipped was taken off the count then.
             if (wasSmall &&
-                (await _db.backupAssetOf(asset.id))?.state != BackupAssetState.smallCopy) {
+                (await _db.backupAssetOf(asset.id))?.state == BackupAssetState.failed) {
               state = state.copyWith(smallCopies: fewerSmall());
             }
           case _Outcome.smallCopy:
             state = state.copyWith(smallCopies: state.smallCopies + 1);
           case _Outcome.done:
-            settled.add(asset.id);
+            _settled.add(asset.id);
+            // Skipped as it landed, or as the drive turned out to hold it:
+            // it is backed up, and counts as such.
+            final landed = state.skippedIds.contains(asset.id);
             state = state.copyWith(
               done: state.done + 1,
+              total: landed ? state.total + 1 : null,
+              skippedIds: landed ? ({...state.skippedIds}..remove(asset.id)) : null,
               smallCopies: fewerSmall(),
-              waiting: shown(),
+              waiting: _shown(),
             );
           case _Outcome.failed:
-            settled.add(asset.id);
+            _settled.add(asset.id);
             state = state
                 ._withFailed({...state.failedIds, asset.id})
-                .copyWith(smallCopies: fewerSmall(), waiting: shown());
+                .copyWith(smallCopies: fewerSmall(), waiting: _shown());
         }
       }
     }
@@ -1522,6 +1641,12 @@ class BackupController extends Notifier<BackupState> {
     bool smallCopy = false,
     required void Function(String fileId) uploaded,
   }) async {
+    // Skipped from the Backup queue as it was being got ready: the upload
+    // goes before it sends anything.
+    if ((await _db.backupAssetOf(asset.id))?.state == BackupAssetState.skipped) {
+      await _queue.remove(id);
+      return _Outcome.skipped;
+    }
     final row = await untilEndedOrHeld(ref, id);
     if (row == null) {
       _heldUploads[asset.id] = id;
@@ -1560,6 +1685,12 @@ class BackupController extends Notifier<BackupState> {
     }
     uploaded(row.fileId);
     _uploaded++;
+    state = state.copyWith(
+      recent: [
+        RecentBackup(assetId: asset.id, fileId: row.fileId),
+        ...state.recent.where((r) => r.assetId != asset.id).take(recentKept - 1),
+      ],
+    );
     return smallCopy ? _Outcome.smallCopy : _Outcome.done;
   }
 
@@ -1596,6 +1727,10 @@ class BackupController extends Notifier<BackupState> {
     BackupAssetRow? record,
     String reason,
   ) async {
+    // Skipped while it was being got ready: it stays skipped.
+    if ((await _db.backupAssetOf(asset.id))?.state == BackupAssetState.skipped) {
+      return _Outcome.skipped;
+    }
     final failures = (record?.failures ?? 0) + 1;
     await _db.markAssetFailed(asset.id, failures, reason: reason);
     if (failures >= maxFailures) return _Outcome.failed;
@@ -1928,6 +2063,26 @@ enum _Outcome { done, smallCopy, failed, skipped, held }
 
 final backupControllerProvider =
     NotifierProvider<BackupController, BackupState>(BackupController.new);
+
+/// Backup's uploads in the transfer queue that haven't ended, in the order
+/// they were queued: what the Backup queue shows going up now.
+final backupUploadsProvider = Provider.autoDispose<List<TransferItem>>(
+  (ref) => ref
+      .watch(transferQueueProvider)
+      .items
+      .reversed
+      .where(
+        (t) => t.origin == TransferOrigin.backup && t.row.assetId != null && t.status.isPending,
+      )
+      .toList(),
+);
+
+/// The photos and videos this run of the app backed up that are still in
+/// the drive and out of the trash, newest moment first, live.
+final recentBackupsProvider = StreamProvider.autoDispose<List<DriveFile>>((ref) {
+  final recent = ref.watch(backupControllerProvider.select((s) => s.recent));
+  return ref.watch(driveRepositoryProvider).watchFiles([for (final r in recent) r.fileId]);
+});
 
 /// How many photos and videos the drive holds from backup, live.
 final backedUpCountProvider = StreamProvider.autoDispose<int>(

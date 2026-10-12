@@ -9,9 +9,11 @@ import '../features/auth/presentation/phone_screen.dart';
 import '../features/auth/presentation/qr_screen.dart';
 import '../features/auth/presentation/unsupported_screen.dart';
 import '../features/auth/presentation/welcome_screen.dart';
+import '../features/backup/presentation/backup_queue_screen.dart';
 import '../features/backup/presentation/backup_screen.dart';
 import '../features/backup/presentation/free_up_preview_screen.dart';
 import '../features/backup/presentation/not_backed_up_screen.dart';
+import '../features/backup/presentation/phone_media_viewer.dart';
 import '../features/checkup/presentation/checkup_screen.dart';
 import '../features/drive/presentation/waiting_changes_screen.dart';
 import '../features/files/presentation/file_list_screen.dart';
@@ -151,7 +153,21 @@ final routerProvider = Provider<GoRouter>((ref) {
             parentNavigatorKey: rootNavigatorKey,
             builder: (_, _) => const NotBackedUpScreen(),
           ),
+          GoRoute(
+            path: 'queue',
+            parentNavigatorKey: rootNavigatorKey,
+            builder: (_, _) => const BackupQueueScreen(),
+          ),
         ],
+      ),
+      // Photos on this phone, from the Backup queue, which hands over the
+      // ones to swipe through. Without them, as after the app was restored,
+      // there is nothing to show, and the queue opens instead.
+      GoRoute(
+        path: '/phone-media',
+        parentNavigatorKey: rootNavigatorKey,
+        redirect: (_, state) => state.extra is PhoneMediaArgs ? null : '/backup/queue',
+        pageBuilder: (_, state) => _fade(state, PhoneMediaViewer(args: state.extra! as PhoneMediaArgs)),
       ),
       GoRoute(
         path: '/free-up',

@@ -407,6 +407,16 @@ value goes back onto the line exactly as it came.
 - **Nothing silently skipped.** A photo that fails is tried again; after
   three tries it is listed under Backup › Not backed up with the reason,
   to retry or skip.
+- **The queue, live.** Tapping backup's line on Photos or Transfers opens
+  the Backup queue. Waiting lists the uploads under way, each with how far
+  it has got, then every photo still to go, newest first. A tap opens the
+  phone's own copy full screen, to swipe through the rest, with Back up
+  now. The cross skips a photo, and calls off its upload if one is under
+  way. The photo keeps its failures and any small copy, and Undo puts it
+  back as it was and sends it next. Backed up shows what this run of the
+  app sent up, in the Photos grid with its selection bar, so photos can
+  be trashed (the phone's copy too, if you like), put in albums or sent
+  while the rest follow.
 - **Notices gaps.** After every full read, the photos backed up from this
   phone are matched against the index, and any whose file is gone are
   counted, never sent again until you choose to.

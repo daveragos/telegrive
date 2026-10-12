@@ -137,7 +137,7 @@ class BackupScreen extends ConsumerWidget {
             if (watching) ...when,
           ],
           const FreeUpSpaceTile(),
-          if (backup.failed > 0 || (backup.remaining > 0 && !backup.isWorking)) ...[
+          if (backup.failed > 0 || backup.remaining > 0) ...[
             const SizedBox(height: Space.s),
             ListGroup(
               children: [
@@ -148,13 +148,13 @@ class BackupScreen extends ConsumerWidget {
                     text: '${Formatters.count(backup.failed, 'item')} didn\'t back up',
                     detail: 'See which ones and why.',
                     onTap: () => context.push('/backup/not-backed-up'),
-                  )
-                else
+                  ),
+                if (backup.remaining > 0)
                   StatusLine(
                     icon: Icons.schedule_rounded,
                     text: '${Formatters.count(backup.remaining, 'item')} waiting',
-                    detail: 'See what\'s left.',
-                    onTap: () => context.push('/backup/not-backed-up'),
+                    detail: 'See what\'s left, and leave out what you don\'t want.',
+                    onTap: () => context.push('/backup/queue'),
                   ),
               ],
             ),

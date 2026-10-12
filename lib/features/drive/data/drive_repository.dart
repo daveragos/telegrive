@@ -226,6 +226,11 @@ class DriveRepository {
   Stream<List<DriveFile>> watchMedia() =>
       throttleLatest(_db.watchMediaLite().map(_liteFiles), _settle);
 
+  /// Those of the files [ids] still in the drive and out of the trash,
+  /// newest moment first, read and throttled as the timeline is.
+  Stream<List<DriveFile>> watchFiles(List<String> ids) =>
+      throttleLatest(_db.watchFilesLite(ids).map(_liteFiles), _settle);
+
   /// The least time between two lists of the timeline or an album.
   static const _settle = Duration(milliseconds: 750);
 

@@ -10,6 +10,7 @@ import 'package:photo_manager/photo_manager.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:telegrive/app/theme/app_theme.dart';
 import 'package:telegrive/features/backup/data/backup_controller.dart';
+import 'package:telegrive/features/backup/presentation/backup_queue_screen.dart';
 import 'package:telegrive/features/backup/presentation/backup_screen.dart';
 import 'package:telegrive/features/backup/presentation/duplicates_sheet.dart';
 import 'package:telegrive/features/backup/presentation/not_backed_up_screen.dart';
@@ -552,71 +553,35 @@ void main() {
     expect(find.text('Undo'), findsNothing);
   });
 
-  testWidgets(
-    'waiting photos say what they wait for, and Back up now waits for Wi-Fi too',
-    (tester) async {
-      final waiting = [
-        for (var i = 0; i < 3; i++)
-          PendingAsset(
-            assetId: 'w$i',
-            takenAt: DateTime(2025, 9, 25),
-            folder: 'Camera',
-          ),
-      ];
-      final controller = await pump(
-        tester,
-        backup: BackupState(
-          phase: BackupPhase.waitingForWifi,
-          total: 30,
-          done: 3,
-          waiting: waiting,
-        ),
-      );
-
-      expect(find.text('Waiting · 27'), findsOneWidget);
-      expect(find.text('27 items · waiting for Wi-Fi'), findsOneWidget);
-      expect(find.text('and 24 more, newest first.'), findsOneWidget);
-      expect(find.text('Camera · Sep 25, 2025'), findsNWidgets(3));
-      final retryAll = tester.widget<TextButton>(
-        find.widgetWithText(TextButton, 'Retry all'),
-      );
-      expect(retryAll.onPressed, isNull);
-
-      await tester.tap(find.widgetWithText(TextButton, 'Back up now').first);
-      await tester.pump();
-      expect(controller.calls, isEmpty);
-    },
-  );
-
-  testWidgets('Back up now queues the photo and says so', (tester) async {
-    final controller = await pump(
+  testWidgets('waiting photos are counted with what they wait for, and listed in the queue', (
+    tester,
+  ) async {
+    await pump(
       tester,
       backup: BackupState(
-        phase: BackupPhase.uploading,
+        phase: BackupPhase.waitingForWifi,
         total: 30,
-        done: 28,
+        done: 3,
         waiting: [
-          PendingAsset(
-            assetId: 'w0',
-            takenAt: DateTime(2025, 9, 25),
-            folder: 'Camera',
-          ),
-          PendingAsset(
-            assetId: 'w1',
-            takenAt: DateTime(2025, 9, 24),
-            folder: 'Camera',
-          ),
+          for (var i = 0; i < 3; i++)
+            PendingAsset(
+              assetId: 'w$i',
+              takenAt: DateTime(2025, 9, 25),
+              folder: 'Camera',
+            ),
         ],
       ),
     );
 
-    expect(find.text('2 items · backing up now'), findsOneWidget);
-    expect(find.textContaining('more, newest first'), findsNothing);
-    await tester.tap(find.widgetWithText(TextButton, 'Back up now').last);
-    await tester.pump();
-    expect(controller.calls, ['now w1']);
-    expect(find.text('Queued'), findsOneWidget);
-    expect(find.text('Back up now'), findsOneWidget);
+    expect(find.text('Waiting · 27'), findsOneWidget);
+    expect(find.text('27 items · waiting for Wi-Fi'), findsOneWidget);
+    expect(find.text('See what\'s left, and leave out what you don\'t want.'), findsOneWidget);
+    // One by one, they are on the Backup queue.
+    expect(find.text('Camera · Sep 25, 2025'), findsNothing);
+    final retryAll = tester.widget<TextButton>(
+      find.widgetWithText(TextButton, 'Retry all'),
+    );
+    expect(retryAll.onPressed, isNull);
   });
 
   testWidgets('with nothing stuck, it says everything is backed up', (
@@ -658,6 +623,10 @@ void main() {
                 path: 'not-backed-up',
                 builder: (_, _) => const NotBackedUpScreen(),
               ),
+              GoRoute(
+                path: 'queue',
+                builder: (_, _) => const BackupQueueScreen(),
+              ),
             ],
           ),
         ],
@@ -680,6 +649,7 @@ void main() {
               (ref) => Stream.value(const []),
             ),
             skippedBackupCountProvider.overrideWith((ref) => Stream.value(0)),
+            recentBackupsProvider.overrideWith((ref) => Stream.value(const [])),
           ],
           child: MaterialApp.router(
             theme: AppTheme.light(),
@@ -691,12 +661,12 @@ void main() {
       await tester.pump();
     }
 
-    /// Taps [line] and expects Not backed up to open.
-    Future<void> follow(WidgetTester tester, String line) async {
+    /// Taps [line] and expects [screen] to open.
+    Future<void> follow(WidgetTester tester, String line, Type screen) async {
       await tester.tap(find.text(line));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 500));
-      expect(find.byType(NotBackedUpScreen), findsOneWidget);
+      expect(find.byType(screen), findsOneWidget);
     }
 
     const uploading = BackupState(
@@ -733,43 +703,52 @@ void main() {
       final pointer = find.textContaining(
         RegExp(r"^[\d,]+ waiting|didn't back up"),
       );
-      for (final (backup, line) in [
-        (uploading, null),
-        (allDone, null),
-        (onMobileData, '27 waiting'),
+      for (final (backup, line, screen) in [
+        (uploading, null, null),
+        (allDone, null, null),
+        // Waiting and nothing failed: the queue lists what is left.
+        (onMobileData, '27 waiting', BackupQueueScreen),
         // While backup is moving, the status line above counts what is left.
-        (failing, '2 didn\'t back up'),
-        (stuck, '25 waiting · 2 didn\'t back up'),
+        (failing, '2 didn\'t back up', NotBackedUpScreen),
+        (stuck, '25 waiting · 2 didn\'t back up', NotBackedUpScreen),
       ]) {
         await open(tester, '/photos', backup);
         if (line == null) {
           expect(pointer, findsNothing, reason: '${backup.phase}');
         } else {
           expect(find.text(line), findsOneWidget);
-          await follow(tester, line);
+          await follow(tester, line, screen!);
         }
       }
     });
 
     testWidgets(
-      'the Backup screen has a row for it only while something is stuck',
+      'the Backup screen has a row for failures, and one for the queue while photos wait',
       (tester) async {
         final row = find.textContaining(
           RegExp(r"^See (which ones and why|what's left)"),
         );
-        for (final (backup, line) in [
-          (uploading, null),
-          (allDone, null),
-          (onMobileData, '27 items waiting'),
-          (failing, '2 items didn\'t back up'),
-          (stuck, '2 items didn\'t back up'),
+        for (final (backup, lines) in [
+          (allDone, const <(String, Type)>[]),
+          (uploading, const [('27 items waiting', BackupQueueScreen)]),
+          (onMobileData, const [('27 items waiting', BackupQueueScreen)]),
+          (
+            failing,
+            const [
+              ('2 items didn\'t back up', NotBackedUpScreen),
+              ('25 items waiting', BackupQueueScreen),
+            ],
+          ),
+          (stuck, const [('2 items didn\'t back up', NotBackedUpScreen)]),
         ]) {
-          await open(tester, '/backup', backup);
-          if (line == null) {
+          if (lines.isEmpty) {
+            await open(tester, '/backup', backup);
             expect(row, findsNothing, reason: '${backup.phase}');
-          } else {
+          }
+          for (final (line, screen) in lines) {
+            await open(tester, '/backup', backup);
             expect(find.text(line), findsOneWidget);
-            await follow(tester, line);
+            await follow(tester, line, screen);
           }
         }
       },

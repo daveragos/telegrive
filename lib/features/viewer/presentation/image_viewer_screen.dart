@@ -11,6 +11,7 @@ import 'package:video_player/video_player.dart';
 import '../../../app/theme/tokens.dart';
 import '../../../core/files/file_kind.dart';
 import '../../../core/format/formatters.dart';
+import '../../backup/data/backup_controller.dart';
 import '../../backup/data/local_media.dart';
 import '../../drive/data/drive_repository.dart';
 import '../../drive/data/previews.dart';
@@ -35,7 +36,8 @@ class ImageViewerScreen extends ConsumerStatefulWidget {
   final String fileId;
 
   /// What to swipe through: `photos` (the timeline), `favorites`,
-  /// `videos`, or `album:<id>`. Null shows the one file.
+  /// `videos`, `album:<id>`, or `backed-up` (what backup sent up since the
+  /// app opened). Null shows the one file.
   final String? source;
 
   @override
@@ -96,6 +98,7 @@ class _ImageViewerScreenState extends ConsumerState<ImageViewerScreen> {
       'photos' => timeline(),
       'favorites' => timeline().where((f) => f.starred).toList(),
       'videos' => timeline().where((f) => f.kind == FileKind.video).toList(),
+      'backed-up' => ref.watch(recentBackupsProvider).value ?? const [],
       final String source when source.startsWith('album:') =>
         ref.watch(albumFilesProvider(source.substring(6))).value ?? const [],
       _ => [?ref.watch(fileInfoProvider(widget.fileId)).value],

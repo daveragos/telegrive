@@ -1042,6 +1042,17 @@ class AppDatabase extends _$AppDatabase {
     readsFrom: {albumFiles},
   );
 
+  /// Those of the files [ids] that are shown, newest moment first, as the
+  /// timeline orders them. Ids go in as variables, so keep them to a few
+  /// hundred.
+  Stream<List<LiteFileRow>> watchFilesLite(List<String> ids) => ids.isEmpty
+      ? Stream.value(const [])
+      : _liteSelect(
+          'id IN (${List.filled(ids.length, '?').join(', ')})',
+          'COALESCE(taken_at, created_at) DESC',
+          variables: [for (final id in ids) Variable.withString(id)],
+        );
+
   /// An album's files, newest moment first, previews and all.
   Stream<List<FileRow>> watchAlbumFiles(String albumId) {
     final when = coalesce([driveFiles.takenAt, driveFiles.createdAt]);
@@ -1427,6 +1438,36 @@ class AppDatabase extends _$AppDatabase {
               updatedAt: Value(DateTime.now()),
             ),
           );
+
+  /// Sets [assetId] aside however backup knew it, never tried included,
+  /// keeping its failures, reason and drive file, so [unskipAsset] can put
+  /// it back as it was.
+  Future<void> setAssetSkipped(String assetId) {
+    final now = DateTime.now();
+    return into(backupAssets).insert(
+      BackupAssetsCompanion.insert(
+        assetId: assetId,
+        state: BackupAssetState.skipped,
+        updatedAt: now,
+      ),
+      onConflict: DoUpdate(
+        (_) => BackupAssetsCompanion(
+          state: const Value(BackupAssetState.skipped),
+          updatedAt: Value(now),
+        ),
+      ),
+    );
+  }
+
+  /// Puts back the record [assetId] had before [setAssetSkipped], which is
+  /// [previous], or none. Returns 0 when it isn't set aside any more (Bring
+  /// back ran, and it may have gone up since), and changes nothing then.
+  Future<int> unskipAsset(String assetId, BackupAssetRow? previous) {
+    Expression<bool> skipped($BackupAssetsTable a) =>
+        a.assetId.equals(assetId) & a.state.equalsValue(BackupAssetState.skipped);
+    if (previous == null) return (delete(backupAssets)..where(skipped)).go();
+    return (update(backupAssets)..where(skipped)).write(previous.toCompanion(true));
+  }
 
   /// Forgets one photo's failures, so the next pass tries it afresh.
   /// Returns 0 when there was nothing to forget.

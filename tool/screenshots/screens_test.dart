@@ -28,6 +28,7 @@ import 'package:telegrive/features/backup/data/free_up_space.dart';
 import 'package:telegrive/features/backup/data/local_media.dart';
 import 'package:telegrive/features/backup/data/phone_folders.dart';
 import 'package:telegrive/features/backup/data/watched_folders.dart';
+import 'package:telegrive/features/backup/presentation/backup_queue_screen.dart';
 import 'package:telegrive/features/backup/presentation/backup_screen.dart';
 import 'package:telegrive/features/backup/presentation/free_up_preview_screen.dart';
 import 'package:telegrive/features/backup/presentation/not_backed_up_screen.dart';
@@ -967,6 +968,10 @@ void main() {
             GoRoute(
               path: 'not-backed-up',
               builder: (_, _) => const NotBackedUpScreen(),
+            ),
+            GoRoute(
+              path: 'queue',
+              builder: (_, _) => const BackupQueueScreen(),
             ),
           ],
         ),
@@ -3228,6 +3233,104 @@ void main() {
     });
     await tester.pump(const Duration(milliseconds: 400));
     await snap(tester, 'not_backed_up');
+  });
+
+  /// Backup sending the newest of a few hundred photos: two going up, the
+  /// rest in line, and the ones that went up since the app opened.
+  Future<void> pumpQueue(WidgetTester tester) async {
+    await prepareData(tester);
+    final scenes = await tester.runAsync(
+      () => Future.wait([
+        _scene(const Color(0xFF7FB2E5), const Color(0xFF5E8C4A), 160),
+        _scene(const Color(0xFFF2B880), const Color(0xFF8C5A3C), 160),
+        _scene(const Color(0xFF9AA7C7), const Color(0xFF3F5A6B), 160),
+      ]),
+    );
+    final names = [
+      'IMG_20260925_181204.jpg',
+      'VID_20260925_174412.mp4',
+      'IMG_20260925_093058.jpg',
+      'IMG_20260924_210731.jpg',
+      'Screenshot_20260924_170322.png',
+      'IMG_20260924_081945.jpg',
+      'IMG_20260923_194410.jpg',
+      'IMG_20260923_123517.jpg',
+      'IMG_20260922_181150.jpg',
+    ];
+    final waiting = [
+      for (var i = 0; i < names.length; i++)
+        PendingAsset(
+          assetId: 'queue-$i',
+          takenAt: DateTime.now().subtract(Duration(hours: 2 + i * 9)),
+          folder: names[i].startsWith('Screenshot') ? 'Screenshots' : 'Camera',
+        ),
+    ];
+    TransferItem going(int i, {required int size, required int done, double speed = 0}) =>
+        TransferItem(
+          TransferRow(
+            id: 'up-$i',
+            kind: TransferKind.upload,
+            status: TransferStatus.running,
+            name: names[i],
+            mimeType: mimeTypeFor(names[i]),
+            fileId: 'file-up-$i',
+            ownsSource: false,
+            wifiOnly: false,
+            totalBytes: size,
+            doneBytes: done,
+            partCount: 1,
+            completedParts: 0,
+            createdAt: DateTime.now(),
+            origin: TransferOrigin.backup,
+            assetId: 'queue-$i',
+          ),
+          bytesPerSecond: speed,
+        );
+    await pumpApp(
+      tester,
+      location: '/backup/queue',
+      backup: BackupState(
+        phase: BackupPhase.uploading,
+        total: 4847,
+        done: 4538,
+        waiting: waiting,
+        recent: [
+          for (final photo in photos.take(12)) RecentBackup(assetId: photo.id, fileId: photo.id),
+        ],
+      ),
+      overrides: [
+        backupUploadsProvider.overrideWith(
+          (ref) => [
+            going(0, size: (4.2 * _mb).round(), done: (2.7 * _mb).round(), speed: 1.8 * _mb),
+            going(1, size: 86 * _mb, done: (11.5 * _mb).round(), speed: 1.4 * _mb),
+          ],
+        ),
+        recentBackupsProvider.overrideWith((ref) => Stream.value(photos.take(12).toList())),
+        for (var i = 0; i < names.length; i++) ...[
+          assetThumbnailProvider('queue-$i').overrideWith((ref) async => scenes![i % 3]),
+          assetTitleProvider('queue-$i').overrideWith((ref) async => names[i]),
+        ],
+      ],
+    );
+    await tester.runAsync(() async {
+      final context = tester.element(find.byType(Scaffold).first);
+      for (final scene in scenes!) {
+        await precacheImage(MemoryImage(scene), context);
+      }
+    });
+    await tester.pump(const Duration(milliseconds: 400));
+  }
+
+  testWidgets('backup queue', (tester) async {
+    await pumpQueue(tester);
+    await snap(tester, 'backup_queue');
+  });
+
+  testWidgets('backup queue backed up', (tester) async {
+    await pumpQueue(tester);
+    await tester.tap(find.text('Backed up · 12'));
+    await tester.pumpAndSettle();
+    await snap(tester, 'backup_queue_backed_up');
   });
 
   testWidgets('photos waiting', (tester) async {

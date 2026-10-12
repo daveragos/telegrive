@@ -191,10 +191,10 @@ class _PhotosScreenState extends ConsumerState<PhotosScreen> {
   }
 }
 
-/// Points to Not backed up while something is stuck: photos out of tries,
-/// or photos waiting while backup isn't moving. While backup is moving, the
-/// status line above already counts what is left, so the row names only
-/// the failures.
+/// Points to what is stuck: Not backed up while photos are out of tries,
+/// and otherwise the Backup queue while photos wait and backup isn't
+/// moving. While backup is moving, the status line above already counts
+/// what is left, so the row names only the failures.
 class _StuckRow extends ConsumerWidget {
   const _StuckRow();
 
@@ -210,7 +210,7 @@ class _StuckRow extends ConsumerWidget {
         border: Border(bottom: BorderSide(color: colors.line)),
       ),
       child: InkWell(
-        onTap: () => context.push('/backup/not-backed-up'),
+        onTap: () => context.push(backup.failed > 0 ? '/backup/not-backed-up' : '/backup/queue'),
         child: SizedBox(
           height: 40,
           child: Padding(

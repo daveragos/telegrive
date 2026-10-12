@@ -111,3 +111,25 @@ final localOriginalProvider = FutureProvider.autoDispose.family<String?, String>
     return null;
   }
 });
+
+/// The phone's photo or video [assetId], or null when the phone no longer
+/// has it.
+final phoneAssetProvider = FutureProvider.autoDispose.family<AssetEntity?, String>(
+  (ref, assetId) => _asset(assetId),
+);
+
+/// Path of the phone's photo or video [assetId] itself, to show it before
+/// it is in the drive. Null when the phone no longer has it.
+final phoneAssetPathProvider = FutureProvider.autoDispose.family<String?, String>((
+  ref,
+  assetId,
+) async {
+  final asset = await ref.watch(phoneAssetProvider(assetId).future);
+  if (asset == null) return null;
+  try {
+    final file = await asset.file;
+    return file != null && await file.exists() ? file.path : null;
+  } catch (_) {
+    return null;
+  }
+});
