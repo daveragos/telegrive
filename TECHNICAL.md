@@ -13,6 +13,7 @@ how to build and work on it. The user-facing summary is in
 - [Known limits](#known-limits)
 - [Project layout](#project-layout)
 - [Development](#development)
+- [Releases](#releases)
 - [Platform support and roadmap](#platform-support-and-roadmap)
 
 ## Architecture
@@ -749,6 +750,18 @@ A schema version bump also dumps the new schema into `drift_schemas/` and
 regenerates the helpers `test/migration_test.dart` checks upgrades with;
 the two commands are at the top of that test.
 
+Every push to main and every pull request runs `flutter analyze` and
+`flutter test` ([checks.yml](.github/workflows/checks.yml)), on macOS so
+the backup tests that read photos run too.
+
+## Releases
+
+`version` in pubspec.yaml is the app's one version number: Android shows
+it, Settings › About shows it, and so does Telegram's Devices list,
+beside the app's name. The build number after the `+` is Android's
+version code, which has to go up with every release for phones to take
+the update.
+
 Release builds are signed with the upload key that the git-ignored
 `android/key.properties` names:
 
@@ -763,6 +776,29 @@ keyPassword=…
 release build is signed with the debug key, so `flutter run --release`
 works on any checkout, but Android won't install that build over one
 signed with the upload key, or the other way round.
+
+To release, raise `version`, commit, and push a tag that matches it:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+[release.yml](.github/workflows/release.yml) then checks the tag against
+pubspec.yaml, builds an APK for each ABI and an app bundle, checks that
+they are signed with the upload key, and publishes them with
+`SHA256SUMS.txt` as a GitHub release. It reads these repository secrets:
+
+| Secret | What it holds |
+| --- | --- |
+| `TELEGRAM_API_ID`, `TELEGRAM_API_HASH` | The app's Telegram API credentials |
+| `UPLOAD_KEYSTORE_BASE64` | The upload keystore, base64-encoded |
+| `UPLOAD_KEYSTORE_PASSWORD`, `UPLOAD_KEY_ALIAS`, `UPLOAD_KEY_PASSWORD` | As in `key.properties` |
+
+```bash
+base64 -i upload-keystore.jks | gh secret set UPLOAD_KEYSTORE_BASE64
+gh secret set UPLOAD_KEYSTORE_PASSWORD
+```
 
 ## Platform support and roadmap
 

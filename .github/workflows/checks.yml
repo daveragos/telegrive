@@ -1,0 +1,34 @@
+name: Checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    # photo_manager hands out files only on Android and Apple platforms, so
+    # the backup tests that read photos run on macOS and skip on Linux.
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.47.4
+          cache: true
+
+      # The analyzer and the tests need the credentials file to exist, not
+      # to hold real credentials.
+      - name: Credentials file
+        run: cp lib/core/config/telegram_api.example.dart lib/core/config/telegram_api.dart
+
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: flutter test
