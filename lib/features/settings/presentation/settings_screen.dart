@@ -468,6 +468,7 @@ class SettingsScreen extends ConsumerWidget {
                   context: context,
                   applicationName: AppConfig.appName,
                   applicationVersion: appVersion,
+                  applicationLegalese: AppConfig.legalNotice,
                   applicationIcon: const Padding(
                     padding: EdgeInsets.all(Space.m),
                     child: BrandMark(),

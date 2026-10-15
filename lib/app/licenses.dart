@@ -1,11 +1,12 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
-/// What the app carries that isn't a Dart package, whose licenses Flutter
-/// can't find by itself: the typeface, and TDLib and the OpenSSL linked
-/// into it, which tool/build_tdlib_android.sh and tool/build_tdlib_ios.sh
-/// build from source.
+/// The licenses Flutter can't find by itself, as they aren't a Dart
+/// package's: Telegrive's own, the typeface's, and those of TDLib and the
+/// OpenSSL linked into it, which tool/build_tdlib_android.sh and
+/// tool/build_tdlib_ios.sh build from source.
 const bundledLicenses = [
+  (package: 'Telegrive', asset: 'LICENSE'),
   (package: 'IBM Plex Sans', asset: 'assets/fonts/OFL.txt'),
   (package: 'TDLib', asset: 'assets/licenses/TDLib.txt'),
   (package: 'OpenSSL', asset: 'assets/licenses/OpenSSL.txt'),

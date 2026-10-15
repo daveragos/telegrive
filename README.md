@@ -98,4 +98,6 @@ How the drive is stored in Telegram, how the app is built, and how to run
 it from source are in [TECHNICAL.md](TECHNICAL.md). The design rules are in
 [DESIGN.md](DESIGN.md).
 
-Telegrive is an independent project, not affiliated with Telegram.
+Telegrive is free software under the [GNU General Public License,
+version 3](LICENSE). It is an independent project, not affiliated with
+Telegram.

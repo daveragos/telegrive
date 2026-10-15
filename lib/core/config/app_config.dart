@@ -21,6 +21,13 @@ abstract final class AppConfig {
     defaultValue: TelegramApi.apiHash,
   );
 
+  /// What the GNU GPL asks an interactive program to show: who holds the
+  /// copyright, that there is no warranty, and the license, which the
+  /// licenses page lists under Telegrive.
+  static const String legalNotice =
+      '© 2026 Dawit Beyene. Telegrive is free software under the GNU General '
+      'Public License, version 3, and comes with no warranty.';
+
   /// Where the source code is.
   static final Uri sourceCode = Uri.parse('https://github.com/daveragos/telegrive');
 

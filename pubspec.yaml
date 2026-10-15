@@ -58,8 +58,10 @@ flutter:
     - assets/brand/channel_photo.jpg
     # The mark, as BrandMark shows it.
     - assets/brand/mark.png
-    # Licenses of what the app carries beyond Dart packages, for Settings ›
-    # About › Open-source licenses (see lib/app/licenses.dart).
+    # The app's own license and those of what it carries beyond Dart
+    # packages, for Settings › About › Open-source licenses (see
+    # lib/app/licenses.dart).
+    - LICENSE
     - assets/fonts/OFL.txt
     - assets/licenses/
 
