@@ -38,6 +38,36 @@ android {
             signingConfig = signingConfigs.getByName("debug")
         }
     }
+
+    packaging {
+        jniLibs {
+            // TDLib is the app's own build in src/main/jniLibs (from
+            // tool/build_tdlib_android.sh), aligned for 16 KB pages with
+            // OpenSSL linked in. It goes in place of handy_tdlib's
+            // libtdjson.so, and handy_tdlib's libcrypto.so and libssl.so stay
+            // out, since nothing else loads them.
+            pickFirsts += "lib/*/libtdjson.so"
+            excludes += listOf("lib/*/libcrypto.so", "lib/*/libssl.so")
+        }
+    }
+}
+
+// TDLib's libtdjson.so for each ABI isn't in git: tool/build_tdlib_android.sh
+// builds it. Without it the app would carry handy_tdlib's, which needs the
+// libcrypto.so and libssl.so left out above, so the build stops instead.
+val tdjson =
+    listOf("arm64-v8a", "armeabi-v7a", "x86_64", "x86")
+        .map { file("src/main/jniLibs/$it/libtdjson.so") }
+tasks.named("preBuild") {
+    doFirst {
+        val missing = tdjson.filterNot { it.exists() }
+        if (missing.isNotEmpty()) {
+            throw GradleException(
+                "TDLib isn't built for Android: run tool/build_tdlib_android.sh " +
+                    "(missing ${missing.joinToString()})",
+            )
+        }
+    }
 }
 
 kotlin {

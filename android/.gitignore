@@ -12,3 +12,6 @@ GeneratedPluginRegistrant.java
 key.properties
 **/*.keystore
 **/*.jks
+
+# TDLib for Android, built by tool/build_tdlib_android.sh.
+/app/src/main/jniLibs/
