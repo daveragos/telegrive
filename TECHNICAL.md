@@ -681,28 +681,43 @@ and fill in an `api_id` and `api_hash` from
 cp lib/core/config/telegram_api.example.dart lib/core/config/telegram_api.dart
 ```
 
-Then run it on an Android device or emulator:
+TDLib comes from the app itself, built from source: the TDLib commit
+handy_tdlib's Dart API was generated from, with OpenSSL linked in. Before
+the first Android build, with the Android NDK (the `NDK_VERSION` in the
+script, which is the app's own), CMake and gperf installed, run:
+
+```bash
+tool/build_tdlib_android.sh
+```
+
+It builds `libtdjson.so` for arm64-v8a, armeabi-v7a, x86_64 and x86 into
+`android/app/src/main/jniLibs`, which git ignores, aligned for 16 KB memory
+pages and optimised for size; the first run takes about 20 minutes. The app
+packages these in place of handy_tdlib's own, which are aligned for 4 KB
+pages only, and leaves out handy_tdlib's `libcrypto.so` and `libssl.so`;
+the build stops if they are missing. `openTdLibrary()` opens
+`libtdjson.so` as before. Then run it on an Android device or emulator:
 
 ```bash
 flutter pub get
 flutter run
 ```
 
-On iOS, TDLib comes from the app itself: handy_tdlib ships no iOS build.
-Before the first iOS build, with Xcode, CMake and gperf installed, run:
+On iOS, before the first build, with Xcode, CMake and gperf installed, run:
 
 ```bash
 tool/build_tdlib_ios.sh
 ```
 
-It builds the TDLib commit handy_tdlib was generated from, with OpenSSL,
-for iPhones and for the simulator on Apple silicon, into
-`ios/Frameworks/tdjson.xcframework`, which git ignores. Runner links and
-embeds it, and `openTdLibrary()` loads it as `tdjson.framework/tdjson`.
-When handy_tdlib moves to a new TDLib, set `TD_COMMIT` in the script to
-match and run it again. Then `flutter run` on an iPhone as usual; a
+It builds the same TDLib commit for iPhones and for the simulator on Apple
+silicon, into `ios/Frameworks/tdjson.xcframework`, which git ignores.
+Runner links and embeds it, and `openTdLibrary()` loads it as
+`tdjson.framework/tdjson`. Then `flutter run` on an iPhone as usual; a
 release build (`flutter run --release`) keeps opening from the home screen
 once it is unplugged.
+
+When handy_tdlib moves to a new TDLib, set `TD_COMMIT` in both scripts to
+match and run them again.
 
 Tests and generated code:
 
@@ -729,10 +744,9 @@ the two commands are at the top of that test.
 | iOS (arm64, and the Apple silicon simulator) | Runs, with TDLib built by `tool/build_tdlib_ios.sh`. Photo backup runs while the app is open; the features below that need Android are off. |
 | macOS | Not yet. |
 
-- **Newer TDLib and 16 KB pages.** `handy_tdlib` bundles TDLib 1.8.36, whose
-  binaries aren't 16 KB-page aligned, so Android 15+ devices with 16 KB
-  pages run the app in compatibility mode. The plan is to vendor current
-  `libtdjson` builds.
+- **Newer TDLib.** The app builds TDLib itself, aligned for 16 KB pages, but
+  stays on 1.8.36, the version `handy_tdlib`'s Dart API was generated from.
+  A newer TDLib needs that API generated again from its `td_api.tl`.
 - **iOS**: backup in the background, a share extension, and the features
   that use Android's own channels: watched folders, the Google Photos
   import, the drive in the system file picker, and the scanner and camera.
