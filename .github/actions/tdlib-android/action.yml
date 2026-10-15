@@ -1,0 +1,28 @@
+name: TDLib for Android
+description: >
+  Puts libtdjson.so for every ABI in android/app/src/main/jniLibs: from the
+  cache while tool/build_tdlib_android.sh is unchanged, otherwise built by
+  that script, which takes the better part of an hour on a runner.
+
+runs:
+  using: composite
+  steps:
+    - id: cache
+      uses: actions/cache@v4
+      with:
+        path: android/app/src/main/jniLibs
+        key: tdlib-android-${{ hashFiles('tool/build_tdlib_android.sh') }}
+
+    - name: NDK and gperf
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        ndk=$(sed -n 's/^NDK_VERSION=//p' tool/build_tdlib_android.sh)
+        "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;$ndk" > /dev/null
+        sudo apt-get update -q
+        sudo apt-get install -y -q gperf
+
+    - name: Build TDLib
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: tool/build_tdlib_android.sh

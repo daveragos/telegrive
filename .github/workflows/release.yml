@@ -10,7 +10,8 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # Long enough to build TDLib when the checks on main haven't cached it.
+    timeout-minutes: 150
     steps:
       - uses: actions/checkout@v5
 
@@ -22,6 +23,8 @@ jobs:
             exit 1
           fi
           echo "VERSION=$version" >> "$GITHUB_ENV"
+
+      - uses: ./.github/actions/tdlib-android
 
       - uses: actions/setup-java@v5
         with:

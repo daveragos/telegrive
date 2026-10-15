@@ -752,7 +752,9 @@ the two commands are at the top of that test.
 
 Every push to main and every pull request runs `flutter analyze` and
 `flutter test` ([checks.yml](.github/workflows/checks.yml)), on macOS so
-the backup tests that read photos run too.
+the backup tests that read photos run too. A push to main also builds
+TDLib for Android when `tool/build_tdlib_android.sh` has changed, and
+caches it for releases.
 
 ## Releases
 
@@ -785,9 +787,11 @@ git push origin v0.1.0
 ```
 
 [release.yml](.github/workflows/release.yml) then checks the tag against
-pubspec.yaml, builds an APK for each ABI and an app bundle, checks that
-they are signed with the upload key, and publishes them with
-`SHA256SUMS.txt` as a GitHub release. It reads these repository secrets:
+pubspec.yaml, takes TDLib from the cache main keeps (or builds it, which
+takes the better part of an hour), builds an APK for each ABI and an app
+bundle, checks that they are signed with the upload key, and publishes
+them with `SHA256SUMS.txt` as a GitHub release. It reads these repository
+secrets:
 
 | Secret | What it holds |
 | --- | --- |

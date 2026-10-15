@@ -7,7 +7,9 @@ on:
 
 concurrency:
   group: checks-${{ github.ref }}
-  cancel-in-progress: true
+  # A newer push to a pull request replaces its checks; on main they run
+  # out, so TDLib's build below isn't cut short.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   checks:
@@ -32,3 +34,14 @@ jobs:
       - run: flutter pub get
       - run: flutter analyze
       - run: flutter test
+
+  tdlib:
+    # Builds TDLib for Android when tool/build_tdlib_android.sh changes. A
+    # run for a tag can restore only what its own tag or main cached, so the
+    # cache the release workflow restores is kept here, on main.
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/tdlib-android
