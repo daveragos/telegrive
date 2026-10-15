@@ -200,6 +200,11 @@ class Preferences {
   Future<void> setBigTransfersWifiOnly(bool on) =>
       _prefs.setBool('big_transfers_wifi_only', on);
 
+  /// The Backup screen's What to back up group is open, as the person left
+  /// it; shut until they open it.
+  bool get backupChoicesOpen => _prefs.getBool('backup_choices_open') ?? false;
+  Future<void> setBackupChoicesOpen(bool open) => _prefs.setBool('backup_choices_open', open);
+
   /// Files kept offline download only over Wi-Fi, whatever their size. Off
   /// until switched on, on the Offline screen or in the sheet that keeps a
   /// folder.

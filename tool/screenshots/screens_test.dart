@@ -3076,8 +3076,14 @@ void main() {
   testWidgets('backup while the app is closed', (tester) async {
     await prepareData(tester);
     await pumpBackupSettings(tester);
-    // Down to the group about the app being closed.
-    await tester.drag(find.byType(ListView).first, const Offset(0, -1100));
+    // Down to the group about the app being closed, its heading at the top.
+    final heading = find.text('While the app is closed');
+    await tester.scrollUntilVisible(
+      heading,
+      300,
+      scrollable: find.descendant(of: find.byType(ListView).first, matching: find.byType(Scrollable)).first,
+    );
+    await tester.ensureVisible(heading);
     await tester.pump(const Duration(milliseconds: 300));
     expect(find.text('Last ran 2:14\u202fAM · 40 items'), findsOneWidget);
     expect(find.text('Battery saver may stop backup'), findsOneWidget);

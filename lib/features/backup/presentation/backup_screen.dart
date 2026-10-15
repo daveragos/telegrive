@@ -181,22 +181,7 @@ class BackupScreen extends ConsumerWidget {
             ),
           ],
           if (backup.enabled) ...[
-            const SectionHeader('What to back up'),
-            ListGroup(
-              children: [
-                SwitchListTile(
-                  title: const Text('Videos'),
-                  subtitle: const Text('Photos are always included'),
-                  value: prefs.backupVideos,
-                  onChanged: (value) async {
-                    await controller.setIncludeVideos(value);
-                    ref.invalidate(preferencesProvider);
-                    ref.invalidate(_deviceFoldersProvider);
-                  },
-                ),
-                const _FolderList(),
-              ],
-            ),
+            const _WhatToBackUp(),
             ...when,
             const _WhileClosed(),
             if (folders) const _WatchedFolders(),
@@ -347,6 +332,78 @@ class _WhileClosed extends ConsumerWidget {
                 ),
             ],
           ],
+        ),
+      ],
+    );
+  }
+}
+
+/// Videos and the phone's photo folders, shut to one line that sums them up
+/// until the person opens it, since the folder list runs long.
+class _WhatToBackUp extends ConsumerWidget {
+  const _WhatToBackUp();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colors = context.colors;
+    final prefs = ref.watch(preferencesProvider);
+    final controller = ref.read(backupControllerProvider.notifier);
+    final open = prefs.backupChoicesOpen;
+    Future<void> toggle() async {
+      await prefs.setBackupChoicesOpen(!open);
+      ref.invalidate(preferencesProvider);
+    }
+
+    final folders = ref.watch(_deviceFoldersProvider).value;
+    final modes = [for (final folder in folders ?? const <DeviceFolder>[]) controller.modeOf(folder.name)];
+    final keptOut = modes.where((m) => m == FolderBackupMode.keptOut).length;
+    final off = modes.where((m) => m == FolderBackupMode.off).length;
+    final summary = [
+      if (folders != null) Formatters.count(folders.length, 'folder'),
+      if (keptOut > 0) '$keptOut kept out of Photos',
+      if (off > 0) '$off not backed up',
+    ].join(' · ');
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SectionHeader(
+          'What to back up',
+          trailing: IconButton(
+            onPressed: toggle,
+            tooltip: open ? 'Hide' : 'Show',
+            icon: Icon(open ? Icons.expand_less_rounded : Icons.expand_more_rounded, color: colors.text2),
+          ),
+        ),
+        AnimatedSize(
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+          alignment: Alignment.topCenter,
+          child: ListGroup(
+            children: open
+                ? [
+                    SwitchListTile(
+                      title: const Text('Videos'),
+                      subtitle: const Text('Photos are always included'),
+                      value: prefs.backupVideos,
+                      onChanged: (value) async {
+                        await controller.setIncludeVideos(value);
+                        ref.invalidate(preferencesProvider);
+                        ref.invalidate(_deviceFoldersProvider);
+                      },
+                    ),
+                    const _FolderList(),
+                  ]
+                : [
+                    ListTile(
+                      title: Text(prefs.backupVideos ? 'Photos and videos' : 'Photos, without videos'),
+                      subtitle: summary.isEmpty
+                          ? null
+                          : Text(summary, style: context.text.bodySmall?.copyWith(fontFeatures: tabularFigures)),
+                      onTap: toggle,
+                    ),
+                  ],
+          ),
         ),
       ],
     );
