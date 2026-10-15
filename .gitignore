@@ -47,6 +47,11 @@ app.*.map.json
 # Widget Preview related
 .widget_preview/
 
+# The release upload key and its passwords (see android/app/build.gradle.kts).
+key.properties
+*.jks
+*.keystore
+
 # Telegram API credentials (template: telegram_api.example.dart).
 /lib/core/config/telegram_api.dart
 

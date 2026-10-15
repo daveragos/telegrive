@@ -1,8 +1,22 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
 }
+
+// The upload key that signs release builds: its keystore and passwords, from
+// the git-ignored android/key.properties. A checkout without that file signs
+// release builds with the debug key, so `flutter run --release` still works.
+val keyPropertiesFile = rootProject.file("key.properties")
+val keyProperties = Properties().apply {
+    if (keyPropertiesFile.exists()) keyPropertiesFile.inputStream().use { load(it) }
+}
+
+fun keyProperty(name: String): String =
+    keyProperties.getProperty(name)?.takeIf { it.isNotBlank() }
+        ?: throw GradleException("android/key.properties has no $name")
 
 android {
     namespace = "dev.ragoose.telegrive"
@@ -17,25 +31,31 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "dev.ragoose.telegrive"
-        // You can update the following values to match your application needs.
-        // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
-        // Uses the version code from pubspec.yaml. When using split APKs, 1000 * ABI_VERSION
-        // is added automatically by Flutter. (https://developer.android.com/studio/build/configure-apk-splits#configure-APK-versions)
-        // You can force using the value of versionCode by specifying the `-P force-version-code-ignoring-abi=true`
-        // flag during build.
+        // From pubspec.yaml. A split-per-ABI build adds 1000 × the ABI's
+        // number to each APK's version code.
         versionCode = flutter.versionCode
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        if (keyPropertiesFile.exists()) {
+            create("release") {
+                // Absolute, or relative to android/.
+                storeFile = rootProject.file(keyProperty("storeFile"))
+                storePassword = keyProperty("storePassword")
+                keyAlias = keyProperty("keyAlias")
+                keyPassword = keyProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.findByName("release")
+                ?: signingConfigs.getByName("debug")
         }
     }
 

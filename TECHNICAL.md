@@ -736,6 +736,21 @@ A schema version bump also dumps the new schema into `drift_schemas/` and
 regenerates the helpers `test/migration_test.dart` checks upgrades with;
 the two commands are at the top of that test.
 
+Release builds are signed with the upload key that the git-ignored
+`android/key.properties` names:
+
+```properties
+storeFile=/path/to/upload-keystore.jks
+storePassword=…
+keyAlias=upload
+keyPassword=…
+```
+
+`storeFile` is absolute or relative to `android/`. Without the file, a
+release build is signed with the debug key, so `flutter run --release`
+works on any checkout, but Android won't install that build over one
+signed with the upload key, or the other way round.
+
 ## Platform support and roadmap
 
 | Platform | Status |
