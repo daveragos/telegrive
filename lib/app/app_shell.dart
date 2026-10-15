@@ -24,6 +24,8 @@ import '../features/share/data/recent_destinations.dart';
 import '../features/share/data/share_intake.dart';
 import '../features/share/presentation/share_sheet.dart';
 import '../features/space/data/cache_janitor.dart';
+import '../features/takeout/data/takeout_import.dart';
+import '../features/takeout/presentation/takeout_status.dart';
 import '../features/transfers/data/transfer_queue.dart';
 import '../features/transfers/domain/transfer_wait.dart';
 import '../features/trash/data/pending_deletes.dart';
@@ -100,7 +102,18 @@ class _AppShellState extends ConsumerState<AppShell> {
         );
       case LaunchAction.resumePaused:
         await queue.loaded;
-        await queue.resumeAll((row) => row.origin != TransferOrigin.backup);
+        await queue.resumeAll(
+          (row) => row.origin != TransferOrigin.backup && row.origin != TransferOrigin.takeout,
+        );
+        // Pause from the notification paused the import with its uploads,
+        // so Resume carries the import on, uploads and all.
+        final importPaused = ref
+            .read(transferQueueProvider)
+            .items
+            .any((t) => t.origin == TransferOrigin.takeout && t.status == TransferStatus.paused);
+        if (importPaused) {
+          await ref.read(takeoutImportProvider.notifier).start();
+        }
       case LaunchAction.openTransfer:
         await queue.loaded;
         if (!mounted) return;
@@ -171,10 +184,16 @@ class _AppShellState extends ConsumerState<AppShell> {
 
     final colors = context.colors;
     // Backup has its own home on the Photos tab; the strip is for things the
-    // person started.
+    // person started. A Google Photos import counts as one thing, in a line
+    // of its own, not as the files it has in hand.
     final manualActive = ref.watch(
-      transferQueueProvider.select((s) => s.activeCount - s.backupActive.length),
+      transferQueueProvider.select(
+        (s) => s.active
+            .where((t) => t.origin != TransferOrigin.backup && t.origin != TransferOrigin.takeout)
+            .length,
+      ),
     );
+    final importing = ref.watch(takeoutImportProvider.select((s) => s.running && takeoutWorthShowing(s)));
     final backingUp = ref.watch(backupControllerProvider.select((b) => b.isWorking));
     // A bulk change wins the one line there is.
     final showBulk = _bulkLineShows(ref);
@@ -205,6 +224,8 @@ class _AppShellState extends ConsumerState<AppShell> {
               ? const _BulkStrip()
               : manualActive > 0 && shell.currentIndex != 0
               ? const _TransferStrip()
+              : importing && shell.currentIndex != 0
+              ? const _ImportStrip()
               : const SizedBox(width: double.infinity),
         ),
       ],
@@ -343,7 +364,7 @@ class _TransferStrip extends ConsumerWidget {
     final colors = context.colors;
     final state = ref.watch(transferQueueProvider);
     final active = state.active
-        .where((t) => t.origin != TransferOrigin.backup)
+        .where((t) => t.origin != TransferOrigin.backup && t.origin != TransferOrigin.takeout)
         .toList();
     // Copies from chats send nothing from the phone, so they aren't counted
     // as uploads, and having no bytes to follow, on their own they are
@@ -415,6 +436,24 @@ class _TransferStrip extends ConsumerWidget {
                   waiting: true,
                 ),
               ),
+      ),
+    );
+  }
+}
+
+/// The Google Photos import above the bar, as one line for the whole of it,
+/// opening its screen.
+class _ImportStrip extends StatelessWidget {
+  const _ImportStrip();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Material(
+      color: colors.surface,
+      child: DecoratedBox(
+        decoration: BoxDecoration(border: Border(top: BorderSide(color: colors.line))),
+        child: const TakeoutStatusLine(),
       ),
     );
   }

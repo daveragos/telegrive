@@ -13,6 +13,7 @@ import '../../../infrastructure/notifications/app_notifications.dart';
 import '../../../infrastructure/storage/preferences.dart';
 import '../../backup/data/backup_controller.dart';
 import '../../backup/data/watched_folders.dart';
+import '../../takeout/data/takeout_import.dart';
 import '../domain/transfer_wait.dart';
 import 'transfer_notifications.dart';
 import 'transfer_queue.dart';
@@ -78,9 +79,12 @@ class TransferKeepAlive {
   /// back to wait for Wi-Fi from one that was waiting already.
   Set<String> _inFlight = {};
 
-  /// A check of the watched phone folders was sending files at the last
-  /// update.
+  /// A check of the watched phone folders, or a Google Photos import, was
+  /// sending files at the last update.
   bool _watching = false;
+
+  /// Where a Google Photos import stood at the last update.
+  TakeoutState? _takeout;
 
   static void _init() {
     FlutterForegroundTask.init(
@@ -137,7 +141,7 @@ class TransferKeepAlive {
       _lingerTimer = Timer(_lingerForWifi, () {
         _lingerTimer = null;
         final latest = _latest;
-        if (latest != null) unawaited(update(latest.$1, latest.$2, watching: _watching));
+        if (latest != null) unawaited(update(latest.$1, latest.$2, watching: _watching, takeout: _takeout));
       });
     }
   }
@@ -157,22 +161,26 @@ class TransferKeepAlive {
             (t.wait is WaitingForTelegram || t.wait is WaitingForRoom),
       );
 
-  /// A check of the watched folders that is moving. Its uploads are the
-  /// person's kind, so one on a long Telegram wait or waiting for room, as
-  /// any upload then is, lets the phone sleep the way a backup pass does.
+  /// A check of the watched folders, or an import, that is moving. Its
+  /// uploads are the person's kind, so one on a long Telegram wait or
+  /// waiting for room, as any upload then is, lets the phone sleep the way
+  /// a backup pass does.
   bool _sendingFromFolders(TransfersState state) =>
       _watching &&
       !state.held.any((t) => t.wait is WaitingForTelegram || t.wait is WaitingForRoom);
 
-  /// Brings the service in line with [state], [backup] and whether the
-  /// watched folders are [watching].
+  /// Brings the service in line with [state], [backup], whether the
+  /// watched folders or an import are [watching], and where the import
+  /// stands, [takeout].
   Future<void> update(
     TransfersState state,
     BackupState backup, {
     bool watching = false,
+    TakeoutState? takeout,
   }) async {
     _latest = (state, backup);
     _watching = watching;
+    _takeout = takeout;
     _noteHeld(state);
     if (!_isActive(state, backup)) {
       _pending = null;
@@ -202,17 +210,19 @@ class TransferKeepAlive {
       _refreshTimer ??= Timer(_updateEvery - since, () {
         _refreshTimer = null;
         final latest = _latest;
-        if (latest != null) unawaited(update(latest.$1, latest.$2, watching: _watching));
+        if (latest != null) unawaited(update(latest.$1, latest.$2, watching: _watching, takeout: _takeout));
       });
       return;
     }
     _refreshTimer?.cancel();
     _refreshTimer = null;
     // Between two files from the watched folders nothing is in flight for
-    // a moment, and the notification keeps saying what it said.
-    if (_watching && state.active.isEmpty && !_backingUp(state, backup)) return;
+    // a moment, and the notification keeps saying what it said. An import
+    // says where the whole of it stands, files in hand or not.
+    final importing = _importing(_takeout);
+    if (_watching && state.active.isEmpty && !_backingUp(state, backup) && !importing) return;
     _lastUpdate = now;
-    final (title, text) = describe(state, backup);
+    final (title, text) = describe(state, backup, takeout: _takeout);
     await FlutterForegroundTask.updateService(
       notificationTitle: title,
       notificationText: text,
@@ -234,7 +244,7 @@ class TransferKeepAlive {
           await FlutterForegroundTask.requestNotificationPermission();
         }
       }
-      final (title, text) = describe(state, backup);
+      final (title, text) = describe(state, backup, takeout: _takeout);
       final result = await FlutterForegroundTask.startService(
         serviceId: _serviceId,
         serviceTypes: const [ForegroundServiceTypes.dataSync],
@@ -254,7 +264,7 @@ class TransferKeepAlive {
     }
     final pending = _pending;
     _pending = null;
-    if (pending != null) await update(pending.$1, pending.$2, watching: _watching);
+    if (pending != null) await update(pending.$1, pending.$2, watching: _watching, takeout: _takeout);
   }
 
   Future<void> _stop() async {
@@ -276,11 +286,18 @@ class TransferKeepAlive {
       const NotificationButton(id: pauseButton, text: 'Pause'),
   ];
 
-  /// The notification's title and text for [state] and [backup]. Copies
-  /// from chats are counted apart from uploads, since nothing goes up, and
-  /// by file rather than by byte, since Telegram makes each in one request.
+  /// A Google Photos import that is sending.
+  static bool _importing(TakeoutState? takeout) =>
+      takeout != null && takeout.working && takeout.progress != null && takeout.progress!.total > 0;
+
+  /// The notification's title and text for [state], [backup] and the
+  /// Google Photos import, [takeout]. Copies from chats are counted apart
+  /// from uploads, since nothing goes up, and by file rather than by byte,
+  /// since Telegram makes each in one request. An import counts as one job,
+  /// by its photos and its pace over the last minute, not as the files it
+  /// has in hand: alone it has the notification to itself.
   @visibleForTesting
-  static (String, String) describe(TransfersState state, BackupState backup) {
+  static (String, String) describe(TransfersState state, BackupState backup, {TakeoutState? takeout}) {
     final inFlight = state.active;
     final percent = '${(state.activeProgress * 100).round()}%';
     if (inFlight.isNotEmpty && inFlight.every((t) => t.wait is WaitingForNetwork)) {
@@ -296,19 +313,37 @@ class TransferKeepAlive {
       );
     }
     final active = inFlight
-        .where((t) => t.origin != TransferOrigin.backup)
+        .where((t) => t.origin != TransferOrigin.backup && t.origin != TransferOrigin.takeout)
         .toList();
     final copies = active.where((t) => t.origin == TransferOrigin.fromChat).length;
     final uploads = active.where((t) => t.kind == TransferKind.upload).length - copies;
     final downloads = active.length - uploads - copies;
     final speed = state.active.fold<double>(0, (sum, t) => sum + t.bytesPerSecond);
     final backingUp = _backingUp(state, backup);
+    final importing = _importing(takeout);
+    final progress = takeout?.progress;
+    final imported = importing
+        ? '${Formatters.number(progress!.total - progress.left)} of ${Formatters.number(progress.total)}'
+        : null;
+    final timeLeft = importing ? takeout!.timeLeft : null;
+
+    if (importing && active.isEmpty && !backingUp) {
+      return (
+        'Importing from Google Photos',
+        [
+          imported!,
+          if (timeLeft != null) Formatters.left(timeLeft),
+          if (takeout!.speed > 0) Formatters.speed(takeout.speed),
+        ].join(' · '),
+      );
+    }
 
     final parts = [
-      if (uploads > 0) 'Uploading ${Formatters.count(uploads, 'file')}',
+      if (importing) 'Importing $imported',
+      if (uploads > 0) '${importing ? 'uploading' : 'Uploading'} ${Formatters.count(uploads, 'file')}',
       if (downloads > 0) 'Downloading ${Formatters.count(downloads, 'file')}',
       if (copies > 0) 'Saving ${Formatters.count(copies, 'file')} from Telegram',
-      if (backingUp) active.isEmpty ? 'Backing up photos' : 'backing up photos',
+      if (backingUp) active.isEmpty && !importing ? 'Backing up photos' : 'backing up photos',
     ];
     final title = parts.isEmpty ? 'Telegrive' : parts.join(' · ');
     final text = [
@@ -316,6 +351,10 @@ class TransferKeepAlive {
         '${Formatters.count(backup.remaining, 'item')} left'
       else if (copies > 0 && copies == active.length)
         '${Formatters.count(state.copyCount.left, 'file')} left'
+      else if (active.isNotEmpty)
+        '${(TransfersState.byteProgress(active) * 100).round()}%'
+      else if (timeLeft != null)
+        Formatters.left(timeLeft)
       else
         percent,
       if (speed > 0) Formatters.speed(speed),
@@ -364,7 +403,8 @@ final transferKeepAliveProvider = Provider<void>((ref) {
     keeper.update(
       ref.read(transferQueueProvider),
       ref.read(backupControllerProvider),
-      watching: ref.read(watchedFoldersProvider).working,
+      watching: ref.read(watchedFoldersProvider).working || ref.read(takeoutImportProvider).working,
+      takeout: ref.read(takeoutImportProvider),
     ),
   );
 
@@ -413,6 +453,11 @@ final transferKeepAliveProvider = Provider<void>((ref) {
   });
   ref.listen<BackupState>(backupControllerProvider, (_, _) => push(), fireImmediately: true);
   ref.listen<bool>(watchedFoldersProvider.select((s) => s.working), (_, _) => push());
+  // The import's count and time left change between its files too.
+  ref.listen<(bool, int?, int?)>(
+    takeoutImportProvider.select((s) => (s.working, s.progress?.left, s.timeLeft?.inMinutes)),
+    (_, _) => push(),
+  );
   ref.onDispose(() {
     FlutterForegroundTask.removeTaskDataCallback(onData);
     unawaited(

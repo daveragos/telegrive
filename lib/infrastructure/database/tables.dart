@@ -214,6 +214,10 @@ enum TransferOrigin {
   /// A copy of a message in another chat, made by Telegram: nothing is
   /// downloaded or uploaded.
   fromChat,
+
+  /// A photo or video from a Google Photos export. The import keeps its own
+  /// record of each, as photo backup does, and starts them one at a time.
+  takeout,
 }
 
 /// Where a saved download ends up: a folder the phone's file manager shows,
@@ -307,6 +311,13 @@ class Transfers extends Table {
   /// That message's id in [sourceChatId], so the copy can be made again, or
   /// found half-done, after a restart.
   IntColumn get sourceMessageId => integer().nullable()();
+
+  /// Albums an upload goes into, `,`-separated ids, carried into its first
+  /// caption so it needs no edit after.
+  TextColumn get albumIds => text().nullable()();
+
+  /// True for an upload that goes up starred.
+  BoolColumn get starred => boolean().nullable()();
 
   @override
   Set<Column> get primaryKey => {id};
@@ -424,6 +435,136 @@ class WatchedFiles extends Table {
 
   @override
   Set<Column> get primaryKey => {ruleId, documentId};
+}
+
+/// Why a part of a Google Photos export can't be read. New problems go at
+/// the end, since the name is what the row stores.
+enum TakeoutPartProblem {
+  /// Not a zip archive.
+  notZip,
+
+  /// Its download didn't finish.
+  incomplete,
+
+  /// Its list of files, or a file in it, doesn't add up.
+  damaged,
+
+  /// Android no longer lets Telegrive read it: moved, deleted or on a card
+  /// that was taken out.
+  noAccess,
+}
+
+/// A part of a Google Photos export, a zip file on this phone that the
+/// person picked. Per phone, like [WatchedFolders]: Android's grant to read
+/// it belongs to this phone.
+@DataClassName('TakeoutPartRow')
+class TakeoutParts extends Table {
+  /// A short id the part's entries refer to it by.
+  TextColumn get id => text()();
+
+  /// The document URI Android handed over, with persisted read access.
+  TextColumn get uri => text()();
+  TextColumn get name => text()();
+  IntColumn get size => integer()();
+  DateTimeColumn get addedAt => dateTime()();
+
+  /// When its list of files and the details in it were read; null until
+  /// then.
+  DateTimeColumn get readAt => dateTime().nullable()();
+  TextColumn get problem => textEnum<TakeoutPartProblem>().nullable()();
+
+  /// When it was deleted from this phone, everything in it being in the
+  /// drive. It stays on the list, done, so its number still counts and the
+  /// details read from it still match photos in parts added later.
+  DateTimeColumn get deletedAt => dateTime().nullable()();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+/// A photo or video in a part, with where its data sits in the zip, so it
+/// can be taken out without reading the part's list of files again.
+@DataClassName('TakeoutEntryRow')
+class TakeoutEntries extends Table {
+  TextColumn get partId => text()();
+
+  /// Where it sits in the zip, `/` between folders.
+  TextColumn get path => text()();
+  IntColumn get method => integer()();
+  IntColumn get crc => integer()();
+  IntColumn get compressedSize => integer()();
+  IntColumn get size => integer()();
+  IntColumn get headerOffset => integer()();
+
+  @override
+  Set<Column> get primaryKey => {partId, path};
+}
+
+/// What a JSON file in a part says: a photo's details, or an album's title.
+@DataClassName('TakeoutDetailRow')
+class TakeoutDetails extends Table {
+  TextColumn get partId => text()();
+
+  /// The JSON file's own path in the zip.
+  TextColumn get path => text()();
+
+  /// An album's metadata rather than one photo's details.
+  BoolColumn get album => boolean()();
+
+  /// The album's title, or the name the photo had in Google Photos.
+  TextColumn get title => text()();
+  DateTimeColumn get takenAt => dateTime().nullable()();
+  BoolColumn get favorited => boolean().withDefault(const Constant(false))();
+
+  @override
+  Set<Column> get primaryKey => {partId, path};
+}
+
+/// What the import has settled about a photo or video of an export. New
+/// states go at the end, since the name is what the row stores.
+enum TakeoutItemState {
+  /// Handed to the transfer queue and not finished yet.
+  pending,
+  done,
+  failed,
+
+  /// Left out by the person, or its upload cancelled.
+  skipped,
+
+  /// Already in the drive, by its name, size or time taken, so not sent
+  /// again.
+  inDrive,
+}
+
+/// The photos and videos the import has dealt with, keyed by size and
+/// checksum, so each goes up once however many folders and parts hold it,
+/// and a later export skips what an earlier one sent.
+@DataClassName('TakeoutItemRow')
+class TakeoutItems extends Table {
+  TextColumn get key => text()();
+  TextColumn get state => textEnum<TakeoutItemState>()();
+
+  /// Drive file holding it, once uploaded or found already there.
+  TextColumn get fileId => text().nullable()();
+
+  /// The queued upload, so a restart can tell a transfer still running from
+  /// one that is gone.
+  TextColumn get transferId => text().nullable()();
+  IntColumn get failures => integer().withDefault(const Constant(0))();
+
+  /// Why the last try failed, in the sentence the screen shows.
+  TextColumn get reason => text().nullable()();
+  DateTimeColumn get updatedAt => dateTime()();
+
+  /// The albums the import has put it in, by title, one per line, and
+  /// whether it starred it, so the albums and star that only a part added
+  /// later shows are added, and nothing the person took away since is put
+  /// back. Null on rows that don't say.
+  TextColumn get albums => text().nullable()();
+  BoolColumn get starred => boolean().nullable()();
+
+  @override
+  Set<Column> get primaryKey => {key};
 }
 
 /// What a waiting change is to: file, folder and album ids are separate

@@ -143,13 +143,15 @@ class ChannelMessenger {
   }
 
   /// Puts the file at [path] in place of the document in [messageId], with
-  /// [caption], uploading it as part of the edit. The message keeps its id,
-  /// so whatever points at it still does.
+  /// [caption] and, when given, the JPEG at [thumbnailPath] as its preview,
+  /// uploading it as part of the edit. The message keeps its id, so whatever
+  /// points at it still does.
   Future<td.Message> replaceDocument(
     int chatId,
     int messageId, {
     required String path,
     required EncodedText caption,
+    String? thumbnailPath,
   }) {
     return _client.send<td.Message>(
       td.EditMessageMedia(
@@ -158,6 +160,13 @@ class ChannelMessenger {
         replyMarkup: null,
         inputMessageContent: td.InputMessageDocument(
           document: td.InputFileLocal(path: path),
+          thumbnail: thumbnailPath == null
+              ? null
+              : td.InputThumbnail(
+                  thumbnail: td.InputFileLocal(path: thumbnailPath),
+                  width: 0,
+                  height: 0,
+                ),
           disableContentTypeDetection: true,
           caption: formatted(caption),
         ),

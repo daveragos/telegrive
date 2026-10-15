@@ -356,8 +356,14 @@ DriveHealth? secondaryHealth(
   final failedTransfers = transfers.failedCount;
   final waitingChanges = changes == null ? null : _waitingChanges(changes, at);
   final heldForWifi = transfersWaitingForWifi(transfers);
+  // A paused Google Photos import says so on its own line.
   final paused = transfers.items
-      .where((t) => t.status == TransferStatus.paused && t.origin != TransferOrigin.backup)
+      .where(
+        (t) =>
+            t.status == TransferStatus.paused &&
+            t.origin != TransferOrigin.backup &&
+            t.origin != TransferOrigin.takeout,
+      )
       .length;
   final needRoom = transfers.waitingForRoom;
   final candidates = [

@@ -54,6 +54,8 @@ class UploadRequest {
     this.fileId,
     this.smallCopyOf,
     this.replacesSmallCopy = false,
+    this.albumIds = const [],
+    this.starred = false,
   }) : assert(path != null || openRead != null);
 
   final String name;
@@ -96,6 +98,12 @@ class UploadRequest {
   /// message in its place rather than into a message of its own.
   final bool replacesSmallCopy;
 
+  /// Albums the file goes into, written in its first caption.
+  final List<String> albumIds;
+
+  /// Goes up starred.
+  final bool starred;
+
   /// This request under another [name] or [path], or replacing a file.
   UploadRequest copyWith({
     String? name,
@@ -117,6 +125,8 @@ class UploadRequest {
     fileId: fileId,
     smallCopyOf: smallCopyOf,
     replacesSmallCopy: replacesSmallCopy,
+    albumIds: albumIds,
+    starred: starred,
   );
 }
 
@@ -435,6 +445,11 @@ class TransferQueue extends Notifier<TransfersState> {
   final Map<String, Completer<String>> _completions = {};
   final Map<String, Stream<List<int>> Function()> _stagers = {};
   final Map<String, Completer<TransferRow>> _finished = {};
+
+  /// The last rows that finished and weren't kept, backup's and an
+  /// import's, so [whenFinished] asked after one has gone still answers.
+  final Map<String, TransferRow> _ended = {};
+  static const int _endedKept = 256;
   final Set<String> _preparing = {};
 
   /// Small copies photo backup sends, to the size of each one's original.
@@ -596,6 +611,8 @@ class TransferQueue extends Notifier<TransfersState> {
         thumbnailPath: request.thumbnailPath,
         replacesFileId: request.replacesFileId,
         durationSeconds: request.durationSeconds,
+        albumIds: request.albumIds.isEmpty ? null : request.albumIds.join(','),
+        starred: request.starred ? true : null,
       );
       if (request.smallCopyOf case final original?) _smallCopyOf[id] = original;
       if (request.replacesSmallCopy) _replacing.add(id);
@@ -610,7 +627,7 @@ class TransferQueue extends Notifier<TransfersState> {
   /// Completes when transfer [id] finishes, successfully or not, with its
   /// final row. Used by photo backup to pace itself.
   Future<TransferRow> whenFinished(String id) {
-    final row = _rows[id];
+    final row = _rows[id] ?? _ended[id];
     if (row != null && row.status.isFinished) return Future.value(row);
     return (_finished[id] ??= Completer<TransferRow>()).future;
   }
@@ -1453,6 +1470,8 @@ class TransferQueue extends Notifier<TransfersState> {
           takenAt: row.takenAt,
           durationSeconds: row.durationSeconds,
           originalSize: _smallCopyOf[row.id],
+          starred: row.starred ?? false,
+          albums: row.albumIds?.split(',') ?? const [],
         );
         // The first part says what the file is; the others only whose part
         // they are, so a rename or move later edits one message.
@@ -2147,8 +2166,9 @@ class TransferQueue extends Notifier<TransfersState> {
               ? _copy(running, resume: resumable)
               : _upload(running, resume: resumable),
         );
-      } else if (row.origin == TransferOrigin.backup) {
-        // Photo backup re-queues these itself on its next pass.
+      } else if (row.origin == TransferOrigin.backup || row.origin == TransferOrigin.takeout) {
+        // Photo backup and the Google Photos import re-queue these
+        // themselves on their next pass.
         _rows.remove(row.id);
         await _db.deleteTransfers([row.id]);
       } else {
@@ -2245,6 +2265,7 @@ class TransferQueue extends Notifier<TransfersState> {
 
   void _reset() {
     _loadedFor = null;
+    _ended.clear();
     // [loaded] waits for the next drive's rows. One still waiting is kept,
     // so whatever waits on it gets them too.
     if (_ready.isCompleted) _ready = Completer<void>();
@@ -2289,11 +2310,13 @@ class TransferQueue extends Notifier<TransfersState> {
     final keptOffline =
         row.saveTo == SaveTarget.offline &&
         row.status == TransferStatus.completed;
-    if (row.origin == TransferOrigin.backup || keptOffline) {
-      // Backup keeps its own record of each photo, and offline copies are
-      // listed in their own table; finished rows here would only bury the
-      // person's own transfers.
+    if (row.origin == TransferOrigin.backup || row.origin == TransferOrigin.takeout || keptOffline) {
+      // Backup and the Google Photos import keep their own record of each
+      // photo, and offline copies are listed in their own table; finished
+      // rows here would only bury the person's own transfers.
       _rows.remove(row.id);
+      _ended[row.id] = finished;
+      if (_ended.length > _endedKept) _ended.remove(_ended.keys.first);
       await _db.deleteTransfers([row.id]);
     } else {
       await _save(finished);

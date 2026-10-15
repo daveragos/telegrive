@@ -34,6 +34,8 @@ import '../../network/presentation/proxy_sheet.dart';
 import '../../offline/data/offline_sync.dart';
 import '../../player/data/play_positions.dart';
 import '../../setup/data/drive_setup.dart';
+import '../../takeout/data/takeout_import.dart';
+import '../../takeout/presentation/takeout_status.dart';
 import '../../transfers/data/transfer_queue.dart';
 import 'drive_health.dart';
 
@@ -359,6 +361,7 @@ class _Activity extends ConsumerWidget {
           children: [
             _line(context, ref, top),
             if (second != null) _line(context, ref, second),
+            if (takeoutWorthShowing(ref.watch(takeoutImportProvider))) const TakeoutStatusLine(),
           ],
         ),
       ),
@@ -417,8 +420,9 @@ class _Activity extends ConsumerWidget {
           child: const Text('Retry'),
         ),
         HealthAction.resumeTransfers => TextButton(
-          onPressed: () =>
-              queue.resumeAll((r) => r.origin != TransferOrigin.backup),
+          onPressed: () => queue.resumeAll(
+            (r) => r.origin != TransferOrigin.backup && r.origin != TransferOrigin.takeout,
+          ),
           child: const Text('Resume'),
         ),
         HealthAction.useDataForTransfers => TextButton(

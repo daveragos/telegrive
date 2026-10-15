@@ -11,6 +11,9 @@ import '../../../core/widgets/common.dart';
 import '../../../infrastructure/notifications/app_notifications.dart';
 import '../../../infrastructure/storage/preferences.dart';
 import '../../network/data/mobile_data.dart';
+import '../../takeout/data/takeout_files.dart';
+import '../../takeout/data/takeout_import.dart';
+import '../../takeout/presentation/takeout_status.dart';
 import '../data/background_health.dart';
 import '../data/backup_controller.dart';
 import '../data/backup_worker.dart';
@@ -135,6 +138,7 @@ class BackupScreen extends ConsumerWidget {
           if (!backup.enabled) ...[
             if (folders) const _WatchedFolders(),
             if (watching) ...when,
+            if (TakeoutFiles.supported) const _FromGoogle(),
           ],
           const FreeUpSpaceTile(),
           if (backup.failed > 0 || backup.remaining > 0) ...[
@@ -185,6 +189,7 @@ class BackupScreen extends ConsumerWidget {
             ...when,
             const _WhileClosed(),
             if (folders) const _WatchedFolders(),
+            if (TakeoutFiles.supported) const _FromGoogle(),
             const SizedBox(height: Space.xxl),
             const DuplicateBackupsTile(),
             const SizedBox(height: Space.m),
@@ -615,6 +620,38 @@ class _WatchedFolderRow extends ConsumerWidget {
           onTap: open,
         );
     }
+  }
+}
+
+/// The way into importing a Google Photos library, or where an import
+/// stands once one has parts.
+class _FromGoogle extends ConsumerWidget {
+  const _FromGoogle();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colors = context.colors;
+    final state = ref.watch(takeoutImportProvider);
+    final started = state.progress != null || state.phase == TakeoutPhase.reading;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const SectionHeader('From Google Photos'),
+        ListGroup(
+          children: [
+            if (started)
+              const TakeoutStatusLine()
+            else
+              ListTile(
+                leading: Icon(Icons.photo_library_outlined, color: colors.text2),
+                title: const Text('Import from Google Photos'),
+                subtitle: const Text('Bring in your library, albums and all, with Google Takeout.'),
+                onTap: () => context.push('/takeout'),
+              ),
+          ],
+        ),
+      ],
+    );
   }
 }
 

@@ -16,6 +16,7 @@ import '../../photos/data/photos_visibility.dart';
 import '../../picker/data/picker_access.dart';
 import '../../preview/data/pdf_block_cache.dart';
 import '../../share/data/recent_destinations.dart';
+import '../../takeout/data/takeout_import.dart';
 import '../../transfers/data/transfer_queue.dart';
 import '../../trash/data/pending_deletes.dart';
 
@@ -248,6 +249,7 @@ class AuthController extends Notifier<AuthUiState> {
     ref.invalidate(offlineSyncProvider);
     await ref.read(recentDestinationsProvider.notifier).clear();
     await ref.read(watchedFoldersProvider.notifier).forgetAll();
+    await ref.read(takeoutImportProvider.notifier).forgetAll();
     await ref.read(appDatabaseProvider).clearAll();
     await _deleteOfflineCopies();
     await deletePdfBlockCache();

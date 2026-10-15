@@ -205,6 +205,11 @@ class Preferences {
   bool get backupChoicesOpen => _prefs.getBool('backup_choices_open') ?? false;
   Future<void> setBackupChoicesOpen(bool open) => _prefs.setBool('backup_choices_open', open);
 
+  /// The Google Photos import was started and not paused, so it carries on
+  /// when Telegrive opens again.
+  bool get takeoutRunning => _prefs.getBool('takeout_running') ?? false;
+  Future<void> setTakeoutRunning(bool on) => _prefs.setBool('takeout_running', on);
+
   /// Files kept offline download only over Wi-Fi, whatever their size. Off
   /// until switched on, on the Offline screen or in the sheet that keeps a
   /// folder.

@@ -2521,6 +2521,31 @@ class $TransfersTable extends Transfers
     type: DriftSqlType.int,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _albumIdsMeta = const VerificationMeta(
+    'albumIds',
+  );
+  @override
+  late final GeneratedColumn<String> albumIds = GeneratedColumn<String>(
+    'album_ids',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _starredMeta = const VerificationMeta(
+    'starred',
+  );
+  @override
+  late final GeneratedColumn<bool> starred = GeneratedColumn<bool>(
+    'starred',
+    aliasedName,
+    true,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("starred" IN (0, 1))',
+    ),
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -2551,6 +2576,8 @@ class $TransfersTable extends Transfers
     replacesFileId,
     sourceChatId,
     sourceMessageId,
+    albumIds,
+    starred,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -2735,6 +2762,18 @@ class $TransfersTable extends Transfers
         ),
       );
     }
+    if (data.containsKey('album_ids')) {
+      context.handle(
+        _albumIdsMeta,
+        albumIds.isAcceptableOrUnknown(data['album_ids']!, _albumIdsMeta),
+      );
+    }
+    if (data.containsKey('starred')) {
+      context.handle(
+        _starredMeta,
+        starred.isAcceptableOrUnknown(data['starred']!, _starredMeta),
+      );
+    }
     return context;
   }
 
@@ -2864,6 +2903,14 @@ class $TransfersTable extends Transfers
         DriftSqlType.int,
         data['${effectivePrefix}source_message_id'],
       ),
+      albumIds: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}album_ids'],
+      ),
+      starred: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}starred'],
+      ),
     );
   }
 
@@ -2949,6 +2996,13 @@ class TransferRow extends DataClass implements Insertable<TransferRow> {
   /// That message's id in [sourceChatId], so the copy can be made again, or
   /// found half-done, after a restart.
   final int? sourceMessageId;
+
+  /// Albums an upload goes into, `,`-separated ids, carried into its first
+  /// caption so it needs no edit after.
+  final String? albumIds;
+
+  /// True for an upload that goes up starred.
+  final bool? starred;
   const TransferRow({
     required this.id,
     required this.kind,
@@ -2978,6 +3032,8 @@ class TransferRow extends DataClass implements Insertable<TransferRow> {
     this.replacesFileId,
     this.sourceChatId,
     this.sourceMessageId,
+    this.albumIds,
+    this.starred,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -3052,6 +3108,12 @@ class TransferRow extends DataClass implements Insertable<TransferRow> {
     if (!nullToAbsent || sourceMessageId != null) {
       map['source_message_id'] = Variable<int>(sourceMessageId);
     }
+    if (!nullToAbsent || albumIds != null) {
+      map['album_ids'] = Variable<String>(albumIds);
+    }
+    if (!nullToAbsent || starred != null) {
+      map['starred'] = Variable<bool>(starred);
+    }
     return map;
   }
 
@@ -3113,6 +3175,12 @@ class TransferRow extends DataClass implements Insertable<TransferRow> {
       sourceMessageId: sourceMessageId == null && nullToAbsent
           ? const Value.absent()
           : Value(sourceMessageId),
+      albumIds: albumIds == null && nullToAbsent
+          ? const Value.absent()
+          : Value(albumIds),
+      starred: starred == null && nullToAbsent
+          ? const Value.absent()
+          : Value(starred),
     );
   }
 
@@ -3158,6 +3226,8 @@ class TransferRow extends DataClass implements Insertable<TransferRow> {
       replacesFileId: serializer.fromJson<String?>(json['replacesFileId']),
       sourceChatId: serializer.fromJson<int?>(json['sourceChatId']),
       sourceMessageId: serializer.fromJson<int?>(json['sourceMessageId']),
+      albumIds: serializer.fromJson<String?>(json['albumIds']),
+      starred: serializer.fromJson<bool?>(json['starred']),
     );
   }
   @override
@@ -3200,6 +3270,8 @@ class TransferRow extends DataClass implements Insertable<TransferRow> {
       'replacesFileId': serializer.toJson<String?>(replacesFileId),
       'sourceChatId': serializer.toJson<int?>(sourceChatId),
       'sourceMessageId': serializer.toJson<int?>(sourceMessageId),
+      'albumIds': serializer.toJson<String?>(albumIds),
+      'starred': serializer.toJson<bool?>(starred),
     };
   }
 
@@ -3232,6 +3304,8 @@ class TransferRow extends DataClass implements Insertable<TransferRow> {
     Value<String?> replacesFileId = const Value.absent(),
     Value<int?> sourceChatId = const Value.absent(),
     Value<int?> sourceMessageId = const Value.absent(),
+    Value<String?> albumIds = const Value.absent(),
+    Value<bool?> starred = const Value.absent(),
   }) => TransferRow(
     id: id ?? this.id,
     kind: kind ?? this.kind,
@@ -3269,6 +3343,8 @@ class TransferRow extends DataClass implements Insertable<TransferRow> {
     sourceMessageId: sourceMessageId.present
         ? sourceMessageId.value
         : this.sourceMessageId,
+    albumIds: albumIds.present ? albumIds.value : this.albumIds,
+    starred: starred.present ? starred.value : this.starred,
   );
   TransferRow copyWithCompanion(TransfersCompanion data) {
     return TransferRow(
@@ -3324,6 +3400,8 @@ class TransferRow extends DataClass implements Insertable<TransferRow> {
       sourceMessageId: data.sourceMessageId.present
           ? data.sourceMessageId.value
           : this.sourceMessageId,
+      albumIds: data.albumIds.present ? data.albumIds.value : this.albumIds,
+      starred: data.starred.present ? data.starred.value : this.starred,
     );
   }
 
@@ -3357,7 +3435,9 @@ class TransferRow extends DataClass implements Insertable<TransferRow> {
           ..write('durationSeconds: $durationSeconds, ')
           ..write('replacesFileId: $replacesFileId, ')
           ..write('sourceChatId: $sourceChatId, ')
-          ..write('sourceMessageId: $sourceMessageId')
+          ..write('sourceMessageId: $sourceMessageId, ')
+          ..write('albumIds: $albumIds, ')
+          ..write('starred: $starred')
           ..write(')'))
         .toString();
   }
@@ -3392,6 +3472,8 @@ class TransferRow extends DataClass implements Insertable<TransferRow> {
     replacesFileId,
     sourceChatId,
     sourceMessageId,
+    albumIds,
+    starred,
   ]);
   @override
   bool operator ==(Object other) =>
@@ -3424,7 +3506,9 @@ class TransferRow extends DataClass implements Insertable<TransferRow> {
           other.durationSeconds == this.durationSeconds &&
           other.replacesFileId == this.replacesFileId &&
           other.sourceChatId == this.sourceChatId &&
-          other.sourceMessageId == this.sourceMessageId);
+          other.sourceMessageId == this.sourceMessageId &&
+          other.albumIds == this.albumIds &&
+          other.starred == this.starred);
 }
 
 class TransfersCompanion extends UpdateCompanion<TransferRow> {
@@ -3456,6 +3540,8 @@ class TransfersCompanion extends UpdateCompanion<TransferRow> {
   final Value<String?> replacesFileId;
   final Value<int?> sourceChatId;
   final Value<int?> sourceMessageId;
+  final Value<String?> albumIds;
+  final Value<bool?> starred;
   final Value<int> rowid;
   const TransfersCompanion({
     this.id = const Value.absent(),
@@ -3486,6 +3572,8 @@ class TransfersCompanion extends UpdateCompanion<TransferRow> {
     this.replacesFileId = const Value.absent(),
     this.sourceChatId = const Value.absent(),
     this.sourceMessageId = const Value.absent(),
+    this.albumIds = const Value.absent(),
+    this.starred = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   TransfersCompanion.insert({
@@ -3517,6 +3605,8 @@ class TransfersCompanion extends UpdateCompanion<TransferRow> {
     this.replacesFileId = const Value.absent(),
     this.sourceChatId = const Value.absent(),
     this.sourceMessageId = const Value.absent(),
+    this.albumIds = const Value.absent(),
+    this.starred = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        kind = Value(kind),
@@ -3555,6 +3645,8 @@ class TransfersCompanion extends UpdateCompanion<TransferRow> {
     Expression<String>? replacesFileId,
     Expression<int>? sourceChatId,
     Expression<int>? sourceMessageId,
+    Expression<String>? albumIds,
+    Expression<bool>? starred,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -3586,6 +3678,8 @@ class TransfersCompanion extends UpdateCompanion<TransferRow> {
       if (replacesFileId != null) 'replaces_file_id': replacesFileId,
       if (sourceChatId != null) 'source_chat_id': sourceChatId,
       if (sourceMessageId != null) 'source_message_id': sourceMessageId,
+      if (albumIds != null) 'album_ids': albumIds,
+      if (starred != null) 'starred': starred,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -3619,6 +3713,8 @@ class TransfersCompanion extends UpdateCompanion<TransferRow> {
     Value<String?>? replacesFileId,
     Value<int?>? sourceChatId,
     Value<int?>? sourceMessageId,
+    Value<String?>? albumIds,
+    Value<bool?>? starred,
     Value<int>? rowid,
   }) {
     return TransfersCompanion(
@@ -3650,6 +3746,8 @@ class TransfersCompanion extends UpdateCompanion<TransferRow> {
       replacesFileId: replacesFileId ?? this.replacesFileId,
       sourceChatId: sourceChatId ?? this.sourceChatId,
       sourceMessageId: sourceMessageId ?? this.sourceMessageId,
+      albumIds: albumIds ?? this.albumIds,
+      starred: starred ?? this.starred,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -3749,6 +3847,12 @@ class TransfersCompanion extends UpdateCompanion<TransferRow> {
     if (sourceMessageId.present) {
       map['source_message_id'] = Variable<int>(sourceMessageId.value);
     }
+    if (albumIds.present) {
+      map['album_ids'] = Variable<String>(albumIds.value);
+    }
+    if (starred.present) {
+      map['starred'] = Variable<bool>(starred.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -3786,6 +3890,8 @@ class TransfersCompanion extends UpdateCompanion<TransferRow> {
           ..write('replacesFileId: $replacesFileId, ')
           ..write('sourceChatId: $sourceChatId, ')
           ..write('sourceMessageId: $sourceMessageId, ')
+          ..write('albumIds: $albumIds, ')
+          ..write('starred: $starred, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -7758,6 +7864,1996 @@ class PendingEditsCompanion extends UpdateCompanion<PendingEditRow> {
   }
 }
 
+class $TakeoutPartsTable extends TakeoutParts
+    with TableInfo<$TakeoutPartsTable, TakeoutPartRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $TakeoutPartsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _uriMeta = const VerificationMeta('uri');
+  @override
+  late final GeneratedColumn<String> uri = GeneratedColumn<String>(
+    'uri',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _nameMeta = const VerificationMeta('name');
+  @override
+  late final GeneratedColumn<String> name = GeneratedColumn<String>(
+    'name',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _sizeMeta = const VerificationMeta('size');
+  @override
+  late final GeneratedColumn<int> size = GeneratedColumn<int>(
+    'size',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _addedAtMeta = const VerificationMeta(
+    'addedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> addedAt = GeneratedColumn<DateTime>(
+    'added_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _readAtMeta = const VerificationMeta('readAt');
+  @override
+  late final GeneratedColumn<DateTime> readAt = GeneratedColumn<DateTime>(
+    'read_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+  );
+  @override
+  late final GeneratedColumnWithTypeConverter<TakeoutPartProblem?, String>
+  problem = GeneratedColumn<String>(
+    'problem',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  ).withConverter<TakeoutPartProblem?>($TakeoutPartsTable.$converterproblemn);
+  static const VerificationMeta _deletedAtMeta = const VerificationMeta(
+    'deletedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> deletedAt = GeneratedColumn<DateTime>(
+    'deleted_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    uri,
+    name,
+    size,
+    addedAt,
+    readAt,
+    problem,
+    deletedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'takeout_parts';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<TakeoutPartRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('uri')) {
+      context.handle(
+        _uriMeta,
+        uri.isAcceptableOrUnknown(data['uri']!, _uriMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_uriMeta);
+    }
+    if (data.containsKey('name')) {
+      context.handle(
+        _nameMeta,
+        name.isAcceptableOrUnknown(data['name']!, _nameMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_nameMeta);
+    }
+    if (data.containsKey('size')) {
+      context.handle(
+        _sizeMeta,
+        size.isAcceptableOrUnknown(data['size']!, _sizeMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_sizeMeta);
+    }
+    if (data.containsKey('added_at')) {
+      context.handle(
+        _addedAtMeta,
+        addedAt.isAcceptableOrUnknown(data['added_at']!, _addedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_addedAtMeta);
+    }
+    if (data.containsKey('read_at')) {
+      context.handle(
+        _readAtMeta,
+        readAt.isAcceptableOrUnknown(data['read_at']!, _readAtMeta),
+      );
+    }
+    if (data.containsKey('deleted_at')) {
+      context.handle(
+        _deletedAtMeta,
+        deletedAt.isAcceptableOrUnknown(data['deleted_at']!, _deletedAtMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  TakeoutPartRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return TakeoutPartRow(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      uri: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}uri'],
+      )!,
+      name: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}name'],
+      )!,
+      size: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}size'],
+      )!,
+      addedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}added_at'],
+      )!,
+      readAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}read_at'],
+      ),
+      problem: $TakeoutPartsTable.$converterproblemn.fromSql(
+        attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}problem'],
+        ),
+      ),
+      deletedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}deleted_at'],
+      ),
+    );
+  }
+
+  @override
+  $TakeoutPartsTable createAlias(String alias) {
+    return $TakeoutPartsTable(attachedDatabase, alias);
+  }
+
+  static JsonTypeConverter2<TakeoutPartProblem, String, String>
+  $converterproblem = const EnumNameConverter<TakeoutPartProblem>(
+    TakeoutPartProblem.values,
+  );
+  static JsonTypeConverter2<TakeoutPartProblem?, String?, String?>
+  $converterproblemn = JsonTypeConverter2.asNullable($converterproblem);
+}
+
+class TakeoutPartRow extends DataClass implements Insertable<TakeoutPartRow> {
+  /// A short id the part's entries refer to it by.
+  final String id;
+
+  /// The document URI Android handed over, with persisted read access.
+  final String uri;
+  final String name;
+  final int size;
+  final DateTime addedAt;
+
+  /// When its list of files and the details in it were read; null until
+  /// then.
+  final DateTime? readAt;
+  final TakeoutPartProblem? problem;
+
+  /// When it was deleted from this phone, everything in it being in the
+  /// drive. It stays on the list, done, so its number still counts and the
+  /// details read from it still match photos in parts added later.
+  final DateTime? deletedAt;
+  const TakeoutPartRow({
+    required this.id,
+    required this.uri,
+    required this.name,
+    required this.size,
+    required this.addedAt,
+    this.readAt,
+    this.problem,
+    this.deletedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['uri'] = Variable<String>(uri);
+    map['name'] = Variable<String>(name);
+    map['size'] = Variable<int>(size);
+    map['added_at'] = Variable<DateTime>(addedAt);
+    if (!nullToAbsent || readAt != null) {
+      map['read_at'] = Variable<DateTime>(readAt);
+    }
+    if (!nullToAbsent || problem != null) {
+      map['problem'] = Variable<String>(
+        $TakeoutPartsTable.$converterproblemn.toSql(problem),
+      );
+    }
+    if (!nullToAbsent || deletedAt != null) {
+      map['deleted_at'] = Variable<DateTime>(deletedAt);
+    }
+    return map;
+  }
+
+  TakeoutPartsCompanion toCompanion(bool nullToAbsent) {
+    return TakeoutPartsCompanion(
+      id: Value(id),
+      uri: Value(uri),
+      name: Value(name),
+      size: Value(size),
+      addedAt: Value(addedAt),
+      readAt: readAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(readAt),
+      problem: problem == null && nullToAbsent
+          ? const Value.absent()
+          : Value(problem),
+      deletedAt: deletedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(deletedAt),
+    );
+  }
+
+  factory TakeoutPartRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return TakeoutPartRow(
+      id: serializer.fromJson<String>(json['id']),
+      uri: serializer.fromJson<String>(json['uri']),
+      name: serializer.fromJson<String>(json['name']),
+      size: serializer.fromJson<int>(json['size']),
+      addedAt: serializer.fromJson<DateTime>(json['addedAt']),
+      readAt: serializer.fromJson<DateTime?>(json['readAt']),
+      problem: $TakeoutPartsTable.$converterproblemn.fromJson(
+        serializer.fromJson<String?>(json['problem']),
+      ),
+      deletedAt: serializer.fromJson<DateTime?>(json['deletedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'uri': serializer.toJson<String>(uri),
+      'name': serializer.toJson<String>(name),
+      'size': serializer.toJson<int>(size),
+      'addedAt': serializer.toJson<DateTime>(addedAt),
+      'readAt': serializer.toJson<DateTime?>(readAt),
+      'problem': serializer.toJson<String?>(
+        $TakeoutPartsTable.$converterproblemn.toJson(problem),
+      ),
+      'deletedAt': serializer.toJson<DateTime?>(deletedAt),
+    };
+  }
+
+  TakeoutPartRow copyWith({
+    String? id,
+    String? uri,
+    String? name,
+    int? size,
+    DateTime? addedAt,
+    Value<DateTime?> readAt = const Value.absent(),
+    Value<TakeoutPartProblem?> problem = const Value.absent(),
+    Value<DateTime?> deletedAt = const Value.absent(),
+  }) => TakeoutPartRow(
+    id: id ?? this.id,
+    uri: uri ?? this.uri,
+    name: name ?? this.name,
+    size: size ?? this.size,
+    addedAt: addedAt ?? this.addedAt,
+    readAt: readAt.present ? readAt.value : this.readAt,
+    problem: problem.present ? problem.value : this.problem,
+    deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
+  );
+  TakeoutPartRow copyWithCompanion(TakeoutPartsCompanion data) {
+    return TakeoutPartRow(
+      id: data.id.present ? data.id.value : this.id,
+      uri: data.uri.present ? data.uri.value : this.uri,
+      name: data.name.present ? data.name.value : this.name,
+      size: data.size.present ? data.size.value : this.size,
+      addedAt: data.addedAt.present ? data.addedAt.value : this.addedAt,
+      readAt: data.readAt.present ? data.readAt.value : this.readAt,
+      problem: data.problem.present ? data.problem.value : this.problem,
+      deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('TakeoutPartRow(')
+          ..write('id: $id, ')
+          ..write('uri: $uri, ')
+          ..write('name: $name, ')
+          ..write('size: $size, ')
+          ..write('addedAt: $addedAt, ')
+          ..write('readAt: $readAt, ')
+          ..write('problem: $problem, ')
+          ..write('deletedAt: $deletedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(id, uri, name, size, addedAt, readAt, problem, deletedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is TakeoutPartRow &&
+          other.id == this.id &&
+          other.uri == this.uri &&
+          other.name == this.name &&
+          other.size == this.size &&
+          other.addedAt == this.addedAt &&
+          other.readAt == this.readAt &&
+          other.problem == this.problem &&
+          other.deletedAt == this.deletedAt);
+}
+
+class TakeoutPartsCompanion extends UpdateCompanion<TakeoutPartRow> {
+  final Value<String> id;
+  final Value<String> uri;
+  final Value<String> name;
+  final Value<int> size;
+  final Value<DateTime> addedAt;
+  final Value<DateTime?> readAt;
+  final Value<TakeoutPartProblem?> problem;
+  final Value<DateTime?> deletedAt;
+  final Value<int> rowid;
+  const TakeoutPartsCompanion({
+    this.id = const Value.absent(),
+    this.uri = const Value.absent(),
+    this.name = const Value.absent(),
+    this.size = const Value.absent(),
+    this.addedAt = const Value.absent(),
+    this.readAt = const Value.absent(),
+    this.problem = const Value.absent(),
+    this.deletedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  TakeoutPartsCompanion.insert({
+    required String id,
+    required String uri,
+    required String name,
+    required int size,
+    required DateTime addedAt,
+    this.readAt = const Value.absent(),
+    this.problem = const Value.absent(),
+    this.deletedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : id = Value(id),
+       uri = Value(uri),
+       name = Value(name),
+       size = Value(size),
+       addedAt = Value(addedAt);
+  static Insertable<TakeoutPartRow> custom({
+    Expression<String>? id,
+    Expression<String>? uri,
+    Expression<String>? name,
+    Expression<int>? size,
+    Expression<DateTime>? addedAt,
+    Expression<DateTime>? readAt,
+    Expression<String>? problem,
+    Expression<DateTime>? deletedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (uri != null) 'uri': uri,
+      if (name != null) 'name': name,
+      if (size != null) 'size': size,
+      if (addedAt != null) 'added_at': addedAt,
+      if (readAt != null) 'read_at': readAt,
+      if (problem != null) 'problem': problem,
+      if (deletedAt != null) 'deleted_at': deletedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  TakeoutPartsCompanion copyWith({
+    Value<String>? id,
+    Value<String>? uri,
+    Value<String>? name,
+    Value<int>? size,
+    Value<DateTime>? addedAt,
+    Value<DateTime?>? readAt,
+    Value<TakeoutPartProblem?>? problem,
+    Value<DateTime?>? deletedAt,
+    Value<int>? rowid,
+  }) {
+    return TakeoutPartsCompanion(
+      id: id ?? this.id,
+      uri: uri ?? this.uri,
+      name: name ?? this.name,
+      size: size ?? this.size,
+      addedAt: addedAt ?? this.addedAt,
+      readAt: readAt ?? this.readAt,
+      problem: problem ?? this.problem,
+      deletedAt: deletedAt ?? this.deletedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (uri.present) {
+      map['uri'] = Variable<String>(uri.value);
+    }
+    if (name.present) {
+      map['name'] = Variable<String>(name.value);
+    }
+    if (size.present) {
+      map['size'] = Variable<int>(size.value);
+    }
+    if (addedAt.present) {
+      map['added_at'] = Variable<DateTime>(addedAt.value);
+    }
+    if (readAt.present) {
+      map['read_at'] = Variable<DateTime>(readAt.value);
+    }
+    if (problem.present) {
+      map['problem'] = Variable<String>(
+        $TakeoutPartsTable.$converterproblemn.toSql(problem.value),
+      );
+    }
+    if (deletedAt.present) {
+      map['deleted_at'] = Variable<DateTime>(deletedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('TakeoutPartsCompanion(')
+          ..write('id: $id, ')
+          ..write('uri: $uri, ')
+          ..write('name: $name, ')
+          ..write('size: $size, ')
+          ..write('addedAt: $addedAt, ')
+          ..write('readAt: $readAt, ')
+          ..write('problem: $problem, ')
+          ..write('deletedAt: $deletedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $TakeoutEntriesTable extends TakeoutEntries
+    with TableInfo<$TakeoutEntriesTable, TakeoutEntryRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $TakeoutEntriesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _partIdMeta = const VerificationMeta('partId');
+  @override
+  late final GeneratedColumn<String> partId = GeneratedColumn<String>(
+    'part_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _pathMeta = const VerificationMeta('path');
+  @override
+  late final GeneratedColumn<String> path = GeneratedColumn<String>(
+    'path',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _methodMeta = const VerificationMeta('method');
+  @override
+  late final GeneratedColumn<int> method = GeneratedColumn<int>(
+    'method',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _crcMeta = const VerificationMeta('crc');
+  @override
+  late final GeneratedColumn<int> crc = GeneratedColumn<int>(
+    'crc',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _compressedSizeMeta = const VerificationMeta(
+    'compressedSize',
+  );
+  @override
+  late final GeneratedColumn<int> compressedSize = GeneratedColumn<int>(
+    'compressed_size',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _sizeMeta = const VerificationMeta('size');
+  @override
+  late final GeneratedColumn<int> size = GeneratedColumn<int>(
+    'size',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _headerOffsetMeta = const VerificationMeta(
+    'headerOffset',
+  );
+  @override
+  late final GeneratedColumn<int> headerOffset = GeneratedColumn<int>(
+    'header_offset',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    partId,
+    path,
+    method,
+    crc,
+    compressedSize,
+    size,
+    headerOffset,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'takeout_entries';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<TakeoutEntryRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('part_id')) {
+      context.handle(
+        _partIdMeta,
+        partId.isAcceptableOrUnknown(data['part_id']!, _partIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_partIdMeta);
+    }
+    if (data.containsKey('path')) {
+      context.handle(
+        _pathMeta,
+        path.isAcceptableOrUnknown(data['path']!, _pathMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_pathMeta);
+    }
+    if (data.containsKey('method')) {
+      context.handle(
+        _methodMeta,
+        method.isAcceptableOrUnknown(data['method']!, _methodMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_methodMeta);
+    }
+    if (data.containsKey('crc')) {
+      context.handle(
+        _crcMeta,
+        crc.isAcceptableOrUnknown(data['crc']!, _crcMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_crcMeta);
+    }
+    if (data.containsKey('compressed_size')) {
+      context.handle(
+        _compressedSizeMeta,
+        compressedSize.isAcceptableOrUnknown(
+          data['compressed_size']!,
+          _compressedSizeMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_compressedSizeMeta);
+    }
+    if (data.containsKey('size')) {
+      context.handle(
+        _sizeMeta,
+        size.isAcceptableOrUnknown(data['size']!, _sizeMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_sizeMeta);
+    }
+    if (data.containsKey('header_offset')) {
+      context.handle(
+        _headerOffsetMeta,
+        headerOffset.isAcceptableOrUnknown(
+          data['header_offset']!,
+          _headerOffsetMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_headerOffsetMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {partId, path};
+  @override
+  TakeoutEntryRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return TakeoutEntryRow(
+      partId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}part_id'],
+      )!,
+      path: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}path'],
+      )!,
+      method: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}method'],
+      )!,
+      crc: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}crc'],
+      )!,
+      compressedSize: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}compressed_size'],
+      )!,
+      size: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}size'],
+      )!,
+      headerOffset: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}header_offset'],
+      )!,
+    );
+  }
+
+  @override
+  $TakeoutEntriesTable createAlias(String alias) {
+    return $TakeoutEntriesTable(attachedDatabase, alias);
+  }
+}
+
+class TakeoutEntryRow extends DataClass implements Insertable<TakeoutEntryRow> {
+  final String partId;
+
+  /// Where it sits in the zip, `/` between folders.
+  final String path;
+  final int method;
+  final int crc;
+  final int compressedSize;
+  final int size;
+  final int headerOffset;
+  const TakeoutEntryRow({
+    required this.partId,
+    required this.path,
+    required this.method,
+    required this.crc,
+    required this.compressedSize,
+    required this.size,
+    required this.headerOffset,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['part_id'] = Variable<String>(partId);
+    map['path'] = Variable<String>(path);
+    map['method'] = Variable<int>(method);
+    map['crc'] = Variable<int>(crc);
+    map['compressed_size'] = Variable<int>(compressedSize);
+    map['size'] = Variable<int>(size);
+    map['header_offset'] = Variable<int>(headerOffset);
+    return map;
+  }
+
+  TakeoutEntriesCompanion toCompanion(bool nullToAbsent) {
+    return TakeoutEntriesCompanion(
+      partId: Value(partId),
+      path: Value(path),
+      method: Value(method),
+      crc: Value(crc),
+      compressedSize: Value(compressedSize),
+      size: Value(size),
+      headerOffset: Value(headerOffset),
+    );
+  }
+
+  factory TakeoutEntryRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return TakeoutEntryRow(
+      partId: serializer.fromJson<String>(json['partId']),
+      path: serializer.fromJson<String>(json['path']),
+      method: serializer.fromJson<int>(json['method']),
+      crc: serializer.fromJson<int>(json['crc']),
+      compressedSize: serializer.fromJson<int>(json['compressedSize']),
+      size: serializer.fromJson<int>(json['size']),
+      headerOffset: serializer.fromJson<int>(json['headerOffset']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'partId': serializer.toJson<String>(partId),
+      'path': serializer.toJson<String>(path),
+      'method': serializer.toJson<int>(method),
+      'crc': serializer.toJson<int>(crc),
+      'compressedSize': serializer.toJson<int>(compressedSize),
+      'size': serializer.toJson<int>(size),
+      'headerOffset': serializer.toJson<int>(headerOffset),
+    };
+  }
+
+  TakeoutEntryRow copyWith({
+    String? partId,
+    String? path,
+    int? method,
+    int? crc,
+    int? compressedSize,
+    int? size,
+    int? headerOffset,
+  }) => TakeoutEntryRow(
+    partId: partId ?? this.partId,
+    path: path ?? this.path,
+    method: method ?? this.method,
+    crc: crc ?? this.crc,
+    compressedSize: compressedSize ?? this.compressedSize,
+    size: size ?? this.size,
+    headerOffset: headerOffset ?? this.headerOffset,
+  );
+  TakeoutEntryRow copyWithCompanion(TakeoutEntriesCompanion data) {
+    return TakeoutEntryRow(
+      partId: data.partId.present ? data.partId.value : this.partId,
+      path: data.path.present ? data.path.value : this.path,
+      method: data.method.present ? data.method.value : this.method,
+      crc: data.crc.present ? data.crc.value : this.crc,
+      compressedSize: data.compressedSize.present
+          ? data.compressedSize.value
+          : this.compressedSize,
+      size: data.size.present ? data.size.value : this.size,
+      headerOffset: data.headerOffset.present
+          ? data.headerOffset.value
+          : this.headerOffset,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('TakeoutEntryRow(')
+          ..write('partId: $partId, ')
+          ..write('path: $path, ')
+          ..write('method: $method, ')
+          ..write('crc: $crc, ')
+          ..write('compressedSize: $compressedSize, ')
+          ..write('size: $size, ')
+          ..write('headerOffset: $headerOffset')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    partId,
+    path,
+    method,
+    crc,
+    compressedSize,
+    size,
+    headerOffset,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is TakeoutEntryRow &&
+          other.partId == this.partId &&
+          other.path == this.path &&
+          other.method == this.method &&
+          other.crc == this.crc &&
+          other.compressedSize == this.compressedSize &&
+          other.size == this.size &&
+          other.headerOffset == this.headerOffset);
+}
+
+class TakeoutEntriesCompanion extends UpdateCompanion<TakeoutEntryRow> {
+  final Value<String> partId;
+  final Value<String> path;
+  final Value<int> method;
+  final Value<int> crc;
+  final Value<int> compressedSize;
+  final Value<int> size;
+  final Value<int> headerOffset;
+  final Value<int> rowid;
+  const TakeoutEntriesCompanion({
+    this.partId = const Value.absent(),
+    this.path = const Value.absent(),
+    this.method = const Value.absent(),
+    this.crc = const Value.absent(),
+    this.compressedSize = const Value.absent(),
+    this.size = const Value.absent(),
+    this.headerOffset = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  TakeoutEntriesCompanion.insert({
+    required String partId,
+    required String path,
+    required int method,
+    required int crc,
+    required int compressedSize,
+    required int size,
+    required int headerOffset,
+    this.rowid = const Value.absent(),
+  }) : partId = Value(partId),
+       path = Value(path),
+       method = Value(method),
+       crc = Value(crc),
+       compressedSize = Value(compressedSize),
+       size = Value(size),
+       headerOffset = Value(headerOffset);
+  static Insertable<TakeoutEntryRow> custom({
+    Expression<String>? partId,
+    Expression<String>? path,
+    Expression<int>? method,
+    Expression<int>? crc,
+    Expression<int>? compressedSize,
+    Expression<int>? size,
+    Expression<int>? headerOffset,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (partId != null) 'part_id': partId,
+      if (path != null) 'path': path,
+      if (method != null) 'method': method,
+      if (crc != null) 'crc': crc,
+      if (compressedSize != null) 'compressed_size': compressedSize,
+      if (size != null) 'size': size,
+      if (headerOffset != null) 'header_offset': headerOffset,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  TakeoutEntriesCompanion copyWith({
+    Value<String>? partId,
+    Value<String>? path,
+    Value<int>? method,
+    Value<int>? crc,
+    Value<int>? compressedSize,
+    Value<int>? size,
+    Value<int>? headerOffset,
+    Value<int>? rowid,
+  }) {
+    return TakeoutEntriesCompanion(
+      partId: partId ?? this.partId,
+      path: path ?? this.path,
+      method: method ?? this.method,
+      crc: crc ?? this.crc,
+      compressedSize: compressedSize ?? this.compressedSize,
+      size: size ?? this.size,
+      headerOffset: headerOffset ?? this.headerOffset,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (partId.present) {
+      map['part_id'] = Variable<String>(partId.value);
+    }
+    if (path.present) {
+      map['path'] = Variable<String>(path.value);
+    }
+    if (method.present) {
+      map['method'] = Variable<int>(method.value);
+    }
+    if (crc.present) {
+      map['crc'] = Variable<int>(crc.value);
+    }
+    if (compressedSize.present) {
+      map['compressed_size'] = Variable<int>(compressedSize.value);
+    }
+    if (size.present) {
+      map['size'] = Variable<int>(size.value);
+    }
+    if (headerOffset.present) {
+      map['header_offset'] = Variable<int>(headerOffset.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('TakeoutEntriesCompanion(')
+          ..write('partId: $partId, ')
+          ..write('path: $path, ')
+          ..write('method: $method, ')
+          ..write('crc: $crc, ')
+          ..write('compressedSize: $compressedSize, ')
+          ..write('size: $size, ')
+          ..write('headerOffset: $headerOffset, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $TakeoutDetailsTable extends TakeoutDetails
+    with TableInfo<$TakeoutDetailsTable, TakeoutDetailRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $TakeoutDetailsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _partIdMeta = const VerificationMeta('partId');
+  @override
+  late final GeneratedColumn<String> partId = GeneratedColumn<String>(
+    'part_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _pathMeta = const VerificationMeta('path');
+  @override
+  late final GeneratedColumn<String> path = GeneratedColumn<String>(
+    'path',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _albumMeta = const VerificationMeta('album');
+  @override
+  late final GeneratedColumn<bool> album = GeneratedColumn<bool>(
+    'album',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: true,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("album" IN (0, 1))',
+    ),
+  );
+  static const VerificationMeta _titleMeta = const VerificationMeta('title');
+  @override
+  late final GeneratedColumn<String> title = GeneratedColumn<String>(
+    'title',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _takenAtMeta = const VerificationMeta(
+    'takenAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> takenAt = GeneratedColumn<DateTime>(
+    'taken_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _favoritedMeta = const VerificationMeta(
+    'favorited',
+  );
+  @override
+  late final GeneratedColumn<bool> favorited = GeneratedColumn<bool>(
+    'favorited',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("favorited" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    partId,
+    path,
+    album,
+    title,
+    takenAt,
+    favorited,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'takeout_details';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<TakeoutDetailRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('part_id')) {
+      context.handle(
+        _partIdMeta,
+        partId.isAcceptableOrUnknown(data['part_id']!, _partIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_partIdMeta);
+    }
+    if (data.containsKey('path')) {
+      context.handle(
+        _pathMeta,
+        path.isAcceptableOrUnknown(data['path']!, _pathMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_pathMeta);
+    }
+    if (data.containsKey('album')) {
+      context.handle(
+        _albumMeta,
+        album.isAcceptableOrUnknown(data['album']!, _albumMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_albumMeta);
+    }
+    if (data.containsKey('title')) {
+      context.handle(
+        _titleMeta,
+        title.isAcceptableOrUnknown(data['title']!, _titleMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_titleMeta);
+    }
+    if (data.containsKey('taken_at')) {
+      context.handle(
+        _takenAtMeta,
+        takenAt.isAcceptableOrUnknown(data['taken_at']!, _takenAtMeta),
+      );
+    }
+    if (data.containsKey('favorited')) {
+      context.handle(
+        _favoritedMeta,
+        favorited.isAcceptableOrUnknown(data['favorited']!, _favoritedMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {partId, path};
+  @override
+  TakeoutDetailRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return TakeoutDetailRow(
+      partId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}part_id'],
+      )!,
+      path: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}path'],
+      )!,
+      album: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}album'],
+      )!,
+      title: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}title'],
+      )!,
+      takenAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}taken_at'],
+      ),
+      favorited: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}favorited'],
+      )!,
+    );
+  }
+
+  @override
+  $TakeoutDetailsTable createAlias(String alias) {
+    return $TakeoutDetailsTable(attachedDatabase, alias);
+  }
+}
+
+class TakeoutDetailRow extends DataClass
+    implements Insertable<TakeoutDetailRow> {
+  final String partId;
+
+  /// The JSON file's own path in the zip.
+  final String path;
+
+  /// An album's metadata rather than one photo's details.
+  final bool album;
+
+  /// The album's title, or the name the photo had in Google Photos.
+  final String title;
+  final DateTime? takenAt;
+  final bool favorited;
+  const TakeoutDetailRow({
+    required this.partId,
+    required this.path,
+    required this.album,
+    required this.title,
+    this.takenAt,
+    required this.favorited,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['part_id'] = Variable<String>(partId);
+    map['path'] = Variable<String>(path);
+    map['album'] = Variable<bool>(album);
+    map['title'] = Variable<String>(title);
+    if (!nullToAbsent || takenAt != null) {
+      map['taken_at'] = Variable<DateTime>(takenAt);
+    }
+    map['favorited'] = Variable<bool>(favorited);
+    return map;
+  }
+
+  TakeoutDetailsCompanion toCompanion(bool nullToAbsent) {
+    return TakeoutDetailsCompanion(
+      partId: Value(partId),
+      path: Value(path),
+      album: Value(album),
+      title: Value(title),
+      takenAt: takenAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(takenAt),
+      favorited: Value(favorited),
+    );
+  }
+
+  factory TakeoutDetailRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return TakeoutDetailRow(
+      partId: serializer.fromJson<String>(json['partId']),
+      path: serializer.fromJson<String>(json['path']),
+      album: serializer.fromJson<bool>(json['album']),
+      title: serializer.fromJson<String>(json['title']),
+      takenAt: serializer.fromJson<DateTime?>(json['takenAt']),
+      favorited: serializer.fromJson<bool>(json['favorited']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'partId': serializer.toJson<String>(partId),
+      'path': serializer.toJson<String>(path),
+      'album': serializer.toJson<bool>(album),
+      'title': serializer.toJson<String>(title),
+      'takenAt': serializer.toJson<DateTime?>(takenAt),
+      'favorited': serializer.toJson<bool>(favorited),
+    };
+  }
+
+  TakeoutDetailRow copyWith({
+    String? partId,
+    String? path,
+    bool? album,
+    String? title,
+    Value<DateTime?> takenAt = const Value.absent(),
+    bool? favorited,
+  }) => TakeoutDetailRow(
+    partId: partId ?? this.partId,
+    path: path ?? this.path,
+    album: album ?? this.album,
+    title: title ?? this.title,
+    takenAt: takenAt.present ? takenAt.value : this.takenAt,
+    favorited: favorited ?? this.favorited,
+  );
+  TakeoutDetailRow copyWithCompanion(TakeoutDetailsCompanion data) {
+    return TakeoutDetailRow(
+      partId: data.partId.present ? data.partId.value : this.partId,
+      path: data.path.present ? data.path.value : this.path,
+      album: data.album.present ? data.album.value : this.album,
+      title: data.title.present ? data.title.value : this.title,
+      takenAt: data.takenAt.present ? data.takenAt.value : this.takenAt,
+      favorited: data.favorited.present ? data.favorited.value : this.favorited,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('TakeoutDetailRow(')
+          ..write('partId: $partId, ')
+          ..write('path: $path, ')
+          ..write('album: $album, ')
+          ..write('title: $title, ')
+          ..write('takenAt: $takenAt, ')
+          ..write('favorited: $favorited')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(partId, path, album, title, takenAt, favorited);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is TakeoutDetailRow &&
+          other.partId == this.partId &&
+          other.path == this.path &&
+          other.album == this.album &&
+          other.title == this.title &&
+          other.takenAt == this.takenAt &&
+          other.favorited == this.favorited);
+}
+
+class TakeoutDetailsCompanion extends UpdateCompanion<TakeoutDetailRow> {
+  final Value<String> partId;
+  final Value<String> path;
+  final Value<bool> album;
+  final Value<String> title;
+  final Value<DateTime?> takenAt;
+  final Value<bool> favorited;
+  final Value<int> rowid;
+  const TakeoutDetailsCompanion({
+    this.partId = const Value.absent(),
+    this.path = const Value.absent(),
+    this.album = const Value.absent(),
+    this.title = const Value.absent(),
+    this.takenAt = const Value.absent(),
+    this.favorited = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  TakeoutDetailsCompanion.insert({
+    required String partId,
+    required String path,
+    required bool album,
+    required String title,
+    this.takenAt = const Value.absent(),
+    this.favorited = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : partId = Value(partId),
+       path = Value(path),
+       album = Value(album),
+       title = Value(title);
+  static Insertable<TakeoutDetailRow> custom({
+    Expression<String>? partId,
+    Expression<String>? path,
+    Expression<bool>? album,
+    Expression<String>? title,
+    Expression<DateTime>? takenAt,
+    Expression<bool>? favorited,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (partId != null) 'part_id': partId,
+      if (path != null) 'path': path,
+      if (album != null) 'album': album,
+      if (title != null) 'title': title,
+      if (takenAt != null) 'taken_at': takenAt,
+      if (favorited != null) 'favorited': favorited,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  TakeoutDetailsCompanion copyWith({
+    Value<String>? partId,
+    Value<String>? path,
+    Value<bool>? album,
+    Value<String>? title,
+    Value<DateTime?>? takenAt,
+    Value<bool>? favorited,
+    Value<int>? rowid,
+  }) {
+    return TakeoutDetailsCompanion(
+      partId: partId ?? this.partId,
+      path: path ?? this.path,
+      album: album ?? this.album,
+      title: title ?? this.title,
+      takenAt: takenAt ?? this.takenAt,
+      favorited: favorited ?? this.favorited,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (partId.present) {
+      map['part_id'] = Variable<String>(partId.value);
+    }
+    if (path.present) {
+      map['path'] = Variable<String>(path.value);
+    }
+    if (album.present) {
+      map['album'] = Variable<bool>(album.value);
+    }
+    if (title.present) {
+      map['title'] = Variable<String>(title.value);
+    }
+    if (takenAt.present) {
+      map['taken_at'] = Variable<DateTime>(takenAt.value);
+    }
+    if (favorited.present) {
+      map['favorited'] = Variable<bool>(favorited.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('TakeoutDetailsCompanion(')
+          ..write('partId: $partId, ')
+          ..write('path: $path, ')
+          ..write('album: $album, ')
+          ..write('title: $title, ')
+          ..write('takenAt: $takenAt, ')
+          ..write('favorited: $favorited, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $TakeoutItemsTable extends TakeoutItems
+    with TableInfo<$TakeoutItemsTable, TakeoutItemRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $TakeoutItemsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _keyMeta = const VerificationMeta('key');
+  @override
+  late final GeneratedColumn<String> key = GeneratedColumn<String>(
+    'key',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  @override
+  late final GeneratedColumnWithTypeConverter<TakeoutItemState, String> state =
+      GeneratedColumn<String>(
+        'state',
+        aliasedName,
+        false,
+        type: DriftSqlType.string,
+        requiredDuringInsert: true,
+      ).withConverter<TakeoutItemState>($TakeoutItemsTable.$converterstate);
+  static const VerificationMeta _fileIdMeta = const VerificationMeta('fileId');
+  @override
+  late final GeneratedColumn<String> fileId = GeneratedColumn<String>(
+    'file_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _transferIdMeta = const VerificationMeta(
+    'transferId',
+  );
+  @override
+  late final GeneratedColumn<String> transferId = GeneratedColumn<String>(
+    'transfer_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _failuresMeta = const VerificationMeta(
+    'failures',
+  );
+  @override
+  late final GeneratedColumn<int> failures = GeneratedColumn<int>(
+    'failures',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _reasonMeta = const VerificationMeta('reason');
+  @override
+  late final GeneratedColumn<String> reason = GeneratedColumn<String>(
+    'reason',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> updatedAt = GeneratedColumn<DateTime>(
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _albumsMeta = const VerificationMeta('albums');
+  @override
+  late final GeneratedColumn<String> albums = GeneratedColumn<String>(
+    'albums',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _starredMeta = const VerificationMeta(
+    'starred',
+  );
+  @override
+  late final GeneratedColumn<bool> starred = GeneratedColumn<bool>(
+    'starred',
+    aliasedName,
+    true,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("starred" IN (0, 1))',
+    ),
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    key,
+    state,
+    fileId,
+    transferId,
+    failures,
+    reason,
+    updatedAt,
+    albums,
+    starred,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'takeout_items';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<TakeoutItemRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('key')) {
+      context.handle(
+        _keyMeta,
+        key.isAcceptableOrUnknown(data['key']!, _keyMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_keyMeta);
+    }
+    if (data.containsKey('file_id')) {
+      context.handle(
+        _fileIdMeta,
+        fileId.isAcceptableOrUnknown(data['file_id']!, _fileIdMeta),
+      );
+    }
+    if (data.containsKey('transfer_id')) {
+      context.handle(
+        _transferIdMeta,
+        transferId.isAcceptableOrUnknown(data['transfer_id']!, _transferIdMeta),
+      );
+    }
+    if (data.containsKey('failures')) {
+      context.handle(
+        _failuresMeta,
+        failures.isAcceptableOrUnknown(data['failures']!, _failuresMeta),
+      );
+    }
+    if (data.containsKey('reason')) {
+      context.handle(
+        _reasonMeta,
+        reason.isAcceptableOrUnknown(data['reason']!, _reasonMeta),
+      );
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_updatedAtMeta);
+    }
+    if (data.containsKey('albums')) {
+      context.handle(
+        _albumsMeta,
+        albums.isAcceptableOrUnknown(data['albums']!, _albumsMeta),
+      );
+    }
+    if (data.containsKey('starred')) {
+      context.handle(
+        _starredMeta,
+        starred.isAcceptableOrUnknown(data['starred']!, _starredMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {key};
+  @override
+  TakeoutItemRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return TakeoutItemRow(
+      key: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}key'],
+      )!,
+      state: $TakeoutItemsTable.$converterstate.fromSql(
+        attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}state'],
+        )!,
+      ),
+      fileId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}file_id'],
+      ),
+      transferId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}transfer_id'],
+      ),
+      failures: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}failures'],
+      )!,
+      reason: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}reason'],
+      ),
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}updated_at'],
+      )!,
+      albums: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}albums'],
+      ),
+      starred: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}starred'],
+      ),
+    );
+  }
+
+  @override
+  $TakeoutItemsTable createAlias(String alias) {
+    return $TakeoutItemsTable(attachedDatabase, alias);
+  }
+
+  static JsonTypeConverter2<TakeoutItemState, String, String> $converterstate =
+      const EnumNameConverter<TakeoutItemState>(TakeoutItemState.values);
+}
+
+class TakeoutItemRow extends DataClass implements Insertable<TakeoutItemRow> {
+  final String key;
+  final TakeoutItemState state;
+
+  /// Drive file holding it, once uploaded or found already there.
+  final String? fileId;
+
+  /// The queued upload, so a restart can tell a transfer still running from
+  /// one that is gone.
+  final String? transferId;
+  final int failures;
+
+  /// Why the last try failed, in the sentence the screen shows.
+  final String? reason;
+  final DateTime updatedAt;
+
+  /// The albums the import has put it in, by title, one per line, and
+  /// whether it starred it, so the albums and star that only a part added
+  /// later shows are added, and nothing the person took away since is put
+  /// back. Null on rows that don't say.
+  final String? albums;
+  final bool? starred;
+  const TakeoutItemRow({
+    required this.key,
+    required this.state,
+    this.fileId,
+    this.transferId,
+    required this.failures,
+    this.reason,
+    required this.updatedAt,
+    this.albums,
+    this.starred,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['key'] = Variable<String>(key);
+    {
+      map['state'] = Variable<String>(
+        $TakeoutItemsTable.$converterstate.toSql(state),
+      );
+    }
+    if (!nullToAbsent || fileId != null) {
+      map['file_id'] = Variable<String>(fileId);
+    }
+    if (!nullToAbsent || transferId != null) {
+      map['transfer_id'] = Variable<String>(transferId);
+    }
+    map['failures'] = Variable<int>(failures);
+    if (!nullToAbsent || reason != null) {
+      map['reason'] = Variable<String>(reason);
+    }
+    map['updated_at'] = Variable<DateTime>(updatedAt);
+    if (!nullToAbsent || albums != null) {
+      map['albums'] = Variable<String>(albums);
+    }
+    if (!nullToAbsent || starred != null) {
+      map['starred'] = Variable<bool>(starred);
+    }
+    return map;
+  }
+
+  TakeoutItemsCompanion toCompanion(bool nullToAbsent) {
+    return TakeoutItemsCompanion(
+      key: Value(key),
+      state: Value(state),
+      fileId: fileId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(fileId),
+      transferId: transferId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(transferId),
+      failures: Value(failures),
+      reason: reason == null && nullToAbsent
+          ? const Value.absent()
+          : Value(reason),
+      updatedAt: Value(updatedAt),
+      albums: albums == null && nullToAbsent
+          ? const Value.absent()
+          : Value(albums),
+      starred: starred == null && nullToAbsent
+          ? const Value.absent()
+          : Value(starred),
+    );
+  }
+
+  factory TakeoutItemRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return TakeoutItemRow(
+      key: serializer.fromJson<String>(json['key']),
+      state: $TakeoutItemsTable.$converterstate.fromJson(
+        serializer.fromJson<String>(json['state']),
+      ),
+      fileId: serializer.fromJson<String?>(json['fileId']),
+      transferId: serializer.fromJson<String?>(json['transferId']),
+      failures: serializer.fromJson<int>(json['failures']),
+      reason: serializer.fromJson<String?>(json['reason']),
+      updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
+      albums: serializer.fromJson<String?>(json['albums']),
+      starred: serializer.fromJson<bool?>(json['starred']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'key': serializer.toJson<String>(key),
+      'state': serializer.toJson<String>(
+        $TakeoutItemsTable.$converterstate.toJson(state),
+      ),
+      'fileId': serializer.toJson<String?>(fileId),
+      'transferId': serializer.toJson<String?>(transferId),
+      'failures': serializer.toJson<int>(failures),
+      'reason': serializer.toJson<String?>(reason),
+      'updatedAt': serializer.toJson<DateTime>(updatedAt),
+      'albums': serializer.toJson<String?>(albums),
+      'starred': serializer.toJson<bool?>(starred),
+    };
+  }
+
+  TakeoutItemRow copyWith({
+    String? key,
+    TakeoutItemState? state,
+    Value<String?> fileId = const Value.absent(),
+    Value<String?> transferId = const Value.absent(),
+    int? failures,
+    Value<String?> reason = const Value.absent(),
+    DateTime? updatedAt,
+    Value<String?> albums = const Value.absent(),
+    Value<bool?> starred = const Value.absent(),
+  }) => TakeoutItemRow(
+    key: key ?? this.key,
+    state: state ?? this.state,
+    fileId: fileId.present ? fileId.value : this.fileId,
+    transferId: transferId.present ? transferId.value : this.transferId,
+    failures: failures ?? this.failures,
+    reason: reason.present ? reason.value : this.reason,
+    updatedAt: updatedAt ?? this.updatedAt,
+    albums: albums.present ? albums.value : this.albums,
+    starred: starred.present ? starred.value : this.starred,
+  );
+  TakeoutItemRow copyWithCompanion(TakeoutItemsCompanion data) {
+    return TakeoutItemRow(
+      key: data.key.present ? data.key.value : this.key,
+      state: data.state.present ? data.state.value : this.state,
+      fileId: data.fileId.present ? data.fileId.value : this.fileId,
+      transferId: data.transferId.present
+          ? data.transferId.value
+          : this.transferId,
+      failures: data.failures.present ? data.failures.value : this.failures,
+      reason: data.reason.present ? data.reason.value : this.reason,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+      albums: data.albums.present ? data.albums.value : this.albums,
+      starred: data.starred.present ? data.starred.value : this.starred,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('TakeoutItemRow(')
+          ..write('key: $key, ')
+          ..write('state: $state, ')
+          ..write('fileId: $fileId, ')
+          ..write('transferId: $transferId, ')
+          ..write('failures: $failures, ')
+          ..write('reason: $reason, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('albums: $albums, ')
+          ..write('starred: $starred')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    key,
+    state,
+    fileId,
+    transferId,
+    failures,
+    reason,
+    updatedAt,
+    albums,
+    starred,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is TakeoutItemRow &&
+          other.key == this.key &&
+          other.state == this.state &&
+          other.fileId == this.fileId &&
+          other.transferId == this.transferId &&
+          other.failures == this.failures &&
+          other.reason == this.reason &&
+          other.updatedAt == this.updatedAt &&
+          other.albums == this.albums &&
+          other.starred == this.starred);
+}
+
+class TakeoutItemsCompanion extends UpdateCompanion<TakeoutItemRow> {
+  final Value<String> key;
+  final Value<TakeoutItemState> state;
+  final Value<String?> fileId;
+  final Value<String?> transferId;
+  final Value<int> failures;
+  final Value<String?> reason;
+  final Value<DateTime> updatedAt;
+  final Value<String?> albums;
+  final Value<bool?> starred;
+  final Value<int> rowid;
+  const TakeoutItemsCompanion({
+    this.key = const Value.absent(),
+    this.state = const Value.absent(),
+    this.fileId = const Value.absent(),
+    this.transferId = const Value.absent(),
+    this.failures = const Value.absent(),
+    this.reason = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.albums = const Value.absent(),
+    this.starred = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  TakeoutItemsCompanion.insert({
+    required String key,
+    required TakeoutItemState state,
+    this.fileId = const Value.absent(),
+    this.transferId = const Value.absent(),
+    this.failures = const Value.absent(),
+    this.reason = const Value.absent(),
+    required DateTime updatedAt,
+    this.albums = const Value.absent(),
+    this.starred = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : key = Value(key),
+       state = Value(state),
+       updatedAt = Value(updatedAt);
+  static Insertable<TakeoutItemRow> custom({
+    Expression<String>? key,
+    Expression<String>? state,
+    Expression<String>? fileId,
+    Expression<String>? transferId,
+    Expression<int>? failures,
+    Expression<String>? reason,
+    Expression<DateTime>? updatedAt,
+    Expression<String>? albums,
+    Expression<bool>? starred,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (key != null) 'key': key,
+      if (state != null) 'state': state,
+      if (fileId != null) 'file_id': fileId,
+      if (transferId != null) 'transfer_id': transferId,
+      if (failures != null) 'failures': failures,
+      if (reason != null) 'reason': reason,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (albums != null) 'albums': albums,
+      if (starred != null) 'starred': starred,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  TakeoutItemsCompanion copyWith({
+    Value<String>? key,
+    Value<TakeoutItemState>? state,
+    Value<String?>? fileId,
+    Value<String?>? transferId,
+    Value<int>? failures,
+    Value<String?>? reason,
+    Value<DateTime>? updatedAt,
+    Value<String?>? albums,
+    Value<bool?>? starred,
+    Value<int>? rowid,
+  }) {
+    return TakeoutItemsCompanion(
+      key: key ?? this.key,
+      state: state ?? this.state,
+      fileId: fileId ?? this.fileId,
+      transferId: transferId ?? this.transferId,
+      failures: failures ?? this.failures,
+      reason: reason ?? this.reason,
+      updatedAt: updatedAt ?? this.updatedAt,
+      albums: albums ?? this.albums,
+      starred: starred ?? this.starred,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (key.present) {
+      map['key'] = Variable<String>(key.value);
+    }
+    if (state.present) {
+      map['state'] = Variable<String>(
+        $TakeoutItemsTable.$converterstate.toSql(state.value),
+      );
+    }
+    if (fileId.present) {
+      map['file_id'] = Variable<String>(fileId.value);
+    }
+    if (transferId.present) {
+      map['transfer_id'] = Variable<String>(transferId.value);
+    }
+    if (failures.present) {
+      map['failures'] = Variable<int>(failures.value);
+    }
+    if (reason.present) {
+      map['reason'] = Variable<String>(reason.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<DateTime>(updatedAt.value);
+    }
+    if (albums.present) {
+      map['albums'] = Variable<String>(albums.value);
+    }
+    if (starred.present) {
+      map['starred'] = Variable<bool>(starred.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('TakeoutItemsCompanion(')
+          ..write('key: $key, ')
+          ..write('state: $state, ')
+          ..write('fileId: $fileId, ')
+          ..write('transferId: $transferId, ')
+          ..write('failures: $failures, ')
+          ..write('reason: $reason, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('albums: $albums, ')
+          ..write('starred: $starred, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
@@ -7776,6 +9872,10 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $WatchedFoldersTable watchedFolders = $WatchedFoldersTable(this);
   late final $WatchedFilesTable watchedFiles = $WatchedFilesTable(this);
   late final $PendingEditsTable pendingEdits = $PendingEditsTable(this);
+  late final $TakeoutPartsTable takeoutParts = $TakeoutPartsTable(this);
+  late final $TakeoutEntriesTable takeoutEntries = $TakeoutEntriesTable(this);
+  late final $TakeoutDetailsTable takeoutDetails = $TakeoutDetailsTable(this);
+  late final $TakeoutItemsTable takeoutItems = $TakeoutItemsTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -7796,6 +9896,10 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     watchedFolders,
     watchedFiles,
     pendingEdits,
+    takeoutParts,
+    takeoutEntries,
+    takeoutDetails,
+    takeoutItems,
   ];
 }
 
@@ -8851,6 +10955,8 @@ typedef $$TransfersTableCreateCompanionBuilder = TransfersCompanion Function({
   Value<String?> replacesFileId,
   Value<int?> sourceChatId,
   Value<int?> sourceMessageId,
+  Value<String?> albumIds,
+  Value<bool?> starred,
   Value<int> rowid,
 });
 typedef $$TransfersTableUpdateCompanionBuilder = TransfersCompanion Function({
@@ -8882,6 +10988,8 @@ typedef $$TransfersTableUpdateCompanionBuilder = TransfersCompanion Function({
   Value<String?> replacesFileId,
   Value<int?> sourceChatId,
   Value<int?> sourceMessageId,
+  Value<String?> albumIds,
+  Value<bool?> starred,
   Value<int> rowid,
 });
 
@@ -9037,6 +11145,16 @@ class $$TransfersTableFilterComposer
     column: $table.sourceMessageId,
     builder: (column) => ColumnFilters(column),
   );
+
+  ColumnFilters<String> get albumIds => $composableBuilder(
+    column: $table.albumIds,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get starred => $composableBuilder(
+    column: $table.starred,
+    builder: (column) => ColumnFilters(column),
+  );
 }
 
 class $$TransfersTableOrderingComposer
@@ -9187,6 +11305,16 @@ class $$TransfersTableOrderingComposer
     column: $table.sourceMessageId,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get albumIds => $composableBuilder(
+    column: $table.albumIds,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get starred => $composableBuilder(
+    column: $table.starred,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$TransfersTableAnnotationComposer
@@ -9305,6 +11433,12 @@ class $$TransfersTableAnnotationComposer
     column: $table.sourceMessageId,
     builder: (column) => column,
   );
+
+  GeneratedColumn<String> get albumIds =>
+      $composableBuilder(column: $table.albumIds, builder: (column) => column);
+
+  GeneratedColumn<bool> get starred =>
+      $composableBuilder(column: $table.starred, builder: (column) => column);
 }
 
 class $$TransfersTableTableManager
@@ -9366,6 +11500,8 @@ class $$TransfersTableTableManager
                 Value<String?> replacesFileId = const Value.absent(),
                 Value<int?> sourceChatId = const Value.absent(),
                 Value<int?> sourceMessageId = const Value.absent(),
+                Value<String?> albumIds = const Value.absent(),
+                Value<bool?> starred = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => TransfersCompanion(
                 id: id,
@@ -9396,6 +11532,8 @@ class $$TransfersTableTableManager
                 replacesFileId: replacesFileId,
                 sourceChatId: sourceChatId,
                 sourceMessageId: sourceMessageId,
+                albumIds: albumIds,
+                starred: starred,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -9428,6 +11566,8 @@ class $$TransfersTableTableManager
                 Value<String?> replacesFileId = const Value.absent(),
                 Value<int?> sourceChatId = const Value.absent(),
                 Value<int?> sourceMessageId = const Value.absent(),
+                Value<String?> albumIds = const Value.absent(),
+                Value<bool?> starred = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => TransfersCompanion.insert(
                 id: id,
@@ -9458,6 +11598,8 @@ class $$TransfersTableTableManager
                 replacesFileId: replacesFileId,
                 sourceChatId: sourceChatId,
                 sourceMessageId: sourceMessageId,
+                albumIds: albumIds,
+                starred: starred,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
@@ -11769,6 +13911,1056 @@ typedef $$PendingEditsTableProcessedTableManager =
       PendingEditRow,
       PrefetchHooks Function()
     >;
+typedef $$TakeoutPartsTableCreateCompanionBuilder =
+    TakeoutPartsCompanion Function({
+      required String id,
+      required String uri,
+      required String name,
+      required int size,
+      required DateTime addedAt,
+      Value<DateTime?> readAt,
+      Value<TakeoutPartProblem?> problem,
+      Value<DateTime?> deletedAt,
+      Value<int> rowid,
+    });
+typedef $$TakeoutPartsTableUpdateCompanionBuilder =
+    TakeoutPartsCompanion Function({
+      Value<String> id,
+      Value<String> uri,
+      Value<String> name,
+      Value<int> size,
+      Value<DateTime> addedAt,
+      Value<DateTime?> readAt,
+      Value<TakeoutPartProblem?> problem,
+      Value<DateTime?> deletedAt,
+      Value<int> rowid,
+    });
+
+class $$TakeoutPartsTableFilterComposer
+    extends Composer<_$AppDatabase, $TakeoutPartsTable> {
+  $$TakeoutPartsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get uri => $composableBuilder(
+    column: $table.uri,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get name => $composableBuilder(
+    column: $table.name,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get size => $composableBuilder(
+    column: $table.size,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get addedAt => $composableBuilder(
+    column: $table.addedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get readAt => $composableBuilder(
+    column: $table.readAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnWithTypeConverterFilters<
+    TakeoutPartProblem?,
+    TakeoutPartProblem,
+    String
+  >
+  get problem => $composableBuilder(
+    column: $table.problem,
+    builder: (column) => ColumnWithTypeConverterFilters(column),
+  );
+
+  ColumnFilters<DateTime> get deletedAt => $composableBuilder(
+    column: $table.deletedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$TakeoutPartsTableOrderingComposer
+    extends Composer<_$AppDatabase, $TakeoutPartsTable> {
+  $$TakeoutPartsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get uri => $composableBuilder(
+    column: $table.uri,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get name => $composableBuilder(
+    column: $table.name,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get size => $composableBuilder(
+    column: $table.size,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get addedAt => $composableBuilder(
+    column: $table.addedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get readAt => $composableBuilder(
+    column: $table.readAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get problem => $composableBuilder(
+    column: $table.problem,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get deletedAt => $composableBuilder(
+    column: $table.deletedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$TakeoutPartsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $TakeoutPartsTable> {
+  $$TakeoutPartsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get uri =>
+      $composableBuilder(column: $table.uri, builder: (column) => column);
+
+  GeneratedColumn<String> get name =>
+      $composableBuilder(column: $table.name, builder: (column) => column);
+
+  GeneratedColumn<int> get size =>
+      $composableBuilder(column: $table.size, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get addedAt =>
+      $composableBuilder(column: $table.addedAt, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get readAt =>
+      $composableBuilder(column: $table.readAt, builder: (column) => column);
+
+  GeneratedColumnWithTypeConverter<TakeoutPartProblem?, String> get problem =>
+      $composableBuilder(column: $table.problem, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get deletedAt =>
+      $composableBuilder(column: $table.deletedAt, builder: (column) => column);
+}
+
+class $$TakeoutPartsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $TakeoutPartsTable,
+          TakeoutPartRow,
+          $$TakeoutPartsTableFilterComposer,
+          $$TakeoutPartsTableOrderingComposer,
+          $$TakeoutPartsTableAnnotationComposer,
+          $$TakeoutPartsTableCreateCompanionBuilder,
+          $$TakeoutPartsTableUpdateCompanionBuilder,
+          (
+            TakeoutPartRow,
+            BaseReferences<_$AppDatabase, $TakeoutPartsTable, TakeoutPartRow>,
+          ),
+          TakeoutPartRow,
+          PrefetchHooks Function()
+        > {
+  $$TakeoutPartsTableTableManager(_$AppDatabase db, $TakeoutPartsTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$TakeoutPartsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$TakeoutPartsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$TakeoutPartsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> id = const Value.absent(),
+                Value<String> uri = const Value.absent(),
+                Value<String> name = const Value.absent(),
+                Value<int> size = const Value.absent(),
+                Value<DateTime> addedAt = const Value.absent(),
+                Value<DateTime?> readAt = const Value.absent(),
+                Value<TakeoutPartProblem?> problem = const Value.absent(),
+                Value<DateTime?> deletedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => TakeoutPartsCompanion(
+                id: id,
+                uri: uri,
+                name: name,
+                size: size,
+                addedAt: addedAt,
+                readAt: readAt,
+                problem: problem,
+                deletedAt: deletedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String id,
+                required String uri,
+                required String name,
+                required int size,
+                required DateTime addedAt,
+                Value<DateTime?> readAt = const Value.absent(),
+                Value<TakeoutPartProblem?> problem = const Value.absent(),
+                Value<DateTime?> deletedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => TakeoutPartsCompanion.insert(
+                id: id,
+                uri: uri,
+                name: name,
+                size: size,
+                addedAt: addedAt,
+                readAt: readAt,
+                problem: problem,
+                deletedAt: deletedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable<$TakeoutPartsTable, TakeoutPartRow>(table),
+                  BaseReferences<
+                    _$AppDatabase,
+                    $TakeoutPartsTable,
+                    TakeoutPartRow
+                  >(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$TakeoutPartsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $TakeoutPartsTable,
+      TakeoutPartRow,
+      $$TakeoutPartsTableFilterComposer,
+      $$TakeoutPartsTableOrderingComposer,
+      $$TakeoutPartsTableAnnotationComposer,
+      $$TakeoutPartsTableCreateCompanionBuilder,
+      $$TakeoutPartsTableUpdateCompanionBuilder,
+      (
+        TakeoutPartRow,
+        BaseReferences<_$AppDatabase, $TakeoutPartsTable, TakeoutPartRow>,
+      ),
+      TakeoutPartRow,
+      PrefetchHooks Function()
+    >;
+typedef $$TakeoutEntriesTableCreateCompanionBuilder =
+    TakeoutEntriesCompanion Function({
+      required String partId,
+      required String path,
+      required int method,
+      required int crc,
+      required int compressedSize,
+      required int size,
+      required int headerOffset,
+      Value<int> rowid,
+    });
+typedef $$TakeoutEntriesTableUpdateCompanionBuilder =
+    TakeoutEntriesCompanion Function({
+      Value<String> partId,
+      Value<String> path,
+      Value<int> method,
+      Value<int> crc,
+      Value<int> compressedSize,
+      Value<int> size,
+      Value<int> headerOffset,
+      Value<int> rowid,
+    });
+
+class $$TakeoutEntriesTableFilterComposer
+    extends Composer<_$AppDatabase, $TakeoutEntriesTable> {
+  $$TakeoutEntriesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get partId => $composableBuilder(
+    column: $table.partId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get path => $composableBuilder(
+    column: $table.path,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get method => $composableBuilder(
+    column: $table.method,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get crc => $composableBuilder(
+    column: $table.crc,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get compressedSize => $composableBuilder(
+    column: $table.compressedSize,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get size => $composableBuilder(
+    column: $table.size,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get headerOffset => $composableBuilder(
+    column: $table.headerOffset,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$TakeoutEntriesTableOrderingComposer
+    extends Composer<_$AppDatabase, $TakeoutEntriesTable> {
+  $$TakeoutEntriesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get partId => $composableBuilder(
+    column: $table.partId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get path => $composableBuilder(
+    column: $table.path,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get method => $composableBuilder(
+    column: $table.method,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get crc => $composableBuilder(
+    column: $table.crc,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get compressedSize => $composableBuilder(
+    column: $table.compressedSize,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get size => $composableBuilder(
+    column: $table.size,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get headerOffset => $composableBuilder(
+    column: $table.headerOffset,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$TakeoutEntriesTableAnnotationComposer
+    extends Composer<_$AppDatabase, $TakeoutEntriesTable> {
+  $$TakeoutEntriesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get partId =>
+      $composableBuilder(column: $table.partId, builder: (column) => column);
+
+  GeneratedColumn<String> get path =>
+      $composableBuilder(column: $table.path, builder: (column) => column);
+
+  GeneratedColumn<int> get method =>
+      $composableBuilder(column: $table.method, builder: (column) => column);
+
+  GeneratedColumn<int> get crc =>
+      $composableBuilder(column: $table.crc, builder: (column) => column);
+
+  GeneratedColumn<int> get compressedSize => $composableBuilder(
+    column: $table.compressedSize,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get size =>
+      $composableBuilder(column: $table.size, builder: (column) => column);
+
+  GeneratedColumn<int> get headerOffset => $composableBuilder(
+    column: $table.headerOffset,
+    builder: (column) => column,
+  );
+}
+
+class $$TakeoutEntriesTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $TakeoutEntriesTable,
+          TakeoutEntryRow,
+          $$TakeoutEntriesTableFilterComposer,
+          $$TakeoutEntriesTableOrderingComposer,
+          $$TakeoutEntriesTableAnnotationComposer,
+          $$TakeoutEntriesTableCreateCompanionBuilder,
+          $$TakeoutEntriesTableUpdateCompanionBuilder,
+          (
+            TakeoutEntryRow,
+            BaseReferences<
+              _$AppDatabase,
+              $TakeoutEntriesTable,
+              TakeoutEntryRow
+            >,
+          ),
+          TakeoutEntryRow,
+          PrefetchHooks Function()
+        > {
+  $$TakeoutEntriesTableTableManager(
+    _$AppDatabase db,
+    $TakeoutEntriesTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$TakeoutEntriesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$TakeoutEntriesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$TakeoutEntriesTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> partId = const Value.absent(),
+                Value<String> path = const Value.absent(),
+                Value<int> method = const Value.absent(),
+                Value<int> crc = const Value.absent(),
+                Value<int> compressedSize = const Value.absent(),
+                Value<int> size = const Value.absent(),
+                Value<int> headerOffset = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => TakeoutEntriesCompanion(
+                partId: partId,
+                path: path,
+                method: method,
+                crc: crc,
+                compressedSize: compressedSize,
+                size: size,
+                headerOffset: headerOffset,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String partId,
+                required String path,
+                required int method,
+                required int crc,
+                required int compressedSize,
+                required int size,
+                required int headerOffset,
+                Value<int> rowid = const Value.absent(),
+              }) => TakeoutEntriesCompanion.insert(
+                partId: partId,
+                path: path,
+                method: method,
+                crc: crc,
+                compressedSize: compressedSize,
+                size: size,
+                headerOffset: headerOffset,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable<$TakeoutEntriesTable, TakeoutEntryRow>(table),
+                  BaseReferences<
+                    _$AppDatabase,
+                    $TakeoutEntriesTable,
+                    TakeoutEntryRow
+                  >(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$TakeoutEntriesTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $TakeoutEntriesTable,
+      TakeoutEntryRow,
+      $$TakeoutEntriesTableFilterComposer,
+      $$TakeoutEntriesTableOrderingComposer,
+      $$TakeoutEntriesTableAnnotationComposer,
+      $$TakeoutEntriesTableCreateCompanionBuilder,
+      $$TakeoutEntriesTableUpdateCompanionBuilder,
+      (
+        TakeoutEntryRow,
+        BaseReferences<_$AppDatabase, $TakeoutEntriesTable, TakeoutEntryRow>,
+      ),
+      TakeoutEntryRow,
+      PrefetchHooks Function()
+    >;
+typedef $$TakeoutDetailsTableCreateCompanionBuilder =
+    TakeoutDetailsCompanion Function({
+      required String partId,
+      required String path,
+      required bool album,
+      required String title,
+      Value<DateTime?> takenAt,
+      Value<bool> favorited,
+      Value<int> rowid,
+    });
+typedef $$TakeoutDetailsTableUpdateCompanionBuilder =
+    TakeoutDetailsCompanion Function({
+      Value<String> partId,
+      Value<String> path,
+      Value<bool> album,
+      Value<String> title,
+      Value<DateTime?> takenAt,
+      Value<bool> favorited,
+      Value<int> rowid,
+    });
+
+class $$TakeoutDetailsTableFilterComposer
+    extends Composer<_$AppDatabase, $TakeoutDetailsTable> {
+  $$TakeoutDetailsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get partId => $composableBuilder(
+    column: $table.partId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get path => $composableBuilder(
+    column: $table.path,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get album => $composableBuilder(
+    column: $table.album,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get title => $composableBuilder(
+    column: $table.title,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get takenAt => $composableBuilder(
+    column: $table.takenAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get favorited => $composableBuilder(
+    column: $table.favorited,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$TakeoutDetailsTableOrderingComposer
+    extends Composer<_$AppDatabase, $TakeoutDetailsTable> {
+  $$TakeoutDetailsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get partId => $composableBuilder(
+    column: $table.partId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get path => $composableBuilder(
+    column: $table.path,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get album => $composableBuilder(
+    column: $table.album,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get title => $composableBuilder(
+    column: $table.title,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get takenAt => $composableBuilder(
+    column: $table.takenAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get favorited => $composableBuilder(
+    column: $table.favorited,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$TakeoutDetailsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $TakeoutDetailsTable> {
+  $$TakeoutDetailsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get partId =>
+      $composableBuilder(column: $table.partId, builder: (column) => column);
+
+  GeneratedColumn<String> get path =>
+      $composableBuilder(column: $table.path, builder: (column) => column);
+
+  GeneratedColumn<bool> get album =>
+      $composableBuilder(column: $table.album, builder: (column) => column);
+
+  GeneratedColumn<String> get title =>
+      $composableBuilder(column: $table.title, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get takenAt =>
+      $composableBuilder(column: $table.takenAt, builder: (column) => column);
+
+  GeneratedColumn<bool> get favorited =>
+      $composableBuilder(column: $table.favorited, builder: (column) => column);
+}
+
+class $$TakeoutDetailsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $TakeoutDetailsTable,
+          TakeoutDetailRow,
+          $$TakeoutDetailsTableFilterComposer,
+          $$TakeoutDetailsTableOrderingComposer,
+          $$TakeoutDetailsTableAnnotationComposer,
+          $$TakeoutDetailsTableCreateCompanionBuilder,
+          $$TakeoutDetailsTableUpdateCompanionBuilder,
+          (
+            TakeoutDetailRow,
+            BaseReferences<
+              _$AppDatabase,
+              $TakeoutDetailsTable,
+              TakeoutDetailRow
+            >,
+          ),
+          TakeoutDetailRow,
+          PrefetchHooks Function()
+        > {
+  $$TakeoutDetailsTableTableManager(
+    _$AppDatabase db,
+    $TakeoutDetailsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$TakeoutDetailsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$TakeoutDetailsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$TakeoutDetailsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> partId = const Value.absent(),
+                Value<String> path = const Value.absent(),
+                Value<bool> album = const Value.absent(),
+                Value<String> title = const Value.absent(),
+                Value<DateTime?> takenAt = const Value.absent(),
+                Value<bool> favorited = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => TakeoutDetailsCompanion(
+                partId: partId,
+                path: path,
+                album: album,
+                title: title,
+                takenAt: takenAt,
+                favorited: favorited,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String partId,
+                required String path,
+                required bool album,
+                required String title,
+                Value<DateTime?> takenAt = const Value.absent(),
+                Value<bool> favorited = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => TakeoutDetailsCompanion.insert(
+                partId: partId,
+                path: path,
+                album: album,
+                title: title,
+                takenAt: takenAt,
+                favorited: favorited,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable<$TakeoutDetailsTable, TakeoutDetailRow>(table),
+                  BaseReferences<
+                    _$AppDatabase,
+                    $TakeoutDetailsTable,
+                    TakeoutDetailRow
+                  >(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$TakeoutDetailsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $TakeoutDetailsTable,
+      TakeoutDetailRow,
+      $$TakeoutDetailsTableFilterComposer,
+      $$TakeoutDetailsTableOrderingComposer,
+      $$TakeoutDetailsTableAnnotationComposer,
+      $$TakeoutDetailsTableCreateCompanionBuilder,
+      $$TakeoutDetailsTableUpdateCompanionBuilder,
+      (
+        TakeoutDetailRow,
+        BaseReferences<_$AppDatabase, $TakeoutDetailsTable, TakeoutDetailRow>,
+      ),
+      TakeoutDetailRow,
+      PrefetchHooks Function()
+    >;
+typedef $$TakeoutItemsTableCreateCompanionBuilder =
+    TakeoutItemsCompanion Function({
+      required String key,
+      required TakeoutItemState state,
+      Value<String?> fileId,
+      Value<String?> transferId,
+      Value<int> failures,
+      Value<String?> reason,
+      required DateTime updatedAt,
+      Value<String?> albums,
+      Value<bool?> starred,
+      Value<int> rowid,
+    });
+typedef $$TakeoutItemsTableUpdateCompanionBuilder =
+    TakeoutItemsCompanion Function({
+      Value<String> key,
+      Value<TakeoutItemState> state,
+      Value<String?> fileId,
+      Value<String?> transferId,
+      Value<int> failures,
+      Value<String?> reason,
+      Value<DateTime> updatedAt,
+      Value<String?> albums,
+      Value<bool?> starred,
+      Value<int> rowid,
+    });
+
+class $$TakeoutItemsTableFilterComposer
+    extends Composer<_$AppDatabase, $TakeoutItemsTable> {
+  $$TakeoutItemsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get key => $composableBuilder(
+    column: $table.key,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnWithTypeConverterFilters<TakeoutItemState, TakeoutItemState, String>
+  get state => $composableBuilder(
+    column: $table.state,
+    builder: (column) => ColumnWithTypeConverterFilters(column),
+  );
+
+  ColumnFilters<String> get fileId => $composableBuilder(
+    column: $table.fileId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get transferId => $composableBuilder(
+    column: $table.transferId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get failures => $composableBuilder(
+    column: $table.failures,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get reason => $composableBuilder(
+    column: $table.reason,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get albums => $composableBuilder(
+    column: $table.albums,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get starred => $composableBuilder(
+    column: $table.starred,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$TakeoutItemsTableOrderingComposer
+    extends Composer<_$AppDatabase, $TakeoutItemsTable> {
+  $$TakeoutItemsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get key => $composableBuilder(
+    column: $table.key,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get state => $composableBuilder(
+    column: $table.state,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get fileId => $composableBuilder(
+    column: $table.fileId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get transferId => $composableBuilder(
+    column: $table.transferId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get failures => $composableBuilder(
+    column: $table.failures,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get reason => $composableBuilder(
+    column: $table.reason,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get albums => $composableBuilder(
+    column: $table.albums,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get starred => $composableBuilder(
+    column: $table.starred,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$TakeoutItemsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $TakeoutItemsTable> {
+  $$TakeoutItemsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get key =>
+      $composableBuilder(column: $table.key, builder: (column) => column);
+
+  GeneratedColumnWithTypeConverter<TakeoutItemState, String> get state =>
+      $composableBuilder(column: $table.state, builder: (column) => column);
+
+  GeneratedColumn<String> get fileId =>
+      $composableBuilder(column: $table.fileId, builder: (column) => column);
+
+  GeneratedColumn<String> get transferId => $composableBuilder(
+    column: $table.transferId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get failures =>
+      $composableBuilder(column: $table.failures, builder: (column) => column);
+
+  GeneratedColumn<String> get reason =>
+      $composableBuilder(column: $table.reason, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+
+  GeneratedColumn<String> get albums =>
+      $composableBuilder(column: $table.albums, builder: (column) => column);
+
+  GeneratedColumn<bool> get starred =>
+      $composableBuilder(column: $table.starred, builder: (column) => column);
+}
+
+class $$TakeoutItemsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $TakeoutItemsTable,
+          TakeoutItemRow,
+          $$TakeoutItemsTableFilterComposer,
+          $$TakeoutItemsTableOrderingComposer,
+          $$TakeoutItemsTableAnnotationComposer,
+          $$TakeoutItemsTableCreateCompanionBuilder,
+          $$TakeoutItemsTableUpdateCompanionBuilder,
+          (
+            TakeoutItemRow,
+            BaseReferences<_$AppDatabase, $TakeoutItemsTable, TakeoutItemRow>,
+          ),
+          TakeoutItemRow,
+          PrefetchHooks Function()
+        > {
+  $$TakeoutItemsTableTableManager(_$AppDatabase db, $TakeoutItemsTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$TakeoutItemsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$TakeoutItemsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$TakeoutItemsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> key = const Value.absent(),
+                Value<TakeoutItemState> state = const Value.absent(),
+                Value<String?> fileId = const Value.absent(),
+                Value<String?> transferId = const Value.absent(),
+                Value<int> failures = const Value.absent(),
+                Value<String?> reason = const Value.absent(),
+                Value<DateTime> updatedAt = const Value.absent(),
+                Value<String?> albums = const Value.absent(),
+                Value<bool?> starred = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => TakeoutItemsCompanion(
+                key: key,
+                state: state,
+                fileId: fileId,
+                transferId: transferId,
+                failures: failures,
+                reason: reason,
+                updatedAt: updatedAt,
+                albums: albums,
+                starred: starred,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String key,
+                required TakeoutItemState state,
+                Value<String?> fileId = const Value.absent(),
+                Value<String?> transferId = const Value.absent(),
+                Value<int> failures = const Value.absent(),
+                Value<String?> reason = const Value.absent(),
+                required DateTime updatedAt,
+                Value<String?> albums = const Value.absent(),
+                Value<bool?> starred = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => TakeoutItemsCompanion.insert(
+                key: key,
+                state: state,
+                fileId: fileId,
+                transferId: transferId,
+                failures: failures,
+                reason: reason,
+                updatedAt: updatedAt,
+                albums: albums,
+                starred: starred,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable<$TakeoutItemsTable, TakeoutItemRow>(table),
+                  BaseReferences<
+                    _$AppDatabase,
+                    $TakeoutItemsTable,
+                    TakeoutItemRow
+                  >(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$TakeoutItemsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $TakeoutItemsTable,
+      TakeoutItemRow,
+      $$TakeoutItemsTableFilterComposer,
+      $$TakeoutItemsTableOrderingComposer,
+      $$TakeoutItemsTableAnnotationComposer,
+      $$TakeoutItemsTableCreateCompanionBuilder,
+      $$TakeoutItemsTableUpdateCompanionBuilder,
+      (
+        TakeoutItemRow,
+        BaseReferences<_$AppDatabase, $TakeoutItemsTable, TakeoutItemRow>,
+      ),
+      TakeoutItemRow,
+      PrefetchHooks Function()
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -11803,4 +14995,12 @@ class $AppDatabaseManager {
       $$WatchedFilesTableTableManager(_db, _db.watchedFiles);
   $$PendingEditsTableTableManager get pendingEdits =>
       $$PendingEditsTableTableManager(_db, _db.pendingEdits);
+  $$TakeoutPartsTableTableManager get takeoutParts =>
+      $$TakeoutPartsTableTableManager(_db, _db.takeoutParts);
+  $$TakeoutEntriesTableTableManager get takeoutEntries =>
+      $$TakeoutEntriesTableTableManager(_db, _db.takeoutEntries);
+  $$TakeoutDetailsTableTableManager get takeoutDetails =>
+      $$TakeoutDetailsTableTableManager(_db, _db.takeoutDetails);
+  $$TakeoutItemsTableTableManager get takeoutItems =>
+      $$TakeoutItemsTableTableManager(_db, _db.takeoutItems);
 }

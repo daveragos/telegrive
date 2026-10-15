@@ -30,6 +30,7 @@ import '../features/settings/presentation/settings_screen.dart';
 import '../features/setup/presentation/setup_screen.dart';
 import '../features/setup/presentation/splash_screen.dart';
 import '../features/space/presentation/space_screen.dart';
+import '../features/takeout/presentation/takeout_screen.dart';
 import '../features/transfers/presentation/transfers_screen.dart';
 import '../features/trash/presentation/trash_screen.dart';
 import '../features/viewer/presentation/image_viewer_screen.dart';
@@ -168,6 +169,11 @@ final routerProvider = Provider<GoRouter>((ref) {
         parentNavigatorKey: rootNavigatorKey,
         redirect: (_, state) => state.extra is PhoneMediaArgs ? null : '/backup/queue',
         pageBuilder: (_, state) => _fade(state, PhoneMediaViewer(args: state.extra! as PhoneMediaArgs)),
+      ),
+      GoRoute(
+        path: '/takeout',
+        parentNavigatorKey: rootNavigatorKey,
+        builder: (_, _) => const TakeoutScreen(),
       ),
       GoRoute(
         path: '/free-up',

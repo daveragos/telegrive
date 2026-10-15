@@ -20,6 +20,7 @@ import '../features/picker/data/picker_access.dart';
 import '../features/settings/data/settings_providers.dart';
 import '../features/setup/data/drive_opener.dart';
 import '../features/setup/data/drive_setup.dart';
+import '../features/takeout/data/takeout_import.dart';
 import '../features/transfers/data/transfer_keep_alive.dart';
 import '../features/transfers/data/transfer_queue.dart';
 import '../features/trash/data/pending_deletes.dart';
@@ -93,6 +94,9 @@ class _TelegriveAppState extends ConsumerState<TelegriveApp>
       ref.read(editOutboxProvider.notifier).soon();
       ref.read(backupControllerProvider.notifier).scheduleOnResume();
       ref.read(watchedFoldersProvider.notifier).schedule(immediate: true);
+      if (ref.read(takeoutImportProvider).running) {
+        ref.read(takeoutImportProvider.notifier).schedule(immediate: true);
+      }
       unawaited(ref.read(transferQueueProvider.notifier).recheckRoom());
     }
   }
@@ -140,9 +144,11 @@ class _TelegriveAppState extends ConsumerState<TelegriveApp>
     // close on sign-out and takes the bridge to the stream server away.
     ref.watch(pickerAccessProvider);
     // Alive from the start so backup resumes the moment the drive opens,
-    // and the watched folders are checked then too.
+    // and the watched folders are checked then too, and a Google Photos
+    // import carries on.
     ref.watch(backupControllerProvider.select((b) => b.phase));
     ref.watch(watchedFoldersProvider.select((s) => s.working));
+    ref.watch(takeoutImportProvider.select((s) => s.working));
     // Alive from the start too: it is what tells TDLib about every network
     // change, the call that makes it drop dead sockets and reconnect.
     ref.watch(networkStatusProvider);

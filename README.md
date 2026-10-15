@@ -22,6 +22,9 @@ number, and your files stay in Telegram, where you can see them too.
   quality. New photos follow on their own, even with the app closed
   while the phone charges. Free up space on the phone afterwards, and
   keep the last 30 or 90 days if you like.
+- **Bring your Google Photos.** Download your library with Google
+  Takeout and Telegrive imports it on the phone, with dates, albums and
+  favorites, skipping what is already in your drive.
 - **A real file manager.** Folders, stars, albums, a photo timeline, and
   a trash that keeps things for 30 days. Every change can be undone.
 - **Search that finds things.** By name, by date ("invoices march 2024"),

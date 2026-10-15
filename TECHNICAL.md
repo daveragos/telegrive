@@ -442,6 +442,86 @@ value goes back onto the line exactly as it came.
   are safely in the drive, optionally keeping the last 30 or 90 days. A
   photo with only a small copy in the drive is never among them.
 
+## Importing from Google Photos
+
+Google closed every way for an app to read a whole Google Photos library
+in March 2025: the Library API now lists only what the app uploaded, and
+the Picker API strips location, re-encodes videos and says nothing of
+albums. Takeout is the one complete export, so the import reads its zip
+files.
+
+- **Parts.** The person picks the zips Takeout made in Android's document
+  picker. Each keeps a persistable grant (to read, and to delete where its
+  provider allows), so an import of many days survives restarts. A part is
+  read where it lies: the central directory from its end, the JSON files
+  by range, and each photo or video taken out on its own by
+  `ArchivesChannel.kt`, which inflates it into the cache and checks its
+  CRC. Zip64 parts read the same. What a part holds is kept in
+  `takeout_parts`, `takeout_entries` and `takeout_details`, so it is read
+  once.
+- **Details.** Each file is matched with the JSON beside it, in any part:
+  `name.supplemental-metadata.json` or the older `name.json`, cut to 46
+  characters before a counter, with the counter Takeout puts in the file's
+  own name (`IMG_1(1).jpg` against `IMG_1.jpg.supplemental-metadata(1).json`).
+  An edited copy (`-edited` and its translations) goes by its original's,
+  the video of a Live Photo by the photo's, and a name Takeout shortened
+  goes back to the JSON's title. The time taken is the JSON's
+  `photoTakenTime`, else a date in the name, else the file's EXIF or video
+  header. Album folders are the ones whose `metadata.json` gives a title,
+  since Takeout translates folder names.
+- **Once.** A file is known by its size and CRC, so the copy in each
+  album's folder is the same item, and `takeout_items` records what each
+  came to. One the drive already holds isn't sent; it is put in its albums
+  and starred in one edit instead. The drive holds it when a file there
+  has its name and size, as photo backup judges; its name and the second
+  it was taken, which finds the original of a copy Google kept smaller
+  under Storage saver; or its size and that second, which finds one
+  renamed since.
+- **Live Photos.** Google keeps a Live Photo or motion photo as a photo
+  and a short video, and Takeout gives the video beside the photo under its
+  name. When the drive already had the photo before the import, from photo
+  backup say, the video isn't sent: a phone keeps the movement inside the
+  photo file (Samsung's carry a `MotionPhoto_Data` trailer). When the import
+  sends the photo itself, it reads the photo from its part first: a Samsung
+  or Pixel motion photo (`MotionPhoto_Data`, `MotionPhoto="1"`,
+  `MicroVideo="1"`) holds its movement, so the video is left out; an
+  iPhone's doesn't, so its video goes up too. Videos an earlier version sent
+  beside photos the drive already held are offered for the trash, and
+  recorded as held by their photos.
+- **Nothing lost quietly.** Pausing calls off the uploads under way, which
+  deletes the message Telegram was still receiving; the copy stays on the
+  phone and goes up again on resume. After every full read of the channel,
+  each photo the import settled is looked for in the index, and any whose
+  file is gone is counted, with Import again to send it from the parts still
+  on the phone.
+- **Where it goes.** `Google Photos › <year taken>`, or `Google Photos`
+  without a date. Albums reuse one of the same name in the drive, and the
+  first caption carries the albums and the star, so nothing is edited
+  after.
+- **Order.** Part by part, as each part lays its files out, so the first
+  parts finish first and can be deleted from the phone; files whose JSON
+  hasn't turned up go last, in case a part added later has it. Parts can
+  come a few at a time: a deleted part stays on the list as done, so its
+  number still counts, and the details read from it stay for photos in
+  later parts. A photo already settled that a later part puts in another
+  album, or stars, gets that in one edit, and the ledger records what each
+  was given, so nothing the person took away since is put back.
+- **Running.** Two at a time while Telegrive is open, carrying on when it
+  opens again if it was running. Photo backup's Mobile data choice and
+  monthly limit apply, photos and videos told apart as backup tells them.
+  Pausing, here or from the notification, pauses the uploads under way.
+- **Progress** is for the whole import, never the files in hand: the
+  bytes it sent are sampled each second, those of files still going up
+  included, and its speed is what went up over the last minute, the time
+  between files counted, with the time left worked out from every byte
+  still to send. The screen lists the files in hand with what is being
+  done to each; the notification, the line above the bar and Home name the
+  import as one job, `Importing 2,670 of 3,349 · 10 min left · 7.7 MB/s`,
+  beside anything else under way.
+- **Problems** are per part: a download cut short, a file that isn't a
+  zip, a damaged one, or one Android no longer lets Telegrive read, which
+  can be chosen again.
+
 ## Behaviour in detail
 
 **Files and folders.** Create, rename, move and delete folders, with
@@ -537,6 +617,13 @@ one.
 - A small copy carries no location or camera details; the original that
   replaces it does.
 - Where you stopped in a video is kept on this phone only.
+- A Google Photos import keeps the location in each photo's own file but
+  not the one in Takeout's JSON, and leaves out descriptions; the caption
+  format has no field for either. Edited photos come as copies beside
+  their originals, as Takeout gives them, and photos kept in Storage
+  saver quality come as Google stored them.
+- Takeout parts are read as zip files only, from this phone, so the
+  library passes through it twice: down from Google, then up to Telegram.
 
 ## Project layout
 
@@ -557,6 +644,7 @@ lib/
     │                  # the copy of the index, the outbox
     ├── transfers/     # upload and download queue, background keep-alive
     ├── backup/        # photo backup and watched folders
+    ├── takeout/       # importing a Google Photos export
     ├── checkup/       # Check my drive
     └── files/ home/ photos/ search/ settings/ viewer/ …
 ```

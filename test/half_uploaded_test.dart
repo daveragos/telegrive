@@ -105,6 +105,32 @@ void main() {
     expect(await repository.isWhole('half'), isFalse);
     expect(await repository.isWhole('whole'), isTrue);
     expect(await repository.isWhole('nothing'), isFalse);
+    expect([for (final file in await db.fileMatchRows()) file.id], ['whole']);
+  });
+
+  test('photos and videos without a preview are found, smallest first, others left out', () async {
+    final now = DateTime(2026, 10, 9);
+    Future<void> add(String id, FileKind kind, int size, {int? thumbnail, int parts = 1}) => db.upsertFilePart(
+      DriveFilesCompanion.insert(
+        id: id,
+        name: id,
+        mimeType: 'application/octet-stream',
+        kind: kind,
+        size: size,
+        createdAt: now,
+        modifiedAt: now,
+        partCount: Value(parts),
+        thumbnailFileId: Value(thumbnail),
+      ),
+      FilePartsCompanion.insert(fileId: id, partIndex: 0, messageId: 900 + size, tdFileId: 950 + size, size: size),
+    );
+    await add('big.mp4', FileKind.video, 300);
+    await add('small.heic', FileKind.image, 10);
+    await add('has-preview.jpg', FileKind.image, 20, thumbnail: 7);
+    await add('notes.pdf', FileKind.document, 30);
+    await add('split.mp4', FileKind.video, 40, parts: 2);
+    final rows = await db.filesWithoutPreview(['big.mp4', 'small.heic', 'has-preview.jpg', 'notes.pdf', 'split.mp4']);
+    expect([for (final row in rows) row.id], ['small.heic', 'big.mp4']);
   });
 
   test('after a restart, an upload whose file is only part there is not taken for done', () async {

@@ -69,16 +69,18 @@ class MainActivity : FlutterFragmentActivity() {
     private var networkWatcher: NetworkWatcher? = null
 
     /**
-     * The scanner, the camera and the folder picker come back as activity
-     * results, and Android only registers for those before the activity is
-     * started. Both channels are created at the top of onCreate, ahead of
-     * super.onCreate: a recreated activity re-attaches its Flutter fragment
-     * in there, which runs configureFlutterEngine, and that attaches them.
+     * The scanner, the camera, the folder picker and the zip picker come
+     * back as activity results, and Android only registers for those before
+     * the activity is started. Their channels are created at the top of
+     * onCreate, ahead of super.onCreate: a recreated activity re-attaches
+     * its Flutter fragment in there, which runs configureFlutterEngine, and
+     * that attaches them.
      * They are created in the same order every time, because a result that
      * outlives the process finds its launcher by that order.
      */
     private lateinit var capture: CaptureChannel
     private lateinit var folders: FoldersChannel
+    private lateinit var archives: ArchivesChannel
 
     /**
      * Whether this activity is the first one its intent starts, so the
@@ -94,6 +96,7 @@ class MainActivity : FlutterFragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         capture = CaptureChannel(this, io, main) { addShared(listOf(it)) }
         folders = FoldersChannel(this, io, main)
+        archives = ArchivesChannel(this, io, main)
         firstStart = savedInstanceState == null &&
             (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) == 0
         if (savedInstanceState != null) forgetRestoredRoute()
@@ -188,6 +191,7 @@ class MainActivity : FlutterFragmentActivity() {
         }
         capture.attach(messenger)
         folders.attach(messenger)
+        archives.attach(messenger)
         TextChannel(main).attach(messenger)
         MethodChannel(messenger, "telegrive/security").setMethodCallHandler { call, result ->
             when (call.method) {
@@ -254,6 +258,23 @@ class MainActivity : FlutterFragmentActivity() {
                     val path = call.argument<String>("path")
                     io.execute {
                         val ms = path?.let { durationMs(it) }
+                        main.post { result.success(ms) }
+                    }
+                }
+                "thumbnail" -> {
+                    val path = call.argument<String>("path")
+                    val out = call.argument<String>("out")
+                    val video = call.argument<Boolean>("video") == true
+                    io.execute {
+                        val made = if (path != null && out != null) thumbnail(path, video, out) else null
+                        main.post { result.success(made) }
+                    }
+                }
+                "takenAtMs" -> {
+                    val path = call.argument<String>("path")
+                    val video = call.argument<Boolean>("video") == true
+                    io.execute {
+                        val ms = path?.let { if (video) videoTakenAtMs(it) else photoTakenAtMs(it) }
                         main.post { result.success(ms) }
                     }
                 }
@@ -433,6 +454,119 @@ class MainActivity : FlutterFragmentActivity() {
         try {
             retriever.setDataSource(path)
             retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull()
+        } finally {
+            runCatching { retriever.release() }
+        }
+    } catch (e: Exception) {
+        null
+    }
+
+    /**
+     * A JPEG preview of the photo or [video] at [path], no side over 320 px
+     * and under 200 KB, Telegram's limits for a document's thumbnail, written
+     * to [out]. Null when the file makes no picture.
+     */
+    private fun thumbnail(path: String, video: Boolean, out: String): String? = try {
+        val picture = if (video) videoPicture(path) else photoPicture(path)
+        picture?.let { bitmap ->
+            val scale = THUMB_SIDE.toFloat() / maxOf(bitmap.width, bitmap.height)
+            val fitted = if (scale < 1f) {
+                android.graphics.Bitmap.createScaledBitmap(
+                    bitmap,
+                    (bitmap.width * scale).toInt().coerceAtLeast(1),
+                    (bitmap.height * scale).toInt().coerceAtLeast(1),
+                    true,
+                )
+            } else {
+                bitmap
+            }
+            var quality = 85
+            var bytes: ByteArray
+            do {
+                bytes = java.io.ByteArrayOutputStream().also {
+                    fitted.compress(android.graphics.Bitmap.CompressFormat.JPEG, quality, it)
+                }.toByteArray()
+                quality -= 15
+            } while (bytes.size > THUMB_BYTES && quality > 20)
+            if (bytes.size > THUMB_BYTES) {
+                null
+            } else {
+                File(out).apply { parentFile?.mkdirs() }.writeBytes(bytes)
+                out
+            }
+        }
+    } catch (e: Exception) {
+        null
+    }
+
+    /**
+     * A picture of the photo at [path], tried each way there is, since some
+     * HEIC files, an iPhone's edited ones say, defeat one decoder and not
+     * another: Android's thumbnailer, which turns the photo upright; a
+     * sampled decode; and the small picture a camera keeps in the EXIF.
+     */
+    private fun photoPicture(path: String): android.graphics.Bitmap? {
+        if (Build.VERSION.SDK_INT >= 29) {
+            runCatching {
+                android.media.ThumbnailUtils.createImageThumbnail(File(path), android.util.Size(THUMB_SIDE, THUMB_SIDE), null)
+            }.getOrNull()?.let { return it }
+        }
+        runCatching {
+            val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            android.graphics.BitmapFactory.decodeFile(path, bounds)
+            var sample = 1
+            while (bounds.outWidth / (sample * 2) >= THUMB_SIDE && bounds.outHeight / (sample * 2) >= THUMB_SIDE) sample *= 2
+            android.graphics.BitmapFactory.decodeFile(path, android.graphics.BitmapFactory.Options().apply { inSampleSize = sample })
+        }.getOrNull()?.let { return it }
+        return runCatching { android.media.ExifInterface(path).thumbnailBitmap }.getOrNull()
+    }
+
+    /** A frame of the video at [path], from Android's thumbnailer, or else straight from the file. */
+    private fun videoPicture(path: String): android.graphics.Bitmap? {
+        if (Build.VERSION.SDK_INT >= 29) {
+            runCatching {
+                android.media.ThumbnailUtils.createVideoThumbnail(File(path), android.util.Size(THUMB_SIDE, THUMB_SIDE), null)
+            }.getOrNull()?.let { return it }
+        }
+        return runCatching {
+            val retriever = MediaMetadataRetriever()
+            try {
+                retriever.setDataSource(path)
+                retriever.getFrameAtTime(1_000_000, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                    ?: retriever.getFrameAtTime()
+            } finally {
+                runCatching { retriever.release() }
+            }
+        }.getOrNull()
+    }
+
+    /**
+     * When a photo was taken, from its EXIF date, read as the phone's local
+     * time unless the file gives its offset; null when it has none.
+     */
+    private fun photoTakenAtMs(path: String): Long? = try {
+        val exif = android.media.ExifInterface(path)
+        val stamp = exif.getAttribute("DateTimeOriginal") ?: exif.getAttribute("DateTime")
+        val offset = exif.getAttribute("OffsetTimeOriginal") ?: exif.getAttribute("OffsetTime")
+        stamp?.let {
+            val format = if (offset != null) "yyyy:MM:dd HH:mm:ssXXX" else "yyyy:MM:dd HH:mm:ss"
+            SimpleDateFormat(format, Locale.US).apply { isLenient = false }
+                .parse(if (offset != null) "$it$offset" else it)?.time
+        }?.takeIf { it > 0 }
+    } catch (e: Exception) {
+        null
+    }
+
+    /** When a video was recorded, from its own header, which keeps it in UTC; null when it doesn't say. */
+    private fun videoTakenAtMs(path: String): Long? = try {
+        val retriever = MediaMetadataRetriever()
+        try {
+            retriever.setDataSource(path)
+            retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DATE)?.let {
+                SimpleDateFormat("yyyyMMdd'T'HHmmss.SSS'Z'", Locale.US)
+                    .apply { timeZone = java.util.TimeZone.getTimeZone("UTC"); isLenient = false }
+                    .parse(it)?.time
+            }?.takeIf { it > 86_400_000L }
         } finally {
             runCatching { retriever.release() }
         }
@@ -744,6 +878,10 @@ class MainActivity : FlutterFragmentActivity() {
     private class NoRoom(val atLeast: Long) : IOException("No room to copy the shared file")
 
     private companion object {
+        /** Telegram's limits for a document's thumbnail. */
+        const val THUMB_SIDE = 320
+        const val THUMB_BYTES = 195_000
+
         const val WRITE_ACCESS_REQUEST = 7301
 
         /** Room a shared copy leaves free, so it never fills the phone to the last byte. */

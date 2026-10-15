@@ -16,6 +16,7 @@ const leftoverDirs = [
   'shared',
   'captured',
   'watched',
+  'takeout',
 ];
 
 /// Files in the app's cache that only setting up the drive needs: the

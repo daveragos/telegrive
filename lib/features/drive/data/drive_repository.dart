@@ -788,6 +788,45 @@ class DriveRepository {
     }
   }
 
+  /// Gives the drive file [fileId] the preview at [thumbnailPath] by sending
+  /// its own bytes, the copy at [path], again into the same message, since
+  /// Telegram takes a document's preview only with the document. Its caption
+  /// and everything in it stay as they are. A file in parts isn't touched.
+  Future<void> addPreview(String fileId, {required String path, required String thumbnailPath}) async {
+    final row = await _db.fileById(fileId);
+    final parts = await _db.partsOf(fileId);
+    if (row == null || parts.length != 1) {
+      throw const DriveException('This file is no longer in your drive, or is in parts.');
+    }
+    final edited = await _patiently(
+      () async => _messenger.replaceDocument(
+        _chatId,
+        parts.single.messageId,
+        path: path,
+        thumbnailPath: thumbnailPath,
+        caption: await fileCaption(await _fileManifest(row)),
+      ),
+    );
+    await ingest(edited);
+  }
+
+  /// Puts [file] in [albumIds] and stars it when [star] is set, in one edit,
+  /// keeping the albums and star it already has: what an import knows
+  /// about a photo the drive already holds.
+  Future<void> addDetails(
+    DriveFile file, {
+    List<String> albumIds = const [],
+    bool star = false,
+  }) async {
+    final current = await _db.albumIdsOf(file.id);
+    final albums = [...current, for (final id in albumIds) if (!current.contains(id)) id];
+    if (albums.length == current.length && (!star || file.starred)) return;
+    await _rewriteFile(
+      file,
+      (m) => m.copyWith(albums: albums, starred: m.starred || star),
+    );
+  }
+
   /// Rewrites the manifest of [file], starting from what the
   /// index holds so nothing the caller doesn't touch is lost, including
   /// keys only a newer version knows. While Telegram can't be reached, or

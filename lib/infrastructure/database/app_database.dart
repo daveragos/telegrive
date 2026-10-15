@@ -106,6 +106,10 @@ enum FileRowWrite {
     WatchedFolders,
     WatchedFiles,
     PendingEdits,
+    TakeoutParts,
+    TakeoutEntries,
+    TakeoutDetails,
+    TakeoutItems,
   ],
 )
 class AppDatabase extends _$AppDatabase {
@@ -147,7 +151,7 @@ class AppDatabase extends _$AppDatabase {
   }
 
   @override
-  int get schemaVersion => 12;
+  int get schemaVersion => 14;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -240,6 +244,19 @@ class AppDatabase extends _$AppDatabase {
         for (final TableInfo<Table, dynamic> table in [fileParts, folders, albums]) {
           await m.dropColumn(table, 'caption_layout');
         }
+      }
+      if (from < 13) {
+        await m.addColumn(transfers, transfers.albumIds);
+        await m.addColumn(transfers, transfers.starred);
+        await m.createTable(takeoutParts);
+        await m.createTable(takeoutEntries);
+        await m.createTable(takeoutDetails);
+        await m.createTable(takeoutItems);
+      }
+      if (from == 13) {
+        await m.addColumn(takeoutParts, takeoutParts.deletedAt);
+        await m.addColumn(takeoutItems, takeoutItems.albums);
+        await m.addColumn(takeoutItems, takeoutItems.starred);
       }
     },
   );
@@ -529,6 +546,55 @@ class AppDatabase extends _$AppDatabase {
               smallCopy: row.read(driveFiles.originalSize) != null,
             ),
     };
+  }
+
+  /// Of the files [ids], the photos and videos in one part with no preview
+  /// from Telegram, neither a thumbnail nor an inline one, and not in the
+  /// trash, smallest first.
+  Future<List<FileRow>> filesWithoutPreview(List<String> ids) async {
+    final out = <FileRow>[];
+    for (final slice in _slices(ids)) {
+      out.addAll(
+        await (select(driveFiles)..where(
+              (f) =>
+                  f.id.isIn(slice) &
+                  f.kind.isInValues([FileKind.image, FileKind.video]) &
+                  f.thumbnailFileId.isNull() &
+                  f.minithumbnail.isNull() &
+                  f.partCount.equals(1) &
+                  f.trashedAt.isNull(),
+            ))
+            .get(),
+      );
+    }
+    return out..sort((a, b) => a.size.compareTo(b.size));
+  }
+
+  /// Every whole file in the drive with what an import tells it by: its
+  /// name, its size (a small copy's original's), and when it was taken. A
+  /// split file with a part still missing isn't among them, so a photo is
+  /// never taken to be there before all of it is.
+  Future<List<({String id, String name, int size, DateTime? takenAt})>> fileMatchRows() async {
+    final rows =
+        await (selectOnly(driveFiles)
+              ..addColumns([
+                driveFiles.id,
+                driveFiles.name,
+                driveFiles.size,
+                driveFiles.originalSize,
+                driveFiles.takenAt,
+              ])
+              ..where(driveFiles.partsPresent.isBiggerOrEqual(driveFiles.partCount)))
+            .get();
+    return [
+      for (final row in rows)
+        (
+          id: row.read(driveFiles.id)!,
+          name: row.read(driveFiles.name)!,
+          size: row.read(driveFiles.originalSize) ?? row.read(driveFiles.size)!,
+          takenAt: row.read(driveFiles.takenAt),
+        ),
+    ];
   }
 
   /// The backup states whose drive file stands for a photo still on this
@@ -978,6 +1044,15 @@ class AppDatabase extends _$AppDatabase {
   Future<AlbumRow?> albumById(String id) =>
       (select(albums)..where((a) => a.id.equals(id))).getSingleOrNull();
 
+  /// The album called [name], whatever its case; the oldest when several
+  /// are.
+  Future<AlbumRow?> albumNamed(String name) async =>
+      (await (select(albums)
+                ..where((a) => a.name.lower().equals(name.toLowerCase()))
+                ..orderBy([(a) => OrderingTerm.asc(a.createdAt)]))
+              .get())
+          .firstOrNull;
+
   Stream<AlbumRow?> watchAlbum(String id) =>
       (select(albums)..where((a) => a.id.equals(id))).watchSingleOrNull();
 
@@ -1318,6 +1393,7 @@ class AppDatabase extends _$AppDatabase {
     await delete(watchedFiles).go();
     await delete(watchedFolders).go();
     await delete(pendingEdits).go();
+    await clearTakeout();
   });
 
   // ---------------------------------------------------------------------------
@@ -1637,6 +1713,81 @@ class AppDatabase extends _$AppDatabase {
   ).watch().map(
     (rows) => {for (final row in rows) row.read<String>('rule_id'): row.read<int>('n')},
   );
+
+  // ---------------------------------------------------------------------------
+  // Google Photos import (this phone only)
+  // ---------------------------------------------------------------------------
+
+  /// The parts of the export, in the order they were added.
+  Stream<List<TakeoutPartRow>> watchTakeoutParts() =>
+      (select(takeoutParts)..orderBy([(t) => OrderingTerm.asc(t.addedAt)])).watch();
+
+  Future<List<TakeoutPartRow>> takeoutPartList() =>
+      (select(takeoutParts)..orderBy([(t) => OrderingTerm.asc(t.addedAt)])).get();
+
+  Future<void> saveTakeoutPart(TakeoutPartsCompanion row) => into(takeoutParts).insertOnConflictUpdate(row);
+
+  /// Writes only the fields [changes] holds.
+  Future<void> updateTakeoutPart(String id, TakeoutPartsCompanion changes) =>
+      (update(takeoutParts)..where((t) => t.id.equals(id))).write(changes);
+
+  /// What part [partId] holds, in place of whatever an earlier read found.
+  Future<void> replaceTakeoutContents(
+    String partId,
+    List<TakeoutEntriesCompanion> entries,
+    List<TakeoutDetailsCompanion> details,
+  ) => transaction(() async {
+    await (delete(takeoutEntries)..where((t) => t.partId.equals(partId))).go();
+    await (delete(takeoutDetails)..where((t) => t.partId.equals(partId))).go();
+    await batch((b) {
+      b.insertAll(takeoutEntries, entries);
+      b.insertAll(takeoutDetails, details);
+    });
+  });
+
+  /// Takes a part off the list with where its files sit. The details read
+  /// from it stay, since photos in other parts may be matched with them, and
+  /// so does what the import settled about its photos, so they aren't sent
+  /// again.
+  Future<void> removeTakeoutPart(String id) => transaction(() async {
+    await (delete(takeoutEntries)..where((t) => t.partId.equals(id))).go();
+    await (delete(takeoutParts)..where((t) => t.id.equals(id))).go();
+  });
+
+  /// Marks a part deleted from the phone: where its files sat no longer
+  /// means anything, but it stays on the list, and its details stay.
+  Future<void> markTakeoutPartDeleted(String id, DateTime at) => transaction(() async {
+    await (delete(takeoutEntries)..where((t) => t.partId.equals(id))).go();
+    await updateTakeoutPart(id, TakeoutPartsCompanion(deletedAt: Value(at)));
+  });
+
+  Future<List<TakeoutEntryRow>> takeoutEntryList() => select(takeoutEntries).get();
+
+  Future<List<TakeoutDetailRow>> takeoutDetailList() => select(takeoutDetails).get();
+
+  /// What the import has settled so far, by key.
+  Future<Map<String, TakeoutItemRow>> takeoutLedger() async => {
+    for (final row in await select(takeoutItems).get()) row.key: row,
+  };
+
+  Future<void> saveTakeoutItems(Iterable<TakeoutItemsCompanion> rows) =>
+      batch((b) => b.insertAllOnConflictUpdate(takeoutItems, rows.toList()));
+
+  /// Gives the items in [keys] another go: they count as never tried.
+  Future<void> forgetTakeoutItems(List<String> keys) async {
+    for (final slice in _slices(keys)) {
+      await (delete(takeoutItems)..where((t) => t.key.isIn(slice))).go();
+    }
+  }
+
+  /// Forgets the import: its parts, what was read from them, and what it
+  /// settled. The files it sent stay in the drive.
+  Future<void> clearTakeout() => transaction(() async {
+    await delete(takeoutItems).go();
+    await delete(takeoutDetails).go();
+    await delete(takeoutEntries).go();
+    await delete(takeoutParts).go();
+  });
 
   // ---------------------------------------------------------------------------
   // Waiting changes (this phone only)

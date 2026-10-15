@@ -81,6 +81,8 @@ import 'package:telegrive/features/share/data/recent_destinations.dart';
 import 'package:telegrive/features/share/data/share_intake.dart';
 import 'package:telegrive/features/space/data/phone_usage.dart';
 import 'package:telegrive/features/space/presentation/space_screen.dart';
+import 'package:telegrive/features/takeout/data/takeout_import.dart';
+import 'package:telegrive/features/takeout/presentation/takeout_screen.dart';
 import 'package:telegrive/features/transfers/data/transfer_queue.dart';
 import 'package:telegrive/features/transfers/domain/transfer_wait.dart';
 import 'package:telegrive/features/transfers/presentation/mobile_data_prompt.dart';
@@ -222,6 +224,19 @@ class _Proxies extends ProxyController {
 
   @override
   Future<void> pingAll() async {}
+}
+
+/// A Google Photos import that stays where the screen should show it.
+class _Takeout extends TakeoutImport {
+  _Takeout(this._state);
+
+  final TakeoutState _state;
+
+  @override
+  TakeoutState build() => _state;
+
+  @override
+  void schedule({bool immediate = false}) {}
 }
 
 class _Backup extends BackupController {
@@ -987,6 +1002,7 @@ void main() {
           builder: (_, _) => const FreeUpPreviewScreen(),
         ),
         GoRoute(path: '/trash', builder: (_, _) => const TrashScreen()),
+        GoRoute(path: '/takeout', builder: (_, _) => const TakeoutScreen()),
         GoRoute(path: '/offline', builder: (_, _) => const OfflineScreen()),
         GoRoute(
           path: '/space',
@@ -3107,6 +3123,119 @@ void main() {
     await tester.drag(find.byType(ListView).first, const Offset(0, -900));
     await tester.pump(const Duration(milliseconds: 300));
     await snap(tester, 'backup_folders');
+  });
+
+  testWidgets('google photos steps', (tester) async {
+    await prepareData(tester);
+    await pumpApp(
+      tester,
+      location: '/takeout',
+      overrides: [takeoutImportProvider.overrideWith(() => _Takeout(const TakeoutState()))],
+    );
+    await snap(tester, 'google_photos_steps');
+  });
+
+  testWidgets('google photos importing', (tester) async {
+    await prepareData(tester);
+    final added = DateTime(2026, 10, 6, 21);
+    await pumpApp(
+      tester,
+      location: '/takeout',
+      seed: (db) async {
+        for (final (index, number) in [1, 2, 3, 5].indexed) {
+          await db.saveTakeoutPart(
+            TakeoutPartsCompanion.insert(
+              id: 'part-$number',
+              uri: 'content://downloads/$number',
+              name: 'takeout-20261005T101010Z-00$number.zip',
+              size: number == 5 ? 1340 * _mb : 2 << 30,
+              addedAt: added.add(Duration(seconds: index)),
+              readAt: Value(added),
+            ),
+          );
+        }
+      },
+      overrides: [
+        takeoutImportProvider.overrideWith(
+          () => _Takeout(
+            const TakeoutState(
+              phase: TakeoutPhase.importing,
+              running: true,
+              current: 'PXL_20230612_183344512.jpg',
+              working: true,
+              speed: 2.4 * 1024 * 1024,
+              timeLeft: Duration(minutes: 38),
+              uploadedBytes: 2150 << 20,
+              flights: [
+                TakeoutFlight(
+                  key: 'a',
+                  name: 'PXL_20230612_183344512.jpg',
+                  size: 4 << 20,
+                  step: TakeoutStep.uploading,
+                  transferId: 'none',
+                ),
+                TakeoutFlight(
+                  key: 'b',
+                  name: 'VID_20230613_090102.mp4',
+                  size: 182 << 20,
+                  step: TakeoutStep.extracting,
+                  part: 'part 2',
+                ),
+              ],
+              progress: TakeoutProgress(
+                total: 12430,
+                photos: 11220,
+                videos: 1210,
+                bytes: 7 << 30,
+                albums: 41,
+                sent: 3204,
+                inDrive: 3120,
+                leftBytes: 3 << 30,
+                sentBytes: 2100 << 20,
+                partsLeft: {'part-2': 812, 'part-3': 2340, 'part-5': 1406},
+                partsTotal: {'part-1': 2100, 'part-2': 2210, 'part-3': 2340, 'part-5': 1406},
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+    await snap(tester, 'google_photos_importing');
+  });
+
+  testWidgets('google photos done', (tester) async {
+    await prepareData(tester);
+    final added = DateTime(2026, 10, 9, 1);
+    await pumpApp(
+      tester,
+      location: '/takeout',
+      seed: (db) async {
+        for (var number = 1; number <= 15; number++) {
+          await db.saveTakeoutPart(
+            TakeoutPartsCompanion.insert(
+              id: 'part-$number',
+              uri: 'content://downloads/$number',
+              name: 'takeout-20261008T200000Z-${'$number'.padLeft(3, '0')}.zip',
+              size: number == 15 ? 1900 * _mb : 2 << 30,
+              addedAt: added.add(Duration(seconds: number)),
+              readAt: Value(added),
+              deletedAt: Value(added.add(const Duration(hours: 3))),
+            ),
+          );
+        }
+      },
+      overrides: [
+        takeoutImportProvider.overrideWith(
+          () => _Takeout(
+            const TakeoutState(
+              uploadedBytes: 9100 << 20,
+              progress: TakeoutProgress(total: 3349, photos: 2900, videos: 449, sent: 1232, inDrive: 2117, sentBytes: 9100 << 20),
+            ),
+          ),
+        ),
+      ],
+    );
+    await snap(tester, 'google_photos_done');
   });
 
   testWidgets('watched folder add', (tester) async {

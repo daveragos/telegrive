@@ -25,4 +25,30 @@ abstract final class MediaProbe {
       return null;
     }
   }
+
+  /// Writes a JPEG preview of the photo or [video] at [path] to [out], small
+  /// enough for a document's thumbnail on Telegram, and answers [out], or
+  /// null when the file makes no picture.
+  static Future<String?> thumbnail(String path, {required bool video, required String out}) async {
+    if (kIsWeb || !Platform.isAndroid) return null;
+    try {
+      return await _channel.invokeMethod<String>('thumbnail', {'path': path, 'video': video, 'out': out});
+    } catch (e) {
+      debugPrint('[MediaProbe] $e');
+      return null;
+    }
+  }
+
+  /// When the photo or [video] at [path] was taken, from the date its
+  /// camera wrote into it, or null when it holds none.
+  static Future<DateTime?> takenAt(String path, {required bool video}) async {
+    if (kIsWeb || !Platform.isAndroid) return null;
+    try {
+      final ms = await _channel.invokeMethod<int>('takenAtMs', {'path': path, 'video': video});
+      return ms == null ? null : DateTime.fromMillisecondsSinceEpoch(ms);
+    } catch (e) {
+      debugPrint('[MediaProbe] $e');
+      return null;
+    }
+  }
 }

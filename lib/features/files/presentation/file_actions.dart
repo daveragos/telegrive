@@ -39,6 +39,8 @@ import '../../drive/data/channel_messenger.dart';
 import '../../drive/data/drive_repository.dart';
 import '../../drive/data/drive_session.dart';
 import '../../drive/domain/drive_models.dart';
+import '../../takeout/data/takeout_files.dart';
+import '../../takeout/data/takeout_import.dart';
 import '../../transfers/data/transfer_policy.dart';
 import '../../transfers/data/transfer_queue.dart';
 import '../../transfers/domain/transfer_error.dart';
@@ -930,7 +932,8 @@ abstract final class FileActions {
   }
 
   /// The sheet behind the "+" button. It says which folder things land in,
-  /// and offers a scan or a photo only on a phone that can make one.
+  /// and offers a scan or a photo only on a phone that can make one, and a
+  /// Google Photos import only where zip parts can be picked.
   static Future<void> showCreateSheet(
     BuildContext context,
     WidgetRef ref, {
@@ -1037,6 +1040,14 @@ abstract final class FileActions {
                           () => createFolder(context, ref, parentId: folderId),
                         ),
                       ),
+                      if (TakeoutFiles.supported)
+                        _CreateOption(
+                          icon: Icons.photo_album_outlined,
+                          label: 'Import from Google Photos',
+                          detail:
+                              'Your library, albums and all, into $takeoutRootFolder',
+                          onTap: () => run(() async => context.push('/takeout')),
+                        ),
                       _CreateOption(
                         icon: Icons.telegram,
                         label: 'Save from a Telegram chat',

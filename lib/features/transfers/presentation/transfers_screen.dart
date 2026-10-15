@@ -12,6 +12,8 @@ import '../../../infrastructure/storage/device_storage.dart';
 import '../../backup/data/backup_controller.dart';
 import '../../backup/presentation/backup_card.dart';
 import '../../offline/data/offline_sync.dart';
+import '../../takeout/data/takeout_import.dart';
+import '../../takeout/presentation/takeout_status.dart';
 import '../data/transfer_queue.dart';
 import '../domain/transfer_error.dart';
 import '../domain/transfer_wait.dart';
@@ -22,9 +24,10 @@ class TransfersScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(transferQueueProvider);
-    // Photo backup, downloads to the phone and copies from chats are
-    // summarised in a line each rather than listed file by file; only their
-    // failures are listed.
+    // Photo backup, downloads to the phone, copies from chats and a Google
+    // Photos import are summarised in a line each rather than listed file
+    // by file; only their failures are listed, and the import keeps even
+    // those on its own screen.
     final active = state.pending
         .where((t) => t.origin == TransferOrigin.manual)
         .toList();
@@ -65,6 +68,7 @@ class TransfersScreen extends ConsumerWidget {
         .toList();
     final failed = finished.where((t) => t.status == TransferStatus.failed).length;
     final backingUp = ref.watch(backupControllerProvider.select((b) => b.isWorking));
+    final importing = takeoutWorthShowing(ref.watch(takeoutImportProvider));
 
     return Scaffold(
       appBar: AppBar(
@@ -78,7 +82,7 @@ class TransfersScreen extends ConsumerWidget {
           const SizedBox(width: Space.s),
         ],
       ),
-      body: active.isEmpty && finished.isEmpty && saves.isEmpty && copies.isEmpty && !backingUp
+      body: active.isEmpty && finished.isEmpty && saves.isEmpty && copies.isEmpty && !backingUp && !importing
           ? const EmptyState(
               title: 'Nothing is moving',
               message: 'Uploads and downloads show up here while they run.',
@@ -89,6 +93,10 @@ class TransfersScreen extends ConsumerWidget {
                 if (backingUp) ...[
                   const SectionHeader('Photo backup'),
                   const ListGroup(children: [BackupStatusLine()]),
+                ],
+                if (importing) ...[
+                  const SectionHeader('Google Photos'),
+                  const ListGroup(children: [TakeoutStatusLine()]),
                 ],
                 if (saves.any((t) => t.status != TransferStatus.cancelled)) ...[
                   const SectionHeader('Download to this phone'),
