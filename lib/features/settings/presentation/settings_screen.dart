@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../app/theme/tokens.dart';
 import '../../../core/config/app_config.dart';
 import '../../../core/format/formatters.dart';
+import '../../../core/widgets/brand_mark.dart';
 import '../../../core/widgets/common.dart';
 import '../../../infrastructure/notifications/app_notifications.dart';
 import '../../../infrastructure/storage/device_profile.dart';
@@ -457,6 +459,36 @@ class SettingsScreen extends ConsumerWidget {
                 title: const Text('Version'),
                 subtitle: const Text('Independent, not affiliated with Telegram'),
                 trailing: trailingValue(appVersion),
+              ),
+              ListTile(
+                title: const Text('Open-source licenses'),
+                subtitle: const Text('What Telegrive is built with'),
+                trailing: Icon(Icons.chevron_right_rounded, color: colors.text3),
+                onTap: () => showLicensePage(
+                  context: context,
+                  applicationName: AppConfig.appName,
+                  applicationVersion: appVersion,
+                  applicationIcon: const Padding(
+                    padding: EdgeInsets.all(Space.m),
+                    child: BrandMark(),
+                  ),
+                  useRootNavigator: true,
+                ),
+              ),
+              ListTile(
+                title: const Text('Source code'),
+                subtitle: const Text('On GitHub'),
+                trailing: Icon(Icons.open_in_new_rounded, size: 20, color: colors.text3),
+                onTap: () => launchUrl(AppConfig.sourceCode, mode: LaunchMode.externalApplication),
+              ),
+              ListTile(
+                title: const Text('Report a problem'),
+                subtitle: const Text('On GitHub, with this version filled in'),
+                trailing: Icon(Icons.open_in_new_rounded, size: 20, color: colors.text3),
+                onTap: () => launchUrl(
+                  AppConfig.problemReport(appVersion),
+                  mode: LaunchMode.externalApplication,
+                ),
               ),
             ],
           ),

@@ -7,6 +7,17 @@ import 'package:package_info_plus/package_info_plus.dart';
 abstract final class AppConfig {
   static const String appName = 'Telegrive';
 
+  /// Where the source code is.
+  static final Uri sourceCode = Uri.parse('https://github.com/daveragos/telegrive');
+
+  /// A new issue on GitHub from .github/ISSUE_TEMPLATE/bug_report.yml, with
+  /// this build's [version] filled in.
+  static Uri problemReport(String version) => Uri.https(
+    'github.com',
+    '/daveragos/telegrive/issues/new',
+    {'template': 'bug_report.yml', if (version.isNotEmpty) 'version': version},
+  );
+
   /// This build's version: `version` in pubspec.yaml without the build
   /// number, so 0.1.0 for `0.1.0+1`. Settings › About shows it, and
   /// Telegram's Devices list shows it beside the app's name. Where the

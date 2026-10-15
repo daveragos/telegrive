@@ -1,0 +1,57 @@
+name: Report a problem
+description: Something in Telegrive doesn't work as it should.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time. Please leave out phone numbers, codes,
+        and anything else from your Telegram account you wouldn't post in
+        public.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you saw, and what you expected to see instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: From opening the app, what to tap to make it happen.
+      placeholder: |
+        1. Open Files
+        2. Long-press a folder and choose Move
+        3. …
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Telegrive version
+      description: Settings › About › Version.
+      placeholder: 0.1.0
+    validations:
+      required: true
+  - type: input
+    id: android
+    attributes:
+      label: Android version
+      description: The phone's Settings › About phone › Android version.
+      placeholder: Android 15
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Phone
+      description: The phone's make and model.
+      placeholder: Pixel 8
+    validations:
+      required: true
+  - type: textarea
+    id: more
+    attributes:
+      label: Anything else
+      description: Screenshots, a screen recording, or how often it happens.

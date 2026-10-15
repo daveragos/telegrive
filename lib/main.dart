@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app/app.dart';
 import 'app/launch_action.dart';
+import 'app/licenses.dart';
 import 'features/backup/data/backup_worker.dart';
 import 'infrastructure/notifications/app_notifications.dart';
 import 'infrastructure/storage/device_profile.dart';
@@ -17,6 +18,7 @@ import 'infrastructure/telegram/telegram_client.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+  registerBundledLicenses();
 
   final (prefs, profile) = await (SharedPreferences.getInstance(), DeviceProfile.read()).wait;
   final container = ProviderContainer(

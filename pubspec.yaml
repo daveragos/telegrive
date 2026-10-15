@@ -58,6 +58,10 @@ flutter:
     - assets/brand/channel_photo.jpg
     # The mark, as BrandMark shows it.
     - assets/brand/mark.png
+    # Licenses of what the app carries beyond Dart packages, for Settings ›
+    # About › Open-source licenses (see lib/app/licenses.dart).
+    - assets/fonts/OFL.txt
+    - assets/licenses/
 
   # IBM Plex Sans (SIL Open Font License, assets/fonts/OFL.txt): the one
   # typeface, see DESIGN.md.
