@@ -204,13 +204,13 @@ class TransferItem {
   FileKind get fileKind =>
       FileKind.detect(fileName: row.name, mimeType: row.mimeType);
 
-  /// Queued on a wait that, at [now], is long enough that it doesn't count
-  /// as in flight. A paused transfer is never held: it waits for a person,
-  /// not for the clock.
+  /// Queued, or running while Telegrive waits to be opened, on a wait that,
+  /// at [now], is long enough that it doesn't count as in flight. A paused
+  /// transfer is never held: it waits for a person, not for the clock.
   bool heldAt(DateTime now) =>
-      status == TransferStatus.queued && (wait?.holdsAt(now) ?? false);
+      status.isActive && (wait?.holdsAt(now) ?? false);
 
-  /// Running, or queued with nothing holding it back for long at [now]. A
+  /// Running or queued, with nothing holding it back for long at [now]. A
   /// transfer on a long wait isn't counted, so nothing stays awake for it.
   bool inFlightAt(DateTime now) => status.isActive && !heldAt(now);
 
@@ -244,7 +244,7 @@ class TransfersState {
   List<TransferItem> get backupActive =>
       active.where((t) => t.origin == TransferOrigin.backup).toList();
 
-  /// Queued, but on a wait long enough that they don't count as in flight.
+  /// Waiting long enough that they don't count as in flight.
   List<TransferItem> get held => heldAt(DateTime.now());
 
   /// [held] as it stands at [now].
@@ -374,7 +374,10 @@ class _Tracked {
 /// by itself, and the row only says it is waiting for the network. A request
 /// that times out on the way is tried again a few times before the row is
 /// called failed. A row marked Wi-Fi only doesn't start on mobile data, and
-/// steps back into the queue when the phone moves onto it mid-way.
+/// steps back into the queue when the phone moves onto it mid-way. Once
+/// Android ends the time it gives transfers in the background, nothing
+/// starts and what runs waits until Telegrive is on screen again; see
+/// [waitForApp].
 ///
 /// Nothing big is written without room for it: a transfer that would fill
 /// the phone waits in the queue, says how much it needs, and starts by
@@ -489,6 +492,11 @@ class TransferQueue extends Notifier<TransfersState> {
   /// TDLib is waiting for a network: running transfers say so, and retries
   /// hold off until it has one.
   bool _offline = false;
+
+  /// Android ended the background time for transfers while Telegrive was
+  /// off screen: nothing starts, and what runs says it waits, until
+  /// [appOpened]. See [waitForApp].
+  bool _waitingForApp = false;
 
   StreamSubscription<td.File>? _fileSubscription;
   StreamSubscription<String>? _ingestSubscription;
@@ -929,6 +937,28 @@ class TransferQueue extends Notifier<TransfersState> {
     _pump();
   }
 
+  /// Android ended the time it gives transfers in the background while
+  /// Telegrive was off screen, so nothing starts until [appOpened], and
+  /// what runs says it waits for the app. A running transfer isn't
+  /// stopped: Android freezes the app soon after, which leaves TDLib's work
+  /// where it is, and it carries on from there once the app is open, the
+  /// way it does when the network comes back, rather than sending its part
+  /// again.
+  void waitForApp() {
+    if (_waitingForApp) return;
+    _waitingForApp = true;
+    _emit();
+  }
+
+  /// Telegrive is on screen again after [waitForApp]: what waited starts,
+  /// and what was running carries on.
+  void appOpened() {
+    if (!_waitingForApp) return;
+    _waitingForApp = false;
+    _emit();
+    _pump();
+  }
+
   /// Lets [ids] run on mobile data: they stop waiting for Wi-Fi and start
   /// now, or as soon as there is a free slot.
   Future<void> useMobileData(Iterable<String> ids) async {
@@ -1128,6 +1158,7 @@ class TransferQueue extends Notifier<TransfersState> {
                     notBefore: _notBeforeOf(r),
                     waitsForNetwork: _offline && _retrying.contains(r.id),
                     hasRoom: !_room.containsKey(r.id),
+                    waitsForApp: _waitingForApp,
                   ),
             )
             .toList()
@@ -1307,10 +1338,12 @@ class TransferQueue extends Notifier<TransfersState> {
   /// first, since nothing starts before it is over. Room comes next, since
   /// only the person can make it. Then Wi-Fi: it can
   /// take hours, so a row waiting for it is held even when it is also due
-  /// another try, and Use mobile data can let it go. A row being tried again
-  /// says it waits for the network only while TDLib has none or its wait
-  /// before the next try is running; after that it only waits for a free
-  /// slot.
+  /// another try, and Use mobile data can let it go. Each of those holds a
+  /// row with Telegrive open too; one free of them waits for the app while
+  /// Android has the background time ended, running or not. A row being
+  /// tried again says it waits for the network only while TDLib has none
+  /// or its wait before the next try is running; after that it only waits
+  /// for a free slot.
   TransferWait? _waitOf(TransferRow row, DateTime now) {
     switch (row.status) {
       case TransferStatus.queued:
@@ -1325,12 +1358,14 @@ class TransferQueue extends Notifier<TransfersState> {
         if (TransferPolicy.waitsForWifi(row, _network)) {
           return const WaitingForWifi();
         }
+        if (_waitingForApp) return const WaitingForApp();
         if (retrying &&
             (_offline || (_notBefore[row.id]?.isAfter(now) ?? false))) {
           return const WaitingForNetwork();
         }
         return null;
       case TransferStatus.running:
+        if (_waitingForApp) return const WaitingForApp();
         return _offline ? const WaitingForNetwork() : null;
       default:
         return null;

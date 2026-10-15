@@ -374,6 +374,12 @@ value goes back onto the line exactly as it came.
   the others hold off too.
 - Before writing a big copy, a part or a download, the phone is checked
   for room; without it the transfer waits and says how much it needs.
+- On Android 15 and later the service gets six hours in the background a
+  day. When Android ends it there, nothing new starts and a notification
+  says Android paused background transfers; opening Telegrive gives the
+  six hours back, and everything carries on, photo backup and an import
+  included. A running transfer isn't called off: Android freezes the app,
+  which leaves TDLib's work where it was, as a dropped connection does.
 - Starting 50 MB or more on mobile data asks first. Transfers of 200 MB or
   more started on Wi-Fi step back when the phone moves to mobile data (a
   setting, on by default). A hotspot counts as mobile data everywhere.
@@ -602,6 +608,15 @@ one.
   delivers the first only, and says so.
 - When Telegram asks for a pause longer than five minutes, Telegrive lets
   the phone sleep, so a transfer may wait until the app is next opened.
+- A first backup or import that runs more than six hours with Telegrive
+  off screen waits for it to be opened (Android 15 and later). Android
+  14's user-initiated data transfer jobs have no daily limit, but one can
+  only be started while the app is on screen, so backup passes and folder
+  checks that begin in the background would still need the service; they
+  also need a job service on the native side, take an estimate of the
+  bytes from which Android decides how long the job may run, and don't
+  exist before Android 14. One open a day carries on, so Telegrive keeps
+  the one service.
 - Files you open, stream or download count toward the monthly data limit
   but are never held back by it.
 - While the app is closed, the job that notices new photos doesn't know

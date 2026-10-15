@@ -40,8 +40,9 @@ abstract final class TransferPolicy {
   /// try is due ([notBefore]: Telegram's pause, or a retry after a dropped
   /// connection), while it is being retried and Telegram still waits for a
   /// network ([waitsForNetwork]), while it waits for Wi-Fi on [network] (see
-  /// [waitsForWifi]), or while the phone lacks the room it needs
-  /// ([hasRoom]).
+  /// [waitsForWifi]), while the phone lacks the room it needs ([hasRoom]),
+  /// or while Android has ended the background time for transfers and
+  /// Telegrive isn't on screen yet ([waitsForApp]).
   static bool mayRun(
     TransferRow row, {
     required DateTime now,
@@ -49,9 +50,11 @@ abstract final class TransferPolicy {
     DateTime? notBefore,
     bool waitsForNetwork = false,
     bool hasRoom = true,
+    bool waitsForApp = false,
   }) =>
       !(notBefore?.isAfter(now) ?? false) &&
       !waitsForNetwork &&
       !waitsForWifi(row, network) &&
-      hasRoom;
+      hasRoom &&
+      !waitsForApp;
 }

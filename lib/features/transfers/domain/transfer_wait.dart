@@ -45,6 +45,18 @@ final class WaitingForWifi extends TransferWait {
   bool holdsAt(DateTime now) => true;
 }
 
+/// Android ended the time it gives Telegrive's transfers in the background,
+/// six hours a day, and nothing moves until Telegrive is on screen again,
+/// which gives that time back. A queued transfer doesn't start meanwhile,
+/// and a running one keeps what TDLib has sent or fetched and carries on
+/// from there. It can wait for hours, so it never counts as in flight.
+final class WaitingForApp extends TransferWait {
+  const WaitingForApp();
+
+  @override
+  bool holdsAt(DateTime now) => true;
+}
+
 /// The phone has [free] bytes and the transfer [needed] bytes free before
 /// it writes anything. It starts by itself once there is room, which may
 /// take until someone deletes something, so it never counts as in flight.

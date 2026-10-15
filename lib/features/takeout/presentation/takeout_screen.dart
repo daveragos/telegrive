@@ -558,6 +558,7 @@ class _FlightRow extends ConsumerWidget {
         WaitingForNetwork() => 'Waiting for network',
         WaitingForWifi() => 'Waiting for Wi-Fi',
         WaitingForRoom(:final sentence) => sentence,
+        WaitingForApp() => 'Paused by Android',
         null => switch (row) {
           final row? when row.doneBytes > 0 => [
             '${((fraction ?? 0) * 100).floor()}%',

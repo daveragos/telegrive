@@ -34,6 +34,12 @@ import 'transfer_queue.dart';
 /// The notification shows the one-colour mark, and Pause while transfers
 /// the person started are running; photo backup has its own place to be
 /// stopped.
+///
+/// Android gives a data transfer service six hours in the background a
+/// day, and ends it when they are used up. The service tells the app
+/// ([timedOutSignal]), and from then on nothing tries to start it again,
+/// since Android won't allow it, until Telegrive is on screen, which gives
+/// the six hours back ([onScreen]).
 class TransferKeepAlive {
   TransferKeepAlive(this._prefs);
 
@@ -47,6 +53,10 @@ class TransferKeepAlive {
   /// The id of the Pause button, which the service's isolate sends on to
   /// the app's.
   static const String pauseButton = 'pause';
+
+  /// What the service's isolate sends the app's when Android ends the
+  /// service at its time limit.
+  static const String timedOutSignal = 'timed-out';
 
   static const int _serviceId = 4107;
   static const Duration _updateEvery = Duration(milliseconds: 1500);
@@ -86,6 +96,14 @@ class TransferKeepAlive {
   /// Where a Google Photos import stood at the last update.
   TakeoutState? _takeout;
 
+  /// Android ended the service at its time limit, and won't let it start
+  /// again until Telegrive is on screen.
+  bool _timedOut = false;
+
+  /// Whether Android ended the service at its time limit and Telegrive
+  /// hasn't been on screen since.
+  bool get timedOut => _timedOut;
+
   static void _init() {
     FlutterForegroundTask.init(
       androidNotificationOptions: AndroidNotificationOptions(
@@ -111,12 +129,15 @@ class TransferKeepAlive {
   /// have short gaps between files that must not bounce the service off and
   /// on, since Android won't let an app in the background start it again),
   /// or transfers that only just began to wait for Wi-Fi. Looking through
-  /// the library sends nothing, so it holds no wake or Wi-Fi lock.
+  /// the library sends nothing, so it holds no wake or Wi-Fi lock. Once
+  /// Android has ended the service at its time limit, nothing is until
+  /// Telegrive is on screen.
   bool _isActive(TransfersState state, BackupState backup) =>
-      state.activeCount > 0 ||
-      _backingUp(state, backup) ||
-      _sendingFromFolders(state) ||
-      _lingering;
+      !_timedOut &&
+      (state.activeCount > 0 ||
+          _backingUp(state, backup) ||
+          _sendingFromFolders(state) ||
+          _lingering);
 
   bool get _lingering {
     final since = _heldSince;
@@ -267,6 +288,31 @@ class TransferKeepAlive {
     if (pending != null) await update(pending.$1, pending.$2, watching: _watching, takeout: _takeout);
   }
 
+  /// Android ended the service at its time limit. It has stopped already,
+  /// and the timers that would bring it back are dropped, since Android
+  /// won't let it start again from the background.
+  void stoppedAtTimeLimit() {
+    _timedOut = true;
+    _running = false;
+    _pending = null;
+    _stopTimer?.cancel();
+    _stopTimer = null;
+    _refreshTimer?.cancel();
+    _refreshTimer = null;
+    _lingerTimer?.cancel();
+    _lingerTimer = null;
+    _heldSince = null;
+  }
+
+  /// Telegrive is on screen, which gives the service its time back: it
+  /// starts again for whatever is still to do.
+  Future<void> onScreen() async {
+    if (!_timedOut) return;
+    _timedOut = false;
+    final latest = _latest;
+    if (latest != null) await update(latest.$1, latest.$2, watching: _watching, takeout: _takeout);
+  }
+
   Future<void> _stop() async {
     _running = false;
     _refreshTimer?.cancel();
@@ -363,22 +409,30 @@ class TransferKeepAlive {
   }
 }
 
-/// Runs inside the service's own isolate. It has nothing to do — the
+/// Runs inside the service's own isolate. It has little to do — the
 /// service exists only to keep the process, and TDLib, alive.
 @pragma('vm:entry-point')
 void transferServiceEntryPoint() {
-  FlutterForegroundTask.setTaskHandler(_IdleTaskHandler());
+  FlutterForegroundTask.setTaskHandler(TransferTaskHandler());
 }
 
-class _IdleTaskHandler extends TaskHandler {
+/// The service's side: taps and buttons on its notification, and the end
+/// Android puts to it at its time limit, each passed on to the app.
+@visibleForTesting
+class TransferTaskHandler extends TaskHandler {
   @override
   Future<void> onStart(DateTime timestamp, TaskStarter starter) async {}
 
   @override
   void onRepeatEvent(DateTime timestamp) {}
 
+  /// The app's isolate holds the queue and posts the notice, so it hears
+  /// when Android ends the service at its time limit ([isTimeout]). Any
+  /// other end is the app's own doing.
   @override
-  Future<void> onDestroy(DateTime timestamp, bool isTimeout) async {}
+  Future<void> onDestroy(DateTime timestamp, bool isTimeout) async {
+    if (isTimeout) FlutterForegroundTask.sendDataToMain(TransferKeepAlive.timedOutSignal);
+  }
 
   @override
   void onNotificationPressed() =>
@@ -396,6 +450,12 @@ class _IdleTaskHandler extends TaskHandler {
 /// 'Transfers paused' after Pause, cleared once nothing is paused, and one
 /// summary when a batch finishes while Telegrive is off screen. On screen,
 /// Home and the snacks already say it.
+///
+/// When Android ends the service at its time limit while Telegrive is off
+/// screen, the queue waits for the app and a notice says so. Once Telegrive
+/// is on screen the notice goes and everything carries on. One that ends
+/// while Telegrive is on screen starts again at once, since being there is
+/// what gives the time back.
 final transferKeepAliveProvider = Provider<void>((ref) {
   if (kIsWeb || !Platform.isAndroid) return;
   final keeper = TransferKeepAlive(ref.read(preferencesProvider));
@@ -412,6 +472,9 @@ final transferKeepAliveProvider = Provider<void>((ref) {
   // some; null while none are.
   DateTime? batchSince;
   void noteBatch(TransfersState state) {
+    // What Android paused isn't finished: the batch goes on once the app
+    // is open.
+    if (keeper.timedOut) return;
     final yours = state.active.any((t) => t.origin != TransferOrigin.backup);
     if (yours) {
       batchSince ??= DateTime.now();
@@ -439,11 +502,35 @@ final transferKeepAliveProvider = Provider<void>((ref) {
     await TransferNotifications.showPaused(count);
   }
 
+  Future<void> stoppedAtTimeLimit() async {
+    keeper.stoppedAtTimeLimit();
+    if (WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed) {
+      await keeper.onScreen();
+      return;
+    }
+    ref.read(transferQueueProvider.notifier).waitForApp();
+    await TransferNotifications.showTimedOut();
+    // Opened while the notice went up.
+    if (!keeper.timedOut) await TransferNotifications.clearTimedOut();
+  }
+
+  void carryOn() {
+    if (!keeper.timedOut) return;
+    unawaited(TransferNotifications.clearTimedOut());
+    unawaited(keeper.onScreen());
+    ref.read(transferQueueProvider.notifier).appOpened();
+  }
+
   void onData(Object data) {
     if (data == TransferKeepAlive.pauseButton) unawaited(pauseYours());
+    if (data == TransferKeepAlive.timedOutSignal) unawaited(stoppedAtTimeLimit());
   }
 
   FlutterForegroundTask.addTaskDataCallback(onData);
+  final lifecycle = AppLifecycleListener(onResume: carryOn);
+  // Android may have closed the app while it waited; it is open now, and
+  // what waited carries on as it loads.
+  unawaited(TransferNotifications.clearTimedOut());
   ref.listen<TransfersState>(transferQueueProvider, (_, next) {
     push();
     noteBatch(next);
@@ -459,6 +546,7 @@ final transferKeepAliveProvider = Provider<void>((ref) {
     (_, _) => push(),
   );
   ref.onDispose(() {
+    lifecycle.dispose();
     FlutterForegroundTask.removeTaskDataCallback(onData);
     unawaited(
       keeper.update(TransfersState.empty, const BackupState(phase: BackupPhase.off)),

@@ -223,8 +223,9 @@ typedef _Group = ({String verb, List<TransferItem> items, String tail});
 
 /// The notifications about the person's own transfers, on the quiet
 /// 'Finished transfers' channel: a summary when a batch finishes in the
-/// background, and 'Transfers paused' after Pause in the shade. Their
-/// buttons open the app, which then does what they say.
+/// background, 'Transfers paused' after Pause in the shade, and a word
+/// when Android pauses everything at its time limit. Their buttons open
+/// the app, which then does what they say.
 abstract final class TransferNotifications {
   static const String retryAction = 'retry';
   static const String resumeAction = 'resume';
@@ -249,7 +250,7 @@ abstract final class TransferNotifications {
       AndroidNotificationDetails(
         AppNotifications.transfersDoneChannel,
         'Finished transfers',
-        channelDescription: 'Tells you when uploads and downloads finish in the background',
+        channelDescription: 'Tells you when uploads and downloads finish or pause in the background',
         importance: Importance.low,
         priority: Priority.low,
         playSound: false,
@@ -281,4 +282,24 @@ abstract final class TransferNotifications {
   );
 
   static Future<void> clearPaused() => AppNotifications.cancel(AppNotifications.transfersPausedId);
+
+  /// What the notice says when Android ends the background time for
+  /// transfers: what happened, and that opening Telegrive carries on, which
+  /// is what gives that time back.
+  static const String timedOutTitle = 'Android paused background transfers';
+  static const String timedOutBody =
+      'Open Telegrive to carry on. Android limits transfers in the background to 6 hours a day.';
+
+  /// Says that Android paused the transfers, the photo backup and the
+  /// import at its time limit. A tap opens Transfers, and opening the app
+  /// any way at all carries on.
+  static Future<void> showTimedOut() => AppNotifications.show(
+    id: AppNotifications.transfersTimedOutId,
+    title: timedOutTitle,
+    body: timedOutBody,
+    android: _details(),
+    payload: listPayload,
+  );
+
+  static Future<void> clearTimedOut() => AppNotifications.cancel(AppNotifications.transfersTimedOutId);
 }

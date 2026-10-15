@@ -22,8 +22,8 @@ abstract final class AppNotifications {
   /// foreground service.
   static const String transfersChannel = 'transfers';
 
-  /// One quiet notification when transfers finish in the background, or are
-  /// paused from the shade.
+  /// One quiet notification when transfers finish in the background, are
+  /// paused from the shade, or are paused by Android at its time limit.
   static const String transfersDoneChannel = 'transfer_done';
 
   /// The reminder that new photos are waiting to be backed up.
@@ -32,6 +32,7 @@ abstract final class AppNotifications {
   static const int backupReminderId = 2001;
   static const int transfersFinishedId = 2002;
   static const int transfersPausedId = 2003;
+  static const int transfersTimedOutId = 2004;
 
   /// The one-colour mark, with its creases open.
   static const String icon = 'ic_stat_telegrive';

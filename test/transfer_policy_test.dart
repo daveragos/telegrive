@@ -146,6 +146,17 @@ void main() {
         isFalse,
       );
     });
+
+    test('nothing starts while Android has the background time ended', () {
+      expect(
+        TransferPolicy.mayRun(_row(), now: _now, network: _wifi, waitsForApp: true),
+        isFalse,
+      );
+      expect(
+        TransferPolicy.mayRun(_row(), now: _now, network: _wifi, waitsForApp: false),
+        isTrue,
+      );
+    });
   });
 
   group('the queue asks before it starts a row', () {
