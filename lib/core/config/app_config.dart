@@ -1,11 +1,25 @@
 import 'package:flutter/foundation.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
-/// App-wide constants. Telegram API credentials live next door in the
-/// git-ignored `telegram_api.dart`, so every build ships with them and people
-/// only ever sign in with their phone.
+import 'telegram_api.dart';
+
+/// App-wide constants.
 abstract final class AppConfig {
   static const String appName = 'Telegrive';
+
+  /// The app's Telegram API credentials, built in so people only ever sign
+  /// in with their phone. A build given TELEGRAM_API_ID and
+  /// TELEGRAM_API_HASH, with `--dart-define` or `--dart-define-from-file`,
+  /// uses those, as release builds do; otherwise they come from the
+  /// git-ignored telegram_api.dart.
+  static const int telegramApiId = int.fromEnvironment(
+    'TELEGRAM_API_ID',
+    defaultValue: TelegramApi.apiId,
+  );
+  static const String telegramApiHash = String.fromEnvironment(
+    'TELEGRAM_API_HASH',
+    defaultValue: TelegramApi.apiHash,
+  );
 
   /// Where the source code is.
   static final Uri sourceCode = Uri.parse('https://github.com/daveragos/telegrive');

@@ -52,8 +52,10 @@ key.properties
 *.jks
 *.keystore
 
-# Telegram API credentials (template: telegram_api.example.dart).
+# Telegram API credentials (template: telegram_api.example.dart), and the
+# same two for --dart-define-from-file.
 /lib/core/config/telegram_api.dart
+telegram_api.json
 
 # Golden-test failure diffs.
 **/failures/

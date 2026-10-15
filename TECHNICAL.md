@@ -672,14 +672,27 @@ has the records and the field names.
 
 ## Development
 
-The app's Telegram API credentials live in the git-ignored
-`lib/core/config/telegram_api.dart`. On a fresh clone, copy the template
-and fill in an `api_id` and `api_hash` from
-[my.telegram.org](https://my.telegram.org/apps) › API development tools:
+The app signs in to Telegram with an `api_id` and `api_hash` from
+[my.telegram.org](https://my.telegram.org/apps) › API development tools.
+Every build needs the git-ignored `lib/core/config/telegram_api.dart`, so
+on a fresh clone copy the template:
 
 ```bash
 cp lib/core/config/telegram_api.example.dart lib/core/config/telegram_api.dart
 ```
+
+Then either fill in `apiId` and `apiHash` there, or leave the template's
+blanks and give the build the credentials, as the release workflow does.
+Credentials given to the build win over the file's:
+
+```bash
+flutter run --dart-define=TELEGRAM_API_ID=12345 --dart-define=TELEGRAM_API_HASH=0123abcd…
+flutter run --dart-define-from-file=telegram_api.json
+```
+
+`telegram_api.json` holds the same two,
+`{"TELEGRAM_API_ID": "12345", "TELEGRAM_API_HASH": "0123abcd…"}`, and git
+ignores it.
 
 TDLib comes from the app itself, built from source: the TDLib commit
 handy_tdlib's Dart API was generated from, with OpenSSL linked in. Before

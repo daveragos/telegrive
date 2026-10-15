@@ -9,7 +9,6 @@ import 'package:handy_tdlib/handy_tdlib.dart' show TdPlugin;
 import 'package:path_provider/path_provider.dart';
 
 import '../../core/config/app_config.dart';
-import '../../core/config/telegram_api.dart';
 import 'device_info.dart';
 import 'secure_store.dart';
 import 'td_library.dart';
@@ -446,8 +445,8 @@ class TelegramClient {
       useChatInfoDatabase: true,
       useMessageDatabase: true,
       useSecretChats: false,
-      apiId: TelegramApi.apiId,
-      apiHash: TelegramApi.apiHash,
+      apiId: AppConfig.telegramApiId,
+      apiHash: AppConfig.telegramApiHash,
       systemLanguageCode: Platform.localeName.split('_').first,
       deviceModel: device.model,
       systemVersion: device.system,
