@@ -60,6 +60,7 @@ class SettingsScreen extends ConsumerWidget {
     final saveMemory = ref.watch(saveMemoryProvider);
     final profile = ref.watch(deviceProfileProvider);
     final currentSession = ref.watch(currentSessionProvider).value;
+    final appVersion = ref.watch(appVersionProvider).value ?? '';
     final accountTtl = ref.watch(accountTtlProvider).value;
     final checkupLastRun = ref.watch(checkupLastRunProvider);
     final pickerSupported = ref.watch(pickerSupportedProvider);
@@ -355,7 +356,7 @@ class SettingsScreen extends ConsumerWidget {
               ListTile(
                 title: const Text('This session'),
                 subtitle: Text(
-                  '${currentSession ?? '${AppConfig.appName} ${AppConfig.appVersion}'}. '
+                  '${currentSession ?? '${AppConfig.appName} $appVersion'}. '
                   'Ending it in Telegram signs you out here; your files stay in the channel.',
                   style: context.text.bodySmall?.copyWith(fontFeatures: tabularFigures),
                 ),
@@ -455,7 +456,7 @@ class SettingsScreen extends ConsumerWidget {
               ListTile(
                 title: const Text('Version'),
                 subtitle: const Text('Independent, not affiliated with Telegram'),
-                trailing: trailingValue(AppConfig.appVersion),
+                trailing: trailingValue(appVersion),
               ),
             ],
           ),

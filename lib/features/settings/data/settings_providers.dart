@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/config/app_config.dart';
 import '../../../infrastructure/notifications/app_notifications.dart';
 import '../../../infrastructure/storage/preferences.dart';
 import '../../space/data/phone_usage.dart';
@@ -29,3 +30,6 @@ final cacheSizeProvider = FutureProvider.autoDispose<int>(
 final notificationsEnabledProvider = FutureProvider.autoDispose<bool>(
   (ref) => AppNotifications.enabled(),
 );
+
+/// This build's version, as About shows it.
+final appVersionProvider = FutureProvider<String>((ref) => AppConfig.appVersion());

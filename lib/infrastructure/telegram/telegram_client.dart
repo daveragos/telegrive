@@ -436,7 +436,7 @@ class TelegramClient {
 
     // Telegram's Devices list names the session after these, so the person
     // can tell this phone from another one signed in with Telegrive.
-    final device = await DeviceInfo.read();
+    final (device, version) = await (DeviceInfo.read(), AppConfig.appVersion()).wait;
     td.SetTdlibParameters parameters(String key) => td.SetTdlibParameters(
       useTestDc: false,
       databaseDirectory: databaseDir.path,
@@ -451,7 +451,7 @@ class TelegramClient {
       systemLanguageCode: Platform.localeName.split('_').first,
       deviceModel: device.model,
       systemVersion: device.system,
-      applicationVersion: AppConfig.appVersion,
+      applicationVersion: version,
     );
 
     try {

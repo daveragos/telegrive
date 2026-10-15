@@ -26,6 +26,7 @@ dependencies:
   local_auth: ^3.0.2
   mime: ^2.1.0
   open_filex: ^4.7.0
+  package_info_plus: ^10.2.2
   path: ^1.9.1
   path_provider: ^2.1.6
   pdfrx: ^2.6.5
