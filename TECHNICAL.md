@@ -487,7 +487,9 @@ files.
   `MicroVideo="1"`) holds its movement, so the video is left out; an
   iPhone's doesn't, so its video goes up too. Videos an earlier version sent
   beside photos the drive already held are offered for the trash, and
-  recorded as held by their photos.
+  recorded as held by their photos. Photos shows one tile for each photo:
+  a Live Photo's video, and an original beside its `-edited` copy, stay in
+  Files but not in the grid.
 - **Nothing lost quietly.** Pausing calls off the uploads under way, which
   deletes the message Telegram was still receiving; the copy stays on the
   phone and goes up again on resume. After every full read of the channel,

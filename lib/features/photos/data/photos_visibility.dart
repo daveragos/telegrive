@@ -1,11 +1,13 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/files/file_kind.dart';
 import '../../../core/format/formatters.dart';
 import '../../../infrastructure/database/app_database.dart';
 import '../../../infrastructure/storage/preferences.dart';
 import '../../backup/data/backup_controller.dart';
 import '../../drive/data/drive_repository.dart';
 import '../../drive/domain/drive_models.dart';
+import '../../takeout/domain/takeout_catalog.dart';
 
 /// The drive folders whose photos stay out of the Photos view, by id with
 /// their names: each folder named in [hiddenNames] that sits directly inside
@@ -41,6 +43,30 @@ List<DriveFile> filterTimeline(
   return [
     for (final file in media)
       if (!hiddenIds.contains(file.folderId)) file,
+  ];
+}
+
+/// [media] with one tile for each photo: a video beside a photo of the same
+/// name, in the same folder, is that Live Photo's movement and goes, and an
+/// original beside its edited copy (`IMG_1-edited.jpg`) goes, leaving the
+/// edited one. Both stay in Files. The order is kept.
+List<DriveFile> oneTilePerPhoto(List<DriveFile> media) {
+  String stem(String name) {
+    final dot = name.lastIndexOf('.');
+    return (dot <= 0 ? name : name.substring(0, dot)).toLowerCase();
+  }
+
+  String place(DriveFile file) => '${file.folderId}/${stem(file.name)}';
+  final photos = {
+    for (final file in media)
+      if (file.kind == FileKind.image) place(file),
+  };
+  return [
+    for (final file in media)
+      if (!(file.kind == FileKind.video && photos.contains(place(file))) &&
+          !(file.kind == FileKind.image &&
+              takeoutEditedSuffixes.any((suffix) => photos.contains('${place(file)}$suffix'))))
+        file,
   ];
 }
 
@@ -83,7 +109,8 @@ class RevealHidden extends Notifier<bool> {
 final revealHiddenProvider = NotifierProvider<RevealHidden, bool>(RevealHidden.new);
 
 /// The timeline as the Photos tab, its viewer, and Favorites and Videos show
-/// it: without the kept-out folders unless they are revealed.
+/// it: without the kept-out folders unless they are revealed, and with one
+/// tile for each photo.
 final photosTimelineProvider = Provider.autoDispose<AsyncValue<List<DriveFile>>>((ref) {
   final hidden = ref.watch(hiddenBackupFoldersProvider);
   final reveal = ref.watch(revealHiddenProvider);
@@ -91,7 +118,7 @@ final photosTimelineProvider = Provider.autoDispose<AsyncValue<List<DriveFile>>>
   // Until the folders are known, a kept-out screenshot would flash past.
   if (!hidden.hasValue && !hidden.hasError) return const AsyncLoading();
   final ids = (hidden.value ?? const {}).keys.toSet();
-  return media.whenData((files) => filterTimeline(files, ids, reveal: reveal));
+  return media.whenData((files) => oneTilePerPhoto(filterTimeline(files, ids, reveal: reveal)));
 });
 
 /// How many timeline files are in kept-out folders, and those folders'

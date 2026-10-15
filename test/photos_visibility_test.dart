@@ -112,6 +112,53 @@ void main() {
     });
   });
 
+  group('oneTilePerPhoto', () {
+    DriveFile file(String name, FileKind kind, {String folderId = 'y2025'}) => DriveFile(
+      id: '$folderId/$name',
+      folderId: folderId,
+      name: name,
+      mimeType: kind == FileKind.video ? 'video/mp4' : 'image/jpeg',
+      kind: kind,
+      size: 100,
+      createdAt: now,
+      modifiedAt: now,
+      partCount: 1,
+      starred: false,
+    );
+    List<String> names(List<DriveFile> files) => [for (final f in files) f.name];
+
+    test('a Live Photo shows as its photo, not also its video', () {
+      final media = [
+        file('IMG_0094.HEIC', FileKind.image),
+        file('IMG_0094.MP4', FileKind.video),
+        file('20251008_175705.jpg', FileKind.image),
+        file('20251008_175705.MP4', FileKind.video),
+        file('VID_20251009_100000.mp4', FileKind.video),
+      ];
+      expect(names(oneTilePerPhoto(media)), ['IMG_0094.HEIC', '20251008_175705.jpg', 'VID_20251009_100000.mp4']);
+    });
+
+    test('an edited photo shows in place of its original', () {
+      final media = [
+        file('Screenshot_Maps.jpg', FileKind.image),
+        file('Screenshot_Maps-edited.jpg', FileKind.image),
+        file('IMG_2-bearbeitet.jpg', FileKind.image),
+        file('IMG_2.jpg', FileKind.image),
+      ];
+      expect(names(oneTilePerPhoto(media)), ['Screenshot_Maps-edited.jpg', 'IMG_2-bearbeitet.jpg']);
+    });
+
+    test('only files in the same folder are paired', () {
+      final media = [
+        file('IMG_1.jpg', FileKind.image, folderId: 'camera'),
+        file('IMG_1.mp4', FileKind.video, folderId: 'download'),
+        file('IMG_3.jpg', FileKind.image, folderId: 'camera'),
+        file('IMG_3-edited.jpg', FileKind.image, folderId: 'edits'),
+      ];
+      expect(oneTilePerPhoto(media), hasLength(4));
+    });
+  });
+
   group('keptOutSentence', () {
     test('names one or two folders and counts the rest', () {
       expect(keptOutSentence(['Screenshots'], revealed: false), 'Screenshots is kept out of this view');
