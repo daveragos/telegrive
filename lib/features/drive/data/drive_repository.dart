@@ -392,6 +392,14 @@ class DriveRepository {
     return row == null ? null : DriveFile.fromRow(row);
   }
 
+  /// Whether file [id] is in the drive with every part of it: a split file
+  /// is in the index from its first part, but only whole once the last one
+  /// lands. What decides that an upload finished asks this.
+  Future<bool> isWhole(String id) async {
+    final row = await _db.fileById(id);
+    return row != null && row.partsPresent >= row.partCount;
+  }
+
   Future<DriveFolder?> folderById(String id) async {
     final row = await _db.folderById(id);
     return row == null ? null : DriveFolder.fromRow(row);

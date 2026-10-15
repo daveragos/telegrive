@@ -2045,7 +2045,7 @@ class TransferQueue extends Notifier<TransfersState> {
     );
     if (matches.isEmpty) return;
     final file = await _repository.fileById(fileId);
-    if (file == null) return;
+    if (file == null || !await _repository.isWhole(fileId)) return;
     for (final row in matches.toList()) {
       if (_replacing.contains(row.id) &&
           (file.isSmallCopy || file.size != row.totalBytes)) {
@@ -2109,7 +2109,9 @@ class TransferQueue extends Notifier<TransfersState> {
         );
         continue;
       }
-      if (await _repository.fileById(row.fileId) != null) {
+      // In the drive whole: it landed while the app was away. A split file
+      // with a part still to go isn't, and carries on from its last part.
+      if (await _repository.isWhole(row.fileId)) {
         await _finish(row.copyWith(status: TransferStatus.completed));
         continue;
       }
