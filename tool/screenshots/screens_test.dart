@@ -2658,6 +2658,20 @@ void main() {
     await snap(tester, 'settings_connection');
   });
 
+  testWidgets('settings about', (tester) async {
+    await prepareData(tester);
+    await pumpApp(tester, location: '/settings');
+    await tester.scrollUntilVisible(
+      find.text('Sign out'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    for (var i = 0; i < 4; i++) {
+      await tester.pump(const Duration(milliseconds: 200));
+    }
+    await snap(tester, 'settings_about');
+  });
+
   testWidgets('proxy sheet', (tester) async {
     await prepareData(tester);
     await pumpApp(

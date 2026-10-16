@@ -14,6 +14,7 @@ how to build and work on it. The user-facing summary is in
 - [Project layout](#project-layout)
 - [Development](#development)
 - [Releases](#releases)
+- [Tips](#tips)
 - [Platform support and roadmap](#platform-support-and-roadmap)
 
 ## Architecture
@@ -803,6 +804,13 @@ secrets:
 base64 -i upload-keystore.jks | gh secret set UPLOAD_KEYSTORE_BASE64
 gh secret set UPLOAD_KEYSTORE_PASSWORD
 ```
+
+## Tips
+
+Settings › About › Support Telegrive opens Dawit's tip page on
+[Jami](https://jami.bio/daveragoose) (`AppConfig.support`), where people
+send a tip in birr. Jami takes the payment; nothing about it reaches the
+app, and every feature is there for everyone.
 
 ## Platform support and roadmap
 

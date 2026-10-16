@@ -31,6 +31,10 @@ abstract final class AppConfig {
   /// Where the source code is.
   static final Uri sourceCode = Uri.parse('https://github.com/daveragos/telegrive');
 
+  /// Dawit's tip page on Jami, where people can send a tip in birr. The
+  /// payment happens there, never in the app.
+  static final Uri support = Uri.parse('https://jami.bio/daveragoose');
+
   /// A new issue on GitHub from .github/ISSUE_TEMPLATE/bug_report.yml, with
   /// this build's [version] filled in.
   static Uri problemReport(String version) => Uri.https(

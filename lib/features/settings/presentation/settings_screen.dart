@@ -456,6 +456,12 @@ class SettingsScreen extends ConsumerWidget {
                 onTap: () => _showHowItWorks(context),
               ),
               ListTile(
+                title: const Text('Support Telegrive'),
+                subtitle: const Text('Send a tip in birr, on Jami'),
+                trailing: Icon(Icons.open_in_new_rounded, size: 20, color: colors.text3),
+                onTap: () => launchUrl(AppConfig.support, mode: LaunchMode.externalApplication),
+              ),
+              ListTile(
                 title: const Text('Version'),
                 subtitle: const Text('Independent, not affiliated with Telegram'),
                 trailing: trailingValue(appVersion),
