@@ -1,11 +1,14 @@
 # Telegrive
 
-Your Telegram account as an unlimited drive, with automatic photo backup.
+Use your Telegram account as a drive with no storage limit, and back up
+your photos to it.
 
-Telegrive keeps your files in a private channel on your own Telegram
-account and gives you a proper file manager on top of it. There is no
-Telegrive server and no new account: you sign in with your Telegram phone
-number, and your files stay in Telegram, where you can see them too.
+Telegrive keeps your files in a private channel in your own Telegram
+account and gives you a simple file manager for them. There is no new
+account to make and no Telegrive server: you sign in with Telegram, and
+your files stay in Telegram.
+
+**Website and downloads: [daveragos.github.io/telegrive](https://daveragos.github.io/telegrive/)**
 
 <p>
 <img src="tool/screenshots/out/home_light.png" width="23%" alt="Home">
@@ -14,89 +17,64 @@ number, and your files stay in Telegram, where you can see them too.
 <img src="tool/screenshots/out/backup_settings.png" width="23%" alt="Photo backup">
 </p>
 
-## What you get
+## What it does
 
-- **Room for everything.** Keep as much as you like, and files of any
-  size: big ones are cut into parts and joined back when you open them.
-- **Photo backup.** Turn it on once and your camera roll goes up in full
-  quality. New photos follow on their own, even with the app closed
-  while the phone charges. Free up space on the phone afterwards, and
-  keep the last 30 or 90 days if you like.
-- **Bring your Google Photos.** Download your library with Google
-  Takeout and Telegrive imports it on the phone, with dates, albums and
-  favorites, skipping what is already in your drive.
-- **A real file manager.** Folders, stars, albums, a photo timeline, and
-  a trash that keeps things for 30 days. Every change can be undone.
-- **Search that finds things.** By name, by date ("invoices march 2024"),
-  and by the words inside PDFs, text files and scanned pages.
-- **Watch and read without downloading.** Videos and music stream as they
-  play, at the speed you choose; PDFs open page by page.
-- **Works offline.** Browsing is instant, and changes made without a
-  connection go to Telegram once you are back online.
-- **Easy on your data plan.** Big transfers can wait for Wi-Fi, photo
-  backup can stay inside a monthly limit, and a small copy of a new photo
-  can go first with the original following on Wi-Fi.
-- **Part of your phone.** Share files in from any app, scan a document
-  straight into a folder, send files to any Telegram chat without
-  uploading them again, and attach drive files in other apps.
-- **Private.** App lock with your fingerprint or face, an encrypted cache
-  on the phone, and Telegrive never shows you as online to your contacts.
+- **Keeps as much as you like,** with files of any size.
+- **Backs up your photos** in full quality. Turn it on once and new photos
+  follow by themselves. Then free up space on your phone.
+- **Brings over Google Photos,** with dates and albums.
+- **Works like a file manager:** folders, stars, albums, and a trash you
+  can undo.
+- **Finds things** by name, by date, or by the words inside a document.
+- **Plays videos and music and opens PDFs** without downloading them
+  first.
+- **Works offline.** Changes you make reach Telegram when you are back
+  online.
+- **Goes easy on mobile data.** Big uploads can wait for Wi-Fi.
+- **Stays private,** with a fingerprint or face lock.
 
 ## Getting started
 
-1. Telegrive runs on Android and iPhone. It isn't in a store yet:
-   Android builds are on the
-   [Releases](https://github.com/daveragos/telegrive/releases) page. To
-   build it yourself, and for what the iPhone doesn't do yet, see
-   [TECHNICAL.md](TECHNICAL.md).
-2. Sign in with your phone number, or scan a QR code from Telegram on
-   another device.
-3. Telegrive makes a private channel called **Telegrive** in your account,
-   archived so it stays out of your chat list, and offers to back up your
+1. **Android:** download Telegrive from
+   [the website](https://daveragos.github.io/telegrive/#install) and open
+   the file. Most phones need the file ending in `arm64-v8a.apk`.
+   **iPhone:** follow the
+   [iPhone guide](https://daveragos.github.io/telegrive/iphone.html). You
+   install Telegrive with a free helper app and your Apple Account.
+   Telegrive isn't in Google Play or the App Store yet.
+2. Sign in with your Telegram phone number, or scan a QR code from
+   Telegram on another device.
+3. Telegrive sets up its channel for you and offers to back up your
    photos.
 
-On a new phone, or after reinstalling, sign in the same way and your whole
-drive comes back.
-
-## Your files in Telegram
-
-Open the Telegrive channel in Telegram and it reads like a file list:
-
-- Each file is a message, with its name in bold and its folder as a
-  hashtag. Tap `#Invoices` to see everything in that folder, or
-  `#starred` and `#trash` for your stars and your trash.
-- Each folder is a short message of its own, saying which folder it is in.
-- The message pinned at the top says what the channel is.
-- At the bottom of each message, folded under a spoiler, are the details
-  Telegrive reads. Leave those as they are.
-- Files bigger than Telegram allows in one message show up as numbered
-  parts (`movie.mkv.001`, `movie.mkv.002`, …). Telegrive joins them back.
-- Forward a file into the channel and it shows up in your drive. Write a
-  folder name, like `Wedding`, as the forward's comment and it goes
-  straight into that folder.
+On a new phone, sign in the same way and your whole drive comes back.
 
 ## Good to know
 
-- **Keep the channel.** Deleting it deletes your drive, and deleting a
-  message in it deletes that file. If you turn on an auto-delete timer for
-  the channel, Telegram deletes your files when it runs out; Settings ›
-  Check my drive warns you and can turn it off.
-- **Your files are as private as your Telegram account.** The channel is
-  private and only you are in it, but like any Telegram cloud chat it
-  isn't end-to-end encrypted. Turning on two-step verification in Telegram
-  protects it better; Check my drive tells you if it is off.
-- **Signing out** takes the drive off this phone. Your files stay in
-  Telegram. Ending Telegrive's session in Telegram › Settings › Devices
-  signs it out too.
-- **Telegram's limits apply.** A file goes into one message up to 2 GB
-  (4 GB with Premium); anything bigger becomes parts. When Telegram asks
-  for a pause, transfers wait and carry on by themselves.
+- **Your files are in a channel called Telegrive.** You can open it in
+  Telegram and see them there. Deleting the channel, or a message in it,
+  deletes those files.
+- **Your files are as safe as your Telegram account.** Turning on
+  two-step verification in Telegram protects them better.
+- **Signing out** only takes the drive off this phone. Your files stay in
+  Telegram.
+- **Settings › Check my drive** tells you if anything needs your
+  attention.
+
+## Support
+
+Telegrive is free, with no ads. If it's useful to you, you can
+[send a tip on Jami](https://jami.bio/daveragoose).
+If something doesn't work, [report a
+problem](https://github.com/daveragos/telegrive/issues).
 
 ## For developers
 
-How the drive is stored in Telegram, how the app is built, and how to run
-it from source are in [TECHNICAL.md](TECHNICAL.md). The design rules are in
+How Telegrive stores your drive in Telegram, how the app works, and how to
+build it are in [TECHNICAL.md](TECHNICAL.md). The design rules are in
 [DESIGN.md](DESIGN.md).
+
+## License
 
 Telegrive is free software under the [GNU General Public License,
 version 3](LICENSE). It is an independent project, not affiliated with

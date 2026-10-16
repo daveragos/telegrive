@@ -47,6 +47,33 @@ stay inside `infrastructure/` and `features/*/data`.
 
 ## The drive in Telegram
 
+### What people see in Telegram
+
+Open the Telegrive channel in any Telegram app and it reads as a file list:
+
+- Each file is a message: its name in bold, its folder as a hashtag, and
+  `#starred` or `#trash` when they apply. Tapping `#Invoices` lists
+  everything in that folder.
+- Each folder is a short message of its own, saying which folder it is in.
+- The message pinned at the top is the drive message, which says what the
+  channel is.
+- At the bottom of each message, folded under a spoiler, is the details
+  line Telegrive reads back. It is best left as it is.
+- A file bigger than one message allows shows as numbered parts
+  (`movie.mkv.001`, `movie.mkv.002`, …), which only Telegrive joins back
+  ([Split files](#split-files)).
+- A file forwarded into the channel shows up in the drive, and a folder
+  name such as `Wedding`, written as the forward's comment, files it there
+  ([Forwards and adopted files](#forwards-and-adopted-files)).
+
+The channel is the drive. Deleting a message deletes that file, deleting
+the channel deletes the drive, and an auto-delete timer on the channel
+deletes files when it runs out (Check my drive warns about one and can
+turn it off). The channel is private with only the account in it, but
+like any Telegram cloud chat it isn't end-to-end encrypted, so the drive
+is as safe as the account; Check my drive says whether two-step
+verification is on.
+
 ### The channel, and how it is found
 
 The drive is a private channel, titled **Telegrive**, that the account
@@ -363,6 +390,9 @@ value goes back onto the line exactly as it came.
   index cleared before it is read.
 - **Secrets.** The API credentials and TDLib's database key live in the
   platform keystore, and TDLib's cache is encrypted from the first launch.
+- **Never online.** Telegrive sets TDLib's `online` option off once signed
+  in, so browsing the drive doesn't show the account as online to its
+  contacts.
 
 ## Transfers
 
