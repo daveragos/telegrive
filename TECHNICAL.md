@@ -14,6 +14,7 @@ how to build and work on it. The user-facing summary is in
 - [Project layout](#project-layout)
 - [Development](#development)
 - [Releases](#releases)
+- [Website](#website)
 - [Tips](#tips)
 - [Platform support and roadmap](#platform-support-and-roadmap)
 
@@ -672,6 +673,13 @@ The format lives in `lib/features/drive/domain/`: `caption_text.dart` has
 the caption layout, folder tags and the details line, and `manifest.dart`
 has the records and the field names.
 
+Beside the app:
+
+```text
+docs/       # the website, served by GitHub Pages
+tool/       # TDLib builds, the IPA, screenshots, the icon, the guide's pictures
+```
+
 ## Development
 
 The app signs in to Telegram with an `api_id` and `api_hash` from
@@ -797,7 +805,11 @@ To release:
 1. Raise `version` in pubspec.yaml, build number included.
 2. Write what's new for people in `.github/release-notes/<version>.md`.
    Without that file, the release lists the commits since the last one.
-3. Commit, and push a tag that matches the version:
+3. In `docs/site.js`, set `FALLBACK_VERSION` and the file sizes, which the
+   website shows when GitHub can't be asked. Run
+   `dart run tool/guide_figures.dart`, which draws the IPA's name into the
+   iPhone guide's pictures.
+4. Commit, and push a tag that matches the version:
 
 ```bash
 git tag v0.1.0
@@ -827,6 +839,50 @@ reads these repository secrets:
 base64 -i upload-keystore.jks | gh secret set UPLOAD_KEYSTORE_BASE64
 gh secret set UPLOAD_KEYSTORE_PASSWORD
 ```
+
+## Website
+
+The website, [daveragos.github.io/telegrive](https://daveragos.github.io/telegrive/),
+is the plain HTML, CSS and JavaScript in `docs/`, which GitHub Pages
+serves from main's `docs` folder. There is no build step: a push to main
+changes the site.
+
+| Page | What it is |
+| --- | --- |
+| `index.html` | What Telegrive is, the downloads, and questions |
+| `iphone.html` | Installing the IPA with Sideloadly, SideStore or AltStore, step by step |
+| `privacy.html` | What the app and the site keep, and where files go |
+| `404.html` | For any missing address; its paths start from `/telegrive/` |
+
+- **Styles.** `styles.css` is the one stylesheet for every page, the same
+  web UI as gramX's site with Telegrive's colours, type and two themes;
+  `site.js` likewise follows gramX's (theme switch, release lookup, QR
+  codes, download sheet, guide tabs).
+- **Design.** The site follows DESIGN.md, Website included, and its
+  checks come from the Impeccable catalog. Its detector should find
+  nothing in a served page:
+
+  ```bash
+  python3 -m http.server 8787 --directory docs
+  npx impeccable detect http://localhost:8787/ http://localhost:8787/iphone.html
+  ```
+
+- **Downloads.** `site.js` asks GitHub for the latest release and points
+  every download at its files, matched by name. The page shows the right
+  download for the phone it is opened on, and a QR code on a computer.
+- **Screenshots** are the app's own, from the screenshot harness, as WebP
+  at half size; the Files card has a dark one for the Dark theme:
+
+  ```bash
+  cwebp -q 82 -resize 540 0 tool/screenshots/out/files_list_dark.png -o docs/assets/shots/files-list-dark.webp
+  ```
+
+- **The iPhone guide's pictures** are drawn, not captured, by
+  `dart run tool/guide_figures.dart` into `docs/assets/guide/`, with a
+  placeholder Apple Account. A picture that changes size needs the
+  `width` and `height` of its `<img>` changed too.
+- **Icons** in `docs/assets/icons.svg` are the Material Icons glyphs the
+  app draws, and the fonts are IBM Plex Sans cut down to Latin, as WOFF2.
 
 ## Tips
 

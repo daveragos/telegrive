@@ -118,6 +118,30 @@ Settings lives under the avatar on Home.
   progress bar, placed where it applies, not a banner card.
 - **Empty states** are a sentence and, when there is one, the action.
 
+## Website
+
+The site in `docs/` uses the same web UI as gramX's site, so the author's
+apps read as a family: a sticky blurred header with a theme switch, pill
+buttons, cards with 20 radius and a 1px `border`, a drawn phone (radius 46
+outside, 37 at the screen) with its own status bar over the app's real
+screen, small live pieces of the app inside the feature cards, and a
+bottom sheet after a download. It keeps Telegrive's own identity: IBM Plex
+Sans, the mark, and the app's colours.
+
+**Themes.** Dark and Light, the app's two, with Dark the default when the
+device doesn't ask for light. The header's button and the theme tiles
+switch the page and remember the choice. Tokens are the app's (`bg`,
+`surface`, `surface-2`, `line` as `border`, `text`, `text-2` as `muted`,
+`accent`), plus a pressed accent (`#1D47BD` light, `#A9BDFF` dark) and, in
+dark mode, the kind hues lifted 35% toward white as the app does. The
+app's screens shown on the page are its light ones, so the drawn status
+bar is light too; the Files card swaps to the dark screen in Dark.
+
+**Type.** Titles run from 38 to 62 on the home page and sections from 30
+to 46, sized with the viewport, at weight 700 and a slightly tightened
+tracking; body text is 15 to 19. Running text keeps to about 75
+characters a line.
+
 ## Avoid
 
 Taken from the Impeccable catalog and checked by hand, since its detector

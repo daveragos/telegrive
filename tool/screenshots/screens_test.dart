@@ -1803,6 +1803,12 @@ void main() {
     await snap(tester, 'files_list');
   });
 
+  testWidgets('files list dark', (tester) async {
+    await prepareData(tester);
+    await pumpApp(tester, location: '/files', forwarded: true, themeMode: ThemeMode.dark);
+    await snap(tester, 'files_list_dark');
+  });
+
   testWidgets('bulk edit waiting', (tester) async {
     await prepareData(tester);
     await pumpApp(

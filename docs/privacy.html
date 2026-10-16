@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Privacy · Telegrive</title>
+  <meta name="description" content="What Telegrive keeps, where your files go, and what nobody else sees. In short: Telegrive has no server, no analytics and no ads.">
+  <link rel="canonical" href="https://daveragos.github.io/telegrive/privacy.html">
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png">
+  <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+  <link rel="preload" href="assets/fonts/plex-sans-400.woff2" as="font" type="font/woff2" crossorigin>
+  <meta name="theme-color" content="#111317">
+  <link rel="stylesheet" href="styles.css">
+  <script>
+    // Theme and platform, set before the first paint.
+    (function () {
+      var d = document.documentElement, t = null;
+      try { t = localStorage.getItem('telegrive-theme'); } catch (e) {}
+      if (t !== 'light' && t !== 'dark') {
+        t = window.matchMedia && matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+      }
+      d.setAttribute('data-theme', t);
+      var ua = navigator.userAgent;
+      var ios = /iPhone|iPad|iPod/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+      d.setAttribute('data-platform', /Android/i.test(ua) ? 'android' : ios ? 'ios' : 'desktop');
+    })();
+  </script>
+  <script src="site.js" defer></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="nav" data-nav>
+    <div class="container nav-inner">
+      <a class="brand" href="./" aria-label="Telegrive home">
+        <img src="assets/brand/mark-96.png" alt="" width="26" height="26">
+        <span>Telegrive</span>
+      </a>
+      <div class="nav-actions">
+        <button class="icon-btn theme-toggle" type="button" data-theme-cycle aria-label="Change theme">
+          <svg class="i t-light" aria-hidden="true"><use href="assets/icons.svg#i-sun"/></svg>
+          <svg class="i t-dark" aria-hidden="true"><use href="assets/icons.svg#i-moon"/></svg>
+        </button>
+        <a class="btn btn-primary btn-sm" href="./#install">Download</a>
+      </div>
+    </div>
+  </header>
+
+  <main id="main" class="container doc">
+    <a class="back" href="./"><svg class="i" aria-hidden="true"><use href="assets/icons.svg#i-arrow"/></svg>Telegrive home</a>
+    <h1>Privacy</h1>
+    <p class="summary">Telegrive has no server, no analytics and no ads. Your files go from your phone to your own Telegram account and nowhere else.</p>
+    <p class="updated">Updated 16 October 2026</p>
+
+    <h2>Where your files go</h2>
+    <p>Telegrive stores your drive in a private channel on your Telegram account. Every file, folder and album you add becomes a message in that channel, sent from your phone straight to Telegram. Telegram's <a href="https://telegram.org/privacy">privacy policy</a> covers what Telegram does with them. Like any Telegram cloud chat, the channel isn't end-to-end encrypted.</p>
+    <p>Photos and videos go up as the original files, so the date and place stored in them go too.</p>
+
+    <h2>What stays on your phone</h2>
+    <ul>
+      <li>An index of your drive, so browsing and search work instantly and offline.</li>
+      <li>Thumbnails, files you've opened, and files you've chosen to keep offline.</li>
+      <li>Your settings, and which photos have been backed up.</li>
+      <li>Telegram's own data for your session, kept by Telegram's library, encrypted with a key in the phone's secure storage.</li>
+      <li>Your account's name and id, to show Home before Telegram answers. Never your phone number.</li>
+    </ul>
+    <p>Signing out deletes the drive's index, offline copies and Telegram's data from the phone. App settings, such as the theme and app lock, stay. Your files stay in Telegram.</p>
+
+    <h2>What the developer receives</h2>
+    <p>Nothing. Telegrive sends no analytics, crash reports or usage data to its developer or anyone else. If you report a problem on GitHub, what you write there is public, so leave out anything personal.</p>
+
+    <h2>Google Play services</h2>
+    <p>On Android, reading the words in scanned pages and pictures, and the document scanner, use Google's ML Kit through Google Play services. They run on the phone and your pictures aren't uploaded, though Google may collect information about how the feature performs, under <a href="https://developers.google.com/ml-kit/terms">ML Kit's terms</a>.</p>
+
+    <h2>What the app asks for</h2>
+    <ul>
+      <li><b>Photos and videos</b>, to back them up, and the place they were taken, so the originals keep it.</li>
+      <li><b>Notifications</b>, to show transfers and backup while they run.</li>
+      <li><b>Face ID or fingerprint</b>, only if you turn on app lock.</li>
+    </ul>
+
+    <h2>This website</h2>
+    <p>This site sets no cookies and has no tracking. To show the latest version, it asks GitHub for the newest release, so GitHub sees that request under its <a href="https://docs.github.com/site-policy/privacy-policies/github-general-privacy-statement">privacy statement</a>.</p>
+    <p>If you send a tip, the link takes you to <a href="https://jami.bio/daveragoose">Jami</a>, which takes the payment under its own terms and privacy policy. This site passes nothing about you to Jami.</p>
+
+    <h2>Questions</h2>
+    <p>Email <a href="mailto:daveyeinde@gmail.com">daveyeinde@gmail.com</a>. If this page changes, the date at the top changes with it.</p>
+  </main>
+
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-top">
+        <a class="brand" href="./" aria-label="Telegrive home">
+          <img src="assets/brand/mark-96.png" alt="" width="26" height="26">
+          <span>Telegrive</span>
+        </a>
+        <nav class="footer-links" aria-label="Footer">
+          <a href="./#install">Download for Android</a>
+          <a href="iphone.html">Install on iPhone</a>
+          <a href="https://jami.bio/daveragoose">Send a tip</a>
+          <a href="privacy.html">Privacy Policy</a>
+          <a href="https://github.com/daveragos/telegrive">Source code</a>
+          <a href="https://github.com/daveragos/telegrive/releases">Releases</a>
+          <a href="https://github.com/daveragos/telegrive/issues">Report an issue</a>
+        </nav>
+      </div>
+      <p class="fine">Telegrive is an independent app. It is not made by, affiliated with, or endorsed by Telegram. © <span data-year>2026</span> Dawit Beyene. Telegrive is free software under the GNU General Public License, version 3.</p>
+    </div>
+  </footer>
+</body>
+</html>
