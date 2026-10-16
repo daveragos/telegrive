@@ -103,7 +103,7 @@
       ipa: {
         name: 'telegrive-' + FALLBACK_VERSION + '.ipa',
         url: DL + 'telegrive-' + FALLBACK_VERSION + '.ipa',
-        size: 25027958
+        size: 25026356
       },
       sums: { name: 'SHA256SUMS.txt', url: DL + 'SHA256SUMS.txt', size: 0 }
     }
