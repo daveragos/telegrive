@@ -45,3 +45,12 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/tdlib-android
+
+  tdlib-ios:
+    # The same for iOS, when tool/build_tdlib_ios.sh changes.
+    if: github.event_name == 'push'
+    runs-on: macos-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/tdlib-ios

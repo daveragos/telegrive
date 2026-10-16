@@ -1,0 +1,26 @@
+name: TDLib for iOS
+description: >
+  Puts ios/Frameworks/tdjson.xcframework in place: from the cache while
+  tool/build_tdlib_ios.sh is unchanged, otherwise built by that script, which
+  takes the better part of an hour on a runner.
+
+runs:
+  using: composite
+  steps:
+    - id: cache
+      uses: actions/cache@v4
+      with:
+        path: ios/Frameworks/tdjson.xcframework
+        key: tdlib-ios-${{ hashFiles('tool/build_tdlib_ios.sh') }}
+
+    - name: CMake and gperf
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        command -v cmake > /dev/null || brew install cmake
+        command -v gperf > /dev/null || brew install gperf
+
+    - name: Build TDLib
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: tool/build_tdlib_ios.sh

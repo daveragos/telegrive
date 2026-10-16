@@ -37,8 +37,11 @@ body:
   - type: input
     id: android
     attributes:
-      label: Android version
-      description: The phone's Settings › About phone › Android version.
+      label: Android or iOS version
+      description: >
+        On Android, Settings › About phone › Android version. On iPhone,
+        Settings › General › About › iOS Version, and the helper app you
+        installed Telegrive with.
       placeholder: Android 15
     validations:
       required: true
@@ -47,7 +50,7 @@ body:
     attributes:
       label: Phone
       description: The phone's make and model.
-      placeholder: Pixel 8
+      placeholder: Pixel 8, iPhone 14
     validations:
       required: true
   - type: textarea

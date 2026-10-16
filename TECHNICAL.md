@@ -731,6 +731,13 @@ Runner links and embeds it, and `openTdLibrary()` loads it as
 release build (`flutter run --release`) keeps opening from the home screen
 once it is unplugged.
 
+For people installing it themselves, `tool/build_ipa.sh` builds an
+unsigned `build/ios/ipa/telegrive-<version>.ipa`. Sideloadly, SideStore and
+AltStore sign it with the installer's own Apple Account, so it needs no
+Apple team. The script builds the app afresh, since an unsigned build would
+otherwise keep the signature and provisioning profile of an earlier signed
+one, and a profile names its team and the devices it was made for.
+
 When handy_tdlib moves to a new TDLib, set `TD_COMMIT` in both scripts to
 match and run them again.
 
@@ -759,8 +766,8 @@ the channel to fill again.
 Every push to main and every pull request runs `flutter analyze` and
 `flutter test` ([checks.yml](.github/workflows/checks.yml)), on macOS so
 the backup tests that read photos run too. A push to main also builds
-TDLib for Android when `tool/build_tdlib_android.sh` has changed, and
-caches it for releases.
+TDLib for Android and for iOS when `tool/build_tdlib_android.sh` or
+`tool/build_tdlib_ios.sh` has changed, and caches it for releases.
 
 ## Releases
 
@@ -785,7 +792,12 @@ release build is signed with the debug key, so `flutter run --release`
 works on any checkout, but Android won't install that build over one
 signed with the upload key, or the other way round.
 
-To release, raise `version`, commit, and push a tag that matches it:
+To release:
+
+1. Raise `version` in pubspec.yaml, build number included.
+2. Write what's new for people in `.github/release-notes/<version>.md`.
+   Without that file, the release lists the commits since the last one.
+3. Commit, and push a tag that matches the version:
 
 ```bash
 git tag v0.1.0
@@ -793,11 +805,17 @@ git push origin v0.1.0
 ```
 
 [release.yml](.github/workflows/release.yml) then checks the tag against
-pubspec.yaml, takes TDLib from the cache main keeps (or builds it, which
-takes the better part of an hour), builds an APK for each ABI and an app
-bundle, checks that they are signed with the upload key, and publishes
-them with `SHA256SUMS.txt` as a GitHub release. It reads these repository
-secrets:
+pubspec.yaml and builds both platforms side by side, each with TDLib from
+the cache main keeps (or building it, which takes the better part of an
+hour):
+
+- **Android** builds an APK for each ABI and an app bundle, and checks that
+  they are signed with the upload key.
+- **iOS** builds the unsigned IPA with `tool/build_ipa.sh`, on macOS, and
+  checks that TDLib is inside it.
+
+Then it publishes every file with `SHA256SUMS.txt` as a GitHub release. It
+reads these repository secrets:
 
 | Secret | What it holds |
 | --- | --- |
@@ -822,7 +840,7 @@ app, and every feature is there for everyone.
 | Platform | Status |
 | --- | --- |
 | Android (arm64, armv7, x86, x86_64) | Supported |
-| iOS (arm64, and the Apple silicon simulator) | Runs, with TDLib built by `tool/build_tdlib_ios.sh`. Photo backup runs while the app is open; the features below that need Android are off. |
+| iOS (arm64, and the Apple silicon simulator) | Released as an unsigned IPA to sideload, with TDLib built by `tool/build_tdlib_ios.sh`. Photo backup runs while the app is open; the features below that need Android are off. |
 | macOS | Not yet. |
 
 - **Newer TDLib.** The app builds TDLib itself, aligned for 16 KB pages, but

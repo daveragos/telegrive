@@ -8,21 +8,32 @@ permissions:
   contents: write
 
 jobs:
-  release:
+  tag:
     runs-on: ubuntu-latest
-    # Long enough to build TDLib when the checks on main haven't cached it.
-    timeout-minutes: 150
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v5
 
       - name: Tag matches pubspec.yaml
+        id: version
         run: |
           version=$(sed -n 's/^version: *\([^+]*\).*/\1/p' pubspec.yaml)
           if [ "v$version" != "$GITHUB_REF_NAME" ]; then
             echo "::error::The tag is $GITHUB_REF_NAME but pubspec.yaml has version $version."
             exit 1
           fi
-          echo "VERSION=$version" >> "$GITHUB_ENV"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  android:
+    needs: tag
+    runs-on: ubuntu-latest
+    # Long enough to build TDLib when the checks on main haven't cached it.
+    timeout-minutes: 150
+    env:
+      VERSION: ${{ needs.tag.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
 
       - uses: ./.github/actions/tdlib-android
 
@@ -37,18 +48,10 @@ jobs:
           flutter-version: 3.47.4
           cache: true
 
-      - name: Telegram API credentials
-        env:
-          TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
-          TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
-        run: |
-          if [ -z "$TELEGRAM_API_ID" ] || [ -z "$TELEGRAM_API_HASH" ]; then
-            echo "::error::Set the TELEGRAM_API_ID and TELEGRAM_API_HASH repository secrets."
-            exit 1
-          fi
-          cp lib/core/config/telegram_api.example.dart lib/core/config/telegram_api.dart
-          jq -n --arg id "$TELEGRAM_API_ID" --arg hash "$TELEGRAM_API_HASH" \
-            '{TELEGRAM_API_ID: $id, TELEGRAM_API_HASH: $hash}' > "$RUNNER_TEMP/telegram_api.json"
+      - uses: ./.github/actions/telegram-api
+        with:
+          api-id: ${{ secrets.TELEGRAM_API_ID }}
+          api-hash: ${{ secrets.TELEGRAM_API_HASH }}
 
       - name: Upload key
         env:
@@ -110,11 +113,84 @@ jobs:
             cp "$apk" "dist/telegrive-$VERSION-${abi%-release.apk}.apk"
           done
           cp build/app/outputs/bundle/release/app-release.aab "dist/telegrive-$VERSION.aab"
-          cd dist && sha256sum -- * > SHA256SUMS.txt && cat SHA256SUMS.txt
 
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android
+          path: dist/
+          if-no-files-found: error
+
+  ios:
+    needs: tag
+    runs-on: macos-latest
+    # Long enough to build TDLib when the checks on main haven't cached it.
+    timeout-minutes: 150
+    env:
+      VERSION: ${{ needs.tag.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: ./.github/actions/tdlib-ios
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.47.4
+          cache: true
+
+      - uses: ./.github/actions/telegram-api
+        with:
+          api-id: ${{ secrets.TELEGRAM_API_ID }}
+          api-hash: ${{ secrets.TELEGRAM_API_HASH }}
+
+      # Unsigned: the helper apps people sideload with sign it with their own
+      # Apple Account.
+      - name: Build
+        run: tool/build_ipa.sh --dart-define-from-file="$RUNNER_TEMP/telegram_api.json"
+
+      - name: Collect
+        run: |
+          ipa="build/ios/ipa/telegrive-$VERSION.ipa"
+          if ! unzip -l "$ipa" | grep -q 'Payload/Runner.app/Frameworks/tdjson.framework/tdjson$'; then
+            echo "::error::$ipa doesn't carry TDLib."
+            exit 1
+          fi
+          mkdir dist
+          cp "$ipa" dist/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ios
+          path: dist/
+          if-no-files-found: error
+
+  publish:
+    needs: [tag, android, ios]
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.tag.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Checksums
+        run: cd dist && sha256sum -- * > SHA256SUMS.txt && cat SHA256SUMS.txt
+
+      # Notes written for a version are in .github/release-notes; any other
+      # release lists what changed since the last one.
       - name: Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          notes=".github/release-notes/$VERSION.md"
+          if [ -f "$notes" ]; then
+            set -- --notes-file "$notes"
+          else
+            set -- --generate-notes
+          fi
           gh release create "$GITHUB_REF_NAME" dist/* \
-            --verify-tag --title "Telegrive $VERSION" --generate-notes
+            --verify-tag --title "Telegrive $VERSION" "$@"

@@ -1,0 +1,29 @@
+name: Telegram API credentials
+description: >
+  Puts the credentials file template in place and writes the app's Telegram
+  API credentials to $RUNNER_TEMP/telegram_api.json, for
+  --dart-define-from-file.
+
+inputs:
+  api-id:
+    description: The TELEGRAM_API_ID secret.
+    required: true
+  api-hash:
+    description: The TELEGRAM_API_HASH secret.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        TELEGRAM_API_ID: ${{ inputs.api-id }}
+        TELEGRAM_API_HASH: ${{ inputs.api-hash }}
+      run: |
+        if [ -z "$TELEGRAM_API_ID" ] || [ -z "$TELEGRAM_API_HASH" ]; then
+          echo "::error::Set the TELEGRAM_API_ID and TELEGRAM_API_HASH repository secrets."
+          exit 1
+        fi
+        cp lib/core/config/telegram_api.example.dart lib/core/config/telegram_api.dart
+        jq -n --arg id "$TELEGRAM_API_ID" --arg hash "$TELEGRAM_API_HASH" \
+          '{TELEGRAM_API_ID: $id, TELEGRAM_API_HASH: $hash}' > "$RUNNER_TEMP/telegram_api.json"
