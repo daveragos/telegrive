@@ -52,9 +52,9 @@ class IndexerState {
 /// to be read is deleted again once it has been, so reading leaves no
 /// copies behind.
 class ContentIndexer extends Notifier<IndexerState> {
-  /// 3: pages that are pictures, such as scans, are read with the phone's
-  /// text recognition; 2 read only a PDF's own text; 1 also read photos.
-  static const int version = 3;
+  /// Bump when what is read from a document changes; what an older
+  /// version read is read again.
+  static const int version = 1;
   static const int _maxChars = 20000;
   static const int _pdfLimit = 25 * 1024 * 1024;
   static const int _textLimit = 1024 * 1024;

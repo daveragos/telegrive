@@ -9876,6 +9876,18 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $TakeoutEntriesTable takeoutEntries = $TakeoutEntriesTable(this);
   late final $TakeoutDetailsTable takeoutDetails = $TakeoutDetailsTable(this);
   late final $TakeoutItemsTable takeoutItems = $TakeoutItemsTable(this);
+  late final Index foldersParent = Index(
+    'folders_parent',
+    'CREATE INDEX folders_parent ON folders (parent_id)',
+  );
+  late final Index filesFolder = Index(
+    'files_folder',
+    'CREATE INDEX files_folder ON drive_files (folder_id)',
+  );
+  late final Index filesCreated = Index(
+    'files_created',
+    'CREATE INDEX files_created ON drive_files (created_at)',
+  );
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -9900,6 +9912,9 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     takeoutEntries,
     takeoutDetails,
     takeoutItems,
+    foldersParent,
+    filesFolder,
+    filesCreated,
   ];
 }
 

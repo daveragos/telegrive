@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -113,57 +111,8 @@ void main() {
     });
   });
 
-  test('a version 1 database upgrades to the current schema', () async {
-    final dir = await Directory.systemTemp.createTemp('telegrive_migration');
-    addTearDown(() => dir.delete(recursive: true));
-    final file = File('${dir.path}/telegrive.sqlite');
-
-    // Version 1 is today's schema without what versions 2 to 14 added.
-    var db = AppDatabase(NativeDatabase(file));
-    await db.allTransfers();
-    for (final statement in [
-      'ALTER TABLE transfers DROP COLUMN save_to',
-      'ALTER TABLE transfers DROP COLUMN save_folder',
-      'ALTER TABLE folders DROP COLUMN trashed_at',
-      'ALTER TABLE folders DROP COLUMN hidden',
-      'ALTER TABLE drive_files DROP COLUMN trashed_at',
-      'ALTER TABLE drive_files DROP COLUMN hidden',
-      'DROP TABLE albums',
-      'DROP TABLE album_files',
-      'DROP TABLE offline_pins',
-      'DROP TABLE offline_copies',
-      'DROP TABLE file_contents',
-      'ALTER TABLE folders DROP COLUMN manifest_extra',
-      'ALTER TABLE drive_files DROP COLUMN manifest_extra',
-      'DROP TABLE file_opens',
-      'ALTER TABLE transfers DROP COLUMN wifi_only',
-      'ALTER TABLE backup_assets DROP COLUMN reason',
-      'ALTER TABLE drive_files DROP COLUMN duration_seconds',
-      'ALTER TABLE transfers DROP COLUMN duration_seconds',
-      'ALTER TABLE folders DROP COLUMN starred',
-      'ALTER TABLE drive_files DROP COLUMN replaced_by',
-      'ALTER TABLE transfers DROP COLUMN replaces_file_id',
-      'DROP TABLE play_positions',
-      'ALTER TABLE transfers DROP COLUMN source_chat_id',
-      'ALTER TABLE transfers DROP COLUMN source_message_id',
-      'ALTER TABLE drive_files DROP COLUMN adopted',
-      'DROP TABLE watched_folders',
-      'DROP TABLE watched_files',
-      'DROP TABLE pending_edits',
-      'ALTER TABLE drive_files DROP COLUMN original_size',
-      'ALTER TABLE transfers DROP COLUMN album_ids',
-      'ALTER TABLE transfers DROP COLUMN starred',
-      'DROP TABLE takeout_parts',
-      'DROP TABLE takeout_entries',
-      'DROP TABLE takeout_details',
-      'DROP TABLE takeout_items',
-      'PRAGMA user_version = 1',
-    ]) {
-      await db.customStatement(statement);
-    }
-    await db.close();
-
-    db = AppDatabase(NativeDatabase(file));
+  test('a save to the phone remembers where it goes', () async {
+    final db = AppDatabase(NativeDatabase.memory());
     addTearDown(db.close);
     await db.saveTransfer(
       TransferRow(
@@ -188,62 +137,6 @@ void main() {
     final row = (await db.allTransfers()).single;
     expect(row.saveTo, SaveTarget.gallery);
     expect(row.saveFolder, 'Camera');
-    expect(await db.watchTrashedFiles().first, isEmpty);
-    expect(await db.watchAlbums().first, isEmpty);
-    expect(await db.select(db.fileOpens).get(), isEmpty);
-    expect(await db.select(db.playPositions).get(), isEmpty);
-    expect(await db.watchWatchedFolders().first, isEmpty);
-    expect(await db.select(db.watchedFiles).get(), isEmpty);
-    expect(await db.select(db.pendingEdits).get(), isEmpty);
-    await db.saveWatchedFolder(
-      WatchedFoldersCompanion.insert(
-        id: 'bank',
-        treeUri: 'content://com.android.externalstorage.documents/tree/primary%3ADownload%2FBank',
-        label: 'Bank',
-        filter: WatchFilter.documents,
-        createdAt: DateTime(2026, 9, 26),
-      ),
-    );
-    expect([for (final rule in await db.watchWatchedFolders().first) rule.label], ['Bank']);
-
-    await db.saveTransfer(
-      TransferRow(
-        id: 'c',
-        kind: TransferKind.upload,
-        status: TransferStatus.queued,
-        name: 'Contract.pdf',
-        mimeType: 'application/pdf',
-        fileId: 'g',
-        ownsSource: false,
-        wifiOnly: false,
-        totalBytes: 1,
-        doneBytes: 0,
-        partCount: 1,
-        completedParts: 0,
-        createdAt: DateTime(2026, 9, 26),
-        origin: TransferOrigin.fromChat,
-        sourceChatId: 777000,
-        sourceMessageId: 42,
-      ),
-    );
-    final copy = (await db.allTransfers()).firstWhere((r) => r.id == 'c');
-    expect(copy.origin, TransferOrigin.fromChat);
-    expect(copy.sourceChatId, 777000);
-    expect(copy.sourceMessageId, 42);
-
-    await db.into(db.driveFiles).insert(
-      DriveFilesCompanion.insert(
-        id: 'g',
-        name: 'Contract.pdf',
-        mimeType: 'application/pdf',
-        kind: FileKind.document,
-        size: 1,
-        createdAt: DateTime(2026, 9, 26),
-        modifiedAt: DateTime(2026, 9, 26),
-      ),
-    );
-    expect((await db.fileById('g'))!.adopted, isFalse);
-    expect((await db.fileById('g'))!.originalSize, isNull);
   });
 
   group('DeviceStorage names', () {

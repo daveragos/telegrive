@@ -747,9 +747,14 @@ The screenshot harness renders the signed-in screens with sample data, so
 UI work doesn't need a Telegram account. Some screens show the time, so a
 re-run differs from the stored images by a digit or two.
 
-A schema version bump also dumps the new schema into `drift_schemas/` and
+The index's schema is version 1, and `test/drift_schemas/` keeps a copy of
+each released version, so a migration can be tested against what phones
+really have. A schema version bump dumps the new version there and
 regenerates the helpers `test/migration_test.dart` checks upgrades with;
-the two commands are at the top of that test.
+the two commands are at the top of that test. The database also takes over
+one left by a build from before the first release, whose schema went up to
+14: versions 10 to 14 keep what they hold, and older ones start empty for
+the channel to fill again.
 
 Every push to main and every pull request runs `flutter analyze` and
 `flutter test` ([checks.yml](.github/workflows/checks.yml)), on macOS so

@@ -118,12 +118,12 @@ class DriveSync extends Notifier<SyncState> {
     final chatId = ref.read(driveSessionProvider)?.chatId;
     if (chatId == null) return Future.value();
     final lastFull = _prefs.lastFullSync(chatId);
-    // An index an older indexer built may hold files it classified
+    // An index another indexer built may hold files it classified
     // differently or messages it skipped, so it is read again in full.
     final stale =
         lastFull == null ||
         DateTime.now().difference(lastFull) > _fullSyncInterval ||
-        _prefs.indexedWith(chatId) < MessageIndexer.version;
+        _prefs.indexedWith(chatId) != MessageIndexer.version;
     return stale ? fullSync() : refresh();
   }
 

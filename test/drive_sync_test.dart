@@ -151,15 +151,16 @@ void main() {
     expect(container.read(driveSyncProvider).lastFull, isNull);
   });
 
-  test('an index built by an older indexer is read again in full', () async {
+  test('an index another indexer built is read again in full', () async {
     final readToday = DateTime.now().subtract(const Duration(minutes: 5));
-    // A phone updated from a build that didn't record the version: its
-    // index was read in full today, by indexer version 1.
+    // Read in full today, by a build whose indexer counted differently.
     final (container, _, prefs) = await start(
       [],
-      stored: {'full_sync_$_chatId': readToday.millisecondsSinceEpoch},
+      stored: {
+        'full_sync_$_chatId': readToday.millisecondsSinceEpoch,
+        'indexed_with_$_chatId': MessageIndexer.version + 3,
+      },
     );
-    expect(prefs.indexedWith(_chatId), 1);
 
     await container.read(driveSyncProvider.notifier).syncOnOpen();
 

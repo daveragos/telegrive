@@ -72,7 +72,7 @@ abstract final class MessageIndexer {
   /// Bump when what a message becomes in the index changes, including the
   /// kind FileKind.detect gives it; the next open reads the channel again
   /// in full.
-  static const int version = 4;
+  static const int version = 1;
 
   static IndexEntry? entryFor(td.Message message) {
     // Still sending: the permanent message will arrive separately.

@@ -8,6 +8,7 @@ import '../../core/files/file_kind.dart';
 /// One folder. Stored in the channel as a small text message, so [messageId]
 /// is how a rename or delete finds it again.
 @DataClassName('FolderRow')
+@TableIndex(name: 'folders_parent', columns: {#parentId})
 class Folders extends Table {
   TextColumn get id => text()();
   TextColumn get parentId => text().nullable()();
@@ -39,6 +40,8 @@ class Folders extends Table {
 /// One logical file. Large files span several messages ([FileParts]); the
 /// file only shows up once [partsPresent] reaches [partCount].
 @DataClassName('FileRow')
+@TableIndex(name: 'files_folder', columns: {#folderId})
+@TableIndex(name: 'files_created', columns: {#createdAt})
 class DriveFiles extends Table {
   TextColumn get id => text()();
   TextColumn get folderId => text().nullable()();

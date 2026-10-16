@@ -4,7 +4,6 @@ import 'dart:math' as math;
 import 'package:drift/drift.dart';
 import 'package:drift_flutter/drift_flutter.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import '../../core/files/file_kind.dart';
@@ -132,134 +131,72 @@ class AppDatabase extends _$AppDatabase {
 
   /// Application Support, not drift's default of Documents: on iOS the
   /// Documents folder is shown in the Files app, as the place downloads to
-  /// this phone go. A database left there by an earlier version moves over.
+  /// this phone go.
   static Future<Directory> _directory() async {
     final support = await getApplicationSupportDirectory();
     await support.create(recursive: true);
-    final documents = await getApplicationDocumentsDirectory();
-    final old = File(p.join(documents.path, 'telegrive.sqlite'));
-    if (await old.exists() &&
-        !await File(p.join(support.path, 'telegrive.sqlite')).exists()) {
-      for (final suffix in ['', '-wal', '-shm', '-journal']) {
-        final file = File('${old.path}$suffix');
-        if (await file.exists()) {
-          await file.rename(p.join(support.path, 'telegrive.sqlite$suffix'));
-        }
-      }
-    }
     return support;
   }
 
   @override
-  int get schemaVersion => 14;
+  int get schemaVersion => 1;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
-    onCreate: (m) async {
-      await m.createAll();
-      await customStatement(
-        'CREATE INDEX files_folder ON drive_files (folder_id)',
-      );
-      await customStatement(
-        'CREATE INDEX files_created ON drive_files (created_at)',
-      );
-      await customStatement(
-        'CREATE INDEX folders_parent ON folders (parent_id)',
-      );
-    },
+    onCreate: (m) => m.createAll(),
     onUpgrade: (m, from, to) async {
-      if (from < 2) {
-        await m.addColumn(transfers, transfers.saveTo);
-        await m.addColumn(transfers, transfers.saveFolder);
-      }
-      if (from < 3) {
-        await m.addColumn(folders, folders.trashedAt);
-        await m.addColumn(folders, folders.hidden);
-        await m.addColumn(driveFiles, driveFiles.trashedAt);
-        await m.addColumn(driveFiles, driveFiles.hidden);
-        await m.createTable(albums);
-        await m.createTable(albumFiles);
-        await m.createTable(offlinePins);
-        await m.createTable(offlineCopies);
-        await m.createTable(fileContents);
-      }
-      if (from < 4) {
-        await m.createTable(fileOpens);
-        await m.addColumn(driveFiles, driveFiles.manifestExtra);
-        await m.addColumn(folders, folders.manifestExtra);
-      }
-      if (from < 5) await m.addColumn(transfers, transfers.wifiOnly);
-      if (from < 6) await m.addColumn(backupAssets, backupAssets.reason);
-      if (from < 7) {
-        await m.addColumn(driveFiles, driveFiles.durationSeconds);
-        await m.addColumn(transfers, transfers.durationSeconds);
-        await m.addColumn(folders, folders.starred);
-        await m.addColumn(driveFiles, driveFiles.replacedBy);
-        await m.addColumn(transfers, transfers.replacesFileId);
-        await m.createTable(playPositions);
-        // Schemas 4 to 6 keep st, du and rb among the extras, so a star,
-        // length or replacement written by another phone may already be in
-        // the index. Each moves into its column and out of the extras, which
-        // hold only the keys this schema has no column for.
-        await customStatement(
-          'UPDATE folders SET starred = 1 '
-          "WHERE json_extract(manifest_extra, '\$.st') = 1",
-        );
-        await customStatement(
-          'UPDATE folders SET manifest_extra = '
-          "NULLIF(json_remove(manifest_extra, '\$.st'), '{}') "
-          "WHERE json_type(manifest_extra, '\$.st') IS NOT NULL",
-        );
-        await customStatement(
-          "UPDATE drive_files SET duration_seconds = json_extract(manifest_extra, '\$.du') "
-          "WHERE json_type(manifest_extra, '\$.du') = 'integer' "
-          "AND json_extract(manifest_extra, '\$.du') > 0",
-        );
-        await customStatement(
-          "UPDATE drive_files SET replaced_by = json_extract(manifest_extra, '\$.rb') "
-          "WHERE json_type(manifest_extra, '\$.rb') = 'text'",
-        );
-        await customStatement(
-          'UPDATE drive_files SET manifest_extra = '
-          "NULLIF(json_remove(manifest_extra, '\$.du', '\$.rb'), '{}') "
-          "WHERE json_type(manifest_extra, '\$.du') IS NOT NULL "
-          "OR json_type(manifest_extra, '\$.rb') IS NOT NULL",
-        );
-      }
-      if (from < 8) {
-        await m.addColumn(transfers, transfers.sourceChatId);
-        await m.addColumn(transfers, transfers.sourceMessageId);
-        await m.addColumn(driveFiles, driveFiles.adopted);
-      }
-      if (from < 9) {
-        await m.createTable(watchedFolders);
-        await m.createTable(watchedFiles);
-      }
-      if (from < 10) {
-        await m.createTable(pendingEdits);
-        await m.addColumn(driveFiles, driveFiles.originalSize);
-      }
-      if (from == 11) {
-        // Version 11 alone kept the layout each message's caption was in.
-        for (final TableInfo<Table, dynamic> table in [fileParts, folders, albums]) {
-          await m.dropColumn(table, 'caption_layout');
-        }
-      }
-      if (from < 13) {
-        await m.addColumn(transfers, transfers.albumIds);
-        await m.addColumn(transfers, transfers.starred);
-        await m.createTable(takeoutParts);
-        await m.createTable(takeoutEntries);
-        await m.createTable(takeoutDetails);
-        await m.createTable(takeoutItems);
-      }
-      if (from == 13) {
-        await m.addColumn(takeoutParts, takeoutParts.deletedAt);
-        await m.addColumn(takeoutItems, takeoutItems.albums);
-        await m.addColumn(takeoutItems, takeoutItems.starred);
-      }
+      // Only a build from before the first release leaves a database above
+      // this version.
+      if (from > to) await _takeOverPreRelease(m, from);
     },
   );
+
+  /// Takes over a database from a build before the first release, which
+  /// counted its schema up to 14. Version 14 is version 1's tables as they
+  /// are; 10 to 13 lack some of the Google Photos import's tables and
+  /// columns, and 11 also has a column that is gone. All five keep
+  /// everything in them. Anything older starts over empty, and the next
+  /// read of the channel fills the index again.
+  Future<void> _takeOverPreRelease(Migrator m, int from) async {
+    if (from < 10) {
+      final tables = await customSelect(
+        "SELECT name FROM sqlite_master WHERE type = 'table' "
+        "AND name NOT LIKE 'sqlite_%'",
+      ).get();
+      for (final table in tables) {
+        await customStatement('DROP TABLE "${table.read<String>('name')}"');
+      }
+      await m.createAll();
+      return;
+    }
+    if (from == 11) {
+      for (final TableInfo<Table, dynamic> table in [fileParts, folders, albums]) {
+        await m.dropColumn(table, 'caption_layout');
+      }
+    }
+    if (from <= 12) {
+      await m.addColumn(transfers, transfers.albumIds);
+      await m.addColumn(transfers, transfers.starred);
+      await m.createTable(takeoutParts);
+      await m.createTable(takeoutEntries);
+      await m.createTable(takeoutDetails);
+      await m.createTable(takeoutItems);
+    }
+    if (from == 13) {
+      await m.addColumn(takeoutParts, takeoutParts.deletedAt);
+      await m.addColumn(takeoutItems, takeoutItems.albums);
+      await m.addColumn(takeoutItems, takeoutItems.starred);
+    }
+    // The same indexes, whether or not the database was made with them.
+    for (final index in [filesFolder, filesCreated, foldersParent]) {
+      await customStatement('DROP INDEX IF EXISTS ${index.entityName}');
+      await m.createIndex(index);
+    }
+    // Search's reader counted to 3 before the first release, and that
+    // reader is version 1 now. What an older one read is read again.
+    await customStatement('DELETE FROM file_contents WHERE version < 3');
+    await customStatement('UPDATE file_contents SET version = 1');
+  }
 
   // ---------------------------------------------------------------------------
   // Browsing

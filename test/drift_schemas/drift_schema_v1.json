@@ -1619,6 +1619,16 @@
               "dart_expr": "const EnumNameConverter<TakeoutPartProblem>(TakeoutPartProblem.values)",
               "dart_type_name": "TakeoutPartProblem"
             }
+          },
+          {
+            "name": "deleted_at",
+            "getter_name": "deletedAt",
+            "moor_type": "dateTime",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
           }
         ],
         "is_virtual": false,
@@ -1884,6 +1894,30 @@
             "default_dart": null,
             "default_client_dart": null,
             "dsl_features": []
+          },
+          {
+            "name": "albums",
+            "getter_name": "albums",
+            "moor_type": "string",
+            "nullable": true,
+            "customConstraints": null,
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
+          },
+          {
+            "name": "starred",
+            "getter_name": "starred",
+            "moor_type": "bool",
+            "nullable": true,
+            "customConstraints": null,
+            "defaultConstraints": "CHECK (\"starred\" IN (0, 1))",
+            "dialectAwareDefaultConstraints": {
+              "sqlite": "CHECK (\"starred\" IN (0, 1))"
+            },
+            "default_dart": null,
+            "default_client_dart": null,
+            "dsl_features": []
           }
         ],
         "is_virtual": false,
@@ -1891,6 +1925,63 @@
         "constraints": [],
         "explicit_pk": [
           "key"
+        ]
+      }
+    },
+    {
+      "id": 19,
+      "references": [
+        0
+      ],
+      "type": "index",
+      "data": {
+        "on": 0,
+        "name": "folders_parent",
+        "sql": null,
+        "unique": false,
+        "columns": [
+          {
+            "column": "parent_id",
+            "order_by": null
+          }
+        ]
+      }
+    },
+    {
+      "id": 20,
+      "references": [
+        1
+      ],
+      "type": "index",
+      "data": {
+        "on": 1,
+        "name": "files_folder",
+        "sql": null,
+        "unique": false,
+        "columns": [
+          {
+            "column": "folder_id",
+            "order_by": null
+          }
+        ]
+      }
+    },
+    {
+      "id": 21,
+      "references": [
+        1
+      ],
+      "type": "index",
+      "data": {
+        "on": 1,
+        "name": "files_created",
+        "sql": null,
+        "unique": false,
+        "columns": [
+          {
+            "column": "created_at",
+            "order_by": null
+          }
         ]
       }
     }
@@ -2036,7 +2127,7 @@
       "sql": [
         {
           "dialect": "sqlite",
-          "sql": "CREATE TABLE IF NOT EXISTS \"takeout_parts\" (\"id\" TEXT NOT NULL, \"uri\" TEXT NOT NULL, \"name\" TEXT NOT NULL, \"size\" INTEGER NOT NULL, \"added_at\" INTEGER NOT NULL, \"read_at\" INTEGER NULL, \"problem\" TEXT NULL, PRIMARY KEY (\"id\"));"
+          "sql": "CREATE TABLE IF NOT EXISTS \"takeout_parts\" (\"id\" TEXT NOT NULL, \"uri\" TEXT NOT NULL, \"name\" TEXT NOT NULL, \"size\" INTEGER NOT NULL, \"added_at\" INTEGER NOT NULL, \"read_at\" INTEGER NULL, \"problem\" TEXT NULL, \"deleted_at\" INTEGER NULL, PRIMARY KEY (\"id\"));"
         }
       ]
     },
@@ -2063,7 +2154,34 @@
       "sql": [
         {
           "dialect": "sqlite",
-          "sql": "CREATE TABLE IF NOT EXISTS \"takeout_items\" (\"key\" TEXT NOT NULL, \"state\" TEXT NOT NULL, \"file_id\" TEXT NULL, \"transfer_id\" TEXT NULL, \"failures\" INTEGER NOT NULL DEFAULT 0, \"reason\" TEXT NULL, \"updated_at\" INTEGER NOT NULL, PRIMARY KEY (\"key\"));"
+          "sql": "CREATE TABLE IF NOT EXISTS \"takeout_items\" (\"key\" TEXT NOT NULL, \"state\" TEXT NOT NULL, \"file_id\" TEXT NULL, \"transfer_id\" TEXT NULL, \"failures\" INTEGER NOT NULL DEFAULT 0, \"reason\" TEXT NULL, \"updated_at\" INTEGER NOT NULL, \"albums\" TEXT NULL, \"starred\" INTEGER NULL CHECK (\"starred\" IN (0, 1)), PRIMARY KEY (\"key\"));"
+        }
+      ]
+    },
+    {
+      "name": "folders_parent",
+      "sql": [
+        {
+          "dialect": "sqlite",
+          "sql": "CREATE INDEX folders_parent ON folders (parent_id)"
+        }
+      ]
+    },
+    {
+      "name": "files_folder",
+      "sql": [
+        {
+          "dialect": "sqlite",
+          "sql": "CREATE INDEX files_folder ON drive_files (folder_id)"
+        }
+      ]
+    },
+    {
+      "name": "files_created",
+      "sql": [
+        {
+          "dialect": "sqlite",
+          "sql": "CREATE INDEX files_created ON drive_files (created_at)"
         }
       ]
     }

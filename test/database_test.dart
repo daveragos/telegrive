@@ -1,13 +1,11 @@
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
-import 'package:drift_dev/api/migrations_native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:handy_tdlib/api.dart' as td;
 import 'package:telegrive/core/files/file_kind.dart';
 import 'package:telegrive/features/drive/data/message_indexer.dart';
 import 'package:telegrive/infrastructure/database/app_database.dart';
 
-import 'generated_migrations/schema.dart';
 import 'support/fake_telegram.dart';
 
 void main() {
@@ -664,7 +662,7 @@ void main() {
       file('c').copyWith(takenAt: Value(DateTime(2026, 9, 20))),
       part('c', 0, 12),
     );
-    expect(db.schemaVersion, 14);
+    expect(db.schemaVersion, 1);
 
     await db.recordOpen('a');
     expect((await db.watchRecentOpens().first).map((o) => o.$1.id), ['a']);
@@ -1978,18 +1976,5 @@ void main() {
     ]);
     expect(await db.trashedReplacementsOf('v1'), isEmpty);
     expect((await db.fileById('v1'))!.replacedBy, 'v2');
-  });
-
-  test('a version 3 database gains play positions', () async {
-    final verifier = SchemaVerifier(GeneratedHelper());
-    final upgraded = AppDatabase(await verifier.startAt(3));
-    addTearDown(upgraded.close);
-    await verifier.migrateAndValidate(upgraded, upgraded.schemaVersion);
-
-    expect(await upgraded.playPositionOf('film'), isNull);
-    await upgraded.savePlayPosition('film', 5 * 60 * 1000, 20 * 60 * 1000);
-    final point = (await upgraded.playPositionOf('film'))!;
-    expect(point.positionMs, 5 * 60 * 1000);
-    expect(point.durationMs, 20 * 60 * 1000);
   });
 }

@@ -115,9 +115,9 @@ class Preferences {
   Future<void> setLastFullSync(int chatId, DateTime at) =>
       _prefs.setInt('full_sync_$chatId', at.millisecondsSinceEpoch);
 
-  /// The MessageIndexer.version of the last full read of the channel. An
-  /// index from before this was recorded was built by version 1.
-  int indexedWith(int chatId) => _prefs.getInt('indexed_with_$chatId') ?? 1;
+  /// The MessageIndexer.version of the last full read of the channel, or
+  /// null before one has finished.
+  int? indexedWith(int chatId) => _prefs.getInt('indexed_with_$chatId');
   Future<void> setIndexedWith(int chatId, int version) =>
       _prefs.setInt('indexed_with_$chatId', version);
 
