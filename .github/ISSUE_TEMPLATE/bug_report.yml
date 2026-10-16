@@ -31,7 +31,7 @@ body:
     attributes:
       label: Telegrive version
       description: Settings › About › Version.
-      placeholder: 0.1.0
+      placeholder: 1.0.0
     validations:
       required: true
   - type: input

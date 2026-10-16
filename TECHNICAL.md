@@ -842,8 +842,8 @@ To release:
 4. Commit, and push a tag that matches the version:
 
 ```bash
-git tag v0.1.0
-git push origin v0.1.0
+git tag v1.0.0
+git push origin v1.0.0
 ```
 
 [release.yml](.github/workflows/release.yml) then checks the tag against
