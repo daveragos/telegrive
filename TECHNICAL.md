@@ -722,7 +722,7 @@ cp lib/core/config/telegram_api.example.dart lib/core/config/telegram_api.dart
 ```
 
 Then either fill in `apiId` and `apiHash` there, or leave the template's
-blanks and give the build the credentials, as the release workflow does.
+blanks and give the build the credentials.
 Credentials given to the build win over the file's:
 
 ```bash
@@ -801,11 +801,8 @@ one left by a build from before the first release, whose schema went up to
 14: versions 10 to 14 keep what they hold, and older ones start empty for
 the channel to fill again.
 
-Every push to main and every pull request runs `flutter analyze` and
-`flutter test` ([checks.yml](.github/workflows/checks.yml)), on macOS so
-the backup tests that read photos run too. A push to main also builds
-TDLib for Android and for iOS when `tool/build_tdlib_android.sh` or
-`tool/build_tdlib_ios.sh` has changed, and caches it for releases.
+Run `flutter analyze` and `flutter test` before pushing, on a Mac so the
+backup tests that read photos run too; nothing runs them on GitHub.
 
 ## Releases
 
@@ -830,44 +827,27 @@ release build is signed with the debug key, so `flutter run --release`
 works on any checkout, but Android won't install that build over one
 signed with the upload key, or the other way round.
 
-To release:
+Releases are built on a Mac, which the IPA needs, and attached to a
+GitHub release by hand. To release:
 
 1. Raise `version` in pubspec.yaml, build number included.
 2. Write what's new for people in `.github/release-notes/<version>.md`.
-   Without that file, the release lists the commits since the last one.
-3. In `docs/site.js`, set `FALLBACK_VERSION` and the file sizes, which the
-   website shows when GitHub can't be asked. Run
-   `dart run tool/guide_figures.dart`, which draws the IPA's name into the
-   iPhone guide's pictures.
-4. Commit, and push a tag that matches the version:
+3. Run `dart run tool/guide_figures.dart`, which draws the IPA's name into
+   the iPhone guide's pictures.
+4. Build every file into `build/release` with `tool/build_release.sh`.
+   It builds an APK for each ABI, the app bundle and the unsigned IPA,
+   stops if an Android file is signed with the debug key or the IPA lacks
+   TDLib, and writes `SHA256SUMS.txt`.
+5. In `docs/site.js`, set `FALLBACK_VERSION` and the APK and IPA sizes
+   from `build/release`, which the website shows when GitHub can't be
+   asked.
+6. Commit and push, then draft the release with its notes, attach the
+   files in `build/release`, and publish it, which makes the tag:
 
 ```bash
-git tag v1.0.0
-git push origin v1.0.0
-```
-
-[release.yml](.github/workflows/release.yml) then checks the tag against
-pubspec.yaml and builds both platforms side by side, each with TDLib from
-the cache main keeps (or building it, which takes the better part of an
-hour):
-
-- **Android** builds an APK for each ABI and an app bundle, and checks that
-  they are signed with the upload key.
-- **iOS** builds the unsigned IPA with `tool/build_ipa.sh`, on macOS, and
-  checks that TDLib is inside it.
-
-Then it publishes every file with `SHA256SUMS.txt` as a GitHub release. It
-reads these repository secrets:
-
-| Secret | What it holds |
-| --- | --- |
-| `TELEGRAM_API_ID`, `TELEGRAM_API_HASH` | The app's Telegram API credentials |
-| `UPLOAD_KEYSTORE_BASE64` | The upload keystore, base64-encoded |
-| `UPLOAD_KEYSTORE_PASSWORD`, `UPLOAD_KEY_ALIAS`, `UPLOAD_KEY_PASSWORD` | As in `key.properties` |
-
-```bash
-base64 -i upload-keystore.jks | gh secret set UPLOAD_KEYSTORE_BASE64
-gh secret set UPLOAD_KEYSTORE_PASSWORD
+gh release create v1.0.0 --draft --target main --title "Telegrive 1.0.0" \
+  --notes-file .github/release-notes/1.0.0.md
+gh release upload v1.0.0 build/release/*
 ```
 
 ## Website
