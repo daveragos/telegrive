@@ -138,6 +138,7 @@ class SettingsScreen extends ConsumerWidget {
                         '${Formatters.number(backup.remaining)} left',
                       BackupPhase.waitingForWifi => 'Waiting for Wi-Fi',
                       BackupPhase.waitingForBudget => 'Limit reached',
+                      BackupPhase.paused => 'Paused',
                       BackupPhase.needsPermission => 'Needs access',
                       BackupPhase.stopped => 'Stopped',
                       _ => 'On',

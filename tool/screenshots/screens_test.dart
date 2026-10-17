@@ -3476,6 +3476,23 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
   }
 
+  testWidgets('backup paused', (tester) async {
+    await prepareData(tester);
+    final today = DateTime.now();
+    await pumpApp(
+      tester,
+      location: '/backup',
+      backup: BackupState(
+        phase: BackupPhase.paused,
+        total: 4847,
+        done: 3120,
+        pauseEnds: DateTime(today.year, today.month, today.day + 1, 8),
+      ),
+      prefs: {'backup_enabled': true, 'backup_mobile_data': 'photos'},
+    );
+    await snap(tester, 'backup_paused');
+  });
+
   testWidgets('backup queue', (tester) async {
     await pumpQueue(tester);
     await snap(tester, 'backup_queue');

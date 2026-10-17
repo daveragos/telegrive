@@ -14,6 +14,7 @@ import '../../transfers/domain/transfer_wait.dart';
 import '../data/backup_controller.dart';
 import '../data/local_media.dart';
 import 'backup_card.dart';
+import 'backup_pause_sheet.dart';
 import 'phone_asset_row.dart';
 import 'phone_media_viewer.dart';
 
@@ -42,6 +43,7 @@ class _BackupQueueScreenState extends ConsumerState<BackupQueueScreen> {
   @override
   Widget build(BuildContext context) {
     final backedUp = ref.watch(recentBackupsProvider).value;
+    final backup = ref.watch(backupControllerProvider);
     // Trash, or a file leaving the drive, takes selected photos off screen.
     ref.listen(recentBackupsProvider, (_, next) {
       if (next.value case final files?) _selection.keepOnly(files);
@@ -62,6 +64,18 @@ class _BackupQueueScreenState extends ConsumerState<BackupQueueScreen> {
                 : AppBar(
                     title: const Text('Backup queue'),
                     actions: [
+                      if (backup.enabled)
+                        backup.phase == BackupPhase.paused
+                            ? IconButton(
+                                onPressed: ref.read(backupControllerProvider.notifier).resume,
+                                tooltip: 'Resume backup',
+                                icon: const Icon(Icons.play_arrow_rounded),
+                              )
+                            : IconButton(
+                                onPressed: () => showBackupPauseSheet(context, ref),
+                                tooltip: 'Pause backup',
+                                icon: const Icon(Icons.pause_rounded),
+                              ),
                       IconButton(
                         onPressed: () => context.push('/backup'),
                         tooltip: 'Backup settings',

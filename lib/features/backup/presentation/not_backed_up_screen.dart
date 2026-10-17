@@ -157,6 +157,7 @@ class NotBackedUpScreen extends ConsumerWidget {
   static String _why(BackupPhase phase) => switch (phase) {
     BackupPhase.waitingForWifi => 'waiting for Wi-Fi',
     BackupPhase.waitingForBudget => 'monthly data limit reached',
+    BackupPhase.paused => 'backup is paused',
     BackupPhase.scanning || BackupPhase.uploading => 'backing up now',
     BackupPhase.needsPermission => 'allow photo access to continue',
     BackupPhase.off => 'backup is off',

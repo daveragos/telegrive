@@ -618,6 +618,7 @@ void main() {
         BackupPhase.waitingForDrive: false,
         BackupPhase.waitingForWifi: false,
         BackupPhase.waitingForBudget: false,
+        BackupPhase.paused: false,
         BackupPhase.scanning: true,
         BackupPhase.uploading: true,
         BackupPhase.upToDate: true,

@@ -350,13 +350,26 @@ void main() {
           _item('IMG_1.jpg', origin: TransferOrigin.backup, status: TransferStatus.running),
         ]),
       );
-      expect(buttons.map((b) => (b.id, b.text)), [('pause', 'Pause')]);
+      expect(buttons.map((b) => (b.id, b.text)), [
+        ('pause', 'Pause'),
+        ('pause-backup', 'Pause backup'),
+      ]);
     });
 
-    test('none while only photo backup runs', () {
+    test('only Pause backup while only photo backup runs', () {
       final buttons = TransferKeepAlive.buttons(
         TransfersState([
           _item('IMG_1.jpg', origin: TransferOrigin.backup, status: TransferStatus.running),
+          _item('done.pdf'),
+        ]),
+      );
+      expect(buttons.map((b) => (b.id, b.text)), [('pause-backup', 'Pause backup')]);
+    });
+
+    test('none once nothing is in flight', () {
+      final buttons = TransferKeepAlive.buttons(
+        TransfersState([
+          _item('IMG_1.jpg', origin: TransferOrigin.backup, status: TransferStatus.paused),
           _item('done.pdf'),
         ]),
       );

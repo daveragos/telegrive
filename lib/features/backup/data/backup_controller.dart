@@ -48,6 +48,10 @@ enum BackupPhase {
   /// waits for Wi-Fi or the next period.
   waitingForBudget,
 
+  /// On, but paused by the person, until [BackupState.pauseEnds] or, with
+  /// none, until they resume it. Uploads under way wait where they are.
+  paused,
+
   /// Looking through the photo library.
   scanning,
 
@@ -155,6 +159,7 @@ class BackupState {
     this.heldVideos = 0,
     this.heldForBudget = 0,
     this.pausedUntil,
+    this.pauseEnds,
     this.smallCopies = 0,
     this.sendingSmallCopies = false,
   });
@@ -214,6 +219,10 @@ class BackupState {
   /// as failed.
   final DateTime? pausedUntil;
 
+  /// While [phase] is [BackupPhase.paused], when the person's pause ends
+  /// by itself; null for one that lasts until they resume it.
+  final DateTime? pauseEnds;
+
   /// Photos in scope with only a small copy in the drive so far, whose
   /// originals are still to go up. They count among [remaining].
   final int smallCopies;
@@ -250,6 +259,8 @@ class BackupState {
     int? heldForBudget,
     DateTime? pausedUntil,
     bool clearPaused = false,
+    DateTime? pauseEnds,
+    bool clearPauseEnds = false,
     int? smallCopies,
     bool? sendingSmallCopies,
   }) => BackupState(
@@ -267,6 +278,7 @@ class BackupState {
     heldVideos: heldVideos ?? this.heldVideos,
     heldForBudget: heldForBudget ?? this.heldForBudget,
     pausedUntil: clearPaused ? null : (pausedUntil ?? this.pausedUntil),
+    pauseEnds: clearPauseEnds ? null : (pauseEnds ?? this.pauseEnds),
     smallCopies: smallCopies ?? this.smallCopies,
     sendingSmallCopies: sendingSmallCopies ?? this.sendingSmallCopies,
   );
@@ -389,6 +401,9 @@ class BackupController extends Notifier<BackupState> {
   /// Starts the next pass once a wait Telegram asked for is over.
   Timer? _pauseTimer;
 
+  /// Ends the person's pause once its time is up.
+  Timer? _pauseEnd;
+
   /// The running pass is looking through the whole library, and records
   /// that as the last look once it has dealt with everything, which is also
   /// when the checkpoint moves. Recorded any earlier, a look that never got
@@ -463,18 +478,29 @@ class BackupController extends Notifier<BackupState> {
     ref.onDispose(() {
       _debounce?.cancel();
       _pauseTimer?.cancel();
+      _pauseEnd?.cancel();
       _unwatchLibrary();
     });
+    // A pause whose time passed while the app was closed is over.
+    final pause = ref.read(preferencesProvider).backupPause;
+    final pauseEnds = pause?.until;
+    final paused = enabled && pause != null && (pauseEnds == null || pauseEnds.isAfter(DateTime.now()));
+    if (pause != null && !paused) unawaited(ref.read(preferencesProvider).clearBackupPause());
     // The background job's network is fixed for its run, and it watches
     // nothing: the check jobs notice new photos, and the job runs one pass.
     if (background) {
       return BackupState(
-        phase: enabled ? BackupPhase.waitingForDrive : BackupPhase.off,
+        phase: paused
+            ? BackupPhase.paused
+            : (enabled ? BackupPhase.waitingForDrive : BackupPhase.off),
+        pauseEnds: paused ? pauseEnds : null,
         lastCompleted: ref.read(preferencesProvider).backupLastCompleted,
       );
     }
 
     ref.listen<NetworkState>(networkStatusProvider, (_, next) {
+      // A paused backup's uploads wait as they are, whatever the network.
+      if (_paused) return;
       // Originals behind small copies go on Wi-Fi too, whatever the pass
       // says it is doing.
       final waiting =
@@ -507,9 +533,13 @@ class BackupController extends Notifier<BackupState> {
       // Arms the background checks as the app starts; see BackupWorker.schedule.
       unawaited(BackupWorker.schedule());
     }
+    if (paused) _armPauseEnd(pauseEnds);
 
     return BackupState(
-      phase: enabled ? BackupPhase.waitingForDrive : BackupPhase.off,
+      phase: paused
+          ? BackupPhase.paused
+          : (enabled ? BackupPhase.waitingForDrive : BackupPhase.off),
+      pauseEnds: paused ? pauseEnds : null,
       lastCompleted: ref.read(preferencesProvider).backupLastCompleted,
     );
   }
@@ -546,17 +576,19 @@ class BackupController extends Notifier<BackupState> {
 
   Future<void> disable() async {
     await _prefs.setBackupEnabled(false);
+    await _prefs.clearBackupPause();
     _stopRequested = true;
     _pauseTimer?.cancel();
+    _pauseEnd?.cancel();
     _unwatchLibrary();
     unawaited(BackupWorker.cancel());
     unawaited(BackupNotifications.clear());
     // Uploads on a long Telegram wait as well, or they would start again
-    // by themselves once it is over.
+    // by themselves once it is over, and those a pause stopped.
     final uploads = ref
         .read(transferQueueProvider)
         .items
-        .where((t) => t.status.isActive && t.origin == TransferOrigin.backup);
+        .where((t) => t.status.isPending && t.origin == TransferOrigin.backup);
     for (final item in uploads) {
       unawaited(_queue.cancel(item.id));
     }
@@ -565,6 +597,76 @@ class BackupController extends Notifier<BackupState> {
       phase: BackupPhase.off,
       lastCompleted: state.lastCompleted,
     );
+  }
+
+  /// Pauses backup until [until], or until [resume] when null. Uploads
+  /// under way stop where they are rather than being cancelled, nothing new
+  /// starts, and the pause outlasts the app being closed, the background
+  /// job included. Once its time is up it ends by itself.
+  Future<void> pause([DateTime? until]) async {
+    if (!state.enabled) return;
+    await _prefs.setBackupPause(until);
+    _stopRequested = true;
+    _rerun = false;
+    _debounce?.cancel();
+    state = state.copyWith(
+      phase: BackupPhase.paused,
+      pauseEnds: until,
+      clearPauseEnds: until == null,
+      clearPaused: true,
+      clearCurrent: true,
+    );
+    _armPauseEnd(until);
+    await _queue.pauseAll((row) => row.origin == TransferOrigin.backup);
+  }
+
+  /// Ends a pause: the uploads it stopped go on from where they were, and
+  /// a pass looks for what else is left.
+  Future<void> resume() async {
+    _pauseEnd?.cancel();
+    _pauseEnd = null;
+    if (_prefs.backupPause == null && state.phase != BackupPhase.paused) return;
+    await _prefs.clearBackupPause();
+    if (!_prefs.backupEnabled) return;
+    state = state.copyWith(phase: BackupPhase.scanning, clearPauseEnds: true);
+    await _resumePausedUploads();
+    schedule(immediate: true);
+  }
+
+  /// Paused by the person, with time left on the pause.
+  bool get _paused {
+    final pause = _prefs.backupPause;
+    if (pause == null) return false;
+    final until = pause.until;
+    return until == null || until.isAfter(DateTime.now());
+  }
+
+  /// Resumes backup once a pause that ends [until] is over. The background
+  /// job, which runs one pass, has no use for it.
+  void _armPauseEnd(DateTime? until) {
+    _pauseEnd?.cancel();
+    _pauseEnd = null;
+    if (until == null || _background) return;
+    _pauseEnd = Timer(until.difference(DateTime.now()) + const Duration(seconds: 1), () {
+      _pauseEnd = null;
+      unawaited(resume());
+    });
+  }
+
+  /// Backup's uploads a pause stopped go on from where they were, and the
+  /// pass that reaches each photo follows its upload rather than sending
+  /// the photo again, also when the app was closed in between.
+  Future<void> _resumePausedUploads() async {
+    final paused = [
+      for (final item in ref.read(transferQueueProvider).items)
+        if (item.origin == TransferOrigin.backup && item.status == TransferStatus.paused)
+          item.row,
+    ];
+    if (paused.isEmpty) return;
+    for (final row in paused) {
+      if (row.assetId case final assetId?) _heldUploads.putIfAbsent(assetId, () => row.id);
+    }
+    await _queue.resumeAll((row) => row.origin == TransferOrigin.backup);
   }
 
   Future<void> setIncludeVideos(bool value) async {
@@ -912,7 +1014,7 @@ class BackupController extends Notifier<BackupState> {
   /// several rows per photo), so non-urgent calls are debounced. The
   /// background job runs its one pass itself and schedules none.
   void schedule({bool immediate = false}) {
-    if (!_prefs.backupEnabled || _background) return;
+    if (!_prefs.backupEnabled || _background || _paused) return;
     _debounce?.cancel();
     _debounce = Timer(
       immediate ? Duration.zero : const Duration(seconds: 4),
@@ -1012,7 +1114,7 @@ class BackupController extends Notifier<BackupState> {
   }
 
   Future<void> run() async {
-    if (!_prefs.backupEnabled) return;
+    if (!_prefs.backupEnabled || _paused) return;
     if (_running) {
       _rerun = true;
       return;
@@ -1027,7 +1129,7 @@ class BackupController extends Notifier<BackupState> {
         _lastPassAt = DateTime.now();
         _libraryChanged = false;
         await _pass();
-      } while (_rerun && _prefs.backupEnabled);
+      } while (_rerun && _prefs.backupEnabled && !_paused);
     } catch (e, stack) {
       debugPrint('[Backup] pass failed: $e\n$stack');
       // A crashed pass says so, with the reason. Calling it up to date
@@ -1042,6 +1144,17 @@ class BackupController extends Notifier<BackupState> {
     } finally {
       _running = false;
       _passIds = null;
+      // A pause that came while the pass ran stands, whatever the pass said
+      // about itself as it ended.
+      if (_prefs.backupEnabled && _paused && state.phase != BackupPhase.paused) {
+        final until = _prefs.backupPause?.until;
+        state = state.copyWith(
+          phase: BackupPhase.paused,
+          pauseEnds: until,
+          clearPauseEnds: until == null,
+          clearCurrent: true,
+        );
+      }
     }
   }
 
@@ -1231,6 +1344,9 @@ class BackupController extends Notifier<BackupState> {
           heldVideos: heldVideos,
           smallCopies: smallCopies,
         );
+    // Paused while the library was looked through: the counts stand, and
+    // nothing goes up.
+    if (_paused) return;
     if (!hasWork) {
       if (heldVideos > 0 || _heldForWifi > 0) {
         state = state.copyWith(
@@ -1256,6 +1372,7 @@ class BackupController extends Notifier<BackupState> {
     // it stands now: the limit may have renewed, or 'Use data anyway' been
     // tapped.
     await _markQueued();
+    await _resumePausedUploads();
 
     final fingerprints = await _repository.mediaFingerprints();
     final queue = pending.iterator;
@@ -1429,6 +1546,10 @@ class BackupController extends Notifier<BackupState> {
           return await _landed(asset, held!, record, uploaded: uploaded);
         }
         if (held != null && held.status.isPending) {
+          if (held.status == TransferStatus.paused) {
+            _heldUploads[asset.id] = id;
+            return _Outcome.held;
+          }
           if (held.wifiOnly && ref.read(networkStatusProvider).metered) {
             _heldUploads[asset.id] = id;
             return _hold(isVideo: isVideo);
@@ -1631,9 +1752,9 @@ class BackupController extends Notifier<BackupState> {
 
   /// Waits for [asset]'s upload [id] to end, and calls [uploaded] with the
   /// new file's id once it is in the drive. A [smallCopy] is recorded as
-  /// one. An upload that steps back into the queue to wait for Wi-Fi is
-  /// left there for a later pass to follow, so the worker can move on to
-  /// what may still go.
+  /// one. An upload that steps back into the queue to wait for Wi-Fi, or
+  /// that a pause stops, is left there for a later pass to follow, so the
+  /// worker can move on, or end.
   Future<_Outcome> _follow(
     AssetEntity asset,
     String id,
@@ -1647,9 +1768,13 @@ class BackupController extends Notifier<BackupState> {
       await _queue.remove(id);
       return _Outcome.skipped;
     }
-    final row = await untilEndedOrHeld(ref, id);
+    final row = await untilEndedOrHeld(ref, id, paused: true);
     if (row == null) {
       _heldUploads[asset.id] = id;
+      // Held by a pause, nothing waits for Wi-Fi or the limit.
+      if (ref.read(transferQueueProvider).byId(id)?.status == TransferStatus.paused) {
+        return _Outcome.held;
+      }
       return _hold(isVideo: asset.type == AssetType.video);
     }
     switch (row.status) {

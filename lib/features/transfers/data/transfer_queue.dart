@@ -2441,18 +2441,20 @@ final transferQueueProvider = NotifierProvider<TransferQueue, TransfersState>(
 
 /// Waits for upload [id] to end, and answers its final row, or null once
 /// it is back in the queue waiting for Wi-Fi while the phone is on mobile
-/// data. Work that paces itself on its own uploads, photo backup and the
-/// watched phone folders, moves on then and leaves the upload where it is;
-/// the queue starts it again on Wi-Fi by itself.
-Future<TransferRow?> untilEndedOrHeld(Ref ref, String id) async {
+/// data, or, with [paused], once it is paused. Work that paces itself on
+/// its own uploads, photo backup and the watched phone folders, moves on
+/// then and leaves the upload where it is; the queue starts it again on
+/// Wi-Fi by itself, and a paused one goes on when it is resumed.
+Future<TransferRow?> untilEndedOrHeld(Ref ref, String id, {bool paused = false}) async {
   final ended = Completer<TransferRow?>();
   final queue = ref.listen<TransfersState>(transferQueueProvider, (_, transfers) {
     final row = transfers.byId(id)?.row;
-    if (row != null &&
+    if (row == null || ended.isCompleted) return;
+    final heldForWifi =
         row.status == TransferStatus.queued &&
         row.wifiOnly &&
-        ref.read(networkStatusProvider).metered &&
-        !ended.isCompleted) {
+        ref.read(networkStatusProvider).metered;
+    if (heldForWifi || (paused && row.status == TransferStatus.paused)) {
       ended.complete(null);
     }
   }, fireImmediately: true);

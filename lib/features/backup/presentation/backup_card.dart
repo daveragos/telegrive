@@ -76,6 +76,10 @@ class BackupStatusLine extends ConsumerWidget {
         onPressed: () => controller.schedule(immediate: true),
         child: const Text('Retry'),
       ),
+      BackupPhase.paused => TextButton(
+        onPressed: controller.resume,
+        child: const Text('Resume'),
+      ),
       _ => null,
     };
   }
@@ -248,6 +252,13 @@ describeBackup(BackupState backup, {double speed = 0, int renewDay = 1}) {
       progress: null,
       done: false,
     ),
+    BackupPhase.paused => (
+      icon: Icons.pause_circle_outline_rounded,
+      title: 'Backup is paused',
+      detail: pausedDetail(backup.remaining, backup.pauseEnds),
+      progress: null,
+      done: false,
+    ),
     BackupPhase.scanning => (
       icon: Icons.cloud_sync_outlined,
       title: 'Looking for new photos',
@@ -303,6 +314,17 @@ describeBackup(BackupState backup, {double speed = 0, int renewDay = 1}) {
       done: true,
     ),
   };
+}
+
+/// What a pause holds back, [remaining] items or the photos still to come,
+/// and when it ends: by itself at [ends], or once the person resumes it.
+String pausedDetail(int remaining, DateTime? ends, {DateTime? now}) {
+  final left = remaining > 0
+      ? '${Formatters.count(remaining, 'item')} left.'
+      : 'New photos wait.';
+  return ends == null
+      ? '$left Backup carries on when you resume it.'
+      : '$left Backup carries on by itself ${Formatters.at(ends, now: now)}.';
 }
 
 /// When a pass paused for Telegram goes on by itself, with what is left.

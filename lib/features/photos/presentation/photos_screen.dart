@@ -103,6 +103,7 @@ class _PhotosScreenState extends ConsumerState<PhotosScreen> {
                         BackupPhase.upToDate => Icons.cloud_done_outlined,
                         BackupPhase.needsPermission => Icons.cloud_off_outlined,
                         BackupPhase.stopped => Icons.cloud_off_outlined,
+                        BackupPhase.paused => Icons.pause_circle_outline_rounded,
                         _ => Icons.cloud_sync_outlined,
                       }),
                     ),

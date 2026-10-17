@@ -1285,4 +1285,42 @@ void main() {
       expect(health.needsAttention(true, now: _now), isFalse);
     });
   });
+
+  group('a pause the person chose', () {
+    final paused = BackupState(
+      phase: BackupPhase.paused,
+      total: 300,
+      done: 88,
+      pauseEnds: _now.add(const Duration(hours: 1)),
+    );
+
+    test('says when backup carries on, with Resume', () {
+      final health = _top(backup: paused);
+      expect(health.text, 'Backup is paused');
+      expect(
+        health.detail,
+        'It carries on by itself ${Formatters.at(_now.add(const Duration(hours: 1)), now: _now)}.',
+      );
+      expect(health.tone, HealthTone.neutral);
+      expect(health.action, HealthAction.resumeBackup);
+      expect(health.target, HealthTarget.backup);
+    });
+
+    test('one until resumed says so', () {
+      final health = _top(backup: const BackupState(phase: BackupPhase.paused));
+      expect(health.detail, 'It stays paused until you resume it.');
+      expect(health.action, HealthAction.resumeBackup);
+    });
+
+    test('transfers in progress keep the top line, and the pause the second', () {
+      final transfers = TransfersState([
+        _transfer('a.zip', TransferStatus.running, total: 100, done: 40),
+      ]);
+      final health = _top(backup: paused, transfers: transfers);
+      expect(health.text, '1 transfer in progress');
+      final second = secondaryHealth(health, backup: paused, transfers: transfers, now: _now);
+      expect(second?.text, 'Backup is paused');
+      expect(second?.action, HealthAction.resumeBackup);
+    });
+  });
 }

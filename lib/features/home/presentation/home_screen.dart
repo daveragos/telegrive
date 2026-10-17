@@ -407,6 +407,10 @@ class _Activity extends ConsumerWidget {
           onPressed: () => controller.schedule(immediate: true),
           child: const Text('Retry'),
         ),
+        HealthAction.resumeBackup => TextButton(
+          onPressed: controller.resume,
+          child: const Text('Resume'),
+        ),
         HealthAction.retryFailed => TextButton(
           onPressed: controller.retryFailed,
           child: const Text('Retry'),

@@ -303,6 +303,29 @@ class Preferences {
   Future<void> setBackupEnabled(bool value) =>
       _prefs.setBool(BackupPrefKeys.enabled, value);
 
+  /// A pause the person asked for: none while backup isn't paused, and
+  /// [until] null for one that lasts until they resume it. A pause whose
+  /// time has passed still reads as one; backup ends it as it starts.
+  ({DateTime? until})? get backupPause {
+    if (!(_prefs.getBool(BackupPrefKeys.paused) ?? false)) return null;
+    final millis = _prefs.getInt(BackupPrefKeys.pausedUntil);
+    return (until: millis == null ? null : DateTime.fromMillisecondsSinceEpoch(millis));
+  }
+
+  Future<void> setBackupPause(DateTime? until) async {
+    await _prefs.setBool(BackupPrefKeys.paused, true);
+    if (until == null) {
+      await _prefs.remove(BackupPrefKeys.pausedUntil);
+    } else {
+      await _prefs.setInt(BackupPrefKeys.pausedUntil, until.millisecondsSinceEpoch);
+    }
+  }
+
+  Future<void> clearBackupPause() async {
+    await _prefs.remove(BackupPrefKeys.paused);
+    await _prefs.remove(BackupPrefKeys.pausedUntil);
+  }
+
   bool get backupVideos => _prefs.getBool(BackupPrefKeys.videos) ?? true;
   Future<void> setBackupVideos(bool value) =>
       _prefs.setBool(BackupPrefKeys.videos, value);
@@ -575,6 +598,12 @@ abstract final class BackupPrefKeys {
   /// When a background job last looked for new photos, in milliseconds
   /// since the epoch.
   static const String lastChecked = 'backup_bg_last_checked';
+
+  /// Backup paused by the person, and when the pause ends in milliseconds
+  /// since the epoch, with none for a pause until they resume it; see
+  /// [Preferences.backupPause].
+  static const String paused = 'backup_paused';
+  static const String pausedUntil = 'backup_paused_until';
 
   /// When the background backup job last ran a pass, in milliseconds since
   /// the epoch, and how many photos it sent up.

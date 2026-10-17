@@ -122,6 +122,23 @@ abstract final class Formatters {
     return DateFormat.yMMMd().format(value);
   }
 
+  /// When something happens later, to follow a verb: `at 4:30 PM` today,
+  /// `tomorrow at 8:00 AM`, then `on Oct 20 at 8:00 AM`, with the year once
+  /// it isn't this one's.
+  static String at(DateTime value, {DateTime? now}) {
+    final reference = now ?? DateTime.now();
+    final time = DateFormat.jm().format(value);
+    final day = DateTime(value.year, value.month, value.day);
+    final today = DateTime(reference.year, reference.month, reference.day);
+    final days = day.difference(today).inHours / 24;
+    if (days.round() == 0) return 'at $time';
+    if (days.round() == 1) return 'tomorrow at $time';
+    final date = value.year == reference.year
+        ? DateFormat.MMMd().format(value)
+        : DateFormat.yMMMd().format(value);
+    return 'on $date at $time';
+  }
+
   static String fullDate(DateTime value) =>
       DateFormat.yMMMd().add_jm().format(value);
 

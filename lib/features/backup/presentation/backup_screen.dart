@@ -20,6 +20,7 @@ import '../data/backup_worker.dart';
 import '../data/phone_folders.dart';
 import '../data/watched_folders.dart';
 import 'backup_card.dart';
+import 'backup_pause_sheet.dart';
 import 'duplicates_sheet.dart';
 import 'free_up_space_sheet.dart';
 import 'watched_folder_sheets.dart';
@@ -109,10 +110,13 @@ class BackupScreen extends ConsumerWidget {
         padding: const EdgeInsets.only(bottom: Space.x4),
         children: [
           const BackupStatusPanel(),
-          // Home's "Backup stopped" line opens this screen, so the way to
-          // run the pass again is here too, not only back on Home.
+          // Home's "Backup stopped" and "Backup is paused" lines open this
+          // screen, so the way to carry on is here too, not only on Home.
           if (backup.phase
-              case BackupPhase.off || BackupPhase.needsPermission || BackupPhase.stopped)
+              case BackupPhase.off ||
+                  BackupPhase.needsPermission ||
+                  BackupPhase.stopped ||
+                  BackupPhase.paused)
             Padding(
               padding: const EdgeInsets.fromLTRB(Space.gutter, 0, Space.gutter, Space.s),
               child: SizedBox(
@@ -123,6 +127,8 @@ class BackupScreen extends ConsumerWidget {
                       if (!await controller.enable()) await PhotoManager.openSetting();
                     } else if (backup.phase == BackupPhase.stopped) {
                       controller.schedule(immediate: true);
+                    } else if (backup.phase == BackupPhase.paused) {
+                      await controller.resume();
                     } else if (context.mounted) {
                       await enableBackup(context, ref);
                     }
@@ -130,6 +136,7 @@ class BackupScreen extends ConsumerWidget {
                   child: Text(switch (backup.phase) {
                     BackupPhase.off => 'Turn on backup',
                     BackupPhase.stopped => 'Retry',
+                    BackupPhase.paused => 'Resume backup',
                     _ => 'Allow photo access',
                   }),
                 ),
@@ -195,6 +202,12 @@ class BackupScreen extends ConsumerWidget {
             const SizedBox(height: Space.m),
             ListGroup(
               children: [
+                if (backup.phase != BackupPhase.paused)
+                  ListTile(
+                    title: const Text('Pause backup'),
+                    subtitle: const Text('For an hour, until tomorrow, or until you resume it'),
+                    onTap: () => showBackupPauseSheet(context, ref),
+                  ),
                 ListTile(
                   title: Text(
                     'Turn off backup',

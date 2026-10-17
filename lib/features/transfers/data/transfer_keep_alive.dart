@@ -54,6 +54,10 @@ class TransferKeepAlive {
   /// the app's.
   static const String pauseButton = 'pause';
 
+  /// The id of the Pause backup button, which pauses photo backup for an
+  /// hour.
+  static const String pauseBackupButton = 'pause-backup';
+
   /// What the service's isolate sends the app's when Android ends the
   /// service at its time limit.
   static const String timedOutSignal = 'timed-out';
@@ -325,11 +329,14 @@ class TransferKeepAlive {
   }
 
   /// The notification's buttons for [state]: Pause while any transfer the
-  /// person started is in flight, and none while only photo backup runs.
+  /// person started is in flight, and Pause backup while photo backup
+  /// sends, which pauses it for an hour.
   @visibleForTesting
   static List<NotificationButton> buttons(TransfersState state) => [
     if (state.active.any((t) => t.origin != TransferOrigin.backup))
       const NotificationButton(id: pauseButton, text: 'Pause'),
+    if (state.active.any((t) => t.origin == TransferOrigin.backup))
+      const NotificationButton(id: pauseBackupButton, text: 'Pause backup'),
   ];
 
   /// A Google Photos import that is sending.
@@ -523,6 +530,13 @@ final transferKeepAliveProvider = Provider<void>((ref) {
 
   void onData(Object data) {
     if (data == TransferKeepAlive.pauseButton) unawaited(pauseYours());
+    if (data == TransferKeepAlive.pauseBackupButton) {
+      unawaited(
+        ref
+            .read(backupControllerProvider.notifier)
+            .pause(DateTime.now().add(const Duration(hours: 1))),
+      );
+    }
     if (data == TransferKeepAlive.timedOutSignal) unawaited(stoppedAtTimeLimit());
   }
 

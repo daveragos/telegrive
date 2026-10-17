@@ -465,6 +465,15 @@ value goes back onto the line exactly as it came.
   up, or after a photo was deleted; otherwise only at photos added since
   the last pass that finished, so a library of thousands takes about a
   second.
+- **Pausing.** Pause backup (on the Photo backup screen, the Backup
+  queue, or the notification while backup sends) holds it for an hour,
+  until eight the next morning, or until Resume. Uploads under way are
+  paused in the queue rather than cancelled, no pass starts, and the pause
+  is kept in preferences, so it outlasts the app closing and holds off the
+  background job too. Once its time is up, or on Resume, the paused
+  uploads carry on from where they were, and the pass that reaches each
+  photo follows its upload instead of sending the photo again. Turning
+  backup off ends a pause and cancels what it held.
 - **With the app closed,** Android wakes a small job the moment new photos
   land (a MediaStore content trigger) and every few hours as a fallback.
   It posts "N new photos to back up". With Back up on its own turned on,

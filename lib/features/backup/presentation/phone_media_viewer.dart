@@ -198,11 +198,12 @@ class _Bar extends ConsumerWidget {
 }
 
 /// Whether one photo can go up ahead of the rest in [phase]: not while
-/// backup is off or held up (no Wi-Fi, the monthly data limit, no photo
-/// access, the drive still opening), when nothing goes up at all.
+/// backup is off, paused or held up (no Wi-Fi, the monthly data limit, no
+/// photo access, the drive still opening), when nothing goes up at all.
 bool canBackUpNow(BackupPhase phase) => switch (phase) {
   BackupPhase.waitingForWifi ||
   BackupPhase.waitingForBudget ||
+  BackupPhase.paused ||
   BackupPhase.needsPermission ||
   BackupPhase.off ||
   BackupPhase.waitingForDrive => false,

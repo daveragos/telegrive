@@ -155,13 +155,14 @@ abstract final class BackgroundBackup {
 
   /// Whether the job is done with a pass that ended in [state]: nothing is
   /// left to send, or what is left waits for Wi-Fi, the monthly limit, the
-  /// photo permission or the drive, none of which another run on the
-  /// charger would change. Photos left to a stop, an error or a wait
+  /// person's pause, the photo permission or the drive, none of which
+  /// another run on the charger would change. Photos left to a stop, an error or a wait
   /// Telegram asked for are for Android to run the job again.
   @visibleForTesting
   static bool isDone(BackupState state) => switch (state.phase) {
     BackupPhase.waitingForWifi ||
     BackupPhase.waitingForBudget ||
+    BackupPhase.paused ||
     BackupPhase.needsPermission ||
     BackupPhase.waitingForDrive => true,
     BackupPhase.stopped => false,

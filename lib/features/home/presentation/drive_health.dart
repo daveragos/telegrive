@@ -24,6 +24,9 @@ enum HealthAction {
   allow,
   useData,
   retryBackup,
+
+  /// Ends the person's pause on photo backup.
+  resumeBackup,
   retryFailed,
   retryTransfers,
   resumeTransfers,
@@ -166,6 +169,10 @@ class DriveHealth {
 /// ranks above them and above backup waiting for Wi-Fi, since it says when
 /// backup carries on without Wi-Fi ([renewDay], the day the limit renews).
 ///
+/// A pause the person chose comes after the monthly limit and transfers
+/// waiting for Wi-Fi, and before backup waiting for Wi-Fi, which can't
+/// apply while backup is paused; it carries Resume.
+///
 /// Transfers waiting for room on the phone come straight after not
 /// reaching Telegram, unless backup is stopped or can't see the photos,
 /// which keep the line for their own button. Nothing they wait for comes
@@ -210,7 +217,8 @@ DriveHealth describeDriveHealth({
     BackupPhase.stopped ||
     BackupPhase.needsPermission ||
     BackupPhase.waitingForWifi ||
-    BackupPhase.waitingForBudget => true,
+    BackupPhase.waitingForBudget ||
+    BackupPhase.paused => true,
     _ => false,
   };
   if (!backupBlocked && _allWaitForNetwork(transfers.activeAt(at))) {
@@ -283,6 +291,7 @@ DriveHealth describeDriveHealth({
   if (backup.phase == BackupPhase.waitingForBudget) return _waitingForBudget(backup, renewDay);
   final heldForWifi = transfersWaitingForWifi(transfers);
   if (heldForWifi.isNotEmpty) return _transfersWaitingForWifi(heldForWifi);
+  if (backup.phase == BackupPhase.paused) return _paused(backup, at);
   if (backup.phase == BackupPhase.waitingForWifi) return _waitingForWifi(backup);
   if (backup.enabled && backup.failed > 0) return _failedItems(backup);
   if (backup.phase == BackupPhase.waitingForDrive) {
@@ -371,6 +380,7 @@ DriveHealth? secondaryHealth(
     if (backup.phase == BackupPhase.needsPermission) _needsPermission,
     if (needRoom.isNotEmpty) _nearlyFull(needRoom),
     if (backup.phase == BackupPhase.waitingForBudget) _waitingForBudget(backup, renewDay),
+    if (backup.phase == BackupPhase.paused) _paused(backup, at),
     if (backup.phase == BackupPhase.waitingForWifi) _waitingForWifi(backup),
     if (backup.enabled && backup.failed > 0) _failedItems(backup),
     if (failedTransfers > 0) _failedTransfers(transfers),
@@ -470,6 +480,20 @@ DriveHealth _unreachable(DateTime? synced, DateTime now, {required bool retrying
       target: HealthTarget.refresh,
       topic: HealthTopic.sync,
     );
+
+/// Backup paused by the person, with when it carries on by itself, if it
+/// does, and Resume.
+DriveHealth _paused(BackupState backup, DateTime at) => DriveHealth(
+  icon: Icons.pause_circle_outline_rounded,
+  tone: HealthTone.neutral,
+  text: 'Backup is paused',
+  detail: backup.pauseEnds == null
+      ? 'It stays paused until you resume it.'
+      : 'It carries on by itself ${Formatters.at(backup.pauseEnds!, now: at)}.',
+  action: HealthAction.resumeBackup,
+  target: HealthTarget.backup,
+  topic: HealthTopic.backup,
+);
 
 DriveHealth _stopped(BackupState backup) => DriveHealth(
   icon: Icons.error_outline_rounded,
