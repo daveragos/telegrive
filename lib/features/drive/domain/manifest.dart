@@ -216,6 +216,8 @@ abstract final class ManifestCodec {
     _Field('n', 'name', _Value.text),
     _Field('p', 'parent', _Value.text),
     _Field('st', 'star', _Value.number),
+    _Field('hp', 'nophotos', _Value.number),
+    _Field('pr', 'private', _Value.number),
     _Field('tr', 'trashed', _Value.number),
     _Field('ct', 'added', _Value.number),
     _Field('mt', 'changed', _Value.number),
@@ -522,12 +524,14 @@ class FolderManifest {
     required this.modifiedAt,
     this.trashedAt,
     this.starred = false,
+    this.hiddenFromPhotos = false,
+    this.private = false,
     this.extra = const {},
   });
 
   /// Every key [toJson] can write. A key toJson writes that is missing here
   /// is also copied into [extra], and comes back after it is cleared.
-  static const Set<String> _keys = {'id', 'n', 'p', 'ct', 'mt', 'tr', 'st'};
+  static const Set<String> _keys = {'id', 'n', 'p', 'ct', 'mt', 'tr', 'st', 'hp', 'pr'};
 
   final String id;
   final String name;
@@ -540,6 +544,14 @@ class FolderManifest {
 
   /// Starred, the way a file is; omitted from the message otherwise.
   final bool starred;
+
+  /// Its photos and videos, and those of the folders inside it, stay out
+  /// of the Photos tab; omitted from the message otherwise.
+  final bool hiddenFromPhotos;
+
+  /// It and everything inside it show only in Private, behind the phone's
+  /// lock; omitted from the message otherwise.
+  final bool private;
 
   /// Keys a newer version wrote that this one doesn't know; see
   /// [FileManifest.extra].
@@ -556,6 +568,8 @@ class FolderManifest {
     'mt': modifiedAt.millisecondsSinceEpoch,
     if (trashedAt != null) 'tr': trashedAt!.millisecondsSinceEpoch,
     if (starred) 'st': 1,
+    if (hiddenFromPhotos) 'hp': 1,
+    if (private) 'pr': 1,
   };
 
   static FolderManifest? tryFromJson(Map<String, dynamic> json) {
@@ -570,6 +584,8 @@ class FolderManifest {
       modifiedAt: _time(json['mt'] ?? json['ct']),
       trashedAt: json['tr'] is int ? _time(json['tr']) : null,
       starred: json['st'] == 1 || json['st'] == true,
+      hiddenFromPhotos: json['hp'] == 1 || json['hp'] == true,
+      private: json['pr'] == 1 || json['pr'] == true,
       extra: Map.unmodifiable(_unknown(json, _keys)),
     );
   }

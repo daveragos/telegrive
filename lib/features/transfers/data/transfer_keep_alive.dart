@@ -13,6 +13,7 @@ import '../../../infrastructure/notifications/app_notifications.dart';
 import '../../../infrastructure/storage/preferences.dart';
 import '../../backup/data/backup_controller.dart';
 import '../../backup/data/watched_folders.dart';
+import '../../private/data/private_space.dart';
 import '../../takeout/data/takeout_import.dart';
 import '../domain/transfer_wait.dart';
 import 'transfer_notifications.dart';
@@ -490,7 +491,11 @@ final transferKeepAliveProvider = Provider<void>((ref) {
     final since = batchSince;
     if (since == null) return;
     batchSince = null;
-    final summary = TransferSummary.of(state.items, since);
+    final summary = TransferSummary.of(
+      state.items,
+      since,
+      outOfSight: ref.read(privateOutOfSightProvider),
+    );
     if (summary != null &&
         WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed) {
       unawaited(TransferNotifications.showSummary(summary));

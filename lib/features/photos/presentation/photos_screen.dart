@@ -11,6 +11,7 @@ import '../../backup/presentation/backup_card.dart';
 import '../../backup/presentation/duplicates_sheet.dart';
 import '../../drive/data/drive_sync.dart';
 import '../../files/presentation/file_actions.dart';
+import '../../lock/data/app_lock.dart';
 import '../data/photos_visibility.dart';
 import 'media_grid.dart';
 import 'media_selection_bar.dart';
@@ -242,6 +243,7 @@ class _StuckRow extends ConsumerWidget {
 
 /// Says which folders the timeline leaves out, with Show to bring them in
 /// until the app closes. Only there while one of them has something in it.
+/// With app lock on, Show asks for the phone's lock first.
 class _KeptOutRow extends ConsumerWidget {
   const _KeptOutRow();
 
@@ -251,7 +253,15 @@ class _KeptOutRow extends ConsumerWidget {
     final keptOut = ref.watch(keptOutSummaryProvider);
     final revealed = ref.watch(revealHiddenProvider);
     if (keptOut.count == 0) return const SizedBox.shrink();
-    void toggle() => ref.read(revealHiddenProvider.notifier).toggle();
+    Future<void> toggle() async {
+      if (!revealed && ref.read(appLockProvider).enabled) {
+        final passed = await ref
+            .read(appLockProvider.notifier)
+            .confirm('Show the hidden photos');
+        if (!passed) return;
+      }
+      ref.read(revealHiddenProvider.notifier).toggle();
+    }
 
     return DecoratedBox(
       decoration: BoxDecoration(

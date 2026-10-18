@@ -181,6 +181,33 @@ void main() {
       );
     });
 
+    test('a folder kept out of Photos, or private, says so in its details', () {
+      final folder = FolderManifest(
+        id: 'folder-3',
+        name: 'Diary',
+        parentId: null,
+        createdAt: created,
+        modifiedAt: created,
+        hiddenFromPhotos: true,
+        private: true,
+      );
+      final encoded = ManifestCodec.encodeFolder(folder);
+      expect(encoded.text.split('\n')[1], '#Diary');
+      expect(
+        encoded.styled(CaptionStyle.spoiler),
+        'tgfolder2;id=folder-3;name=Diary;nophotos=1;private=1;'
+        'added=1700000000000;changed=1700000000000',
+      );
+      final decoded = ManifestCodec.decodeFolder(encoded.text)!;
+      expect((decoded.hiddenFromPhotos, decoded.private), (true, true));
+      expect(decoded.extra, isEmpty);
+
+      final plain = ManifestCodec.decodeFolder(
+        'tgfolder2;id=f;name=Work;added=1700000000000',
+      )!;
+      expect((plain.hiddenFromPhotos, plain.private), (false, false));
+    });
+
     test('values that would break the line or turn into links are escaped', () {
       const name = 'Q3; 100% #final @ \$5\u202e.pdf';
       final encoded = ManifestCodec.encodeFile(file(name: name));

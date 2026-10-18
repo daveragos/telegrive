@@ -357,6 +357,12 @@ class SettingsScreen extends ConsumerWidget {
                   ),
                 ),
               ListTile(
+                title: const Text('Private'),
+                subtitle: const Text('Folders that open only with your fingerprint, face or screen lock'),
+                trailing: Icon(Icons.chevron_right_rounded, color: colors.text3),
+                onTap: () => context.push('/private'),
+              ),
+              ListTile(
                 title: const Text('This session'),
                 subtitle: Text(
                   '${currentSession ?? '${AppConfig.appName} $appVersion'}. '

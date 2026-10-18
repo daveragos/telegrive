@@ -12,6 +12,7 @@ import '../../../infrastructure/storage/device_storage.dart';
 import '../../backup/data/backup_controller.dart';
 import '../../backup/presentation/backup_card.dart';
 import '../../offline/data/offline_sync.dart';
+import '../../private/data/private_space.dart';
 import '../../takeout/data/takeout_import.dart';
 import '../../takeout/presentation/takeout_status.dart';
 import '../data/transfer_queue.dart';
@@ -23,7 +24,15 @@ class TransfersScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final state = ref.watch(transferQueueProvider);
+    // What goes into or out of Private shows only while Private is open.
+    final outOfSight = ref.watch(privateOutOfSightProvider);
+    final queued = ref.watch(transferQueueProvider);
+    final state = outOfSight.isNone
+        ? queued
+        : TransfersState([
+            for (final item in queued.items)
+              if (!outOfSight.hides(item.row.folderId)) item,
+          ]);
     // Photo backup, downloads to the phone, copies from chats and a Google
     // Photos import are summarised in a line each rather than listed file
     // by file; only their failures are listed, and the import keeps even

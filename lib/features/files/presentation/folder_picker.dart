@@ -5,6 +5,7 @@ import '../../../core/widgets/common.dart';
 import '../../../core/widgets/file_visuals.dart';
 import '../../drive/data/drive_repository.dart';
 import '../../drive/domain/drive_models.dart';
+import '../../private/data/private_space.dart';
 
 /// Where the person chose to move things.
 class FolderChoice {
@@ -65,6 +66,7 @@ class _FolderPickerState extends ConsumerState<_FolderPicker> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final contents = ref.watch(folderContentsProvider(_current));
+    final privateOpen = ref.watch(privateSpaceProvider);
     final crumbs = ref.watch(breadcrumbsProvider(_current)).value ?? const [];
     final currentName = crumbs.isEmpty ? 'Files' : crumbs.last.name;
 
@@ -107,7 +109,11 @@ class _FolderPickerState extends ConsumerState<_FolderPicker> {
           child: AsyncView<FolderContents>(
             value: contents,
             data: (data) {
-              final folders = data.sorted(const SortOrder(SortField.name)).folders;
+              // Folders in Private are there to pick only while it is open.
+              final folders = [
+                for (final folder in data.sorted(const SortOrder(SortField.name)).folders)
+                  if (privateOpen || !folder.inPrivate) folder,
+              ];
               if (folders.isEmpty) {
                 return const EmptyState(
                   title: 'No folders here',

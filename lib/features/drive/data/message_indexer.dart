@@ -104,6 +104,8 @@ abstract final class MessageIndexer {
           modifiedAt: folder.modifiedAt,
           trashedAt: Value(folder.trashedAt),
           starred: Value(folder.starred),
+          hiddenFromPhotos: Value(folder.hiddenFromPhotos),
+          private: Value(folder.private),
           manifestExtra: Value(ManifestCodec.encodeExtra(folder.extra)),
         ),
       );

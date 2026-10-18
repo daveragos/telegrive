@@ -645,6 +645,9 @@ void main() {
             hiddenBackupFoldersProvider.overrideWith(
               (ref) => Stream.value(const {}),
             ),
+            photosHiddenFoldersProvider.overrideWith(
+              (ref) => Stream.value(const {}),
+            ),
             failedBackupAssetsProvider.overrideWith(
               (ref) => Stream.value(const []),
             ),

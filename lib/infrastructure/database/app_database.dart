@@ -139,15 +139,28 @@ class AppDatabase extends _$AppDatabase {
   }
 
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
     onCreate: (m) => m.createAll(),
     onUpgrade: (m, from, to) async {
       // Only a build from before the first release leaves a database above
-      // this version.
-      if (from > to) await _takeOverPreRelease(m, from);
+      // this version. What it left is taken over as version 1, unless it
+      // was too old to keep and starts over as this one.
+      var version = from;
+      if (from > to) {
+        if (!await _takeOverPreRelease(m, from)) return;
+        version = 1;
+      }
+      if (version < 2) {
+        // Folders kept out of Photos, and private ones. No folder of a
+        // version 1 database is private, so nothing is in Private yet.
+        await m.addColumn(folders, folders.hiddenFromPhotos);
+        await m.addColumn(folders, folders.private);
+        await m.addColumn(folders, folders.inPrivate);
+        await m.addColumn(driveFiles, driveFiles.inPrivate);
+      }
     },
   );
 
@@ -156,8 +169,9 @@ class AppDatabase extends _$AppDatabase {
   /// are; 10 to 13 lack some of the Google Photos import's tables and
   /// columns, and 11 also has a column that is gone. All five keep
   /// everything in them. Anything older starts over empty, and the next
-  /// read of the channel fills the index again.
-  Future<void> _takeOverPreRelease(Migrator m, int from) async {
+  /// read of the channel fills the index again. Returns whether what it
+  /// kept is version 1's, rather than this version's made afresh.
+  Future<bool> _takeOverPreRelease(Migrator m, int from) async {
     if (from < 10) {
       final tables = await customSelect(
         "SELECT name FROM sqlite_master WHERE type = 'table' "
@@ -167,7 +181,7 @@ class AppDatabase extends _$AppDatabase {
         await customStatement('DROP TABLE "${table.read<String>('name')}"');
       }
       await m.createAll();
-      return;
+      return false;
     }
     if (from == 11) {
       for (final TableInfo<Table, dynamic> table in [fileParts, folders, albums]) {
@@ -196,6 +210,7 @@ class AppDatabase extends _$AppDatabase {
     // reader is version 1 now. What an older one read is read again.
     await customStatement('DELETE FROM file_contents WHERE version < 3');
     await customStatement('UPDATE file_contents SET version = 1');
+    return true;
   }
 
   // ---------------------------------------------------------------------------
@@ -211,6 +226,12 @@ class AppDatabase extends _$AppDatabase {
   /// this rule and [_inFolder]; test/picker_contract_test.dart runs it.
   Expression<bool> _shown(DriveFiles f) =>
       _complete(f) & f.hidden.equals(false);
+
+  /// [_shown], and not in Private: what the views across the whole drive
+  /// list. Name checks and copies of a folder's contents go by [_shown]
+  /// alone, since a private file is still in its folder.
+  Expression<bool> _browsable(DriveFiles f) =>
+      _shown(f) & f.inPrivate.equals(false);
 
   /// Items whose parent is gone (deleted from another device, or forwarded
   /// in without one) are shown at the root rather than lost.
@@ -249,8 +270,8 @@ class AppDatabase extends _$AppDatabase {
       (select(driveFiles)
             ..where(
               (f) => excludeCameraRoll
-                  ? _shown(f) & f.takenAt.isNull()
-                  : _shown(f),
+                  ? _browsable(f) & f.takenAt.isNull()
+                  : _browsable(f),
             )
             ..orderBy([(f) => OrderingTerm.desc(f.createdAt)])
             ..limit(limit))
@@ -286,7 +307,7 @@ class AppDatabase extends _$AppDatabase {
         select(fileOpens).join([
             innerJoin(driveFiles, driveFiles.id.equalsExp(fileOpens.fileId)),
           ])
-          ..where(_shown(driveFiles))
+          ..where(_browsable(driveFiles))
           ..orderBy([OrderingTerm.desc(fileOpens.openedAt)])
           ..limit(limit);
     return query.watch().map(
@@ -299,7 +320,7 @@ class AppDatabase extends _$AppDatabase {
 
   Stream<List<FileRow>> watchStarred() =>
       (select(driveFiles)
-            ..where((f) => _shown(f) & f.starred.equals(true))
+            ..where((f) => _browsable(f) & f.starred.equals(true))
             ..orderBy([(f) => OrderingTerm.desc(f.modifiedAt)]))
           .watch();
 
@@ -353,7 +374,7 @@ class AppDatabase extends _$AppDatabase {
             leftOuterJoin(folders, folders.id.equalsExp(driveFiles.folderId)),
           ])
           ..where(
-            _shown(driveFiles) &
+            _browsable(driveFiles) &
                 playPositions.updatedAt.isBiggerThanValue(since),
           )
           ..orderBy([OrderingTerm.desc(playPositions.updatedAt)])
@@ -371,19 +392,25 @@ class AppDatabase extends _$AppDatabase {
     );
   }
 
-  /// Starred folders that aren't in the trash, in name order.
+  /// Starred folders that aren't in the trash or in Private, in name order.
   Stream<List<FolderRow>> watchStarredFolders() =>
       (select(folders)
-            ..where((f) => f.hidden.equals(false) & f.starred.equals(true))
+            ..where(
+              (f) =>
+                  f.hidden.equals(false) &
+                  f.inPrivate.equals(false) &
+                  f.starred.equals(true),
+            )
             ..orderBy([
               (f) => OrderingTerm.asc(f.name.collate(Collate.noCase)),
             ]))
           .watch();
 
-  /// [_shown] as SQL, for the lite queries.
-  static const _shownSql = 'parts_present >= part_count AND hidden = 0';
+  /// [_browsable] as SQL, for the lite queries.
+  static const _browsableSql =
+      'parts_present >= part_count AND hidden = 0 AND in_private = 0';
 
-  /// Shown files matching [where], in [orderBy] order, as [LiteFileRow]s.
+  /// Browsable files matching [where], in [orderBy] order, as [LiteFileRow]s.
   /// The column list is taken from the table, so a column added later is
   /// read here too rather than coming back null. [readsFrom] names any
   /// other table [where] looks at, so a change there updates the list.
@@ -401,7 +428,7 @@ class AppDatabase extends _$AppDatabase {
     return customSelect(
       'SELECT $columns, NULL AS minithumbnail, '
       'minithumbnail IS NOT NULL AS has_mini '
-      'FROM drive_files WHERE $_shownSql AND $where ORDER BY $orderBy',
+      'FROM drive_files WHERE $_browsableSql AND $where ORDER BY $orderBy',
       variables: variables,
       readsFrom: {driveFiles, ...readsFrom},
     ).watch().map(
@@ -440,7 +467,7 @@ class AppDatabase extends _$AppDatabase {
         await (selectOnly(driveFiles)
               ..addColumns([driveFiles.id, driveFiles.thumbnailFileId])
               ..where(
-                _shown(driveFiles) &
+                _browsable(driveFiles) &
                     driveFiles.kind.isIn([
                       FileKind.image.name,
                       FileKind.video.name,
@@ -631,7 +658,7 @@ class AppDatabase extends _$AppDatabase {
     final when = coalesce([driveFiles.takenAt, driveFiles.createdAt]);
     return (select(driveFiles)
           ..where((f) {
-            var condition = _shown(f);
+            var condition = _browsable(f);
             if (words.isNotEmpty) {
               // The indexer stores content in lower case.
               final inContent = selectOnly(fileContents)
@@ -652,7 +679,7 @@ class AppDatabase extends _$AppDatabase {
             if (typed.isNotEmpty &&
                 typed.toLowerCase() != words.toLowerCase()) {
               condition |=
-                  _shown(f) & f.name.like(_like(typed), escapeChar: r'\');
+                  _browsable(f) & f.name.like(_like(typed), escapeChar: r'\');
             }
             if (kinds != null) {
               condition &= f.kind.isIn([for (final kind in kinds) kind.name]);
@@ -679,7 +706,9 @@ class AppDatabase extends _$AppDatabase {
     return (select(folders)
           ..where((f) {
             var condition =
-                f.hidden.equals(false) & f.name.like(pattern, escapeChar: r'\');
+                f.hidden.equals(false) &
+                f.inPrivate.equals(false) &
+                f.name.like(pattern, escapeChar: r'\');
             if (within != null) condition &= f.id.isIn(within);
             return condition;
           })
@@ -700,7 +729,7 @@ class AppDatabase extends _$AppDatabase {
   Stream<List<KindTotal>> watchTotals() {
     return customSelect(
       'SELECT kind, COUNT(*) AS c, COALESCE(SUM(size), 0) AS s '
-      'FROM drive_files WHERE parts_present >= part_count AND hidden = 0 '
+      'FROM drive_files WHERE $_browsableSql '
       'GROUP BY kind',
       readsFrom: {driveFiles},
     ).watch().map(
@@ -718,7 +747,7 @@ class AppDatabase extends _$AppDatabase {
   /// The [limit] biggest files the drive shows, biggest first.
   Stream<List<FileRow>> watchLargestFiles({int limit = 50}) =>
       (select(driveFiles)
-            ..where(_shown)
+            ..where(_browsable)
             ..orderBy([
               (f) => OrderingTerm.desc(f.size),
               (f) => OrderingTerm.asc(f.name),
@@ -730,20 +759,21 @@ class AppDatabase extends _$AppDatabase {
   /// it, biggest first, then one row for the files in no folder when there
   /// are any. A folder or file whose parent is gone counts as top-level, as
   /// Files lists it at the root, so the rows add up to the drive's total.
-  /// UNION rather than UNION ALL, so a folder tree that loops ends anyway.
+  /// What is in Private is left out, as it is from the total. UNION rather
+  /// than UNION ALL, so a folder tree that loops ends anyway.
   Stream<List<FolderSize>> watchFolderSizes() =>
       customSelect(
         'WITH RECURSIVE tree(root, id) AS ('
-        'SELECT id, id FROM folders WHERE hidden = 0 '
+        'SELECT id, id FROM folders WHERE hidden = 0 AND in_private = 0 '
         'AND (parent_id IS NULL OR parent_id NOT IN (SELECT id FROM folders)) '
         'UNION SELECT t.root, f.id FROM folders f JOIN tree t ON f.parent_id = t.id '
-        'WHERE f.hidden = 0) '
+        'WHERE f.hidden = 0 AND f.in_private = 0) '
         'SELECT * FROM ('
         'SELECT t.root AS id, r.name AS name, COUNT(d.id) AS n, '
         'COALESCE(SUM(d.size), 0) AS bytes '
         'FROM tree t JOIN drive_files d ON d.folder_id = t.id '
         'JOIN folders r ON r.id = t.root '
-        'WHERE d.hidden = 0 AND d.parts_present >= d.part_count '
+        'WHERE d.hidden = 0 AND d.in_private = 0 AND d.parts_present >= d.part_count '
         'GROUP BY t.root '
         'UNION ALL '
         "SELECT NULL, '', COUNT(*), COALESCE(SUM(size), 0) FROM drive_files "
@@ -768,19 +798,20 @@ class AppDatabase extends _$AppDatabase {
   /// holds, in it or in any folder below it, and their size; a starred
   /// folder with nothing in it has a row of zeros. The same tree walk as
   /// [watchFolderSizes], rooted at the starred folders rather than the
-  /// top-level ones, since a starred folder can sit anywhere. UNION rather
-  /// than UNION ALL, so a folder tree that loops ends anyway.
+  /// top-level ones, since a starred folder can sit anywhere. What is in
+  /// Private is left out. UNION rather than UNION ALL, so a folder tree
+  /// that loops ends anyway.
   Stream<List<FolderSize>> watchStarredFolderSizes() =>
       customSelect(
         'WITH RECURSIVE tree(root, id) AS ('
-        'SELECT id, id FROM folders WHERE hidden = 0 AND starred = 1 '
+        'SELECT id, id FROM folders WHERE hidden = 0 AND in_private = 0 AND starred = 1 '
         'UNION SELECT t.root, f.id FROM folders f JOIN tree t ON f.parent_id = t.id '
-        'WHERE f.hidden = 0) '
+        'WHERE f.hidden = 0 AND f.in_private = 0) '
         'SELECT t.root AS id, r.name AS name, COUNT(d.id) AS n, '
         'COALESCE(SUM(d.size), 0) AS bytes '
         'FROM tree t JOIN folders r ON r.id = t.root '
         'LEFT JOIN drive_files d ON d.folder_id = t.id '
-        'AND d.hidden = 0 AND d.parts_present >= d.part_count '
+        'AND d.hidden = 0 AND d.in_private = 0 AND d.parts_present >= d.part_count '
         'GROUP BY t.root ORDER BY r.name COLLATE NOCASE',
         readsFrom: {folders, driveFiles},
       ).watch().map(
@@ -796,10 +827,11 @@ class AppDatabase extends _$AppDatabase {
       );
 
   /// How many files the trash holds, those inside trashed folders included,
-  /// and their size.
-  Stream<(int count, int bytes)> watchTrashTotals() => customSelect(
+  /// and their size; those in Private only with [includePrivate].
+  Stream<(int count, int bytes)> watchTrashTotals({bool includePrivate = true}) => customSelect(
     'SELECT COUNT(*) AS n, COALESCE(SUM(size), 0) AS bytes FROM drive_files '
-    'WHERE hidden = 1 AND parts_present >= part_count',
+    'WHERE hidden = 1 AND parts_present >= part_count'
+    '${includePrivate ? '' : ' AND in_private = 0'}',
     readsFrom: {driveFiles},
   ).watchSingle().map((row) => (row.read<int>('n'), row.read<int>('bytes')));
 
@@ -906,8 +938,17 @@ class AppDatabase extends _$AppDatabase {
   static const String _fileHidden =
       '(trashed_at IS NOT NULL OR COALESCE(folder_id IN gone, 0))';
 
-  /// Works [Folders.hidden] and [DriveFiles.hidden] out again, after the
-  /// trash or the folder tree changed.
+  /// Every private folder and every folder inside one.
+  static const String _privateTree =
+      'WITH RECURSIVE secret(id) AS ('
+      'SELECT id FROM folders WHERE "private" = 1 '
+      'UNION SELECT f.id FROM folders f JOIN secret s ON f.parent_id = s.id) ';
+
+  static const String _fileInPrivate = 'COALESCE(folder_id IN secret, 0)';
+
+  /// Works [Folders.hidden], [DriveFiles.hidden] and their [Folders.inPrivate]
+  /// and [DriveFiles.inPrivate] out again, after the trash, the folder tree
+  /// or what is private changed.
   Future<void> refreshHidden() async {
     await customUpdate(
       '${_trashedTree}UPDATE folders SET hidden = (id IN gone) '
@@ -919,18 +960,37 @@ class AppDatabase extends _$AppDatabase {
       'WHERE hidden != $_fileHidden',
       updates: {driveFiles},
     );
+    await customUpdate(
+      '${_privateTree}UPDATE folders SET in_private = (id IN secret) '
+      'WHERE in_private != (id IN secret)',
+      updates: {folders},
+    );
+    await customUpdate(
+      '${_privateTree}UPDATE drive_files SET in_private = $_fileInPrivate '
+      'WHERE in_private != $_fileInPrivate',
+      updates: {driveFiles},
+    );
   }
 
-  /// Works out [DriveFiles.hidden] again for one file, after a change made
-  /// on this phone moved it to or out of the trash or into another folder.
+  /// Works out [DriveFiles.hidden] and [DriveFiles.inPrivate] again for one
+  /// file, after a change made on this phone moved it to or out of the
+  /// trash or into another folder.
   Future<void> refreshHiddenFile(String fileId) => _refreshHiddenFile(fileId);
 
-  Future<void> _refreshHiddenFile(String fileId) => customUpdate(
-    '${_trashedTree}UPDATE drive_files SET hidden = $_fileHidden '
-    'WHERE id = ? AND hidden != $_fileHidden',
-    variables: [Variable.withString(fileId)],
-    updates: {driveFiles},
-  );
+  Future<void> _refreshHiddenFile(String fileId) async {
+    await customUpdate(
+      '${_trashedTree}UPDATE drive_files SET hidden = $_fileHidden '
+      'WHERE id = ? AND hidden != $_fileHidden',
+      variables: [Variable.withString(fileId)],
+      updates: {driveFiles},
+    );
+    await customUpdate(
+      '${_privateTree}UPDATE drive_files SET in_private = $_fileInPrivate '
+      'WHERE id = ? AND in_private != $_fileInPrivate',
+      variables: [Variable.withString(fileId)],
+      updates: {driveFiles},
+    );
+  }
 
   /// Not inside a hidden folder: how Trash lists only what was put there,
   /// not everything inside a trashed folder too.
@@ -942,19 +1002,29 @@ class AppDatabase extends _$AppDatabase {
           ..where(folders.hidden.equals(true)),
       );
 
-  Stream<List<FolderRow>> watchTrashedFolders() =>
+  /// The folders put in the trash, those in Private only with
+  /// [includePrivate].
+  Stream<List<FolderRow>> watchTrashedFolders({bool includePrivate = true}) =>
       (select(folders)
-            ..where((f) => f.trashedAt.isNotNull() & _parentShown(f.parentId))
+            ..where(
+              (f) =>
+                  f.trashedAt.isNotNull() &
+                  _parentShown(f.parentId) &
+                  (includePrivate ? const Constant(true) : f.inPrivate.equals(false)),
+            )
             ..orderBy([(f) => OrderingTerm.desc(f.trashedAt)]))
           .watch();
 
-  Stream<List<FileRow>> watchTrashedFiles() =>
+  /// The files put in the trash, those in Private only with
+  /// [includePrivate].
+  Stream<List<FileRow>> watchTrashedFiles({bool includePrivate = true}) =>
       (select(driveFiles)
             ..where(
               (f) =>
                   _complete(f) &
                   f.trashedAt.isNotNull() &
-                  _parentShown(f.folderId),
+                  _parentShown(f.folderId) &
+                  (includePrivate ? const Constant(true) : f.inPrivate.equals(false)),
             )
             ..orderBy([(f) => OrderingTerm.desc(f.trashedAt)]))
           .watch();
@@ -1024,7 +1094,7 @@ class AppDatabase extends _$AppDatabase {
   /// Albums with how many shown files each holds and its newest one, most
   /// recently changed first.
   Stream<List<AlbumSummary>> watchAlbums() {
-    const shown = 'f.hidden = 0 AND f.parts_present >= f.part_count';
+    const shown = 'f.hidden = 0 AND f.in_private = 0 AND f.parts_present >= f.part_count';
     return customSelect(
       'SELECT a.*, '
       '(SELECT COUNT(*) FROM album_files af JOIN drive_files f ON f.id = af.file_id '

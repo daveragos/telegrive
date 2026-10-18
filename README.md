@@ -32,7 +32,8 @@ your files stay in Telegram.
 - **Works offline.** Changes you make reach Telegram when you are back
   online.
 - **Goes easy on mobile data.** Big uploads can wait for Wi-Fi.
-- **Stays private,** with a fingerprint or face lock.
+- **Stays private,** with a fingerprint or face lock, and a Private space
+  for folders only you should see. Any folder can also stay out of Photos.
 
 ## Getting started
 

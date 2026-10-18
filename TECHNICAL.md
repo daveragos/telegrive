@@ -212,6 +212,8 @@ under [Ids and numbers](#ids-and-numbers).
 | `name` | Its name |
 | `parent` | The id of the folder it is in; absent at the root |
 | `star` | `1` when starred |
+| `nophotos` | `1` when its photos and videos, and those of the folders inside it, stay out of the Photos tab |
+| `private` | `1` when it and everything inside it show only in Private |
 | `trashed` | When it went to the trash, with everything inside it |
 | `added`, `changed` | When it was made and last changed |
 
@@ -622,7 +624,33 @@ month beside your finger, select-a-month, drag to select, pinch to change
 the grid, albums, Favorites and Videos. The viewer flicks down to close
 and up for Details, and plays videos in place. Thumbnails are fetched only
 for what stops on screen, and decoded at the size they are shown; phones
-with little memory start in Save memory.
+with little memory start in Save memory. Hide from Photos, in a folder's
+menu, keeps that folder's photos and videos, and those of the folders
+inside it, out of the timeline, Favorites and Videos on every phone; they
+stay in Files, Search and albums. The line above the grid names what is
+kept out, photo backup's Screenshots and chat folders included, with Show,
+which asks for the phone's lock first when app lock is on.
+
+**Private.** Move to Private, in a folder's menu, takes the folder and
+everything inside it out of Files, Photos, albums, Search, Home, Starred,
+Space and Android's file picker and share targets, on every phone. It is
+written into the folder's message (`private`), and each phone works out
+what is inside a private folder from its tree, as it does for the trash,
+so the index and Android's picker leave it out in SQL. Settings › Private
+lists the private folders behind the phone's fingerprint, face or screen
+lock, asked for on the way in whether or not app lock is on; inside, the
+folders work as in Files. Private closes when its last screen is left, or
+when the app goes to the background, which also closes anything opened
+from it. A private folder opened from outside by its id says it is in
+Private and opens there. Making a folder private needs a phone with a
+lock to open Private with. While Private is closed, Trash, Offline and
+Transfers leave out what is in it, with their counts and totals, so
+emptying the trash never takes what it didn't show; Trash opened from
+Private's own button lists everything. Waiting changes says how many of
+its changes are to things in Private without naming them, and the
+notification for a finished batch counts a file in Private rather than
+naming it or opening it. Until the phone has read which folders are
+private, anything in a folder counts as maybe in Private.
 
 **Search.** Words and dates narrow each other ("invoice march 2024",
 "last week"). PDFs and text files are read on the phone so search finds
@@ -668,6 +696,8 @@ one.
 
 ## Known limits
 
+- Private hides folders in Telegrive only. Telegram shows their files in
+  the channel as it shows any other.
 - Split files appear in Telegram as numbered parts, and only Telegrive
   joins them back.
 - A video the phone's player can't decode, such as some MKV files, keeps
@@ -827,7 +857,7 @@ The screenshot harness renders the signed-in screens with sample data, so
 UI work doesn't need a Telegram account. Some screens show the time, so a
 re-run differs from the stored images by a digit or two.
 
-The index's schema is version 1, and `test/drift_schemas/` keeps a copy of
+The index's schema is version 2, and `test/drift_schemas/` keeps a copy of
 each released version, so a migration can be tested against what phones
 really have. A schema version bump dumps the new version there and
 regenerates the helpers `test/migration_test.dart` checks upgrades with;

@@ -34,6 +34,21 @@ void main() {
     await verifier.migrateAndValidate(db, latest, options: strict);
   });
 
+  test('a version 1 database gains the folders\' Photos and Private choices', () async {
+    final schema = await verifier.schemaAt(1);
+    schema.rawDatabase.execute(
+      'INSERT INTO folders (id, name, message_id, created_at, modified_at) '
+      "VALUES ('docs', 'Docs', 1, 0, 0)",
+    );
+    final db = AppDatabase(schema.newConnection());
+    addTearDown(db.close);
+    await verifier.migrateAndValidate(db, latest, options: strict);
+
+    final folder = (await db.folderById('docs'))!;
+    expect(folder.name, 'Docs');
+    expect((folder.hiddenFromPhotos, folder.private), (false, false));
+  });
+
   // Builds before the first release counted their schema up to 14, which is
   // version 1's tables as they are. Each test below gives version 1's tables
   // the shape an earlier one had.
@@ -83,7 +98,7 @@ void main() {
     final db = await preRelease(14);
     await verifier.migrateAndValidate(db, latest, options: strict);
 
-    expect(await userVersion(db), 1);
+    expect(await userVersion(db), latest);
     await expectKept(db);
   });
 
@@ -98,7 +113,7 @@ void main() {
     );
     await verifier.migrateAndValidate(db, latest, options: strict);
 
-    expect(await userVersion(db), 1);
+    expect(await userVersion(db), latest);
     await expectKept(db);
   });
 
@@ -117,7 +132,7 @@ void main() {
       final db = await preRelease(from, then: beforeImport);
       await verifier.migrateAndValidate(db, latest, options: strict);
 
-      expect(await userVersion(db), 1);
+      expect(await userVersion(db), latest);
       await expectKept(db);
     });
   }
@@ -133,7 +148,7 @@ void main() {
     );
     await verifier.migrateAndValidate(db, latest, options: strict);
 
-    expect(await userVersion(db), 1);
+    expect(await userVersion(db), latest);
     await expectKept(db);
   });
 
@@ -144,7 +159,7 @@ void main() {
     );
     await verifier.migrateAndValidate(db, latest, options: strict);
 
-    expect(await userVersion(db), 1);
+    expect(await userVersion(db), latest);
     expect(await db.folderById('docs'), isNull);
     expect(await db.fileById('lease'), isNull);
     expect(await db.indexedFileIds(1), isEmpty);

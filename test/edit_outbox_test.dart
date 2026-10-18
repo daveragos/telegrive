@@ -367,6 +367,49 @@ void main() {
     expect(await db.albumIdsOf('f2'), unorderedEquals(['a0', 'a1', 'b9']));
   });
 
+  test('a folder\'s Photos and Private choices wait, show at once and go', () async {
+    await postText(
+      20,
+      ManifestCodec.encodeFolder(
+        FolderManifest(
+          id: 'diary',
+          name: 'Diary',
+          parentId: null,
+          createdAt: created,
+          modifiedAt: created,
+        ),
+      ).text,
+    );
+    await repository.moveFiles([await fileOf('f1')], 'diary');
+    telegram.goOffline();
+
+    final diary = (await repository.folderById('diary'))!;
+    await repository.setFolderHiddenFromPhotos([diary], hidden: true);
+    await repository.setFolderPrivate(
+      [(await repository.folderById('diary'))!],
+      private: true,
+    );
+
+    final row = (await db.folderById('diary'))!;
+    expect((row.hiddenFromPhotos, row.private, row.inPrivate), (true, true, true));
+    expect((await db.fileById('f1'))!.inPrivate, isTrue);
+    final views = {for (final view in await repository.watchPendingEdits().first) view.id: view};
+    expect(views['diary']!.description, 'Hidden from Photos · Moved to Private');
+    expect(views['diary']!.inPrivate, isTrue);
+
+    telegram.goOnline();
+    await outbox().drain();
+
+    final texts = {
+      for (final edit in telegram.requests.whereType<td.EditMessageText>())
+        edit.messageId: (edit.inputMessageContent as td.InputMessageText).text.text,
+    };
+    final sent = ManifestCodec.decodeFolder(texts[20]!)!;
+    expect((sent.hiddenFromPhotos, sent.private), (true, true));
+    expect(await db.pendingEditList(), isEmpty);
+    expect((await db.folderById('diary'))!.inPrivate, isTrue);
+  });
+
   test('a chat Telegram hasn\'t loaded yet is not an item that went', () async {
     telegram.goOffline();
     await repository.renameFile(await fileOf('f1'), 'Lease.pdf');

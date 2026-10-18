@@ -3,6 +3,7 @@ import 'package:telegrive/app/launch_action.dart';
 import 'package:telegrive/core/files/file_kind.dart';
 import 'package:telegrive/features/backup/data/backup_notifications.dart';
 import 'package:telegrive/features/backup/data/backup_worker.dart';
+import 'package:telegrive/features/private/data/private_space.dart';
 import 'package:telegrive/features/transfers/data/transfer_keep_alive.dart';
 import 'package:telegrive/features/transfers/data/transfer_notifications.dart';
 import 'package:telegrive/features/transfers/data/transfer_queue.dart';
@@ -22,6 +23,7 @@ TransferItem _item(
   String? error,
   int size = _mb,
   DateTime? finishedAt,
+  String? folderId,
 }) => TransferItem(
   TransferRow(
     id: 'id-$name',
@@ -30,6 +32,7 @@ TransferItem _item(
     name: name,
     mimeType: mimeTypeFor(name),
     fileId: 'file-$name',
+    folderId: folderId,
     ownsSource: false,
     wifiOnly: false,
     totalBytes: size,
@@ -80,6 +83,55 @@ void main() {
       expect(summary.body, '1.4 GB in your drive');
       expect(summary.payload, 'transfers');
       expect(summary.actionId, isNull);
+    });
+
+    test('a lone file in Private is counted, and the tap opens Transfers', () {
+      const private = OutOfSight.of({'vault'});
+      final upload = TransferSummary.of(
+        [_item('Passport.pdf', folderId: 'vault')],
+        _since,
+        outOfSight: private,
+      )!;
+      expect(upload.title, 'Uploaded 1 file');
+      expect(upload.payload, 'transfers');
+
+      final download = TransferSummary.of(
+        [
+          _item(
+            'Diary.pdf',
+            kind: TransferKind.download,
+            resultPath: '/data/telegrive/Diary.pdf',
+            folderId: 'vault',
+          ),
+        ],
+        _since,
+        outOfSight: private,
+      )!;
+      expect(download.title, 'Downloaded 1 file');
+      expect(download.payload, 'transfers');
+      expect(download.actionId, isNull);
+
+      final elsewhere = TransferSummary.of(
+        [_item('Lease.pdf', folderId: 'docs')],
+        _since,
+        outOfSight: private,
+      )!;
+      expect(elsewhere.title, 'Uploaded Lease.pdf');
+    });
+
+    test('a lone file in a folder is counted until Private\'s folders are known', () {
+      expect(
+        TransferSummary.of(
+          [_item('Lease.pdf', folderId: 'docs')],
+          _since,
+          outOfSight: OutOfSight.unknown,
+        )!.title,
+        'Uploaded 1 file',
+      );
+      expect(
+        TransferSummary.of([_item('Notes.txt')], _since, outOfSight: OutOfSight.unknown)!.title,
+        'Uploaded Notes.txt',
+      );
     });
 
     test('several uploads are counted', () {

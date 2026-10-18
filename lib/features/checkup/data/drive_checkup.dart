@@ -346,7 +346,8 @@ class DriveCheckup extends AsyncNotifier<CheckupReport> {
   /// Null when the trash is empty, so the row isn't shown.
   Future<TrashFinding?> _trash() async {
     try {
-      final contents = await _repository.watchTrash().first;
+      // As Trash lists it, from Settings, with Private closed.
+      final contents = await _repository.watchTrash(includePrivate: false).first;
       if (contents.isEmpty) return null;
       final horizon = DateTime.now().add(TrashFinding.dueWithin);
       bool due(DateTime? trashedAt) =>

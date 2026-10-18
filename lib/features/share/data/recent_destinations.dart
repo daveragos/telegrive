@@ -104,6 +104,9 @@ class RecentDestinations extends Notifier<List<FolderChoice>> {
         dropped.add(id);
         continue;
       }
+      // One in Private stays off the list, which Android's share sheet
+      // shows too, and comes back if it leaves Private.
+      if (folder.inPrivate) continue;
       choices.add(FolderChoice(folder.id, folder.name));
     }
     // The drive may have closed while the folders were looked up, or a

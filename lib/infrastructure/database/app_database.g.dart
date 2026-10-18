@@ -120,6 +120,51 @@ class $FoldersTable extends Folders with TableInfo<$FoldersTable, FolderRow> {
     ),
     defaultValue: const Constant(false),
   );
+  static const VerificationMeta _hiddenFromPhotosMeta = const VerificationMeta(
+    'hiddenFromPhotos',
+  );
+  @override
+  late final GeneratedColumn<bool> hiddenFromPhotos = GeneratedColumn<bool>(
+    'hidden_from_photos',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("hidden_from_photos" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  static const VerificationMeta _privateMeta = const VerificationMeta(
+    'private',
+  );
+  @override
+  late final GeneratedColumn<bool> private = GeneratedColumn<bool>(
+    'private',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("private" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  static const VerificationMeta _inPrivateMeta = const VerificationMeta(
+    'inPrivate',
+  );
+  @override
+  late final GeneratedColumn<bool> inPrivate = GeneratedColumn<bool>(
+    'in_private',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("in_private" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -132,6 +177,9 @@ class $FoldersTable extends Folders with TableInfo<$FoldersTable, FolderRow> {
     hidden,
     manifestExtra,
     starred,
+    hiddenFromPhotos,
+    private,
+    inPrivate,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -215,6 +263,27 @@ class $FoldersTable extends Folders with TableInfo<$FoldersTable, FolderRow> {
         starred.isAcceptableOrUnknown(data['starred']!, _starredMeta),
       );
     }
+    if (data.containsKey('hidden_from_photos')) {
+      context.handle(
+        _hiddenFromPhotosMeta,
+        hiddenFromPhotos.isAcceptableOrUnknown(
+          data['hidden_from_photos']!,
+          _hiddenFromPhotosMeta,
+        ),
+      );
+    }
+    if (data.containsKey('private')) {
+      context.handle(
+        _privateMeta,
+        private.isAcceptableOrUnknown(data['private']!, _privateMeta),
+      );
+    }
+    if (data.containsKey('in_private')) {
+      context.handle(
+        _inPrivateMeta,
+        inPrivate.isAcceptableOrUnknown(data['in_private']!, _inPrivateMeta),
+      );
+    }
     return context;
   }
 
@@ -264,6 +333,18 @@ class $FoldersTable extends Folders with TableInfo<$FoldersTable, FolderRow> {
         DriftSqlType.bool,
         data['${effectivePrefix}starred'],
       )!,
+      hiddenFromPhotos: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}hidden_from_photos'],
+      )!,
+      private: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}private'],
+      )!,
+      inPrivate: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}in_private'],
+      )!,
     );
   }
 
@@ -296,6 +377,19 @@ class FolderRow extends DataClass implements Insertable<FolderRow> {
   /// Starred like a file is, and kept in the folder's own message, so the
   /// star follows the drive to another phone.
   final bool starred;
+
+  /// Kept out of the Photos tab with the folders inside it, and kept in the
+  /// folder's own message, as the star is.
+  final bool hiddenFromPhotos;
+
+  /// Shown only in Private with everything inside it, and kept in the
+  /// folder's own message, as the star is.
+  final bool private;
+
+  /// Private, or inside a folder that is: shown only in Private. Worked out
+  /// locally from [private] down the folder tree, as [hidden] is from the
+  /// trash.
+  final bool inPrivate;
   const FolderRow({
     required this.id,
     this.parentId,
@@ -307,6 +401,9 @@ class FolderRow extends DataClass implements Insertable<FolderRow> {
     required this.hidden,
     this.manifestExtra,
     required this.starred,
+    required this.hiddenFromPhotos,
+    required this.private,
+    required this.inPrivate,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -327,6 +424,9 @@ class FolderRow extends DataClass implements Insertable<FolderRow> {
       map['manifest_extra'] = Variable<String>(manifestExtra);
     }
     map['starred'] = Variable<bool>(starred);
+    map['hidden_from_photos'] = Variable<bool>(hiddenFromPhotos);
+    map['private'] = Variable<bool>(private);
+    map['in_private'] = Variable<bool>(inPrivate);
     return map;
   }
 
@@ -348,6 +448,9 @@ class FolderRow extends DataClass implements Insertable<FolderRow> {
           ? const Value.absent()
           : Value(manifestExtra),
       starred: Value(starred),
+      hiddenFromPhotos: Value(hiddenFromPhotos),
+      private: Value(private),
+      inPrivate: Value(inPrivate),
     );
   }
 
@@ -367,6 +470,9 @@ class FolderRow extends DataClass implements Insertable<FolderRow> {
       hidden: serializer.fromJson<bool>(json['hidden']),
       manifestExtra: serializer.fromJson<String?>(json['manifestExtra']),
       starred: serializer.fromJson<bool>(json['starred']),
+      hiddenFromPhotos: serializer.fromJson<bool>(json['hiddenFromPhotos']),
+      private: serializer.fromJson<bool>(json['private']),
+      inPrivate: serializer.fromJson<bool>(json['inPrivate']),
     );
   }
   @override
@@ -383,6 +489,9 @@ class FolderRow extends DataClass implements Insertable<FolderRow> {
       'hidden': serializer.toJson<bool>(hidden),
       'manifestExtra': serializer.toJson<String?>(manifestExtra),
       'starred': serializer.toJson<bool>(starred),
+      'hiddenFromPhotos': serializer.toJson<bool>(hiddenFromPhotos),
+      'private': serializer.toJson<bool>(private),
+      'inPrivate': serializer.toJson<bool>(inPrivate),
     };
   }
 
@@ -397,6 +506,9 @@ class FolderRow extends DataClass implements Insertable<FolderRow> {
     bool? hidden,
     Value<String?> manifestExtra = const Value.absent(),
     bool? starred,
+    bool? hiddenFromPhotos,
+    bool? private,
+    bool? inPrivate,
   }) => FolderRow(
     id: id ?? this.id,
     parentId: parentId.present ? parentId.value : this.parentId,
@@ -410,6 +522,9 @@ class FolderRow extends DataClass implements Insertable<FolderRow> {
         ? manifestExtra.value
         : this.manifestExtra,
     starred: starred ?? this.starred,
+    hiddenFromPhotos: hiddenFromPhotos ?? this.hiddenFromPhotos,
+    private: private ?? this.private,
+    inPrivate: inPrivate ?? this.inPrivate,
   );
   FolderRow copyWithCompanion(FoldersCompanion data) {
     return FolderRow(
@@ -427,6 +542,11 @@ class FolderRow extends DataClass implements Insertable<FolderRow> {
           ? data.manifestExtra.value
           : this.manifestExtra,
       starred: data.starred.present ? data.starred.value : this.starred,
+      hiddenFromPhotos: data.hiddenFromPhotos.present
+          ? data.hiddenFromPhotos.value
+          : this.hiddenFromPhotos,
+      private: data.private.present ? data.private.value : this.private,
+      inPrivate: data.inPrivate.present ? data.inPrivate.value : this.inPrivate,
     );
   }
 
@@ -442,7 +562,10 @@ class FolderRow extends DataClass implements Insertable<FolderRow> {
           ..write('trashedAt: $trashedAt, ')
           ..write('hidden: $hidden, ')
           ..write('manifestExtra: $manifestExtra, ')
-          ..write('starred: $starred')
+          ..write('starred: $starred, ')
+          ..write('hiddenFromPhotos: $hiddenFromPhotos, ')
+          ..write('private: $private, ')
+          ..write('inPrivate: $inPrivate')
           ..write(')'))
         .toString();
   }
@@ -459,6 +582,9 @@ class FolderRow extends DataClass implements Insertable<FolderRow> {
     hidden,
     manifestExtra,
     starred,
+    hiddenFromPhotos,
+    private,
+    inPrivate,
   );
   @override
   bool operator ==(Object other) =>
@@ -473,7 +599,10 @@ class FolderRow extends DataClass implements Insertable<FolderRow> {
           other.trashedAt == this.trashedAt &&
           other.hidden == this.hidden &&
           other.manifestExtra == this.manifestExtra &&
-          other.starred == this.starred);
+          other.starred == this.starred &&
+          other.hiddenFromPhotos == this.hiddenFromPhotos &&
+          other.private == this.private &&
+          other.inPrivate == this.inPrivate);
 }
 
 class FoldersCompanion extends UpdateCompanion<FolderRow> {
@@ -487,6 +616,9 @@ class FoldersCompanion extends UpdateCompanion<FolderRow> {
   final Value<bool> hidden;
   final Value<String?> manifestExtra;
   final Value<bool> starred;
+  final Value<bool> hiddenFromPhotos;
+  final Value<bool> private;
+  final Value<bool> inPrivate;
   final Value<int> rowid;
   const FoldersCompanion({
     this.id = const Value.absent(),
@@ -499,6 +631,9 @@ class FoldersCompanion extends UpdateCompanion<FolderRow> {
     this.hidden = const Value.absent(),
     this.manifestExtra = const Value.absent(),
     this.starred = const Value.absent(),
+    this.hiddenFromPhotos = const Value.absent(),
+    this.private = const Value.absent(),
+    this.inPrivate = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   FoldersCompanion.insert({
@@ -512,6 +647,9 @@ class FoldersCompanion extends UpdateCompanion<FolderRow> {
     this.hidden = const Value.absent(),
     this.manifestExtra = const Value.absent(),
     this.starred = const Value.absent(),
+    this.hiddenFromPhotos = const Value.absent(),
+    this.private = const Value.absent(),
+    this.inPrivate = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        name = Value(name),
@@ -529,6 +667,9 @@ class FoldersCompanion extends UpdateCompanion<FolderRow> {
     Expression<bool>? hidden,
     Expression<String>? manifestExtra,
     Expression<bool>? starred,
+    Expression<bool>? hiddenFromPhotos,
+    Expression<bool>? private,
+    Expression<bool>? inPrivate,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -542,6 +683,9 @@ class FoldersCompanion extends UpdateCompanion<FolderRow> {
       if (hidden != null) 'hidden': hidden,
       if (manifestExtra != null) 'manifest_extra': manifestExtra,
       if (starred != null) 'starred': starred,
+      if (hiddenFromPhotos != null) 'hidden_from_photos': hiddenFromPhotos,
+      if (private != null) 'private': private,
+      if (inPrivate != null) 'in_private': inPrivate,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -557,6 +701,9 @@ class FoldersCompanion extends UpdateCompanion<FolderRow> {
     Value<bool>? hidden,
     Value<String?>? manifestExtra,
     Value<bool>? starred,
+    Value<bool>? hiddenFromPhotos,
+    Value<bool>? private,
+    Value<bool>? inPrivate,
     Value<int>? rowid,
   }) {
     return FoldersCompanion(
@@ -570,6 +717,9 @@ class FoldersCompanion extends UpdateCompanion<FolderRow> {
       hidden: hidden ?? this.hidden,
       manifestExtra: manifestExtra ?? this.manifestExtra,
       starred: starred ?? this.starred,
+      hiddenFromPhotos: hiddenFromPhotos ?? this.hiddenFromPhotos,
+      private: private ?? this.private,
+      inPrivate: inPrivate ?? this.inPrivate,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -607,6 +757,15 @@ class FoldersCompanion extends UpdateCompanion<FolderRow> {
     if (starred.present) {
       map['starred'] = Variable<bool>(starred.value);
     }
+    if (hiddenFromPhotos.present) {
+      map['hidden_from_photos'] = Variable<bool>(hiddenFromPhotos.value);
+    }
+    if (private.present) {
+      map['private'] = Variable<bool>(private.value);
+    }
+    if (inPrivate.present) {
+      map['in_private'] = Variable<bool>(inPrivate.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -626,6 +785,9 @@ class FoldersCompanion extends UpdateCompanion<FolderRow> {
           ..write('hidden: $hidden, ')
           ..write('manifestExtra: $manifestExtra, ')
           ..write('starred: $starred, ')
+          ..write('hiddenFromPhotos: $hiddenFromPhotos, ')
+          ..write('private: $private, ')
+          ..write('inPrivate: $inPrivate, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -814,6 +976,21 @@ class $DriveFilesTable extends DriveFiles
     ),
     defaultValue: const Constant(false),
   );
+  static const VerificationMeta _inPrivateMeta = const VerificationMeta(
+    'inPrivate',
+  );
+  @override
+  late final GeneratedColumn<bool> inPrivate = GeneratedColumn<bool>(
+    'in_private',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("in_private" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
   static const VerificationMeta _manifestExtraMeta = const VerificationMeta(
     'manifestExtra',
   );
@@ -891,6 +1068,7 @@ class $DriveFilesTable extends DriveFiles
     takenAt,
     trashedAt,
     hidden,
+    inPrivate,
     manifestExtra,
     durationSeconds,
     replacedBy,
@@ -1017,6 +1195,12 @@ class $DriveFilesTable extends DriveFiles
         hidden.isAcceptableOrUnknown(data['hidden']!, _hiddenMeta),
       );
     }
+    if (data.containsKey('in_private')) {
+      context.handle(
+        _inPrivateMeta,
+        inPrivate.isAcceptableOrUnknown(data['in_private']!, _inPrivateMeta),
+      );
+    }
     if (data.containsKey('manifest_extra')) {
       context.handle(
         _manifestExtraMeta,
@@ -1131,6 +1315,10 @@ class $DriveFilesTable extends DriveFiles
         DriftSqlType.bool,
         data['${effectivePrefix}hidden'],
       )!,
+      inPrivate: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}in_private'],
+      )!,
       manifestExtra: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}manifest_extra'],
@@ -1192,6 +1380,9 @@ class FileRow extends DataClass implements Insertable<FileRow> {
   /// In the trash itself or inside a trashed folder; see [Folders.hidden].
   final bool hidden;
 
+  /// Inside a private folder; see [Folders.inPrivate].
+  final bool inPrivate;
+
   /// Manifest keys this version doesn't know; see [Folders.manifestExtra].
   final String? manifestExtra;
 
@@ -1229,6 +1420,7 @@ class FileRow extends DataClass implements Insertable<FileRow> {
     this.takenAt,
     this.trashedAt,
     required this.hidden,
+    required this.inPrivate,
     this.manifestExtra,
     this.durationSeconds,
     this.replacedBy,
@@ -1268,6 +1460,7 @@ class FileRow extends DataClass implements Insertable<FileRow> {
       map['trashed_at'] = Variable<DateTime>(trashedAt);
     }
     map['hidden'] = Variable<bool>(hidden);
+    map['in_private'] = Variable<bool>(inPrivate);
     if (!nullToAbsent || manifestExtra != null) {
       map['manifest_extra'] = Variable<String>(manifestExtra);
     }
@@ -1312,6 +1505,7 @@ class FileRow extends DataClass implements Insertable<FileRow> {
           ? const Value.absent()
           : Value(trashedAt),
       hidden: Value(hidden),
+      inPrivate: Value(inPrivate),
       manifestExtra: manifestExtra == null && nullToAbsent
           ? const Value.absent()
           : Value(manifestExtra),
@@ -1352,6 +1546,7 @@ class FileRow extends DataClass implements Insertable<FileRow> {
       takenAt: serializer.fromJson<DateTime?>(json['takenAt']),
       trashedAt: serializer.fromJson<DateTime?>(json['trashedAt']),
       hidden: serializer.fromJson<bool>(json['hidden']),
+      inPrivate: serializer.fromJson<bool>(json['inPrivate']),
       manifestExtra: serializer.fromJson<String?>(json['manifestExtra']),
       durationSeconds: serializer.fromJson<int?>(json['durationSeconds']),
       replacedBy: serializer.fromJson<String?>(json['replacedBy']),
@@ -1381,6 +1576,7 @@ class FileRow extends DataClass implements Insertable<FileRow> {
       'takenAt': serializer.toJson<DateTime?>(takenAt),
       'trashedAt': serializer.toJson<DateTime?>(trashedAt),
       'hidden': serializer.toJson<bool>(hidden),
+      'inPrivate': serializer.toJson<bool>(inPrivate),
       'manifestExtra': serializer.toJson<String?>(manifestExtra),
       'durationSeconds': serializer.toJson<int?>(durationSeconds),
       'replacedBy': serializer.toJson<String?>(replacedBy),
@@ -1406,6 +1602,7 @@ class FileRow extends DataClass implements Insertable<FileRow> {
     Value<DateTime?> takenAt = const Value.absent(),
     Value<DateTime?> trashedAt = const Value.absent(),
     bool? hidden,
+    bool? inPrivate,
     Value<String?> manifestExtra = const Value.absent(),
     Value<int?> durationSeconds = const Value.absent(),
     Value<String?> replacedBy = const Value.absent(),
@@ -1432,6 +1629,7 @@ class FileRow extends DataClass implements Insertable<FileRow> {
     takenAt: takenAt.present ? takenAt.value : this.takenAt,
     trashedAt: trashedAt.present ? trashedAt.value : this.trashedAt,
     hidden: hidden ?? this.hidden,
+    inPrivate: inPrivate ?? this.inPrivate,
     manifestExtra: manifestExtra.present
         ? manifestExtra.value
         : this.manifestExtra,
@@ -1468,6 +1666,7 @@ class FileRow extends DataClass implements Insertable<FileRow> {
       takenAt: data.takenAt.present ? data.takenAt.value : this.takenAt,
       trashedAt: data.trashedAt.present ? data.trashedAt.value : this.trashedAt,
       hidden: data.hidden.present ? data.hidden.value : this.hidden,
+      inPrivate: data.inPrivate.present ? data.inPrivate.value : this.inPrivate,
       manifestExtra: data.manifestExtra.present
           ? data.manifestExtra.value
           : this.manifestExtra,
@@ -1503,6 +1702,7 @@ class FileRow extends DataClass implements Insertable<FileRow> {
           ..write('takenAt: $takenAt, ')
           ..write('trashedAt: $trashedAt, ')
           ..write('hidden: $hidden, ')
+          ..write('inPrivate: $inPrivate, ')
           ..write('manifestExtra: $manifestExtra, ')
           ..write('durationSeconds: $durationSeconds, ')
           ..write('replacedBy: $replacedBy, ')
@@ -1530,6 +1730,7 @@ class FileRow extends DataClass implements Insertable<FileRow> {
     takenAt,
     trashedAt,
     hidden,
+    inPrivate,
     manifestExtra,
     durationSeconds,
     replacedBy,
@@ -1556,6 +1757,7 @@ class FileRow extends DataClass implements Insertable<FileRow> {
           other.takenAt == this.takenAt &&
           other.trashedAt == this.trashedAt &&
           other.hidden == this.hidden &&
+          other.inPrivate == this.inPrivate &&
           other.manifestExtra == this.manifestExtra &&
           other.durationSeconds == this.durationSeconds &&
           other.replacedBy == this.replacedBy &&
@@ -1580,6 +1782,7 @@ class DriveFilesCompanion extends UpdateCompanion<FileRow> {
   final Value<DateTime?> takenAt;
   final Value<DateTime?> trashedAt;
   final Value<bool> hidden;
+  final Value<bool> inPrivate;
   final Value<String?> manifestExtra;
   final Value<int?> durationSeconds;
   final Value<String?> replacedBy;
@@ -1603,6 +1806,7 @@ class DriveFilesCompanion extends UpdateCompanion<FileRow> {
     this.takenAt = const Value.absent(),
     this.trashedAt = const Value.absent(),
     this.hidden = const Value.absent(),
+    this.inPrivate = const Value.absent(),
     this.manifestExtra = const Value.absent(),
     this.durationSeconds = const Value.absent(),
     this.replacedBy = const Value.absent(),
@@ -1627,6 +1831,7 @@ class DriveFilesCompanion extends UpdateCompanion<FileRow> {
     this.takenAt = const Value.absent(),
     this.trashedAt = const Value.absent(),
     this.hidden = const Value.absent(),
+    this.inPrivate = const Value.absent(),
     this.manifestExtra = const Value.absent(),
     this.durationSeconds = const Value.absent(),
     this.replacedBy = const Value.absent(),
@@ -1657,6 +1862,7 @@ class DriveFilesCompanion extends UpdateCompanion<FileRow> {
     Expression<DateTime>? takenAt,
     Expression<DateTime>? trashedAt,
     Expression<bool>? hidden,
+    Expression<bool>? inPrivate,
     Expression<String>? manifestExtra,
     Expression<int>? durationSeconds,
     Expression<String>? replacedBy,
@@ -1681,6 +1887,7 @@ class DriveFilesCompanion extends UpdateCompanion<FileRow> {
       if (takenAt != null) 'taken_at': takenAt,
       if (trashedAt != null) 'trashed_at': trashedAt,
       if (hidden != null) 'hidden': hidden,
+      if (inPrivate != null) 'in_private': inPrivate,
       if (manifestExtra != null) 'manifest_extra': manifestExtra,
       if (durationSeconds != null) 'duration_seconds': durationSeconds,
       if (replacedBy != null) 'replaced_by': replacedBy,
@@ -1707,6 +1914,7 @@ class DriveFilesCompanion extends UpdateCompanion<FileRow> {
     Value<DateTime?>? takenAt,
     Value<DateTime?>? trashedAt,
     Value<bool>? hidden,
+    Value<bool>? inPrivate,
     Value<String?>? manifestExtra,
     Value<int?>? durationSeconds,
     Value<String?>? replacedBy,
@@ -1731,6 +1939,7 @@ class DriveFilesCompanion extends UpdateCompanion<FileRow> {
       takenAt: takenAt ?? this.takenAt,
       trashedAt: trashedAt ?? this.trashedAt,
       hidden: hidden ?? this.hidden,
+      inPrivate: inPrivate ?? this.inPrivate,
       manifestExtra: manifestExtra ?? this.manifestExtra,
       durationSeconds: durationSeconds ?? this.durationSeconds,
       replacedBy: replacedBy ?? this.replacedBy,
@@ -1793,6 +2002,9 @@ class DriveFilesCompanion extends UpdateCompanion<FileRow> {
     if (hidden.present) {
       map['hidden'] = Variable<bool>(hidden.value);
     }
+    if (inPrivate.present) {
+      map['in_private'] = Variable<bool>(inPrivate.value);
+    }
     if (manifestExtra.present) {
       map['manifest_extra'] = Variable<String>(manifestExtra.value);
     }
@@ -1833,6 +2045,7 @@ class DriveFilesCompanion extends UpdateCompanion<FileRow> {
           ..write('takenAt: $takenAt, ')
           ..write('trashedAt: $trashedAt, ')
           ..write('hidden: $hidden, ')
+          ..write('inPrivate: $inPrivate, ')
           ..write('manifestExtra: $manifestExtra, ')
           ..write('durationSeconds: $durationSeconds, ')
           ..write('replacedBy: $replacedBy, ')
@@ -2960,7 +3173,8 @@ class TransferRow extends DataClass implements Insertable<TransferRow> {
   final DateTime? finishedAt;
   final TransferOrigin origin;
 
-  /// Camera-roll asset a backup upload came from.
+  /// The photo or video in the phone's gallery an upload came from, for
+  /// backup or an album uploaded from the gallery.
   final String? assetId;
 
   /// Capture time carried into the manifest (backup uploads). For a copy
@@ -9929,6 +10143,9 @@ typedef $$FoldersTableCreateCompanionBuilder = FoldersCompanion Function({
   Value<bool> hidden,
   Value<String?> manifestExtra,
   Value<bool> starred,
+  Value<bool> hiddenFromPhotos,
+  Value<bool> private,
+  Value<bool> inPrivate,
   Value<int> rowid,
 });
 typedef $$FoldersTableUpdateCompanionBuilder = FoldersCompanion Function({
@@ -9942,6 +10159,9 @@ typedef $$FoldersTableUpdateCompanionBuilder = FoldersCompanion Function({
   Value<bool> hidden,
   Value<String?> manifestExtra,
   Value<bool> starred,
+  Value<bool> hiddenFromPhotos,
+  Value<bool> private,
+  Value<bool> inPrivate,
   Value<int> rowid,
 });
 
@@ -10001,6 +10221,21 @@ class $$FoldersTableFilterComposer
 
   ColumnFilters<bool> get starred => $composableBuilder(
     column: $table.starred,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get hiddenFromPhotos => $composableBuilder(
+    column: $table.hiddenFromPhotos,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get private => $composableBuilder(
+    column: $table.private,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get inPrivate => $composableBuilder(
+    column: $table.inPrivate,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -10063,6 +10298,21 @@ class $$FoldersTableOrderingComposer
     column: $table.starred,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<bool> get hiddenFromPhotos => $composableBuilder(
+    column: $table.hiddenFromPhotos,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get private => $composableBuilder(
+    column: $table.private,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get inPrivate => $composableBuilder(
+    column: $table.inPrivate,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$FoldersTableAnnotationComposer
@@ -10107,6 +10357,17 @@ class $$FoldersTableAnnotationComposer
 
   GeneratedColumn<bool> get starred =>
       $composableBuilder(column: $table.starred, builder: (column) => column);
+
+  GeneratedColumn<bool> get hiddenFromPhotos => $composableBuilder(
+    column: $table.hiddenFromPhotos,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<bool> get private =>
+      $composableBuilder(column: $table.private, builder: (column) => column);
+
+  GeneratedColumn<bool> get inPrivate =>
+      $composableBuilder(column: $table.inPrivate, builder: (column) => column);
 }
 
 class $$FoldersTableTableManager
@@ -10147,6 +10408,9 @@ class $$FoldersTableTableManager
                 Value<bool> hidden = const Value.absent(),
                 Value<String?> manifestExtra = const Value.absent(),
                 Value<bool> starred = const Value.absent(),
+                Value<bool> hiddenFromPhotos = const Value.absent(),
+                Value<bool> private = const Value.absent(),
+                Value<bool> inPrivate = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => FoldersCompanion(
                 id: id,
@@ -10159,6 +10423,9 @@ class $$FoldersTableTableManager
                 hidden: hidden,
                 manifestExtra: manifestExtra,
                 starred: starred,
+                hiddenFromPhotos: hiddenFromPhotos,
+                private: private,
+                inPrivate: inPrivate,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -10173,6 +10440,9 @@ class $$FoldersTableTableManager
                 Value<bool> hidden = const Value.absent(),
                 Value<String?> manifestExtra = const Value.absent(),
                 Value<bool> starred = const Value.absent(),
+                Value<bool> hiddenFromPhotos = const Value.absent(),
+                Value<bool> private = const Value.absent(),
+                Value<bool> inPrivate = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => FoldersCompanion.insert(
                 id: id,
@@ -10185,6 +10455,9 @@ class $$FoldersTableTableManager
                 hidden: hidden,
                 manifestExtra: manifestExtra,
                 starred: starred,
+                hiddenFromPhotos: hiddenFromPhotos,
+                private: private,
+                inPrivate: inPrivate,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
@@ -10235,6 +10508,7 @@ typedef $$DriveFilesTableCreateCompanionBuilder = DriveFilesCompanion Function({
   Value<DateTime?> takenAt,
   Value<DateTime?> trashedAt,
   Value<bool> hidden,
+  Value<bool> inPrivate,
   Value<String?> manifestExtra,
   Value<int?> durationSeconds,
   Value<String?> replacedBy,
@@ -10259,6 +10533,7 @@ typedef $$DriveFilesTableUpdateCompanionBuilder = DriveFilesCompanion Function({
   Value<DateTime?> takenAt,
   Value<DateTime?> trashedAt,
   Value<bool> hidden,
+  Value<bool> inPrivate,
   Value<String?> manifestExtra,
   Value<int?> durationSeconds,
   Value<String?> replacedBy,
@@ -10354,6 +10629,11 @@ class $$DriveFilesTableFilterComposer
 
   ColumnFilters<bool> get hidden => $composableBuilder(
     column: $table.hidden,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get inPrivate => $composableBuilder(
+    column: $table.inPrivate,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -10472,6 +10752,11 @@ class $$DriveFilesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<bool> get inPrivate => $composableBuilder(
+    column: $table.inPrivate,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get manifestExtra => $composableBuilder(
     column: $table.manifestExtra,
     builder: (column) => ColumnOrderings(column),
@@ -10563,6 +10848,9 @@ class $$DriveFilesTableAnnotationComposer
   GeneratedColumn<bool> get hidden =>
       $composableBuilder(column: $table.hidden, builder: (column) => column);
 
+  GeneratedColumn<bool> get inPrivate =>
+      $composableBuilder(column: $table.inPrivate, builder: (column) => column);
+
   GeneratedColumn<String> get manifestExtra => $composableBuilder(
     column: $table.manifestExtra,
     builder: (column) => column,
@@ -10631,6 +10919,7 @@ class $$DriveFilesTableTableManager
                 Value<DateTime?> takenAt = const Value.absent(),
                 Value<DateTime?> trashedAt = const Value.absent(),
                 Value<bool> hidden = const Value.absent(),
+                Value<bool> inPrivate = const Value.absent(),
                 Value<String?> manifestExtra = const Value.absent(),
                 Value<int?> durationSeconds = const Value.absent(),
                 Value<String?> replacedBy = const Value.absent(),
@@ -10654,6 +10943,7 @@ class $$DriveFilesTableTableManager
                 takenAt: takenAt,
                 trashedAt: trashedAt,
                 hidden: hidden,
+                inPrivate: inPrivate,
                 manifestExtra: manifestExtra,
                 durationSeconds: durationSeconds,
                 replacedBy: replacedBy,
@@ -10679,6 +10969,7 @@ class $$DriveFilesTableTableManager
                 Value<DateTime?> takenAt = const Value.absent(),
                 Value<DateTime?> trashedAt = const Value.absent(),
                 Value<bool> hidden = const Value.absent(),
+                Value<bool> inPrivate = const Value.absent(),
                 Value<String?> manifestExtra = const Value.absent(),
                 Value<int?> durationSeconds = const Value.absent(),
                 Value<String?> replacedBy = const Value.absent(),
@@ -10702,6 +10993,7 @@ class $$DriveFilesTableTableManager
                 takenAt: takenAt,
                 trashedAt: trashedAt,
                 hidden: hidden,
+                inPrivate: inPrivate,
                 manifestExtra: manifestExtra,
                 durationSeconds: durationSeconds,
                 replacedBy: replacedBy,

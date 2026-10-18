@@ -216,6 +216,8 @@ class IndexCopies {
             'mt': ms(f.modifiedAt),
             'tr': ms(f.trashedAt),
             'st': f.starred,
+            'hp': f.hiddenFromPhotos,
+            'pr': f.private,
             'x': f.manifestExtra,
           },
       ],
@@ -323,6 +325,10 @@ class IndexCopies {
               modifiedAt: time(f['mt']),
               trashedAt: Value(maybe(f['tr'])),
               starred: Value(f['st'] as bool),
+              // A copy from a version that knows neither choice leaves
+              // both out.
+              hiddenFromPhotos: Value(f['hp'] as bool? ?? false),
+              private: Value(f['pr'] as bool? ?? false),
               manifestExtra: Value(f['x'] as String?),
             ),
         ],

@@ -21,9 +21,20 @@ import 'file_tiles.dart';
 
 /// The folder browser. `folderId == null` is the drive root.
 class FilesScreen extends ConsumerStatefulWidget {
-  const FilesScreen({super.key, this.folderId, this.highlight});
+  const FilesScreen({
+    super.key,
+    this.folderId,
+    this.highlight,
+    this.private = false,
+  });
 
   final String? folderId;
+
+  /// Shown in Private, behind its lock: folders inside open there too, and
+  /// the folder's way up and search, which reach beyond Private, are left
+  /// out. Out of Private, folders in it don't show, and one opened by its
+  /// id says it is in Private.
+  final bool private;
 
   /// The id of a file to point out on arrival, from Show in folder: its
   /// row is brought into view and tinted for a moment.
@@ -211,6 +222,13 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final folderId = widget.folderId;
+    if (!widget.private && folderId != null) {
+      final inPrivate = ref.watch(
+        folderInfoProvider(folderId).select((f) => f.value?.inPrivate ?? false),
+      );
+      if (inPrivate) return _InPrivate(folderId: folderId);
+    }
     final contents = ref.watch(folderContentsProvider(widget.folderId));
     final prefs = ref.watch(browsePreferencesProvider);
     final crumbs =
@@ -218,7 +236,7 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
     final title = widget.folderId == null
         ? 'Files'
         : (crumbs.isNotEmpty ? crumbs.last.name : '');
-    final data = contents.value?.sorted(prefs.sort);
+    final data = _outOfPrivate(contents.value)?.sorted(prefs.sort);
     // A selection stays on its tab: the shell, switching tabs, says nothing
     // is selecting, and the selection goes.
     ref.listen<bool>(selectionActiveProvider, (_, active) {
@@ -280,15 +298,16 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
                       : null,
                 ),
                 actions: [
-                  IconButton(
-                    onPressed: () => context.push(
-                      widget.folderId == null
-                          ? '/search'
-                          : '/search?folder=${Uri.encodeQueryComponent(widget.folderId!)}',
+                  if (!widget.private)
+                    IconButton(
+                      onPressed: () => context.push(
+                        widget.folderId == null
+                            ? '/search'
+                            : '/search?folder=${Uri.encodeQueryComponent(widget.folderId!)}',
+                      ),
+                      icon: const Icon(Icons.search_rounded),
+                      tooltip: 'Search',
                     ),
-                    icon: const Icon(Icons.search_rounded),
-                    tooltip: 'Search',
-                  ),
                   IconButton(
                     onPressed: () => ref
                         .read(browsePreferencesProvider.notifier)
@@ -347,7 +366,9 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
         floatingActionButton: _selecting
             ? null
             : FloatingActionButton(
-                heroTag: 'files-fab-${widget.folderId}',
+                heroTag: widget.private
+                    ? 'private-fab-${widget.folderId}'
+                    : 'files-fab-${widget.folderId}',
                 onPressed: () => FileActions.showCreateSheet(
                   context,
                   ref,
@@ -362,7 +383,7 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
             controller: _scroll,
             physics: const AlwaysScrollableScrollPhysics(),
             slivers: [
-              if (widget.folderId != null)
+              if (widget.folderId != null && !widget.private)
                 SliverToBoxAdapter(child: _Breadcrumbs(crumbs: crumbs)),
               if (data == null)
                 const SliverFillRemaining(
@@ -415,7 +436,23 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
     Space.s,
   );
 
-  void _openFolder(DriveFolder folder) => context.push('/files/${folder.id}');
+  void _openFolder(DriveFolder folder) => context.push(
+    widget.private ? '/private/${folder.id}' : '/files/${folder.id}',
+  );
+
+  /// [contents] without the folders in Private, out of it; in Private,
+  /// everything inside is private, and shows.
+  FolderContents? _outOfPrivate(FolderContents? contents) {
+    if (contents == null || widget.private) return contents;
+    if (!contents.folders.any((f) => f.inPrivate)) return contents;
+    return FolderContents(
+      folders: [
+        for (final folder in contents.folders)
+          if (!folder.inPrivate) folder,
+      ],
+      files: contents.files,
+    );
+  }
 
   void _onFolderTap(DriveFolder folder) =>
       _selecting ? _toggleFolder(folder) : _openFolder(folder);
@@ -709,6 +746,29 @@ class _Summary extends StatelessWidget {
       child: Text(
         parts.join(' · '),
         style: context.text.bodySmall?.copyWith(fontFeatures: tabularFigures),
+      ),
+    );
+  }
+}
+
+/// A folder in Private, opened from outside it by its id: from a link or
+/// an old notification, say. It opens in Private, behind the lock.
+class _InPrivate extends StatelessWidget {
+  const _InPrivate({required this.folderId});
+
+  final String folderId;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(),
+      body: EmptyState(
+        icon: Icons.lock_outline_rounded,
+        title: 'This folder is in Private',
+        action: FilledButton(
+          onPressed: () => context.push('/private/$folderId'),
+          child: const Text('Open in Private'),
+        ),
       ),
     );
   }

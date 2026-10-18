@@ -15,8 +15,9 @@ class EditField {
 /// A change made on this phone to one file, folder or album that is still
 /// to reach Telegram, field by field, under the manifest's short keys: `n`
 /// the name, `f` a file's folder, `p` a folder's parent, `st` the star,
-/// `tr` when it went to the trash (epoch milliseconds cut to the whole
-/// second, null once restored) and `al` the ids of a file's albums, sorted.
+/// `hp` and `pr` whether a folder stays out of Photos and is private, `tr`
+/// when it went to the trash (epoch milliseconds cut to the whole second,
+/// null once restored) and `al` the ids of a file's albums, sorted.
 ///
 /// Each field keeps the value it started from as well as the one wanted,
 /// so later edits fold into the same patch, an edit taken back leaves
@@ -68,6 +69,8 @@ class EditPatch {
     'n': manifest.name,
     'p': manifest.parentId,
     'st': manifest.starred,
+    'hp': manifest.hiddenFromPhotos,
+    'pr': manifest.private,
     'tr': trashedValue(manifest.trashedAt),
   };
 
@@ -113,6 +116,10 @@ class EditPatch {
     modifiedAt: modifiedAt ?? manifest.modifiedAt,
     trashedAt: values.containsKey('tr') ? _time(values['tr']) : manifest.trashedAt,
     starred: values.containsKey('st') ? values['st']! as bool : manifest.starred,
+    hiddenFromPhotos: values.containsKey('hp')
+        ? values['hp']! as bool
+        : manifest.hiddenFromPhotos,
+    private: values.containsKey('pr') ? values['pr']! as bool : manifest.private,
     extra: manifest.extra,
   );
 

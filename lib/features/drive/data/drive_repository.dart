@@ -14,6 +14,7 @@ import '../../../infrastructure/database/app_database.dart';
 import '../../../infrastructure/storage/device_storage.dart';
 import '../../../infrastructure/telegram/telegram_client.dart';
 import '../../../infrastructure/telegram/telegram_exception.dart';
+import '../../private/data/private_space.dart';
 import '../domain/drive_models.dart';
 import '../domain/edit_patch.dart';
 import '../domain/manifest.dart';
@@ -143,9 +144,11 @@ class DriveRepository {
     ),
   );
 
-  Stream<TrashContents> watchTrash() => combineLatest2(
-    _db.watchTrashedFolders(),
-    _db.watchTrashedFiles(),
+  /// What was put in the trash; what is in Private only with
+  /// [includePrivate], as emptying it on schedule takes everything.
+  Stream<TrashContents> watchTrash({bool includePrivate = true}) => combineLatest2(
+    _db.watchTrashedFolders(includePrivate: includePrivate),
+    _db.watchTrashedFiles(includePrivate: includePrivate),
     (folders, files) => TrashContents(
       folders: folders.map(DriveFolder.fromRow).toList(),
       files: files.map(DriveFile.fromRow).toList(),
@@ -299,8 +302,9 @@ class DriveRepository {
   Stream<List<FolderSize>> watchFolderSizes() => _db.watchFolderSizes();
 
   /// How many files the trash holds, those in trashed folders included,
-  /// and their size.
-  Stream<(int count, int bytes)> watchTrashTotals() => _db.watchTrashTotals();
+  /// and their size; those in Private only with [includePrivate].
+  Stream<(int count, int bytes)> watchTrashTotals({bool includePrivate = true}) =>
+      _db.watchTrashTotals(includePrivate: includePrivate);
 
   /// Root-first chain of folders leading to [folderId], for breadcrumbs.
   Future<List<DriveFolder>> pathTo(String? folderId) async {
@@ -541,6 +545,42 @@ class DriveRepository {
     }
   }
 
+  /// Keeps [folders] out of the Photos tab, or brings them back, on every
+  /// phone: one message edit each, passing over a folder already the way
+  /// it is asked for.
+  Future<void> setFolderHiddenFromPhotos(
+    List<DriveFolder> folders, {
+    required bool hidden,
+  }) async {
+    for (final folder in folders) {
+      if (folder.hiddenFromPhotos == hidden) continue;
+      await _rewriteFolder(
+        folder,
+        name: folder.name,
+        parentId: folder.parentId,
+        hiddenFromPhotos: hidden,
+      );
+    }
+  }
+
+  /// Makes [folders] private, or brings them back out of Private, on every
+  /// phone: one message edit each, passing over a folder already the way it
+  /// is asked for.
+  Future<void> setFolderPrivate(
+    List<DriveFolder> folders, {
+    required bool private,
+  }) async {
+    for (final folder in folders) {
+      if (folder.private == private) continue;
+      await _rewriteFolder(
+        folder,
+        name: folder.name,
+        parentId: folder.parentId,
+        private: private,
+      );
+    }
+  }
+
   /// Rewrites a folder's message from what the index holds, so a rename or
   /// move keeps the star and the keys only a newer version knows. While
   /// Telegram can't be reached, or the folder already has a change waiting,
@@ -553,6 +593,8 @@ class DriveRepository {
     DateTime? trashedAt,
     bool restore = false,
     bool? starred,
+    bool? hiddenFromPhotos,
+    bool? private,
   }) async {
     final row = await _db.folderById(folder.id);
     if (row == null) return;
@@ -565,6 +607,8 @@ class DriveRepository {
       modifiedAt: DateTime.now(),
       trashedAt: restore ? null : (trashedAt ?? row.trashedAt),
       starred: starred ?? row.starred,
+      hiddenFromPhotos: hiddenFromPhotos ?? row.hiddenFromPhotos,
+      private: private ?? row.private,
       extra: current.extra,
     );
     final patch = EditPatch.folderDiff(current, next);
@@ -590,6 +634,8 @@ class DriveRepository {
     modifiedAt: row.modifiedAt,
     trashedAt: row.trashedAt,
     starred: row.starred,
+    hiddenFromPhotos: row.hiddenFromPhotos,
+    private: row.private,
     extra: ManifestCodec.decodeExtra(row.manifestExtra),
   );
 
@@ -1572,6 +1618,8 @@ class DriveRepository {
         parentId: Value(next.parentId),
         trashedAt: Value(next.trashedAt),
         starred: Value(next.starred),
+        hiddenFromPhotos: Value(next.hiddenFromPhotos),
+        private: Value(next.private),
         modifiedAt: Value(DateTime.now()),
       ),
     );
@@ -1675,6 +1723,8 @@ class DriveRepository {
           'n': folder.name.value,
           'p': folder.parentId.value,
           'st': folder.starred.value,
+          'hp': folder.hiddenFromPhotos.value,
+          'pr': folder.private.value,
           'tr': EditPatch.trashedValue(folder.trashedAt.value),
         });
         return FolderEntry(
@@ -1682,6 +1732,8 @@ class DriveRepository {
             name: Value(shown['n']! as String),
             parentId: Value(shown['p'] as String?),
             starred: Value(shown['st']! as bool),
+            hiddenFromPhotos: Value(shown['hp']! as bool),
+            private: Value(shown['pr']! as bool),
             trashedAt: Value(_time(shown['tr'])),
           ),
         );
@@ -1850,7 +1902,7 @@ class DriveRepository {
     Set<String> skipped,
     String current,
   ) {
-    for (final key in const ['n', 'f', 'p', 'tr', 'st']) {
+    for (final key in const ['n', 'f', 'p', 'tr', 'st', 'hp', 'pr']) {
       if (!skipped.contains(key)) continue;
       return EditNotice(
         name: switch (patch.fields['n']?.base) {
@@ -1861,6 +1913,8 @@ class DriveRepository {
           'n' => 'rename',
           'f' || 'p' => 'move',
           'st' => 'star',
+          'hp' => 'Photos choice',
+          'pr' => 'Private choice',
           _ => patch.fields[key]!.want == null ? 'restore' : 'trash',
         },
       );
@@ -1963,6 +2017,7 @@ class DriveRepository {
                   file: DriveFile.fromRow(file),
                   description: description,
                   error: error,
+                  inPrivate: file.inPrivate,
                 ),
               );
             case EditTarget.folder:
@@ -1976,6 +2031,7 @@ class DriveRepository {
                   folder: DriveFolder.fromRow(folder),
                   description: description,
                   error: error,
+                  inPrivate: folder.inPrivate,
                 ),
               );
             case EditTarget.album:
@@ -2023,6 +2079,10 @@ class DriveRepository {
         trash.want == null ? 'Restored from Trash' : 'Moved to Trash',
       if (fields['st'] case final star?)
         star.want == true ? 'Added to Starred' : 'Removed from Starred',
+      if (fields['hp'] case final photos?)
+        photos.want == true ? 'Hidden from Photos' : 'Shown in Photos',
+      if (fields['pr'] case final private?)
+        private.want == true ? 'Moved to Private' : 'Taken out of Private',
     ];
     if (fields['al'] case final albums?) {
       final before = ids(albums.base).toSet();
@@ -2124,8 +2184,12 @@ final starredFolderSizesProvider =
       (ref) => ref.watch(driveRepositoryProvider).watchStarredFolderSizes(),
     );
 
+/// What Trash lists: what is in Private only while Private is open, so
+/// emptying it never takes what it didn't show.
 final trashProvider = StreamProvider.autoDispose<TrashContents>(
-  (ref) => ref.watch(driveRepositoryProvider).watchTrash(),
+  (ref) => ref
+      .watch(driveRepositoryProvider)
+      .watchTrash(includePrivate: ref.watch(privateSpaceProvider)),
 );
 
 final albumsProvider = StreamProvider.autoDispose<List<DriveAlbum>>(
@@ -2159,9 +2223,11 @@ final folderSizesProvider = StreamProvider.autoDispose<List<FolderSize>>(
 );
 
 /// How many files the trash holds, those in trashed folders included, and
-/// their size.
+/// their size; what is in Private only while Private is open.
 final trashTotalsProvider = StreamProvider.autoDispose<(int count, int bytes)>(
-  (ref) => ref.watch(driveRepositoryProvider).watchTrashTotals(),
+  (ref) => ref
+      .watch(driveRepositoryProvider)
+      .watchTrashTotals(includePrivate: ref.watch(privateSpaceProvider)),
 );
 
 /// Every photo and video in the drive, newest moment first.

@@ -317,6 +317,37 @@ void main() {
     expect((await db.partsOf('big')).map((p) => p.messageId), [_m(20), _m(21)]);
   });
 
+  test('a folder\'s Photos and Private choices come back from the copy', () async {
+    final telegram = _Telegram(stored);
+    final (writer, _, _) = await open(telegram);
+    final repository = writer.read(driveRepositoryProvider);
+    await seed(repository);
+    final created = DateTime.fromMillisecondsSinceEpoch(1_700_000_000_000);
+    await repository.ingest(textMessage(
+      _m(40),
+      ManifestCodec.encodeFolder(
+        FolderManifest(
+          id: 'diary',
+          name: 'Diary',
+          parentId: 'trips',
+          createdAt: created,
+          modifiedAt: created,
+          hiddenFromPhotos: true,
+          private: true,
+        ),
+      ).text,
+    ));
+    expect(await writer.read(indexCopiesProvider).writeIfDue(testChatId), isTrue);
+
+    final (reader, db, _) = await open(telegram);
+    expect(await reader.read(indexCopiesProvider).restore(testChatId), isTrue);
+
+    final diary = (await db.folderById('diary'))!;
+    expect((diary.hiddenFromPhotos, diary.private, diary.inPrivate), (true, true, true));
+    final trips = (await db.folderById('trips'))!;
+    expect((trips.hiddenFromPhotos, trips.private, trips.inPrivate), (false, false, false));
+  });
+
   test('a copy that belongs to another drive, or none at all, leaves the index alone', () async {
     final telegram = _Telegram(stored);
     final (writer, _, _) = await open(telegram);

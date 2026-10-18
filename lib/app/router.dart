@@ -24,6 +24,7 @@ import '../features/offline/presentation/offline_screen.dart';
 import '../features/photos/presentation/albums_screen.dart';
 import '../features/player/presentation/player_screen.dart';
 import '../features/preview/presentation/document_preview_screen.dart';
+import '../features/private/presentation/private_screen.dart';
 import '../features/photos/presentation/photos_screen.dart';
 import '../features/search/presentation/search_screen.dart';
 import '../features/settings/presentation/settings_screen.dart';
@@ -133,6 +134,23 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/settings',
         parentNavigatorKey: rootNavigatorKey,
         builder: (_, _) => const SettingsScreen(),
+      ),
+      GoRoute(
+        path: '/private',
+        parentNavigatorKey: rootNavigatorKey,
+        builder: (_, _) => const PrivateScreen(),
+        routes: [
+          GoRoute(
+            path: ':folderId',
+            parentNavigatorKey: rootNavigatorKey,
+            builder: (_, state) => PrivateGate(
+              child: FilesScreen(
+                folderId: state.pathParameters['folderId'],
+                private: true,
+              ),
+            ),
+          ),
+        ],
       ),
       GoRoute(
         path: '/checkup',

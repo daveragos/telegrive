@@ -16,6 +16,9 @@ class DriveFolder {
     required this.modifiedAt,
     this.trashedAt,
     this.starred = false,
+    this.hiddenFromPhotos = false,
+    this.private = false,
+    this.inPrivate = false,
   });
 
   factory DriveFolder.fromRow(FolderRow row) => DriveFolder(
@@ -26,6 +29,9 @@ class DriveFolder {
     modifiedAt: row.modifiedAt,
     trashedAt: row.trashedAt,
     starred: row.starred,
+    hiddenFromPhotos: row.hiddenFromPhotos,
+    private: row.private,
+    inPrivate: row.inPrivate,
   );
 
   final String id;
@@ -40,6 +46,17 @@ class DriveFolder {
   /// Starred like a file; the star lives in the folder's message.
   final bool starred;
 
+  /// Kept out of the Photos tab, with the folders inside it, on every
+  /// phone; the choice lives in the folder's message.
+  final bool hiddenFromPhotos;
+
+  /// Shown only in Private, with everything inside it, on every phone;
+  /// the choice lives in the folder's message.
+  final bool private;
+
+  /// Private, or inside a folder that is.
+  final bool inPrivate;
+
   @override
   bool operator ==(Object other) =>
       other is DriveFolder &&
@@ -47,10 +64,22 @@ class DriveFolder {
       other.name == name &&
       other.parentId == parentId &&
       other.starred == starred &&
+      other.hiddenFromPhotos == hiddenFromPhotos &&
+      other.private == private &&
+      other.inPrivate == inPrivate &&
       other.modifiedAt == modifiedAt;
 
   @override
-  int get hashCode => Object.hash(id, name, parentId, starred, modifiedAt);
+  int get hashCode => Object.hash(
+    id,
+    name,
+    parentId,
+    starred,
+    hiddenFromPhotos,
+    private,
+    inPrivate,
+    modifiedAt,
+  );
 }
 
 @immutable
@@ -436,11 +465,15 @@ class PendingEditView {
     this.folder,
     required this.description,
     this.error,
+    this.inPrivate = false,
   });
 
   final EditTarget target;
   final String id;
   final String name;
+
+  /// The file or folder changed is in Private.
+  final bool inPrivate;
 
   /// The file changed, when [target] is a file.
   final DriveFile? file;

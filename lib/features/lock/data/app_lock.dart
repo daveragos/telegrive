@@ -108,6 +108,23 @@ class AppLock extends Notifier<AppLockState> with WidgetsBindingObserver {
     return true;
   }
 
+  /// Whether this phone has a fingerprint, face or screen lock to ask for.
+  Future<bool> canConfirm() async {
+    try {
+      return await _auth.isDeviceSupported();
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Asks for the phone's fingerprint, face or screen lock for [reason],
+  /// whether or not app lock is on, without counting the prompt as leaving
+  /// the app. Returns false on a phone with no lock set up.
+  Future<bool> confirm(String reason) async {
+    if (!await canConfirm()) return false;
+    return _authenticate(reason);
+  }
+
   Future<void> setAfter(LockAfter after) async {
     await _prefs.setAppLockAfter(after.name);
     state = state.copyWith(after: after);

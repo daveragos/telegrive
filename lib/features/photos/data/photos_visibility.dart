@@ -9,6 +9,28 @@ import '../../drive/data/drive_repository.dart';
 import '../../drive/domain/drive_models.dart';
 import '../../takeout/domain/takeout_catalog.dart';
 
+/// Every folder of [folders] that [marked] picks out, and every folder
+/// inside one, by id, to the name of the outermost marked folder it is in.
+/// A folder tree that loops ends anyway.
+Map<String, String> markedSubtrees(
+  List<FolderRow> folders,
+  bool Function(FolderRow folder) marked,
+) {
+  final byId = {for (final folder in folders) folder.id: folder};
+  final out = <String, String>{};
+  for (final folder in folders) {
+    FolderRow? top;
+    final seen = <String>{};
+    for (FolderRow? cursor = folder;
+        cursor != null && seen.add(cursor.id);
+        cursor = byId[cursor.parentId]) {
+      if (marked(cursor)) top = cursor;
+    }
+    if (top != null) out[folder.id] = top.name;
+  }
+  return out;
+}
+
 /// The drive folders whose photos stay out of the Photos view, by id with
 /// their names: each folder named in [hiddenNames] that sits directly inside
 /// a top-level [rootName] folder. Every top-level [rootName] counts, since a
@@ -97,6 +119,28 @@ final hiddenBackupFoldersProvider = StreamProvider.autoDispose<Map<String, Strin
       .map((rows) => hiddenBackupFolders(rows, names, BackupController.rootFolder));
 });
 
+/// Folders kept out of the Photos view on every phone, each with the
+/// folders inside it, by id with the name of the folder that was kept out.
+/// Worked out from the live folder tree, so moves count.
+final photosHiddenFoldersProvider = StreamProvider.autoDispose<Map<String, String>>(
+  (ref) => ref
+      .watch(appDatabaseProvider)
+      .watchAllFolders()
+      .map((rows) => markedSubtrees(rows, (folder) => folder.hiddenFromPhotos)),
+);
+
+/// Every folder the Photos view keeps out until it is shown: photo backup's
+/// kept-out folders on this phone, and the folders kept out on every phone
+/// with those inside them, by id with the name the line above the grid
+/// gives them. Loading until both are known.
+final keptOutFoldersProvider = Provider.autoDispose<AsyncValue<Map<String, String>>>((ref) {
+  final backup = ref.watch(hiddenBackupFoldersProvider);
+  final chosen = ref.watch(photosHiddenFoldersProvider);
+  bool known(AsyncValue<Object?> value) => value.hasValue || value.hasError;
+  if (!known(backup) || !known(chosen)) return const AsyncLoading();
+  return AsyncData({...?backup.value, ...?chosen.value});
+});
+
 /// Whether the Photos view shows the kept-out folders after all. It lasts
 /// until the app is closed or the account signs out.
 class RevealHidden extends Notifier<bool> {
@@ -110,13 +154,13 @@ final revealHiddenProvider = NotifierProvider<RevealHidden, bool>(RevealHidden.n
 
 /// The timeline as the Photos tab, its viewer, and Favorites and Videos show
 /// it: without the kept-out folders unless they are revealed, and with one
-/// tile for each photo.
+/// tile for each photo. What is in Private never reaches it.
 final photosTimelineProvider = Provider.autoDispose<AsyncValue<List<DriveFile>>>((ref) {
-  final hidden = ref.watch(hiddenBackupFoldersProvider);
+  final hidden = ref.watch(keptOutFoldersProvider);
   final reveal = ref.watch(revealHiddenProvider);
   final media = ref.watch(mediaTimelineProvider);
   // Until the folders are known, a kept-out screenshot would flash past.
-  if (!hidden.hasValue && !hidden.hasError) return const AsyncLoading();
+  if (hidden.isLoading) return const AsyncLoading();
   final ids = (hidden.value ?? const {}).keys.toSet();
   return media.whenData((files) => oneTilePerPhoto(filterTimeline(files, ids, reveal: reveal)));
 });
@@ -124,7 +168,7 @@ final photosTimelineProvider = Provider.autoDispose<AsyncValue<List<DriveFile>>>
 /// How many timeline files are in kept-out folders, and those folders'
 /// names, sorted. The same whether or not they are revealed.
 final keptOutSummaryProvider = Provider.autoDispose<({int count, List<String> names})>((ref) {
-  final hidden = ref.watch(hiddenBackupFoldersProvider).value ?? const {};
+  final hidden = ref.watch(keptOutFoldersProvider).value ?? const {};
   final media = ref.watch(mediaTimelineProvider).value ?? const [];
   var count = 0;
   // Two backup roots can each hold a Screenshots folder; it is named once.

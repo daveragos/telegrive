@@ -30,6 +30,7 @@ import '../../backup/data/backup_controller.dart';
 import '../../backup/data/free_up_space.dart';
 import '../../capture/data/device_capture.dart';
 import '../../offline/data/offline_sync.dart';
+import '../../lock/data/app_lock.dart';
 import '../../offline/presentation/keep_offline_sheet.dart';
 import '../../phone_albums/data/phone_albums.dart';
 import '../../phone_albums/presentation/phone_album_upload.dart';
@@ -1348,6 +1349,91 @@ abstract final class FileActions {
     return outcome?.complete ?? false;
   }
 
+  /// Keeps [folder], with the folders inside it, out of the Photos tab on
+  /// every phone, or brings it back, with Undo. It stays in Files and
+  /// Search.
+  static Future<bool> setHiddenFromPhotos(
+    BuildContext context,
+    WidgetRef ref,
+    DriveFolder folder, {
+    required bool hidden,
+  }) {
+    final repository = ref.read(driveRepositoryProvider);
+    return _guard(
+      context,
+      () => repository.setFolderHiddenFromPhotos([folder], hidden: hidden),
+      success: offlineAware(
+        ref,
+        hidden
+            ? '"${folder.name}" is hidden from Photos'
+            : '"${folder.name}" shows in Photos again',
+      ),
+      undo: () async => repository.setFolderHiddenFromPhotos(
+        await _currentFolders(repository, [folder]),
+        hidden: !hidden,
+      ),
+    );
+  }
+
+  /// Moves [folder] into Private on every phone, or takes it out, with
+  /// Undo. Moving it in says first what that does, and needs a phone with a
+  /// lock to open Private with.
+  static Future<bool> setPrivate(
+    BuildContext context,
+    WidgetRef ref,
+    DriveFolder folder, {
+    required bool private,
+  }) async {
+    final repository = ref.read(driveRepositoryProvider);
+    final lock = ref.read(appLockProvider.notifier);
+    if (private) {
+      if (!await lock.canConfirm()) {
+        if (context.mounted) {
+          showSnack(
+            context,
+            'Set up a fingerprint, face or screen lock on this phone to use Private.',
+          );
+        }
+        return false;
+      }
+      if (!context.mounted) return false;
+      final go = await showConfirmDialog(
+        context,
+        title: 'Move "${folder.name}" to Private?',
+        message:
+            'It leaves Files, Photos, Search and Home on every phone signed '
+            'in, with everything in it, and opens only from Settings › '
+            'Private with the phone\'s fingerprint, face or screen lock. Its '
+            'files stay in your Telegram channel, where Telegram shows them '
+            'as it always does.',
+        confirmLabel: 'Move to Private',
+      );
+      if (!go || !context.mounted) return false;
+    }
+    final destinations = ref.read(recentDestinationsProvider.notifier);
+    final done = await _guard(
+      context,
+      () => repository.setFolderPrivate([folder], private: private),
+      success: offlineAware(
+        ref,
+        private
+            ? 'Moved "${folder.name}" to Private'
+            : 'Took "${folder.name}" out of Private',
+      ),
+      undo: () async {
+        await repository.setFolderPrivate(
+          await _currentFolders(repository, [folder]),
+          private: !private,
+        );
+        await destinations.refresh();
+      },
+    );
+    // A folder in Private leaves the recent folders, and Android's share
+    // sheet with them, at once.
+    if (done) await destinations.refresh();
+    return done;
+  }
+
   /// Moves [files] and [folders] to the trash, with an Undo on the
   /// snackbar. Over 100 items it asks first, since undoing that many is one
   /// edit per item and takes a while. Returns whether it worked.
@@ -1809,6 +1895,41 @@ abstract final class FileActions {
                     ),
                   ),
                 ),
+                _SheetAction(
+                  icon: folder.hiddenFromPhotos
+                      ? Icons.photo_library_outlined
+                      : Icons.hide_image_outlined,
+                  label: folder.hiddenFromPhotos
+                      ? 'Show in Photos'
+                      : 'Hide from Photos',
+                  onTap: () => run(
+                    () => setHiddenFromPhotos(
+                      context,
+                      ref,
+                      folder,
+                      hidden: !folder.hiddenFromPhotos,
+                    ),
+                  ),
+                ),
+                // A folder inside a private one is private with it, and
+                // goes in or out with that folder.
+                if (folder.private || !folder.inPrivate)
+                  _SheetAction(
+                    icon: folder.private
+                        ? Icons.lock_open_outlined
+                        : Icons.lock_outline_rounded,
+                    label: folder.private
+                        ? 'Take out of Private'
+                        : 'Move to Private',
+                    onTap: () => run(
+                      () => setPrivate(
+                        context,
+                        ref,
+                        folder,
+                        private: !folder.private,
+                      ),
+                    ),
+                  ),
                 _SheetAction(
                   icon: Icons.drive_file_rename_outline_rounded,
                   label: 'Rename',

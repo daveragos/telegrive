@@ -320,22 +320,22 @@ class DriveDocumentsProvider : DocumentsProvider() {
         // What the index is read with. test/picker_contract_test.dart keeps
         // a copy of each statement, runs it against the app's schema and
         // fails when a statement here and its copy differ; keep the two in
-        // step. The listings follow AppDatabase's _shown and _inFolder: a
-        // file shows once all its parts are in and while it isn't hidden
-        // (in the trash or in a trashed folder), and anything whose folder
-        // is gone shows at the root. Dates are Unix seconds and flags 0 or
+        // step. The listings follow AppDatabase's _browsable and _inFolder:
+        // a file shows once all its parts are in, while it isn't hidden (in
+        // the trash or in a trashed folder) and isn't in Private, and
+        // anything whose folder is gone shows at the root. Dates are Unix seconds and flags 0 or
         // 1, as Drift keeps them.
-        private const val SHOWN_TOTALS = "SELECT COUNT(*), COALESCE(SUM(size), 0) FROM drive_files WHERE parts_present >= part_count AND hidden = 0"
-        private const val FOLDERS_IN = "SELECT id, name, modified_at FROM folders WHERE hidden = 0 AND parent_id = ?"
-        private const val FOLDERS_AT_ROOT = "SELECT id, name, modified_at FROM folders WHERE hidden = 0 AND (parent_id IS NULL OR parent_id NOT IN (SELECT id FROM folders))"
-        private const val FILES_IN = "SELECT id, name, mime_type, size, modified_at FROM drive_files WHERE hidden = 0 AND parts_present >= part_count AND folder_id = ?"
-        private const val FILES_AT_ROOT = "SELECT id, name, mime_type, size, modified_at FROM drive_files WHERE hidden = 0 AND parts_present >= part_count AND (folder_id IS NULL OR folder_id NOT IN (SELECT id FROM folders))"
-        private const val FOLDER_BY_ID = "SELECT id, name, modified_at FROM folders WHERE hidden = 0 AND id = ?"
-        private const val FILE_BY_ID = "SELECT id, name, mime_type, size, modified_at FROM drive_files WHERE hidden = 0 AND parts_present >= part_count AND id = ?"
-        private const val SEARCH_FOLDERS = "SELECT id, name, modified_at FROM folders WHERE hidden = 0 AND name LIKE ? ESCAPE '\\' ORDER BY modified_at DESC LIMIT 20"
-        private const val SEARCH_FILES = "SELECT id, name, mime_type, size, modified_at FROM drive_files WHERE hidden = 0 AND parts_present >= part_count AND name LIKE ? ESCAPE '\\' ORDER BY modified_at DESC LIMIT 100"
-        private const val FOLDER_PARENT = "SELECT parent_id FROM folders WHERE hidden = 0 AND id = ?"
-        private const val FILE_FOLDER = "SELECT folder_id FROM drive_files WHERE hidden = 0 AND parts_present >= part_count AND id = ?"
+        private const val SHOWN_TOTALS = "SELECT COUNT(*), COALESCE(SUM(size), 0) FROM drive_files WHERE parts_present >= part_count AND hidden = 0 AND in_private = 0"
+        private const val FOLDERS_IN = "SELECT id, name, modified_at FROM folders WHERE hidden = 0 AND in_private = 0 AND parent_id = ?"
+        private const val FOLDERS_AT_ROOT = "SELECT id, name, modified_at FROM folders WHERE hidden = 0 AND in_private = 0 AND (parent_id IS NULL OR parent_id NOT IN (SELECT id FROM folders))"
+        private const val FILES_IN = "SELECT id, name, mime_type, size, modified_at FROM drive_files WHERE hidden = 0 AND in_private = 0 AND parts_present >= part_count AND folder_id = ?"
+        private const val FILES_AT_ROOT = "SELECT id, name, mime_type, size, modified_at FROM drive_files WHERE hidden = 0 AND in_private = 0 AND parts_present >= part_count AND (folder_id IS NULL OR folder_id NOT IN (SELECT id FROM folders))"
+        private const val FOLDER_BY_ID = "SELECT id, name, modified_at FROM folders WHERE hidden = 0 AND in_private = 0 AND id = ?"
+        private const val FILE_BY_ID = "SELECT id, name, mime_type, size, modified_at FROM drive_files WHERE hidden = 0 AND in_private = 0 AND parts_present >= part_count AND id = ?"
+        private const val SEARCH_FOLDERS = "SELECT id, name, modified_at FROM folders WHERE hidden = 0 AND in_private = 0 AND name LIKE ? ESCAPE '\\' ORDER BY modified_at DESC LIMIT 20"
+        private const val SEARCH_FILES = "SELECT id, name, mime_type, size, modified_at FROM drive_files WHERE hidden = 0 AND in_private = 0 AND parts_present >= part_count AND name LIKE ? ESCAPE '\\' ORDER BY modified_at DESC LIMIT 100"
+        private const val FOLDER_PARENT = "SELECT parent_id FROM folders WHERE hidden = 0 AND in_private = 0 AND id = ?"
+        private const val FILE_FOLDER = "SELECT folder_id FROM drive_files WHERE hidden = 0 AND in_private = 0 AND parts_present >= part_count AND id = ?"
         private const val FOLDER_EXISTS = "SELECT 1 FROM folders WHERE id = ?"
         private const val LOCAL_COPIES = "SELECT file_id, path FROM offline_copies UNION ALL SELECT file_id, result_path FROM transfers WHERE kind = 'download' AND status = 'completed' AND result_path IS NOT NULL"
         private const val LOCAL_COPIES_OF = "SELECT file_id, path FROM ($LOCAL_COPIES) WHERE file_id = ?"

@@ -33,6 +33,19 @@ class Folders extends Table {
   /// star follows the drive to another phone.
   BoolColumn get starred => boolean().withDefault(const Constant(false))();
 
+  /// Kept out of the Photos tab with the folders inside it, and kept in the
+  /// folder's own message, as the star is.
+  BoolColumn get hiddenFromPhotos => boolean().withDefault(const Constant(false))();
+
+  /// Shown only in Private with everything inside it, and kept in the
+  /// folder's own message, as the star is.
+  BoolColumn get private => boolean().withDefault(const Constant(false))();
+
+  /// Private, or inside a folder that is: shown only in Private. Worked out
+  /// locally from [private] down the folder tree, as [hidden] is from the
+  /// trash.
+  BoolColumn get inPrivate => boolean().withDefault(const Constant(false))();
+
   @override
   Set<Column> get primaryKey => {id};
 }
@@ -70,6 +83,9 @@ class DriveFiles extends Table {
 
   /// In the trash itself or inside a trashed folder; see [Folders.hidden].
   BoolColumn get hidden => boolean().withDefault(const Constant(false))();
+
+  /// Inside a private folder; see [Folders.inPrivate].
+  BoolColumn get inPrivate => boolean().withDefault(const Constant(false))();
 
   /// Manifest keys this version doesn't know; see [Folders.manifestExtra].
   TextColumn get manifestExtra => text().nullable()();

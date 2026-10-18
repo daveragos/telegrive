@@ -16,24 +16,24 @@ const _provider =
     'android/app/src/main/kotlin/dev/ragoose/telegrive/picker/DriveDocumentsProvider.kt';
 
 const _shownTotals =
-    'SELECT COUNT(*), COALESCE(SUM(size), 0) FROM drive_files WHERE parts_present >= part_count AND hidden = 0';
-const _foldersIn = 'SELECT id, name, modified_at FROM folders WHERE hidden = 0 AND parent_id = ?';
+    'SELECT COUNT(*), COALESCE(SUM(size), 0) FROM drive_files WHERE parts_present >= part_count AND hidden = 0 AND in_private = 0';
+const _foldersIn = 'SELECT id, name, modified_at FROM folders WHERE hidden = 0 AND in_private = 0 AND parent_id = ?';
 const _foldersAtRoot =
-    'SELECT id, name, modified_at FROM folders WHERE hidden = 0 AND (parent_id IS NULL OR parent_id NOT IN (SELECT id FROM folders))';
+    'SELECT id, name, modified_at FROM folders WHERE hidden = 0 AND in_private = 0 AND (parent_id IS NULL OR parent_id NOT IN (SELECT id FROM folders))';
 const _filesIn =
-    'SELECT id, name, mime_type, size, modified_at FROM drive_files WHERE hidden = 0 AND parts_present >= part_count AND folder_id = ?';
+    'SELECT id, name, mime_type, size, modified_at FROM drive_files WHERE hidden = 0 AND in_private = 0 AND parts_present >= part_count AND folder_id = ?';
 const _filesAtRoot =
-    'SELECT id, name, mime_type, size, modified_at FROM drive_files WHERE hidden = 0 AND parts_present >= part_count AND (folder_id IS NULL OR folder_id NOT IN (SELECT id FROM folders))';
-const _folderById = 'SELECT id, name, modified_at FROM folders WHERE hidden = 0 AND id = ?';
+    'SELECT id, name, mime_type, size, modified_at FROM drive_files WHERE hidden = 0 AND in_private = 0 AND parts_present >= part_count AND (folder_id IS NULL OR folder_id NOT IN (SELECT id FROM folders))';
+const _folderById = 'SELECT id, name, modified_at FROM folders WHERE hidden = 0 AND in_private = 0 AND id = ?';
 const _fileById =
-    'SELECT id, name, mime_type, size, modified_at FROM drive_files WHERE hidden = 0 AND parts_present >= part_count AND id = ?';
+    'SELECT id, name, mime_type, size, modified_at FROM drive_files WHERE hidden = 0 AND in_private = 0 AND parts_present >= part_count AND id = ?';
 const _searchFolders =
-    r"SELECT id, name, modified_at FROM folders WHERE hidden = 0 AND name LIKE ? ESCAPE '\' ORDER BY modified_at DESC LIMIT 20";
+    r"SELECT id, name, modified_at FROM folders WHERE hidden = 0 AND in_private = 0 AND name LIKE ? ESCAPE '\' ORDER BY modified_at DESC LIMIT 20";
 const _searchFiles =
-    r"SELECT id, name, mime_type, size, modified_at FROM drive_files WHERE hidden = 0 AND parts_present >= part_count AND name LIKE ? ESCAPE '\' ORDER BY modified_at DESC LIMIT 100";
-const _folderParent = 'SELECT parent_id FROM folders WHERE hidden = 0 AND id = ?';
+    r"SELECT id, name, mime_type, size, modified_at FROM drive_files WHERE hidden = 0 AND in_private = 0 AND parts_present >= part_count AND name LIKE ? ESCAPE '\' ORDER BY modified_at DESC LIMIT 100";
+const _folderParent = 'SELECT parent_id FROM folders WHERE hidden = 0 AND in_private = 0 AND id = ?';
 const _fileFolder =
-    'SELECT folder_id FROM drive_files WHERE hidden = 0 AND parts_present >= part_count AND id = ?';
+    'SELECT folder_id FROM drive_files WHERE hidden = 0 AND in_private = 0 AND parts_present >= part_count AND id = ?';
 const _folderExists = 'SELECT 1 FROM folders WHERE id = ?';
 const _localCopies =
     "SELECT file_id, path FROM offline_copies UNION ALL SELECT file_id, result_path FROM transfers WHERE kind = 'download' AND status = 'completed' AND result_path IS NOT NULL";
@@ -76,7 +76,12 @@ void main() {
   setUp(() => db = AppDatabase(NativeDatabase.memory()));
   tearDown(() => db.close());
 
-  Future<void> folder(String id, {String? parentId, DateTime? trashedAt}) => db.upsertFolder(
+  Future<void> folder(
+    String id, {
+    String? parentId,
+    DateTime? trashedAt,
+    bool private = false,
+  }) => db.upsertFolder(
     FoldersCompanion.insert(
       id: id,
       parentId: Value(parentId),
@@ -85,6 +90,7 @@ void main() {
       createdAt: modified,
       modifiedAt: modified,
       trashedAt: Value(trashedAt),
+      private: Value(private),
     ),
   );
 
@@ -170,6 +176,24 @@ void main() {
       'size': 3000,
       'modified_at': passport['modified_at'],
     });
+  });
+
+  test('what is in Private shows nowhere, nor counts', () async {
+    await seed();
+    await folder('vault', private: true);
+    await folder('deep', parentId: 'vault');
+    await file('secret', name: 'Passport photo.pdf', folderId: 'vault');
+    await file('deeper', folderId: 'deep');
+
+    expect(await ids(_foldersAtRoot), {'docs', 'stray'});
+    expect(await ids(_foldersIn, ['vault']), isEmpty);
+    expect(await ids(_filesIn, ['vault']), isEmpty);
+    expect(await ids(_filesIn, ['deep']), isEmpty);
+    expect(await ids(_folderById, ['deep']), isEmpty);
+    expect(await ids(_fileById, ['secret']), isEmpty);
+    expect(await ids(_searchFiles, ['%Passport%']), {'passport'});
+    expect(await ids(_searchFolders, ['%e%']), isNot(contains('deep')));
+    expect((await rows(_shownTotals)).single.values.toList(), [3, 3600]);
   });
 
   test('the root holds what is in no folder and what lost its folder', () async {

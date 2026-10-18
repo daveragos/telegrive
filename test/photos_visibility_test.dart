@@ -38,6 +38,9 @@ void main() {
     createdAt: now,
     modifiedAt: now,
     hidden: false,
+    hiddenFromPhotos: false,
+    private: false,
+    inPrivate: false,
     starred: false,
   );
 
@@ -226,6 +229,7 @@ void main() {
             ]),
           ),
           hiddenBackupFoldersProvider.overrideWith((ref) => hidden.stream),
+          photosHiddenFoldersProvider.overrideWith((ref) => Stream.value(const {})),
         ],
       );
       container.listen(photosTimelineProvider, (_, _) {});
@@ -294,6 +298,7 @@ void main() {
             (ref) => Stream.value([photo('camera'), photo('screenshot', folderId: 'scr')]),
           ),
           hiddenBackupFoldersProvider.overrideWith((ref) => Stream.value({'scr': 'Screenshots'})),
+          photosHiddenFoldersProvider.overrideWith((ref) => Stream.value(const {})),
         ],
         child: MaterialApp(
           theme: AppTheme.light(),

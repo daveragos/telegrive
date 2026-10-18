@@ -13,6 +13,7 @@ import '../../drive/data/drive_repository.dart';
 import '../../drive/data/drive_session.dart';
 import '../../drive/data/drive_sync.dart';
 import '../../drive/domain/drive_models.dart';
+import '../../private/data/private_space.dart';
 import '../../transfers/data/transfer_policy.dart';
 import '../../transfers/data/transfer_queue.dart';
 import '../../transfers/domain/transfer_wait.dart';
@@ -562,16 +563,25 @@ final _offlineCopyRowsProvider = StreamProvider.autoDispose<Map<String, OfflineC
 /// Everything kept offline and how far along it is, for the Offline screen.
 /// The transfers and the copies are counted afresh as they move, which is
 /// cheap; the pins and what they keep are read only when those change.
+/// What is in Private shows only while Private is open; it is kept offline
+/// all the same.
 final offlineOverviewProvider = Provider.autoDispose<AsyncValue<OfflineOverview>>((ref) {
+  final outOfSight = ref.watch(privateOutOfSightProvider);
   final transfers = [
     for (final item in ref.watch(transferQueueProvider).items)
-      if (item.row.saveTo == SaveTarget.offline) item,
+      if (item.row.saveTo == SaveTarget.offline && !outOfSight.hides(item.row.folderId)) item,
   ];
   final copies = ref.watch(_offlineCopyRowsProvider);
   return ref.watch(_keptOfflineProvider).when(
     data: (kept) => copies.whenData(
       (copies) => OfflineOverview.compute(
-        pins: kept.pins,
+        pins: [
+          for (final pin in kept.pins)
+            if (!(pin.isFolder
+                ? outOfSight.hides(pin.itemId)
+                : outOfSight.hides(kept.files[pin.itemId]?.folderId)))
+              pin,
+        ],
         wantedByPin: kept.wantedByPin,
         copies: copies,
         offlineTransfers: transfers,

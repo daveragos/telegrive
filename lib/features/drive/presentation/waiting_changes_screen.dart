@@ -2,22 +2,31 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/theme/tokens.dart';
+import '../../../core/format/formatters.dart';
 import '../../../core/widgets/common.dart';
 import '../../files/presentation/file_actions.dart';
 import '../../files/presentation/file_tiles.dart';
+import '../../private/data/private_space.dart';
 import '../data/edit_outbox.dart';
 import '../domain/drive_models.dart';
 
 /// The changes made on this phone that are still to reach Telegram, in the
 /// order they go, each saying what changed or why it couldn't be sent. A
 /// tap offers to throw one away, which puts its item back the way Telegram
-/// has it.
+/// has it. Changes to what is in Private are only counted while Private is
+/// closed, so nothing in it is named.
 class WaitingChangesScreen extends ConsumerWidget {
   const WaitingChangesScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final failed = ref.watch(editOutboxProvider.select((s) => s.failed));
+    final privateOpen = ref.watch(privateSpaceProvider);
+    final inPrivate = privateOpen
+        ? 0
+        : (ref.watch(pendingEditsProvider).value ?? const <PendingEditView>[])
+              .where((change) => change.inPrivate)
+              .length;
     return Scaffold(
       appBar: AppBar(
         title: const Text('Waiting changes'),
@@ -31,11 +40,13 @@ class WaitingChangesScreen extends ConsumerWidget {
         ],
       ),
       body: AsyncView(
-        value: ref.watch(pendingEditsProvider),
+        value: ref.watch(pendingEditsProvider).whenData(
+          (all) => privateOpen ? all : [for (final change in all) if (!change.inPrivate) change],
+        ),
         data: (changes) => changes.isEmpty
-            ? const EmptyState(
+            ? EmptyState(
                 icon: Icons.cloud_done_outlined,
-                title: 'Nothing waiting',
+                title: inPrivate == 0 ? 'Nothing waiting' : _inPrivate(inPrivate, also: false),
                 message: 'Changes made without a connection wait here until they reach Telegram.',
               )
             : ListView(
@@ -55,11 +66,33 @@ class WaitingChangesScreen extends ConsumerWidget {
                     ),
                   ),
                   ListGroup(children: [for (final change in changes) _ChangeRow(change: change)]),
+                  if (inPrivate > 0)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(
+                        Space.gutter,
+                        Space.l,
+                        Space.gutter,
+                        0,
+                      ),
+                      child: Text(
+                        _inPrivate(inPrivate, also: true),
+                        style: context.text.bodySmall?.copyWith(fontFeatures: tabularFigures),
+                      ),
+                    ),
                 ],
               ),
       ),
     );
   }
+}
+
+/// How many changes to what is in Private wait, [also] beside those
+/// listed: a sentence beside the list, a title without them.
+String _inPrivate(int count, {required bool also}) {
+  final more = also ? ' too.' : '';
+  return count == 1
+      ? '1 change to something in Private is waiting$more'
+      : '${Formatters.number(count)} changes to things in Private are waiting$more';
 }
 
 class _ChangeRow extends ConsumerWidget {

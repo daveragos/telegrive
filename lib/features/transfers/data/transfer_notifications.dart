@@ -6,6 +6,7 @@ import '../../../core/format/formatters.dart';
 import '../../../infrastructure/database/app_database.dart';
 import '../../../infrastructure/notifications/app_notifications.dart';
 import '../../../infrastructure/storage/device_storage.dart';
+import '../../private/data/private_space.dart';
 import '../domain/transfer_error.dart';
 import 'transfer_queue.dart';
 
@@ -40,8 +41,14 @@ class TransferSummary {
 
   /// The summary of [items] that finished at [since] or later, or null when
   /// none did. Photo backup has its own place and its own reminder, and a
-  /// cancelled transfer was the person's own doing, so neither is told.
-  static TransferSummary? of(List<TransferItem> items, DateTime since) {
+  /// cancelled transfer was the person's own doing, so neither is told. A
+  /// lone file that [outOfSight] hides is counted rather than named, and a
+  /// tap opens Transfers rather than the file.
+  static TransferSummary? of(
+    List<TransferItem> items,
+    DateTime since, {
+    OutOfSight outOfSight = OutOfSight.none,
+  }) {
     final batch = [
       for (final item in items)
         if (item.origin != TransferOrigin.backup &&
@@ -117,7 +124,7 @@ class TransferSummary {
       );
     }
 
-    if (batch.length == 1) {
+    if (batch.length == 1 && !outOfSight.hides(batch.single.row.folderId)) {
       final item = batch.single;
       if (copies.isNotEmpty) {
         return TransferSummary(
