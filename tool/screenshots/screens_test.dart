@@ -35,8 +35,10 @@ import 'package:telegrive/features/backup/presentation/not_backed_up_screen.dart
 import 'package:telegrive/features/capture/data/device_capture.dart';
 import 'package:telegrive/features/checkup/data/drive_checkup.dart';
 import 'package:telegrive/features/checkup/presentation/checkup_screen.dart';
+import 'package:telegrive/features/lock/data/app_lock.dart';
 import 'package:telegrive/features/photos/data/photos_visibility.dart';
 import 'package:telegrive/features/photos/presentation/photos_screen.dart';
+import 'package:telegrive/features/private/presentation/private_screen.dart';
 import 'package:telegrive/features/search/presentation/search_screen.dart';
 import 'package:telegrive/features/photos/presentation/albums_screen.dart';
 import 'package:telegrive/features/photos/presentation/media_grid.dart';
@@ -62,6 +64,7 @@ import 'package:telegrive/features/files/data/bulk_edits.dart';
 import 'package:telegrive/features/files/presentation/file_actions.dart';
 import 'package:telegrive/features/files/presentation/file_list_screen.dart';
 import 'package:telegrive/features/files/presentation/file_location.dart';
+import 'package:telegrive/features/files/presentation/file_tiles.dart';
 import 'package:telegrive/features/files/presentation/files_screen.dart';
 import 'package:telegrive/features/files/presentation/folder_picker.dart';
 import 'package:telegrive/features/home/presentation/home_screen.dart';
@@ -113,6 +116,18 @@ const _account = DriveSession(
   username: 'dawit',
   isPremium: false,
 );
+
+/// A phone whose lock always lets the person in, with no prompt.
+class _Lock extends AppLock {
+  @override
+  AppLockState build() => const AppLockState();
+
+  @override
+  Future<bool> canConfirm() async => true;
+
+  @override
+  Future<bool> confirm(String reason) async => true;
+}
 
 class _Session extends DriveSessionNotifier {
   @override
@@ -1013,6 +1028,7 @@ void main() {
         GoRoute(path: '/albums', builder: (_, _) => const AlbumsScreen()),
         GoRoute(path: '/transfers', builder: (_, _) => const TransfersScreen()),
         GoRoute(path: '/settings', builder: (_, _) => const SettingsScreen()),
+        GoRoute(path: '/private', builder: (_, _) => const PrivateScreen()),
         GoRoute(path: '/checkup', builder: (_, _) => const CheckupScreen()),
         GoRoute(
           path: '/changes',
@@ -1050,6 +1066,9 @@ void main() {
           sharedPreferencesProvider.overrideWithValue(shared),
           appDatabaseProvider.overrideWithValue(db),
           deviceStorageProvider.overrideWithValue(_Storage()),
+          // The platform can't say in a test; Settings › About shows the
+          // release's.
+          appVersionProvider.overrideWith((ref) async => '1.0.0'),
           // A phone with plenty of memory, so Save memory starts off.
           deviceProfileProvider.overrideWithValue(
             const DeviceProfile(
@@ -2378,6 +2397,53 @@ void main() {
     await snap(tester, 'send_folder_sheet');
   });
 
+  testWidgets('folder sheet', (tester) async {
+    await prepareData(tester);
+    await pumpApp(tester, location: '/files');
+    await tester.tap(
+      find.descendant(
+        of: find.ancestor(of: find.text('Photos'), matching: find.byType(FolderListTile)),
+        matching: find.byTooltip('More'),
+      ),
+    );
+    for (var i = 0; i < 6; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    await snap(tester, 'folder_sheet');
+  });
+
+  testWidgets('private', (tester) async {
+    await prepareData(tester);
+    await pumpApp(
+      tester,
+      location: '/private',
+      overrides: [appLockProvider.overrideWith(_Lock.new)],
+      seed: (db) async {
+        for (final (index, (id, name)) in const [
+          ('diary', 'Diary'),
+          ('passport', 'Passport and IDs'),
+          ('health', 'Health records'),
+        ].indexed) {
+          final at = DateTime.now().subtract(Duration(days: 3 + index * 9));
+          await db.upsertFolder(
+            FoldersCompanion.insert(
+              id: id,
+              name: name,
+              messageId: 70 + index,
+              createdAt: at,
+              modifiedAt: at,
+              private: const Value(true),
+            ),
+          );
+        }
+      },
+    );
+    for (var i = 0; i < 6; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    await snap(tester, 'private');
+  });
+
   testWidgets('create sheet', (tester) async {
     await prepareData(tester);
     await pumpApp(tester, location: '/files');
@@ -2656,8 +2722,9 @@ void main() {
     await prepareData(tester);
     await pumpApp(tester, location: '/settings', overrides: [savedProxies()]);
     await scrollToProxy(tester);
-    // On to where Connection sits between Security and This phone.
-    await tester.drag(find.byType(ListView).first, const Offset(0, -500));
+    // Connection's header near the top, under the end of Security, with
+    // This phone below it, however long the sections above have grown.
+    await Scrollable.ensureVisible(tester.element(find.text('Connection')), alignment: 0.06);
     for (var i = 0; i < 4; i++) {
       await tester.pump(const Duration(milliseconds: 200));
     }

@@ -855,7 +855,9 @@ flutter test tool/icon/icon_test.dart --update-goldens && dart run flutter_launc
 
 The screenshot harness renders the signed-in screens with sample data, so
 UI work doesn't need a Telegram account. Some screens show the time, so a
-re-run differs from the stored images by a digit or two.
+re-run differs from the stored images by a digit or two. The sample photos
+are dated back from today, so as days pass the Photos screens move photos
+from one month to the next; regenerate the images before a release.
 
 The index's schema is version 2, and `test/drift_schemas/` keeps a copy of
 each released version, so a migration can be tested against what phones
