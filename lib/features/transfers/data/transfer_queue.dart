@@ -2356,6 +2356,16 @@ class TransferQueue extends Notifier<TransfersState> {
     } else {
       await _save(finished);
     }
+    // A photo or video that went up from the gallery, with an album say,
+    // counts as backed up from this phone once it lands, as one saved to
+    // the gallery from the drive does, so backup never sends it again.
+    if (row.kind == TransferKind.upload &&
+        row.origin == TransferOrigin.manual &&
+        row.status == TransferStatus.completed) {
+      if (row.assetId case final assetId?) {
+        await _db.markAssetBackedUp(assetId, row.fileId);
+      }
+    }
     _finished.remove(row.id)?.complete(finished);
     _speeds.remove(row.id);
     _samples.remove(row.id);

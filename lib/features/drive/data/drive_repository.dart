@@ -608,11 +608,12 @@ class DriveRepository {
     if (message != null) await ingest(message);
   }
 
-  /// Id of the folder at [names] (e.g. `['Photo backup', 'Camera']`),
-  /// creating whatever part of the path doesn't exist yet. Matching is
-  /// case-insensitive, so it reuses folders people made by hand.
-  Future<String> ensureFolderPath(List<String> names) async {
-    String? parentId;
+  /// Id of the folder at [names] (e.g. `['Photo backup', 'Camera']`), from
+  /// the root or, with [under], from inside that folder, creating whatever
+  /// part of the path doesn't exist yet. Matching is case-insensitive, so it
+  /// reuses folders people made by hand.
+  Future<String> ensureFolderPath(List<String> names, {String? under}) async {
+    String? parentId = under;
     for (final name in names) {
       final siblings = await _db.watchChildFolders(parentId).first;
       final existing = siblings.where(

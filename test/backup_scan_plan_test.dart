@@ -51,7 +51,8 @@ class _Repository extends DriveRepository {
   final Future<void>? gate;
 
   @override
-  Future<String> ensureFolderPath(List<String> names) async => names.join('/');
+  Future<String> ensureFolderPath(List<String> names, {String? under}) async =>
+      names.join('/');
 
   @override
   Future<Map<String, ({String fileId, bool smallCopy})>> mediaFingerprints() async {
@@ -547,6 +548,24 @@ void main() {
       app.controller.scheduleOnResume();
       expect(app.controller.scheduled, 2);
     });
+
+    test('leaves a photo going up with a gallery album to that upload', () async {
+      await add('p1');
+      await add('p2');
+      final app = await open();
+      app.queue.holds = (name) => name == 'IMG_p1.jpg';
+      await app.queue.enqueueUploads([
+        UploadRequest(name: 'IMG_p1.jpg', path: files['p1'], assetId: 'p1'),
+      ]);
+
+      await app.controller.run();
+
+      expect(
+        [for (final upload in app.queue.uploads) (upload.assetId, upload.origin)],
+        [('p1', TransferOrigin.manual), ('p2', TransferOrigin.backup)],
+      );
+      expect(await app.db.backupAssetOf('p1'), isNull);
+    }, skip: _readsFiles ? false : 'photo_manager reads files on Android and Apple platforms only');
 
     test('a wait Telegram asks for pauses backup without counting a failure', () async {
       await add('p1');

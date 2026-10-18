@@ -813,7 +813,12 @@ class BackupController extends Notifier<BackupState> {
       final upload = ref
           .read(transferQueueProvider)
           .items
-          .where((t) => t.row.assetId == assetId && t.status.isPending)
+          .where(
+            (t) =>
+                t.origin == TransferOrigin.backup &&
+                t.row.assetId == assetId &&
+                t.status.isPending,
+          )
           .firstOrNull;
       if (upload != null) await _queue.remove(upload.id);
       if ((await _db.backupAssetOf(assetId))?.state != BackupAssetState.skipped) {
@@ -1531,6 +1536,16 @@ class BackupController extends Notifier<BackupState> {
     final isVideo = asset.type == AssetType.video;
     String? thumbnail;
     try {
+      // Going up already with an album uploaded from the gallery, which
+      // records it as backed up once it lands: this pass leaves it to that.
+      final goingUp = ref.read(transferQueueProvider).items.any(
+        (t) =>
+            t.origin != TransferOrigin.backup &&
+            t.row.assetId == asset.id &&
+            t.status.isPending,
+      );
+      if (goingUp) return _Outcome.skipped;
+
       // An earlier pass left its upload waiting for Wi-Fi, with what it has
       // sent so far: this one follows it, unless it still has to wait.
       if (_heldUploads.remove(asset.id) case final id?) {

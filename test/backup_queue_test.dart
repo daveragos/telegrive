@@ -58,7 +58,8 @@ class _Repository extends DriveRepository {
   _Repository(super.ref);
 
   @override
-  Future<String> ensureFolderPath(List<String> names) async => names.join('/');
+  Future<String> ensureFolderPath(List<String> names, {String? under}) async =>
+      names.join('/');
 }
 
 class _Network extends NetworkStatus {

@@ -572,6 +572,32 @@ files.
   zip, a damaged one, or one Android no longer lets Telegrive read, which
   can be chosen again.
 
+## Uploading an album from the gallery
+
+- **Where from.** Upload an album in the "+" sheet sends it into the
+  folder that is open; the button on Photos › Albums sends it into the
+  root. The sheet lists the gallery's albums, biggest first, leaving out
+  the album of everything, which is photo backup's.
+- **Where it goes.** A folder of the album's name, and a drive album of
+  that name, reused when the drive has one. The first caption carries the
+  album, so nothing is edited after. Each photo or video goes up as backup
+  sends it: the original in full quality, with the time it was taken, a
+  thumbnail and a video's length.
+- **Once.** A photo backup sent from this phone, or one the drive holds
+  under the same name and size, isn't sent again: it joins the album where
+  it is, as one change with Undo. One backup is sending joins it as it
+  lands, and one already going up into the album is left to that upload,
+  so uploading the album again sends only what is missing. A photo that
+  lands counts as backed up from this phone, and backup leaves alone a
+  photo an album upload is sending.
+- **Reading.** The album is read through before anything goes up, behind
+  a count with Cancel. Where the gallery copies each original out for the
+  app, as iOS does, the reading stops once the phone has less than 1 GB
+  free: what was read goes up, and the next upload of the album sends the
+  rest. On Android 11 and later each original is read where it lies.
+  Starting 50 MB or more on mobile data asks first, and a name the folder
+  has already asks Replace, Keep both or Skip, as any upload does.
+
 ## Behaviour in detail
 
 **Files and folders.** Create, rename, move and delete folders, with

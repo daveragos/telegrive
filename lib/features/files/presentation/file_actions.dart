@@ -31,6 +31,8 @@ import '../../backup/data/free_up_space.dart';
 import '../../capture/data/device_capture.dart';
 import '../../offline/data/offline_sync.dart';
 import '../../offline/presentation/keep_offline_sheet.dart';
+import '../../phone_albums/data/phone_albums.dart';
+import '../../phone_albums/presentation/phone_album_upload.dart';
 import '../../send/data/send_bundle.dart';
 import '../../send/data/telegram_chats.dart';
 import '../../share/data/recent_destinations.dart';
@@ -932,8 +934,9 @@ abstract final class FileActions {
   }
 
   /// The sheet behind the "+" button. It says which folder things land in,
-  /// and offers a scan or a photo only on a phone that can make one, and a
-  /// Google Photos import only where zip parts can be picked.
+  /// and offers an album only on a phone with a gallery, a scan or a photo
+  /// only on a phone that can make one, and a Google Photos import only
+  /// where zip parts can be picked.
   static Future<void> showCreateSheet(
     BuildContext context,
     WidgetRef ref, {
@@ -1005,6 +1008,19 @@ abstract final class FileActions {
                           ),
                         ),
                       ),
+                      if (phoneAlbumsSupported)
+                        _CreateOption(
+                          icon: Icons.collections_outlined,
+                          label: 'Upload an album',
+                          detail: 'A gallery album, as a folder and an album',
+                          onTap: () => run(
+                            () => PhoneAlbumUpload.start(
+                              context,
+                              ref,
+                              folderId: folderId,
+                            ),
+                          ),
+                        ),
                       if (support.scan)
                         _CreateOption(
                           icon: Icons.document_scanner_outlined,
@@ -2023,6 +2039,9 @@ abstract final class FileActions {
   /// Home shows the drive from the index and Telegram is still starting,
   /// it says so, as a change that reached the repository would, and the
   /// person tries again once it has connected.
+  static bool connected(BuildContext context, WidgetRef ref) =>
+      _connected(context, ref);
+
   static bool _connected(BuildContext context, WidgetRef ref) {
     if (ref.read(driveSessionProvider) != null) return true;
     final snapshot = ref.read(driveSnapshotProvider);

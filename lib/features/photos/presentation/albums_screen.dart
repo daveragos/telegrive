@@ -9,6 +9,8 @@ import '../../../core/widgets/common.dart';
 import '../../drive/data/drive_repository.dart';
 import '../../drive/domain/drive_models.dart';
 import '../../files/presentation/file_actions.dart';
+import '../../phone_albums/data/phone_albums.dart';
+import '../../phone_albums/presentation/phone_album_upload.dart';
 import '../../trash/data/pending_deletes.dart';
 import '../data/photos_visibility.dart';
 import 'album_actions.dart';
@@ -30,7 +32,17 @@ class AlbumsScreen extends ConsumerWidget {
     final videos = media.where((f) => f.kind == FileKind.video).toList();
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Albums')),
+      appBar: AppBar(
+        title: const Text('Albums'),
+        actions: [
+          if (phoneAlbumsSupported)
+            IconButton(
+              tooltip: 'Upload an album from this phone',
+              icon: const Icon(Icons.add_photo_alternate_outlined),
+              onPressed: () => PhoneAlbumUpload.start(context, ref),
+            ),
+        ],
+      ),
       floatingActionButton: FloatingActionButton.extended(
         heroTag: 'albums-fab',
         onPressed: () => AlbumActions.create(context, ref),

@@ -168,4 +168,29 @@ void main() {
     await queue.whenFinished(mine);
     expect((await db.allTransfers()).map((t) => t.id), [mine]);
   });
+
+  test('a photo from a gallery album counts as backed up once it lands', () async {
+    final [id] = await queue.enqueueUploads([
+      UploadRequest(
+        name: 'IMG_4.HEIC',
+        path: await write('IMG_4.HEIC'),
+        assetId: 'asset-4',
+        albumIds: const ['a1b2c3d4e5f6'],
+      ),
+    ]);
+    final finished = await queue.whenFinished(id);
+    expect(finished.status, TransferStatus.completed);
+    expect(await db.watchLocalAssets().first, {finished.fileId: 'asset-4'});
+    expect(ManifestCodec.decodeFile(telegram.captions['IMG_4.HEIC']!)!.albums, [
+      'a1b2c3d4e5f6',
+    ]);
+  });
+
+  test('an upload with no photo behind it records nothing', () async {
+    final [id] = await queue.enqueueUploads([
+      UploadRequest(name: 'notes.txt', path: await write('notes.txt')),
+    ]);
+    await queue.whenFinished(id);
+    expect(await db.watchLocalAssets().first, isEmpty);
+  });
 }

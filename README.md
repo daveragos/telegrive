@@ -21,7 +21,8 @@ your files stay in Telegram.
 
 - **Keeps as much as you like,** with files of any size.
 - **Backs up your photos** in full quality. Turn it on once and new photos
-  follow by themselves. Then free up space on your phone.
+  follow by themselves, or upload one album from your gallery. Then free
+  up space on your phone.
 - **Brings over Google Photos,** with dates and albums.
 - **Works like a file manager:** folders, stars, albums, and a trash you
   can undo.

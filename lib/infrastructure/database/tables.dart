@@ -278,7 +278,8 @@ class Transfers extends Table {
   TextColumn get origin =>
       textEnum<TransferOrigin>().withDefault(Constant(TransferOrigin.manual.name))();
 
-  /// Camera-roll asset a backup upload came from.
+  /// The photo or video in the phone's gallery an upload came from, for
+  /// backup or an album uploaded from the gallery.
   TextColumn get assetId => text().nullable()();
 
   /// Capture time carried into the manifest (backup uploads). For a copy
