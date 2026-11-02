@@ -392,6 +392,11 @@ value goes back onto the line exactly as it came.
   index cleared before it is read.
 - **Secrets.** The API credentials and TDLib's database key live in the
   platform keystore, and TDLib's cache is encrypted from the first launch.
+  A keystore that fails or doesn't answer within 15 seconds, as on some
+  phones with a changed system, stops the splash with what went wrong and
+  Try again, as does TDLib not saying what state it is in within 45
+  seconds; neither is ever taken for no key, which would start the
+  sign-in over.
 - **Never online.** Telegrive sets TDLib's `online` option off once signed
   in, so browsing the drive doesn't show the account as online to its
   contacts.

@@ -136,12 +136,18 @@ class TelegramClient {
 
   /// Loads TDLib, starts receiving and creates the first client. Safe to call
   /// more than once: a call while TDLib still waits for its parameters, after
-  /// they failed, sends them again.
+  /// they failed, sends them again, and one while TDLib has yet to say what
+  /// state it is in asks again.
   Future<void> start() {
-    if (_clientId != null &&
-        _authState is td.AuthorizationStateWaitTdlibParameters &&
-        fatalError.value == null) {
-      unawaited(_configureOnce());
+    if (_clientId != null && fatalError.value == null) {
+      switch (_authState) {
+        case td.AuthorizationStateWaitTdlibParameters():
+          unawaited(_configureOnce());
+        case null:
+          _askForState();
+        default:
+          break;
+      }
     }
     return _starting ??= _start();
   }
@@ -149,9 +155,20 @@ class TelegramClient {
   Future<void>? _configuring;
 
   /// Sends TDLib its parameters, joining a send already under way: a second
-  /// one TDLib doesn't expect would read as a database it can't open.
-  Future<void> _configureOnce() =>
-      _configuring ??= _configure().whenComplete(() => _configuring = null);
+  /// one TDLib doesn't expect would read as a database it can't open. Whatever
+  /// stops them going out is said in [fatalError], so the splash offers to
+  /// try again rather than wait for ever.
+  Future<void> _configureOnce() => _configuring ??= _configure()
+      .catchError((Object e) {
+        debugPrint('[Telegram] Parameters not sent: $e');
+        fatalError.value ??= e is SecureStoreException ? e.message : 'Could not start Telegram: $e';
+      })
+      .whenComplete(() => _configuring = null);
+
+  /// How long TDLib gets to say what state it is in, once asked, before the
+  /// splash says it didn't.
+  static const Duration _firstStateTimeout = Duration(seconds: 45);
+  Timer? _firstState;
 
   /// How long the app waits for a background job to hand TDLib over.
   static const Duration _handOverTimeout = Duration(seconds: 20);
@@ -269,8 +286,19 @@ class TelegramClient {
     final clientId = _clientId = TdPlugin.instance.tdCreateClientId();
     debugPrint('[Telegram] Client $clientId created');
     unawaited(_saveClient(clientId));
-    // TDLib emits its first authorization state in response to any request.
+    _askForState();
+  }
+
+  /// Has TDLib say what state it is in, and says in [fatalError] when it
+  /// hasn't within [_firstStateTimeout]. TDLib emits its first authorization
+  /// state in response to any request.
+  void _askForState() {
     unawaited(_sendQuietly(const td.GetOption(name: 'version')));
+    _firstState?.cancel();
+    _firstState = Timer(_firstStateTimeout, () {
+      if (_disposed || _authState != null) return;
+      fatalError.value ??= 'Telegram didn\'t start. Try again, or restart the phone if it keeps happening.';
+    });
   }
 
   /// Carries on with [clientId], which TDLib still has open. It sends no
@@ -385,6 +413,7 @@ class TelegramClient {
   void _onAuthorizationState(td.AuthorizationState state) {
     debugPrint('[Telegram] Auth state → ${state.runtimeType}');
     _authState = state;
+    _firstState?.cancel();
     if (!_authStates.isClosed) _authStates.add(state);
 
     switch (state) {
@@ -553,6 +582,7 @@ class TelegramClient {
 
   Future<void> dispose() async {
     _disposed = true;
+    _firstState?.cancel();
     await _receiver.stop();
     _failPending();
     await _updates.close();

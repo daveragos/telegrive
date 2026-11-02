@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/services.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:handy_tdlib/api.dart' as td;
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
@@ -20,11 +22,13 @@ class _Paths extends PathProviderPlatform {
   Future<String?> getApplicationSupportPath() async => support;
 }
 
-/// The keystore, holding [key] or, when it can't be read, nothing.
+/// The keystore, holding [key] or, when it can't be read, nothing; one that
+/// is [broken] turns every write down.
 class _Keys extends SecureStore {
-  _Keys(this.key);
+  _Keys(this.key, {this.broken = false});
 
   String? key;
+  final bool broken;
   int writes = 0;
 
   @override
@@ -33,8 +37,28 @@ class _Keys extends SecureStore {
   @override
   Future<void> writeDatabaseKey(String key) async {
     writes++;
+    if (broken) throw const SecureStoreException('KeyStoreException');
     this.key = key;
   }
+}
+
+/// A platform keystore whose writes fail with [error].
+class _FailingStorage extends FlutterSecureStorage {
+  const _FailingStorage(this.error);
+
+  final Object error;
+
+  @override
+  Future<void> write({
+    required String key,
+    required String? value,
+    AppleOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    AppleOptions? mOptions,
+    WindowsOptions? wOptions,
+  }) async => throw error;
 }
 
 /// TDLib turning down its parameters with [refusal], or taking them when
@@ -186,5 +210,22 @@ void main() {
     expect(keys.writes, 1);
     expect(await kept.exists(), isFalse);
     expect(client.fatalError.value, isNull);
+  });
+
+  test('a keystore that won\'t keep a new key says so, rather than leave the splash waiting', () async {
+    final keys = _Keys(null, broken: true);
+    final client = _Client(keys);
+    addTearDown(client.dispose);
+
+    await client.configure();
+
+    expect(client.fatalError.value, startsWith('This phone\'s secure storage isn\'t working'));
+    expect(client.parametersSent, 0);
+  });
+
+  test('a keystore write that fails is told as the keystore\'s', () async {
+    final store = SecureStore(_FailingStorage(PlatformException(code: 'KeyStoreException')));
+
+    await expectLater(store.writeDatabaseKey('key'), throwsA(isA<SecureStoreException>()));
   });
 }
