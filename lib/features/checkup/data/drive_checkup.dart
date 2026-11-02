@@ -10,7 +10,9 @@ import '../../backup/data/backup_controller.dart';
 import '../../drive/data/drive_repository.dart';
 import '../../drive/data/drive_session.dart';
 import '../../drive/data/drive_sync.dart';
+import '../../drive/data/preview_maker.dart';
 import '../../drive/domain/drive_models.dart';
+import '../../files/data/bulk_edits.dart';
 import '../../transfers/data/transfer_queue.dart';
 
 /// How a check-up row reads: fine, a fact with nothing to do, or something
@@ -164,6 +166,19 @@ class TrashFinding extends CheckFinding {
   CheckSeverity get severity => dueSoon > 0 ? CheckSeverity.action : CheckSeverity.neutral;
 }
 
+/// Photos and videos in the drive with no preview from Telegram, which show
+/// as an icon in Photos and Files, and their bytes.
+@immutable
+class PreviewFinding extends CheckFinding {
+  const PreviewFinding({required this.count, required this.bytes});
+
+  final int count;
+  final int bytes;
+
+  @override
+  CheckSeverity get severity => CheckSeverity.action;
+}
+
 /// Whether the account asks for a password on a new sign-in. Null when
 /// Telegram couldn't say.
 @immutable
@@ -219,7 +234,7 @@ class CheckupReport {
 const List<int> accountTtlChoices = [30, 90, 180, 365, 548, 730];
 
 /// Looks the drive over: the channel, the index, split files, photo
-/// backup, the trash and the account, each in its own try, so a check that
+/// backup, the trash, previews and the account, each in its own try, so a check that
 /// fails only degrades its own row. Reading it runs the check-up;
 /// invalidating it runs it again. With no drive open there is nothing to
 /// look at, so it fails rather than report an empty all-clear.
@@ -243,6 +258,7 @@ class DriveCheckup extends AsyncNotifier<CheckupReport> {
       ?await _split(),
       await _backup(),
       ?await _trash(),
+      ?await _previews(),
       await _twoStep(),
       await _accountTtl(),
     ];
@@ -364,6 +380,20 @@ class DriveCheckup extends AsyncNotifier<CheckupReport> {
     }
   }
 
+  /// Null when every photo and video has a preview, or this phone can't
+  /// make them, so the row isn't shown.
+  Future<PreviewFinding?> _previews() async {
+    if (!PreviewMaker.canMake) return null;
+    try {
+      final rows = ref.read(previewMakerProvider).worthTrying(await _db.driveFilesWithoutPreview());
+      if (rows.isEmpty) return null;
+      return PreviewFinding(count: rows.length, bytes: rows.fold(0, (sum, row) => sum + row.size));
+    } catch (e) {
+      debugPrint('[Checkup] previews: $e');
+      return null;
+    }
+  }
+
   Future<TwoStepFinding> _twoStep() async {
     try {
       final state = await _client.send<td.PasswordState>(const td.GetPasswordState());
@@ -408,6 +438,16 @@ class DriveCheckup extends AsyncNotifier<CheckupReport> {
 
   /// Sets after how many days without activity Telegram deletes the account.
   Future<void> setAccountTtl(int days) => ref.read(accountTtlProvider.notifier).set(days);
+
+  /// Makes previews for the photos and videos that have none, as
+  /// [PreviewMaker.make] does.
+  Future<({BulkOutcome outcome, int noPicture})> makePreviews() async {
+    final result = await ref
+        .read(previewMakerProvider)
+        .make(await _db.driveFilesWithoutPreview());
+    if (ref.mounted) ref.invalidateSelf();
+    return result;
+  }
 
   /// Removes what is left of a split file that can't be opened any more.
   Future<void> deleteParts(String fileId) async {

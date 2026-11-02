@@ -9,12 +9,13 @@ import '../../../core/widgets/common.dart';
 import '../../backup/data/backup_controller.dart';
 import '../../drive/data/drive_session.dart';
 import '../../drive/data/drive_sync.dart';
+import '../../drive/presentation/make_previews.dart';
 import '../../files/presentation/file_actions.dart';
 import '../data/drive_checkup.dart';
 
 /// Looks the drive over and says, one sentence per check, whether the
-/// channel, the index, split files, photo backup, the trash and the account
-/// are as they should be, with a fix beside each that has one.
+/// channel, the index, split files, photo backup, the trash, previews and
+/// the account are as they should be, with a fix beside each that has one.
 class CheckupScreen extends ConsumerWidget {
   const CheckupScreen({super.key});
 
@@ -363,6 +364,29 @@ class CheckupScreen extends ConsumerWidget {
             finding.severity,
             '${Formatters.count(finding.count, 'item')} in Trash',
             detail: 'Each goes for good 30 days after it was deleted.',
+          ),
+        ];
+
+      case PreviewFinding():
+        final one = finding.count == 1;
+        return [
+          row(
+            finding.severity,
+            '${Formatters.count(finding.count, 'photo or video', 'photos and videos')} '
+            '${one ? 'has' : 'have'} no preview',
+            detail:
+                '${one ? 'It shows' : 'They show'} as an icon. Making previews fetches each and '
+                'sends it again · ${Formatters.bytes(finding.bytes)}, on Wi-Fi.',
+            fixes: [
+              TextButton(
+                onPressed: () => confirmMakePreviews(
+                  context,
+                  (count: finding.count, bytes: finding.bytes),
+                  checkup.makePreviews,
+                ),
+                child: const Text('Make previews'),
+              ),
+            ],
           ),
         ];
 

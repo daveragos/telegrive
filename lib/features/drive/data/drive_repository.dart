@@ -467,7 +467,9 @@ class DriveRepository {
   /// from the file's first message the first time a tile asks. A file the
   /// index doesn't hold, such as a chat's media offered for import, was read
   /// from Telegram in this run, so its own id, [stored], is used as it is.
-  /// Null when the message is gone or carries no thumbnail.
+  /// Null when the message is gone or carries no thumbnail. A message that
+  /// couldn't be read for now, offline or behind a flood wait say, is read
+  /// again the next time a tile asks.
   Future<int?> thumbnailTdId(String fileId, {required int stored}) async {
     final client = _ref.read(telegramClientProvider);
     await client.ready;
@@ -476,16 +478,16 @@ class DriveRepository {
     if (ids.containsKey(key)) return ids[key];
     final parts = await _db.partsOf(fileId);
     if (parts.isEmpty) return stored;
-    int? id;
+    final td.Message message;
     try {
-      final message = await client.send<td.Message>(
+      message = await client.send<td.Message>(
         td.GetMessage(chatId: _readChatId, messageId: parts.first.messageId),
       );
-      id = MessageIndexer.describe(message)?.thumbnailFileId;
-    } on TelegramException {
-      id = null;
+    } on TelegramException catch (e) {
+      if (e.isNetworkProblem || e.isFloodWait || e.code >= 500) return null;
+      return ids[key] = null;
     }
-    return ids[key] = id;
+    return ids[key] = MessageIndexer.describe(message)?.thumbnailFileId;
   }
 
   static List<DriveFile> _files(List<FileRow> rows) =>

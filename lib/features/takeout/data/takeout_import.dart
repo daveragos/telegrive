@@ -21,8 +21,8 @@ import '../../../infrastructure/storage/preferences.dart';
 import '../../backup/data/backup_rules.dart';
 import '../../drive/data/drive_repository.dart';
 import '../../drive/data/drive_session.dart';
+import '../../drive/data/preview_maker.dart';
 import '../../drive/data/drive_sync.dart';
-import '../../drive/domain/drive_models.dart';
 import '../../files/data/bulk_edits.dart';
 import '../../files/presentation/file_actions.dart';
 import '../../network/data/mobile_data.dart';
@@ -690,10 +690,6 @@ class TakeoutImport extends Notifier<TakeoutState> {
   /// Whether each Live Photo's photo holds its own movement, by key, as read
   /// from its part once.
   final Map<String, bool> _holdsMotion = {};
-
-  /// Files this run couldn't make a preview of, by id, so making previews
-  /// again doesn't fetch them for nothing.
-  final Set<String> _noPicture = {};
 
   /// Every item of the catalog by key, for the moving parts of Live Photos
   /// to find their photos.
@@ -1519,57 +1515,12 @@ class TakeoutImport extends Notifier<TakeoutState> {
       p.join((await getTemporaryDirectory()).path, 'telegrive-thumbs', 'takeout-${DateTime.now().microsecondsSinceEpoch}.jpg');
 
   /// Gives the photos and videos the import sent without a preview one each,
-  /// smallest first, as a bulk change the screen follows: each is fetched,
-  /// a preview made from it, and its bytes sent again into the same message
-  /// with the preview, since Telegram takes a preview only with its file.
-  /// Wi-Fi only, since each costs its size twice. Stops when the phone runs
-  /// short of room.
-  /// Answers how it went, with how many files made no picture.
+  /// as [PreviewMaker.make] does. Answers how it went, with how many files
+  /// made no picture.
   Future<({BulkOutcome outcome, int noPicture})> makePreviews() async {
-    if (ref.read(networkStatusProvider).metered) {
-      throw const DriveException('Connect to Wi-Fi first: each file is fetched and sent again.');
-    }
-    final files = [for (final row in await _withoutPreview()) if (!_noPicture.contains(row.id)) row];
-    var noPicture = 0;
-    final cache = await getTemporaryDirectory();
-    final outcome = await ref.read(bulkEditsProvider.notifier).run<FileRow>(
-      label: 'Making previews for ${Formatters.count(files.length, 'file')}',
-      icon: Icons.image_outlined,
-      items: files,
-      apply: (row) async {
-        if (await Room.shortfall(ref.read(deviceStorageProvider), row.size * 2 + _keepFree) != null) {
-          throw const DriveException('This phone needs more room to make the rest.');
-        }
-        final file = DriveFile.fromRow(row);
-        // A copy already on the phone, kept offline say, is the person's and
-        // stays; one fetched for this goes once it has served.
-        final kept = await _queue.localPathIfAvailable(file);
-        final local = kept ?? await _queue.download(file);
-        final dir = Directory(p.join(cache.path, 'takeout', 'preview-${DateTime.now().microsecondsSinceEpoch}'));
-        try {
-          await dir.create(recursive: true);
-          // A copy of its own, so Telegram takes it as a file to send rather
-          // than the one it already holds.
-          final copy = await File(local).copy(p.join(dir.path, DeviceStorage.safeName(row.name)));
-          final thumbnail = await MediaProbe.thumbnail(
-            copy.path,
-            video: row.kind == FileKind.video,
-            out: p.join(dir.path, 'preview.jpg'),
-          );
-          if (thumbnail == null) {
-            _noPicture.add(row.id);
-            noPicture++;
-            return;
-          }
-          await _repository.addPreview(row.id, path: copy.path, thumbnailPath: thumbnail);
-        } finally {
-          await _deleteQuietly(dir);
-          if (kept == null) await _deleteFileQuietly(local);
-        }
-      },
-    );
+    final result = await ref.read(previewMakerProvider).make(await _withoutPreview());
     schedule(immediate: true);
-    return (outcome: outcome, noPicture: noPicture);
+    return result;
   }
 
   /// The files the import sent that have no preview from Telegram.
@@ -1579,15 +1530,6 @@ class TakeoutImport extends Notifier<TakeoutState> {
       for (final row in ledger.values)
         if (row.state == TakeoutItemState.done && row.fileId != null) row.fileId!,
     ]);
-  }
-
-  static Future<void> _deleteFileQuietly(String path) async {
-    try {
-      final file = File(path);
-      if (await file.exists()) await file.delete();
-    } on FileSystemException catch (e) {
-      debugPrint('[Takeout] $e');
-    }
   }
 
   /// Queues [request] into [folderId], and answers the upload's id with the

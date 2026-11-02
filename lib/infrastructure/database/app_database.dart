@@ -534,6 +534,21 @@ class AppDatabase extends _$AppDatabase {
     return out..sort((a, b) => a.size.compareTo(b.size));
   }
 
+  /// Every photo and video in the drive, in one part and not in the trash,
+  /// with no preview from Telegram, smallest first.
+  Future<List<FileRow>> driveFilesWithoutPreview() =>
+      (select(driveFiles)
+            ..where(
+              (f) =>
+                  f.kind.isInValues([FileKind.image, FileKind.video]) &
+                  f.thumbnailFileId.isNull() &
+                  f.minithumbnail.isNull() &
+                  f.partCount.equals(1) &
+                  f.trashedAt.isNull(),
+            )
+            ..orderBy([(f) => OrderingTerm.asc(f.size)]))
+          .get();
+
   /// Every whole file in the drive with what an import tells it by: its
   /// name, its size (a small copy's original's), and when it was taken. A
   /// split file with a part still missing isn't among them, so a photo is

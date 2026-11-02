@@ -407,6 +407,10 @@ value goes back onto the line exactly as it came.
   out is tried again, up to three times in a row. Telegram's flood waits
   are counted down and sat out, and when Telegram turns one upload away
   the others hold off too.
+- A photo or video that goes up without a preview, one picked in Files
+  say, gets one made from the file on Android before its first part, as
+  backup's do: Telegram makes none for a video sent as a file, nor for a
+  HEIC photo.
 - Before writing a big copy, a part or a download, the phone is checked
   for room; without it the transfer waits and says how much it needs.
 - On Android 15 and later the service gets six hours in the background a
@@ -690,9 +694,13 @@ or screen lock.
 **Check my drive** says whether the channel is private and yours with no
 auto-delete timer, when it was last read in full, which split files are
 missing a part, whether every photo backed up from this phone is still
-there, what in the trash goes soon, whether two-step verification is on
-and when an unused account is deleted, with a fix beside each that has
-one.
+there, what in the trash goes soon, which photos and videos have no
+preview, whether two-step verification is on and when an unused account
+is deleted, with a fix beside each that has one. Make previews, on
+Android and on Wi-Fi, fetches each photo or video without one, smallest
+first, makes a preview from it and sends its bytes again into the same
+message, since Telegram takes a document's preview only with the
+document. A file that makes no picture isn't tried again in that run.
 
 ## Known limits
 

@@ -1446,6 +1446,33 @@ class TransferQueue extends Notifier<TransfersState> {
         }
       }
     }
+    // Telegram makes no preview for a video sent as a file, nor for a HEIC
+    // photo, so a photo or video that came without one, picked in Files
+    // say, goes with one made here before its first part.
+    if (hasSource &&
+        initial.thumbnailPath == null &&
+        initial.completedParts == 0 &&
+        !_smallCopyOf.containsKey(initial.id)) {
+      final kind = FileKind.detect(
+        fileName: initial.name,
+        mimeType: initial.mimeType,
+      );
+      if (kind == FileKind.image || kind == FileKind.video) {
+        final made = await MediaProbe.thumbnail(
+          source.path,
+          video: kind == FileKind.video,
+          out: p.join(
+            (await getTemporaryDirectory()).path,
+            'telegrive-thumbs',
+            'upload-${initial.id}.jpg',
+          ),
+        );
+        if (made != null) {
+          initial = initial.copyWith(thumbnailPath: Value(made));
+          await _save(initial);
+        }
+      }
+    }
 
     final limit = session.isPremium
         ? SplitPolicy.premiumLimit

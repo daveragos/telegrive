@@ -15,10 +15,11 @@ import 'support/fake_telegram.dart';
 /// TDLib's file ids last one run, so the id the index stored for a part may
 /// name nothing, or another file, in this one. Telegram here keeps what it
 /// is asked, answers a file lookup for any id except those in [forgotten],
-/// and hands messages back from the channel.
+/// and hands messages back from the channel unless it is [offline].
 class _Telegram extends FakeTelegram {
   final requests = <td.TdFunction>[];
   final Set<int> forgotten = {};
+  bool offline = false;
 
   Iterable<T> asked<T extends td.TdFunction>() => requests.whereType<T>();
 
@@ -31,6 +32,8 @@ class _Telegram extends FakeTelegram {
           throw const TelegramException(400, 'Invalid file identifier');
         }
         return tdFile(fileId);
+      case td.GetMessage() when offline:
+        throw const TelegramException(408, 'Request timeout');
       default:
         return null;
     }
@@ -150,6 +153,17 @@ void main() {
       expect(await repository.thumbnailTdId('report', stored: 11), isNull);
 
       expect(telegram.asked<td.GetMessage>(), hasLength(1));
+    });
+
+    test('is read again after its message couldn\'t be read for now', () async {
+      telegram.holdsFile(5, 42, thumbnailId: 211);
+      telegram.offline = true;
+      expect(await repository.thumbnailTdId('report', stored: 11), isNull);
+
+      telegram.offline = false;
+      expect(await repository.thumbnailTdId('report', stored: 11), 211);
+
+      expect(telegram.asked<td.GetMessage>(), hasLength(2));
     });
 
     test('is its own id for a file the index doesn\'t hold', () async {

@@ -4,9 +4,9 @@ import 'package:path/path.dart' as p;
 
 /// The folders in the app's cache where copies made for an upload wait:
 /// staged picks, split parts, thumbnails, small copies of photos, the file
-/// picker's copies, shares, captures and files from the watched phone
-/// folders. Anything in them that no transfer or share still needs is a
-/// leftover.
+/// picker's copies, shares, captures, files from the watched phone folders,
+/// and files fetched to make a preview of. Anything in them that no
+/// transfer or share still needs is a leftover.
 const leftoverDirs = [
   'telegrive-staging',
   'telegrive-parts',
@@ -17,6 +17,7 @@ const leftoverDirs = [
   'captured',
   'watched',
   'takeout',
+  'previews',
 ];
 
 /// Files in the app's cache that only setting up the drive needs: the

@@ -110,27 +110,33 @@ void main() {
 
   test('photos and videos without a preview are found, smallest first, others left out', () async {
     final now = DateTime(2026, 10, 9);
-    Future<void> add(String id, FileKind kind, int size, {int? thumbnail, int parts = 1}) => db.upsertFilePart(
-      DriveFilesCompanion.insert(
-        id: id,
-        name: id,
-        mimeType: 'application/octet-stream',
-        kind: kind,
-        size: size,
-        createdAt: now,
-        modifiedAt: now,
-        partCount: Value(parts),
-        thumbnailFileId: Value(thumbnail),
-      ),
-      FilePartsCompanion.insert(fileId: id, partIndex: 0, messageId: 900 + size, tdFileId: 950 + size, size: size),
-    );
+    Future<void> add(String id, FileKind kind, int size, {int? thumbnail, int parts = 1, DateTime? trashedAt}) =>
+        db.upsertFilePart(
+          DriveFilesCompanion.insert(
+            id: id,
+            name: id,
+            mimeType: 'application/octet-stream',
+            kind: kind,
+            size: size,
+            createdAt: now,
+            modifiedAt: now,
+            partCount: Value(parts),
+            thumbnailFileId: Value(thumbnail),
+            trashedAt: Value(trashedAt),
+          ),
+          FilePartsCompanion.insert(fileId: id, partIndex: 0, messageId: 900 + size, tdFileId: 950 + size, size: size),
+        );
     await add('big.mp4', FileKind.video, 300);
     await add('small.heic', FileKind.image, 10);
     await add('has-preview.jpg', FileKind.image, 20, thumbnail: 7);
     await add('notes.pdf', FileKind.document, 30);
     await add('split.mp4', FileKind.video, 40, parts: 2);
+    await add('trashed.mov', FileKind.video, 5, trashedAt: now);
     final rows = await db.filesWithoutPreview(['big.mp4', 'small.heic', 'has-preview.jpg', 'notes.pdf', 'split.mp4']);
     expect([for (final row in rows) row.id], ['small.heic', 'big.mp4']);
+    // Across the whole drive, as Check my drive asks, with the trash left out.
+    final drive = await db.driveFilesWithoutPreview();
+    expect([for (final row in drive) row.id], ['small.heic', 'big.mp4']);
   });
 
   test('after a restart, an upload whose file is only part there is not taken for done', () async {

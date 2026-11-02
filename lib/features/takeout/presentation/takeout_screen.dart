@@ -13,6 +13,7 @@ import '../../../core/widgets/common.dart';
 import '../../../core/widgets/file_visuals.dart';
 import '../../../infrastructure/database/app_database.dart';
 import '../../drive/data/drive_repository.dart';
+import '../../drive/presentation/make_previews.dart';
 import '../../files/data/bulk_edits.dart';
 import '../../transfers/data/transfer_queue.dart';
 import '../../transfers/domain/transfer_wait.dart';
@@ -256,7 +257,11 @@ class _Import extends ConsumerWidget {
                       'Making previews fetches each and sends it again · '
                       '${Formatters.bytes(state.withoutPreview.bytes)}, on Wi-Fi.',
                   trailing: TextButton(
-                    onPressed: () => _makePreviews(context, ref, state.withoutPreview),
+                    onPressed: () => confirmMakePreviews(
+                      context,
+                      state.withoutPreview,
+                      ref.read(takeoutImportProvider.notifier).makePreviews,
+                    ),
                     child: const Text('Make previews'),
                   ),
                 ),
@@ -358,38 +363,6 @@ class _Import extends ConsumerWidget {
     final shown = numbers.take(5).toList();
     final rest = numbers.length - shown.length;
     return rest > 0 ? '${shown.join(', ')} and $rest more' : '${shown.take(shown.length - 1).join(', ')} and ${shown.last}';
-  }
-
-  static Future<void> _makePreviews(BuildContext context, WidgetRef ref, ({int count, int bytes}) without) async {
-    final confirmed = await showConfirmDialog(
-      context,
-      title: 'Make ${Formatters.count(without.count, 'preview')}?',
-      message:
-          'Telegram takes a preview only with its file, so each of these is fetched and sent '
-          'again with one, smallest first: ${Formatters.bytes(without.bytes)} down and the same up. '
-          'Keep the phone on Wi-Fi. You can stop at any point.',
-      confirmLabel: 'Make previews',
-    );
-    if (!confirmed || !context.mounted) return;
-    final BulkOutcome outcome;
-    final int noPicture;
-    try {
-      (:outcome, :noPicture) = await ref.read(takeoutImportProvider.notifier).makePreviews();
-    } on DriveException catch (e) {
-      if (context.mounted) showSnack(context, e.message);
-      return;
-    }
-    if (!context.mounted) return;
-    final made = Formatters.count(outcome.done - noPicture, 'preview');
-    final missed = noPicture == 0 ? '' : '. ${Formatters.count(noPicture, 'file')} made no picture';
-    showSnack(
-      context,
-      outcome.complete
-          ? 'Made $made$missed'
-          : outcome.stopped
-          ? 'Stopped after making $made$missed'
-          : 'Made $made$missed, then: ${outcome.error is DriveException ? (outcome.error! as DriveException).message : 'something went wrong'}',
-    );
   }
 
   static Future<void> _trashExtraMotion(BuildContext context, WidgetRef ref, int count) async {
