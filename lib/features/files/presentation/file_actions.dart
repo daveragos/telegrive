@@ -51,6 +51,7 @@ import '../../transfers/domain/transfer_wait.dart';
 import '../../transfers/presentation/mobile_data_prompt.dart';
 import '../../trash/data/pending_deletes.dart';
 import '../data/bulk_edits.dart';
+import '../data/phone_picks.dart';
 import 'file_tiles.dart';
 import 'folder_picker.dart';
 import 'trash_sheet.dart';
@@ -58,6 +59,17 @@ import 'trash_sheet.dart';
 /// One item of a bulk change that mixes files and folders: how to make the
 /// change, and how to take it back.
 typedef _Step = ({Future<void> Function() apply, Future<void> Function() undo});
+
+/// A file picked to upload: a copy at [path] the app may own, or a way to
+/// read it or copy it when its upload starts.
+typedef _Pick = ({
+  String name,
+  String? path,
+  int? size,
+  Stream<List<int>> Function()? openRead,
+  Future<void> Function(String path)? copyTo,
+  bool owned,
+});
 
 /// Every action a person can take on files and folders, in one place so the
 /// home screen, the browser and search all behave identically.
@@ -483,11 +495,9 @@ abstract final class FileActions {
     String? folderId,
     bool mediaOnly = false,
   }) async {
-    final List<PlatformFile> picked;
+    final List<_Pick> picked;
     try {
-      picked = await FilePicker.pickFiles(
-        type: mediaOnly ? FileType.media : FileType.any,
-      );
+      picked = await _pickFiles(mediaOnly: mediaOnly);
     } catch (e) {
       if (context.mounted) {
         showSnack(context, 'Couldn\'t open the file picker.');
@@ -496,12 +506,19 @@ abstract final class FileActions {
     }
     if (picked.isEmpty) return;
 
-    final temp = (await getTemporaryDirectory()).path;
-    bool owned(PlatformFile file) => file.path?.startsWith(temp) ?? false;
-    final sizes = [for (final file in picked) file.lengthSync()];
+    // Copies the plugin made at once go when the upload is called off.
+    Future<void> dropCopies() async {
+      for (final file in picked) {
+        if (!file.owned || file.path == null) continue;
+        try {
+          await File(file.path!).delete();
+        } catch (_) {}
+      }
+    }
+
     // A size the picker couldn't read counts as nothing, as the queue
     // counts it until the file is staged.
-    final bytes = sizes.fold<int>(0, (sum, size) => sum + (size ?? 0));
+    final bytes = picked.fold<int>(0, (sum, file) => sum + (file.size ?? 0));
     final what = picked.length == 1
         ? picked.single.name
         : Formatters.count(picked.length, 'file');
@@ -521,34 +538,30 @@ abstract final class FileActions {
         );
       }
       if (choice == null) {
-        // Called off: the copies the picker made go too.
-        for (final file in picked.where(owned)) {
-          try {
-            await File(file.path!).delete();
-          } catch (_) {}
-        }
+        await dropCopies();
         return;
       }
     }
 
     final bigWait = ref.read(preferencesProvider).bigTransfersWifiOnly;
     final requests = [
-      for (final (index, file) in picked.indexed)
+      for (final file in picked)
         UploadRequest(
           name: file.name,
           path: file.path,
-          size: sizes[index],
-          openRead: file.path == null ? file.readAsByteStream : null,
-          ownsSource: owned(file),
+          size: file.size,
+          openRead: file.openRead,
+          copyTo: file.copyTo,
+          ownsSource: file.owned,
           wifiOnly:
               wifiOnlyFrom(choice) ??
               TransferPolicy.wifiOnlyFor(
-                sizes[index] ?? 0,
+                file.size ?? 0,
                 bigWaitForWifi: bigWait,
               ),
         ),
     ];
-    if (!context.mounted) return;
+    if (!context.mounted) return dropCopies();
     final resolved = await resolveUploadClashes(
       context,
       ref,
@@ -580,6 +593,42 @@ abstract final class FileActions {
       actionLabel: 'View',
       onAction: () => router.push('/transfers'),
     );
+  }
+
+  /// Files picked to upload. On Android the picker gives where each file
+  /// is, and the queue copies each only when its upload starts, so picking
+  /// hundreds of files at once neither waits for them all to be copied nor
+  /// fills the phone. Elsewhere the file picker plugin hands back its own
+  /// copies, or a way to read each file.
+  static Future<List<_Pick>> _pickFiles({required bool mediaOnly}) async {
+    if (PhonePicks.supported) {
+      return [
+        for (final doc in await PhonePicks.pick(media: mediaOnly))
+          (
+            name: doc.name,
+            path: null,
+            size: doc.size,
+            openRead: null,
+            copyTo: (String path) => PhonePicks.copy(doc.uri, path),
+            owned: true,
+          ),
+      ];
+    }
+    final picked = await FilePicker.pickFiles(
+      type: mediaOnly ? FileType.media : FileType.any,
+    );
+    final temp = (await getTemporaryDirectory()).path;
+    return [
+      for (final file in picked)
+        (
+          name: file.name,
+          path: file.path,
+          size: file.lengthSync(),
+          openRead: file.path == null ? file.readAsByteStream : null,
+          copyTo: null,
+          owned: file.path?.startsWith(temp) ?? false,
+        ),
+    ];
   }
 
   /// Settles [requests], bound for [folderId] (the root when null), against

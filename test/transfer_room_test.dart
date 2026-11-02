@@ -371,6 +371,38 @@ void main() {
     expect(telegram.sends, 0);
   });
 
+  test('picked files are copied only as their uploads start, and only once there is room', () async {
+    final copied = <String>[];
+    final telegram = _Telegram('');
+    storage.free = 100 * _mb;
+    final (container, queue) = await openQueue(telegram);
+    TransfersState state() => container.read(transferQueueProvider);
+
+    final ids = await queue.enqueueUploads([
+      for (final name in ['one.mp3', 'two.mp3', 'three.mp3'])
+        UploadRequest(
+          name: name,
+          size: 200 * _mb,
+          copyTo: (path) async {
+            copied.add(name);
+            await File(path).writeAsBytes([1, 2, 3]);
+          },
+        ),
+    ]);
+    await until(() => state().waitingForRoom.isNotEmpty);
+    expect(copied, isEmpty);
+    expect(Directory(p.join(dir.path, 'telegrive-staging')).existsSync(), isFalse);
+
+    storage.free = 10 << 30;
+    await queue.recheckRoom();
+    for (final id in ids) {
+      await queue.whenFinished(id);
+    }
+    // Each went to send from its copy, which the fake turns down.
+    expect(copied, unorderedEquals(['one.mp3', 'two.mp3', 'three.mp3']));
+    expect(telegram.sends, 3);
+  });
+
   test('joined split files go once they are old, unless a download is waiting for them', () async {
     File joined(String fileId, int bytes) =>
         File(p.join(dir.path, 'downloads', fileId, '$fileId.mkv'))

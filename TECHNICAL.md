@@ -412,6 +412,12 @@ value goes back onto the line exactly as it came.
   out is tried again, up to three times in a row. Telegram's flood waits
   are counted down and sat out, and when Telegram turns one upload away
   the others hold off too.
+- Files picked to upload on Android come back from the picker as where
+  each one is, and the queue copies each into its cache only when its
+  upload starts, after checking for room, so hundreds of files picked at
+  once neither wait to be copied nor fill the phone. Access to them lasts
+  while the app runs: one still waiting when Android stops the app fails
+  as no longer available, to be picked again.
 - A photo or video that goes up without a preview, one picked in Files
   say, gets one made from the file on Android before its first part, as
   backup's do: Telegram makes none for a video sent as a file, nor for a

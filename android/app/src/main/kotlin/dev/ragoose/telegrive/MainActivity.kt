@@ -81,6 +81,7 @@ class MainActivity : FlutterFragmentActivity() {
     private lateinit var capture: CaptureChannel
     private lateinit var folders: FoldersChannel
     private lateinit var archives: ArchivesChannel
+    private lateinit var picks: PicksChannel
 
     /**
      * Whether this activity is the first one its intent starts, so the
@@ -97,6 +98,7 @@ class MainActivity : FlutterFragmentActivity() {
         capture = CaptureChannel(this, io, main) { addShared(listOf(it)) }
         folders = FoldersChannel(this, io, main)
         archives = ArchivesChannel(this, io, main)
+        picks = PicksChannel(this, io, main)
         firstStart = savedInstanceState == null &&
             (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) == 0
         if (savedInstanceState != null) forgetRestoredRoute()
@@ -192,6 +194,7 @@ class MainActivity : FlutterFragmentActivity() {
         capture.attach(messenger)
         folders.attach(messenger)
         archives.attach(messenger)
+        picks.attach(messenger)
         TextChannel(main).attach(messenger)
         MethodChannel(messenger, "telegrive/security").setMethodCallHandler { call, result ->
             when (call.method) {

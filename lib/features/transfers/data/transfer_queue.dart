@@ -42,6 +42,7 @@ class UploadRequest {
     required this.name,
     this.path,
     this.openRead,
+    this.copyTo,
     this.size,
     this.ownsSource = false,
     this.origin = TransferOrigin.manual,
@@ -56,11 +57,15 @@ class UploadRequest {
     this.replacesSmallCopy = false,
     this.albumIds = const [],
     this.starred = false,
-  }) : assert(path != null || openRead != null);
+  }) : assert(path != null || openRead != null || copyTo != null);
 
   final String name;
   final String? path;
   final Stream<List<int>> Function()? openRead;
+
+  /// Writes the file to the path it is given, for a file the queue copies
+  /// only when its upload starts, as [openRead] does.
+  final Future<void> Function(String path)? copyTo;
   final int? size;
 
   /// The path is our own temporary copy and can be deleted once uploaded.
@@ -113,6 +118,7 @@ class UploadRequest {
     name: name ?? this.name,
     path: path ?? this.path,
     openRead: openRead,
+    copyTo: copyTo,
     size: size,
     ownsSource: ownsSource,
     origin: origin,
@@ -446,7 +452,8 @@ class TransferQueue extends Notifier<TransfersState> {
   final Map<String, int> _pendingMessages = {};
   final Map<String, int> _activeDownloads = {};
   final Map<String, Completer<String>> _completions = {};
-  final Map<String, Stream<List<int>> Function()> _stagers = {};
+  /// Writes the copy of an upload that is made only when it starts, by id.
+  final Map<String, Future<void> Function(String path)> _stagers = {};
   final Map<String, Completer<TransferRow>> _finished = {};
 
   /// The last rows that finished and weren't kept, backup's and an
@@ -586,11 +593,11 @@ class TransferQueue extends Notifier<TransfersState> {
         sourcePath = direct.path;
         ownsSource = request.ownsSource;
         size = await direct.length();
-      } else if (request.openRead != null) {
+      } else if (request.copyTo ?? _piping(request.openRead) case final copyTo?) {
         sourcePath = p.join(staging.path, id, request.name);
         ownsSource = true;
         size = request.size ?? 0;
-        _stagers[id] = request.openRead!;
+        _stagers[id] = copyTo;
       } else {
         continue;
       }
@@ -1754,6 +1761,10 @@ class TransferQueue extends Notifier<TransfersState> {
     throw TelegramException(429, 'Too Many Requests: retry after $seconds');
   }
 
+  /// Writes what [openRead] gives to the path it is handed.
+  static Future<void> Function(String path)? _piping(Stream<List<int>> Function()? openRead) =>
+      openRead == null ? null : (path) => openRead().pipe(File(path).openWrite());
+
   /// Copies a picked content URI into staging, where TDLib can read it.
   /// The copy is written under a `.part` name and only takes the file's
   /// name once it is whole, so one cut short is never taken for the file;
@@ -1761,14 +1772,14 @@ class TransferQueue extends Notifier<TransfersState> {
   Future<TransferRow> _stage(
     TransferRow row,
     File target,
-    Stream<List<int>> Function() openRead,
+    Future<void> Function(String path) copyTo,
   ) async {
     _preparing.add(row.id);
     _emit();
     final partial = File('${target.path}.part');
     try {
       await target.parent.create(recursive: true);
-      await openRead().pipe(partial.openWrite());
+      await copyTo(partial.path);
       await partial.rename(target.path);
       final staged = row.copyWith(totalBytes: await target.length());
       await _save(staged);
