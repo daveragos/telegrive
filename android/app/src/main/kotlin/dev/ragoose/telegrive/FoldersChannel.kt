@@ -18,13 +18,15 @@ import java.util.concurrent.Executor
 
 /**
  * Android's folder picker, and the folders picked with it, for a phone
- * folder whose new files are to upload by themselves. The pick comes back
+ * folder whose new files are to upload by themselves, or one uploaded once
+ * with its folders. The pick comes back
  * as an activity result, which an activity can only register for before it
  * is started, so MainActivity creates this in onCreate and the Flutter
- * engine attaches to it later. A picked folder stays readable after a
- * restart through a persistable grant, taken only while a Dart call is
+ * engine attaches to it later. A folder picked to watch stays readable after
+ * a restart through a persistable grant, taken only while a Dart call is
  * waiting for it: a pick that comes back to a new process with nothing
- * waiting is dropped, so no grant is kept that no rule refers to. Listing,
+ * waiting is dropped, so no grant is kept that no rule refers to. A folder
+ * picked to upload once is readable while this process runs. Listing,
  * copying and checking a folder ask its provider, another process, so they
  * run off the main thread, and anything that goes wrong answers an error
  * named 'failed'.
@@ -40,10 +42,13 @@ class FoldersChannel(
     /** The Dart call waiting for a pick. */
     private var pending: MethodChannel.Result? = null
 
+    /** Whether the folder being picked keeps its access after a restart. */
+    private var keep = true
+
     fun attach(messenger: BinaryMessenger) {
         MethodChannel(messenger, "telegrive/folders").setMethodCallHandler { call, result ->
             when (call.method) {
-                "pick" -> pick(result)
+                "pick" -> pick(result, keep = call.argument<Boolean>("keep") != false)
                 "list" -> answer(result) {
                     list(Uri.parse(call.text("uri")), call.argument<Boolean>("recursive") == true)
                 }
@@ -57,13 +62,17 @@ class FoldersChannel(
         }
     }
 
-    /** Opens the picker where it was last; a phone without one refuses. */
-    private fun pick(result: MethodChannel.Result) {
+    /**
+     * Opens the picker where it was last; a phone without one refuses. With
+     * [keep] the folder stays readable after a restart.
+     */
+    private fun pick(result: MethodChannel.Result, keep: Boolean) {
         if (pending != null) {
             result.error("busy", "A folder is already being picked", null)
             return
         }
         pending = result
+        this.keep = keep
         try {
             treeLauncher.launch(null)
         } catch (e: ActivityNotFoundException) {
@@ -73,10 +82,10 @@ class FoldersChannel(
     }
 
     /**
-     * Keeps read access to the picked tree beyond this process, then names
-     * it for the sheet. Backing out answers null. Android can refuse to keep
-     * the grant, which the person is told about, and the name is read off
-     * the main thread, as anything asked of a provider is.
+     * Keeps read access to the picked tree beyond this process when asked
+     * to, then names it for the sheet. Backing out answers null. Android can
+     * refuse to keep the grant, which the person is told about, and the name
+     * is read off the main thread, as anything asked of a provider is.
      */
     private fun onTree(uri: Uri?) {
         val waiting = pending ?: return
@@ -85,12 +94,15 @@ class FoldersChannel(
             waiting.success(null)
             return
         }
+        val keeping = keep
         io.execute {
-            try {
-                activity.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            } catch (e: SecurityException) {
-                main.post { waiting.error("not_persisted", e.message, null) }
-                return@execute
+            if (keeping) {
+                try {
+                    activity.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                } catch (e: SecurityException) {
+                    main.post { waiting.error("not_persisted", e.message, null) }
+                    return@execute
+                }
             }
             val picked = mapOf("uri" to uri.toString(), "name" to displayName(uri))
             main.post { waiting.success(picked) }
@@ -132,7 +144,9 @@ class FoldersChannel(
      * Every file in the [tree], breadth first, and with [recursive] in its
      * folders too, down to [MAX_DEPTH] levels. A huge tree stops at
      * [MAX_FILES], and the answer says it was cut short. A size or date the
-     * provider leaves out is 0.
+     * provider leaves out is 0. Each file says the folders it is in below
+     * the tree, as "Trip/Day 1", empty at the top, and the URI it is read
+     * from.
      */
     private fun list(tree: Uri, recursive: Boolean): Map<String, Any> {
         val columns = arrayOf(
@@ -143,25 +157,30 @@ class FoldersChannel(
             Document.COLUMN_LAST_MODIFIED,
         )
         val files = mutableListOf<Map<String, Any>>()
-        val folders = ArrayDeque(listOf(DocumentsContract.getTreeDocumentId(tree) to 0))
+        val folders = ArrayDeque(listOf(Triple(DocumentsContract.getTreeDocumentId(tree), 0, "")))
         while (folders.isNotEmpty()) {
-            val (folderId, depth) = folders.removeFirst()
+            val (folderId, depth, dir) = folders.removeFirst()
             val children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, folderId)
             val cursor = activity.contentResolver.query(children, columns, null, null, null)
                 ?: throw IOException("Can't read the folder")
             cursor.use {
                 while (it.moveToNext()) {
                     val id = it.getString(0) ?: continue
+                    val name = it.getString(1).orEmpty()
                     val mime = it.getString(2).orEmpty()
                     if (mime == Document.MIME_TYPE_DIR) {
-                        if (recursive && depth < MAX_DEPTH) folders.addLast(id to depth + 1)
+                        if (recursive && depth < MAX_DEPTH) {
+                            folders.addLast(Triple(id, depth + 1, if (dir.isEmpty()) name else "$dir/$name"))
+                        }
                         continue
                     }
                     if (files.size >= MAX_FILES) return mapOf("files" to files, "truncated" to true)
                     files.add(
                         mapOf(
                             "id" to id,
-                            "name" to it.getString(1).orEmpty(),
+                            "name" to name,
+                            "dir" to dir,
+                            "uri" to DocumentsContract.buildDocumentUriUsingTree(tree, id).toString(),
                             "mime" to mime,
                             "size" to if (it.isNull(3)) 0L else it.getLong(3),
                             "modified" to if (it.isNull(4)) 0L else it.getLong(4),

@@ -27,6 +27,8 @@ class PhoneDocument {
     required this.mimeType,
     required this.size,
     required this.modifiedAt,
+    this.dir = '',
+    this.uri,
   });
 
   factory PhoneDocument.fromMap(Map<Object?, Object?> map) => PhoneDocument(
@@ -35,6 +37,8 @@ class PhoneDocument {
     mimeType: map['mime'] as String? ?? '',
     size: (map['size'] as num? ?? 0).toInt(),
     modifiedAt: DateTime.fromMillisecondsSinceEpoch((map['modified'] as num? ?? 0).toInt()),
+    dir: map['dir'] as String? ?? '',
+    uri: map['uri'] as String?,
   );
 
   /// The provider's document id, which stays the same while the file keeps
@@ -46,6 +50,13 @@ class PhoneDocument {
   final String mimeType;
   final int size;
   final DateTime modifiedAt;
+
+  /// The folders it is in below the picked one, as `Trip/Day 1`; empty for
+  /// a file at the top.
+  final String dir;
+
+  /// Where it is read from while the app runs, through the folder's access.
+  final String? uri;
 }
 
 /// Phone folders picked through Android's folder picker, reached through
@@ -68,10 +79,11 @@ class PhoneFolders {
   static set supported(bool value) => _supported = value;
 
   /// Opens the picker and waits for a folder, or null when the person backed
-  /// out. A [PlatformException] coded `not_persisted` means Android
-  /// wouldn't keep access to the folder that was picked.
-  Future<PickedFolder?> pick() async {
-    final map = await _channel.invokeMapMethod<Object?, Object?>('pick');
+  /// out. With [keep] the folder stays readable after a restart, and a
+  /// [PlatformException] coded `not_persisted` means Android wouldn't keep
+  /// access to it; without, it is readable while the app runs.
+  Future<PickedFolder?> pick({bool keep = true}) async {
+    final map = await _channel.invokeMapMethod<Object?, Object?>('pick', {'keep': keep});
     if (map == null) return null;
     return PickedFolder(uri: map['uri']! as String, name: map['name']! as String);
   }

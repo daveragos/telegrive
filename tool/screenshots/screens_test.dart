@@ -350,7 +350,7 @@ class _PhoneFolders extends PhoneFolders {
   static const _bank = 'content://com.android.externalstorage.documents/tree/primary%3ADownload%2FBank';
 
   @override
-  Future<PickedFolder?> pick() async => const PickedFolder(uri: _bank, name: 'Bank');
+  Future<PickedFolder?> pick({bool keep = true}) async => const PickedFolder(uri: _bank, name: 'Bank');
 
   @override
   Future<({List<PhoneDocument> files, bool truncated})> list(

@@ -418,6 +418,16 @@ value goes back onto the line exactly as it came.
   once neither wait to be copied nor fill the phone. Access to them lasts
   while the app runs: one still waiting when Android stops the app fails
   as no longer available, to be picked again.
+- **Upload a folder**, in the "+" sheet on Android, picks a folder in
+  Android's folder picker and sends it up as a folder of its name inside
+  the one open, with the folders inside it made in the drive as they are
+  on the phone, ten levels down and 20,000 files at most. Each folder is
+  made before its files are queued, so uploads start while the rest are
+  still being made. Its files are copied as their uploads start, as picked
+  files are, and the folder is readable while the app runs; no lasting
+  access is kept. Hidden files and folders and empty files stay behind.
+  Into a new folder nothing is asked; into one of the same name already
+  there, a name its folder has asks Replace, Keep both or Skip.
 - **Play in another app**, in a video or audio file's menu on Android,
   hands the file to another player without downloading it first. The
   player reads a listener of its own on the loopback address, with its own

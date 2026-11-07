@@ -57,6 +57,7 @@ import '../data/bulk_edits.dart';
 import '../data/phone_picks.dart';
 import 'file_tiles.dart';
 import 'folder_picker.dart';
+import 'phone_folder_upload.dart';
 import 'trash_sheet.dart';
 
 /// One item of a bulk change that mixes files and folders: how to make the
@@ -1113,6 +1114,19 @@ abstract final class FileActions {
                           ),
                         ),
                       ),
+                      if (PhoneFolderUpload.supported)
+                        _CreateOption(
+                          icon: Icons.drive_folder_upload_outlined,
+                          label: 'Upload a folder',
+                          detail: 'With the folders inside it',
+                          onTap: () => run(
+                            () => PhoneFolderUpload.start(
+                              context,
+                              ref,
+                              folderId: folderId,
+                            ),
+                          ),
+                        ),
                       if (phoneAlbumsSupported)
                         _CreateOption(
                           icon: Icons.collections_outlined,
