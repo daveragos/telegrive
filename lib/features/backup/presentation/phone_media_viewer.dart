@@ -13,6 +13,7 @@ import '../../../core/format/formatters.dart';
 import '../../../core/widgets/common.dart';
 import '../data/backup_controller.dart';
 import '../data/local_media.dart';
+import '../../viewer/presentation/pinch_zoom.dart';
 import 'backup_queue_screen.dart';
 
 /// What [PhoneMediaViewer] shows: the phone's photos [assetIds], opening
@@ -312,10 +313,8 @@ class _PhotoPageState extends State<_PhotoPage> {
       onTap: widget.onTap,
       onDoubleTapDown: (details) => _doubleTap = details,
       onDoubleTap: _toggleZoom,
-      child: InteractiveViewer(
-        transformationController: _transform,
-        minScale: 1,
-        maxScale: 6,
+      child: PinchZoom(
+        controller: _transform,
         child: Stack(
           fit: StackFit.expand,
           children: [

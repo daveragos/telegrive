@@ -22,6 +22,7 @@ import '../../photos/data/photos_visibility.dart';
 import '../../player/data/stream_server.dart';
 import '../../player/presentation/player_screen.dart';
 import '../../transfers/data/transfer_queue.dart';
+import 'pinch_zoom.dart';
 import 'vertical_swipe.dart';
 
 /// Full-screen viewer. Opened from the Photos timeline, an album, a folder
@@ -411,8 +412,9 @@ class _ImagePageState extends ConsumerState<_ImagePage> {
     final progress = remote?.value;
     final path = localPath ?? progress?.path;
 
-    // The swipe sits inside InteractiveViewer, so its drag is claimed at
-    // touch slop before the viewer's pan would be; zoomed, it steps aside.
+    // The swipe sits inside the zoom, so its drag is claimed at touch slop
+    // before a pan would be; zoomed, it steps aside. A pinch wins over it
+    // as a second finger lands.
     return GestureDetector(
       onTap: widget.onTap,
       onDoubleTapDown: (details) => _doubleTap = details,
@@ -420,10 +422,8 @@ class _ImagePageState extends ConsumerState<_ImagePage> {
       child: Stack(
         fit: StackFit.expand,
         children: [
-          InteractiveViewer(
-            transformationController: _transform,
-            minScale: 1,
-            maxScale: 6,
+          PinchZoom(
+            controller: _transform,
             child: VerticalSwipe(
               enabled: !_zoomed,
               onDismiss: () => Navigator.of(context).maybePop(),

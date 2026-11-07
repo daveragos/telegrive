@@ -663,7 +663,10 @@ time.
 **Photos.** A timeline grouped by month, with a scrubber that names the
 month beside your finger, select-a-month, drag to select, pinch to change
 the grid, albums, Favorites and Videos. The viewer flicks down to close
-and up for Details, and plays videos in place. Thumbnails are fetched only
+and up for Details, and plays videos in place. A photo zooms with a pinch
+or a double-tap and pans once zoomed; a pinch wins as its second finger
+lands, before the page swipe or the flick can take the drag, which on
+Android starts after a few pixels. Thumbnails are fetched only
 for what stops on screen, and decoded at the size they are shown; phones
 with little memory start in Save memory. Hide from Photos, in a folder's
 menu, keeps that folder's photos and videos, and those of the folders

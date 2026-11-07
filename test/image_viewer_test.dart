@@ -1,3 +1,5 @@
+import 'dart:ui' as ui;
+
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -502,5 +504,84 @@ void main() {
     await tester.drag(page(), const Offset(0, 200));
     await settle(tester);
     expect(find.byType(ImageViewerScreen), findsNothing);
+  });
+
+  group('a pinch zooms the photo', () {
+    double scale(WidgetTester tester) => tester
+        .widget<InteractiveViewer>(find.byType(InteractiveViewer).first)
+        .transformationController!
+        .value
+        .getMaxScaleOnAxis();
+
+    /// Two fingers [apart] on the photo along [direction], spread further
+    /// apart by [step] a frame, or closer when it is negative. With
+    /// [oneFinger] the first stays still and the second moves twice as far.
+    Future<void> pinch(
+      WidgetTester tester,
+      Offset direction, {
+      double apart = 40,
+      double step = 6,
+      bool oneFinger = false,
+    }) async {
+      final center = tester.getCenter(page());
+      final a = await tester.startGesture(center - direction * apart / 2, pointer: 1);
+      final b = await tester.startGesture(center + direction * apart / 2, pointer: 2);
+      for (var i = 0; i < 12; i++) {
+        if (!oneFinger) await a.moveBy(-direction * step / 2);
+        await b.moveBy(direction * (oneFinger ? step : step / 2));
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      await a.up();
+      await b.up();
+      await settle(tester);
+    }
+
+    // Android's own touch slop, under half of Flutter's, which the swipes
+    // around the photo start at.
+    setUp(() {
+      final view = TestWidgetsFlutterBinding.instance.platformDispatcher.views.first;
+      view.gestureSettings = ui.GestureSettings(physicalTouchSlop: 8 * view.devicePixelRatio);
+      addTearDown(view.resetGestureSettings);
+    });
+
+    for (final (name, direction) in [
+      ('up and down', const Offset(0, 1)),
+      ('side to side', const Offset(1, 0)),
+      ('on a slant', const Offset(0.6, 0.8)),
+    ]) {
+      for (final oneFinger in [false, true]) {
+        testWidgets('$name${oneFinger ? ', one finger still' : ''}', (tester) async {
+          await open(tester, '/viewer/b?from=photos');
+          await pinch(tester, direction, step: 12, oneFinger: oneFinger);
+          expect(scale(tester), greaterThan(1.5));
+          expect(find.byType(ImageViewerScreen), findsOneWidget);
+          expect(bar('b.jpg'), findsOneWidget);
+        });
+      }
+    }
+
+    testWidgets('zoomed, one finger pans and the page stays', (tester) async {
+      await open(tester, '/viewer/b?from=photos');
+      await pinch(tester, const Offset(1, 0), step: 12, oneFinger: true);
+      final zoomed = scale(tester);
+      await tester.drag(page(), const Offset(-300, 0));
+      await settle(tester);
+      expect(bar('b.jpg'), findsOneWidget);
+      await tester.drag(page(), const Offset(0, 300));
+      await settle(tester);
+      expect(find.byType(ImageViewerScreen), findsOneWidget);
+      expect(scale(tester), zoomed);
+    });
+
+    testWidgets('pinched back to its own size, a flick down closes it', (tester) async {
+      await open(tester, '/viewer/b?from=photos');
+      await pinch(tester, const Offset(0, 1), step: 12, oneFinger: true);
+      expect(scale(tester), greaterThan(1.5));
+      await pinch(tester, const Offset(0, 1), apart: 300, step: -20);
+      expect(scale(tester), 1);
+      await tester.drag(page(), const Offset(0, 200));
+      await settle(tester);
+      expect(find.byType(ImageViewerScreen), findsNothing);
+    });
   });
 }
