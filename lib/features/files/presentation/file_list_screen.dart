@@ -31,7 +31,7 @@ final recentOpenedProvider = StreamProvider.autoDispose<List<RecentEntry>>(
 );
 
 /// The last files added by hand or from another device, newest first.
-/// Camera-roll backups are left to Photos.
+/// Photos and videos that know when they were taken are left to Photos.
 final recentAddedProvider = StreamProvider.autoDispose<List<DriveFile>>(
   (ref) => ref
       .watch(driveRepositoryProvider)

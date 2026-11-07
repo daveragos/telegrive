@@ -442,6 +442,11 @@ value goes back onto the line exactly as it came.
   say, gets one made from the file on Android before its first part, as
   backup's do: Telegram makes none for a video sent as a file, nor for a
   HEIC photo.
+- A photo or video that goes up without a date taken, one picked in Files
+  or in an uploaded folder say, gets the one its camera wrote into it
+  (EXIF for a photo, the video's own header) on Android before its first
+  part, so it sits on that day in Photos rather than the day it went up.
+  A file that holds none goes without, and backup's dates are kept.
 - Before writing a big copy, a part or a download, the phone is checked
   for room; without it the transfer waits and says how much it needs.
 - On Android 15 and later the service gets six hours in the background a
@@ -645,7 +650,8 @@ file in the trash, marked as replaced, with Restore previous version in
 the new file's Details. Folders can be starred and sit at the top of
 Home. Long-press or Select puts labelled actions in a bar along the
 bottom. Recent lists what you opened, shared or sent on this phone and
-what you added.
+what you added, apart from photos and videos that know when they were
+taken, which Photos shows on that day.
 
 **Trash and undo.** Deleting moves things to the trash for 30 days.
 Moving, renaming, starring, album changes and restoring all offer Undo for

@@ -199,7 +199,8 @@ class DriveRepository {
       );
 
   /// What this phone opened lately merged with what was added lately,
-  /// leaving out camera-roll backups, which Photos shows.
+  /// leaving out photos and videos that know when they were taken, which
+  /// Photos shows.
   Stream<List<RecentEntry>> watchRecentActivity({int limit = 12}) =>
       combineLatest2(
         watchRecentOpens(limit: limit),

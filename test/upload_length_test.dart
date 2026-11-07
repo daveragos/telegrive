@@ -11,6 +11,7 @@ import 'package:telegrive/features/drive/data/drive_session.dart';
 import 'package:telegrive/features/drive/domain/manifest.dart';
 import 'package:telegrive/features/transfers/data/transfer_queue.dart';
 import 'package:telegrive/infrastructure/database/app_database.dart';
+import 'package:telegrive/infrastructure/media/media_probe.dart';
 import 'package:telegrive/infrastructure/storage/device_profile.dart';
 import 'package:telegrive/infrastructure/telegram/telegram_client.dart';
 
@@ -117,7 +118,11 @@ void main() {
 
   /// Uploads a file called [name] with [request]'s other fields and returns
   /// the manifest its caption carried.
-  Future<FileManifest> upload(String name, {int? durationSeconds}) async {
+  Future<FileManifest> upload(
+    String name, {
+    int? durationSeconds,
+    DateTime? takenAt,
+  }) async {
     final source = File(p.join(dir.path, name))
       ..writeAsStringSync('0123456789');
     final [id] = await queue.enqueueUploads([
@@ -125,6 +130,7 @@ void main() {
         name: name,
         path: source.path,
         durationSeconds: durationSeconds,
+        takenAt: takenAt,
       ),
     ]);
     final finished = await queue.whenFinished(id);
@@ -144,5 +150,59 @@ void main() {
     expect((await upload('clip.mp4')).durationSeconds, isNull);
     expect(telegram.captions['clip.mp4'], isNot(contains('length=')));
     expect((await upload('notes.txt')).durationSeconds, isNull);
+  });
+
+  group('the date taken', () {
+    const media = MethodChannel('telegrive/media');
+    final taken = DateTime.utc(2024, 7, 14, 9, 30);
+
+    /// What the file was asked, as `takenAtMs video` or `takenAtMs photo`.
+    late List<String> asked;
+
+    setUp(() {
+      asked = [];
+      MediaProbe.asks = true;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(media, (call) async {
+            if (call.method != 'takenAtMs') return null;
+            final video = (call.arguments as Map)['video'] == true;
+            asked.add('takenAtMs ${video ? 'video' : 'photo'}');
+            return taken.millisecondsSinceEpoch;
+          });
+    });
+
+    tearDown(() {
+      MediaProbe.asks = false;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(media, null);
+    });
+
+    test(
+      'a photo picked in Files goes up with the date it was taken',
+      () async {
+        final manifest = await upload('beach.jpg');
+        expect(manifest.takenAt?.isAtSameMomentAs(taken), isTrue);
+        expect(asked, ['takenAtMs photo']);
+        final [file] = await db.select(db.driveFiles).get();
+        expect(file.takenAt?.isAtSameMomentAs(taken), isTrue);
+      },
+    );
+
+    test('a video is asked as a video', () async {
+      final manifest = await upload('clip.mp4');
+      expect(manifest.takenAt?.isAtSameMomentAs(taken), isTrue);
+      expect(asked, ['takenAtMs video']);
+    });
+
+    test(
+      'a date the caller knows is kept, and a document is not asked',
+      () async {
+        final known = DateTime.utc(2020, 1, 2);
+        final manifest = await upload('backed-up.jpg', takenAt: known);
+        expect(manifest.takenAt?.isAtSameMomentAs(known), isTrue);
+        expect((await upload('notes.txt')).takenAt, isNull);
+        expect(asked, isEmpty);
+      },
+    );
   });
 }

@@ -10,11 +10,17 @@ import 'package:flutter/services.dart';
 abstract final class MediaProbe {
   static const _channel = MethodChannel('telegrive/media');
 
+  static bool _asks = !kIsWeb && Platform.isAndroid;
+
+  /// Tests that answer the channel themselves turn the asking on.
+  @visibleForTesting
+  static set asks(bool value) => _asks = value;
+
   /// How long the video or audio file at [path] runs, in whole seconds, or
   /// null when it can't be told. A clip too short to round to a second
   /// counts as untold, so a length is never recorded as zero.
   static Future<int?> durationSeconds(String path) async {
-    if (kIsWeb || !Platform.isAndroid) return null;
+    if (!_asks) return null;
     try {
       final ms = await _channel.invokeMethod<int>('durationMs', {'path': path});
       if (ms == null) return null;
@@ -30,7 +36,7 @@ abstract final class MediaProbe {
   /// enough for a document's thumbnail on Telegram, and answers [out], or
   /// null when the file makes no picture.
   static Future<String?> thumbnail(String path, {required bool video, required String out}) async {
-    if (kIsWeb || !Platform.isAndroid) return null;
+    if (!_asks) return null;
     try {
       return await _channel.invokeMethod<String>('thumbnail', {'path': path, 'video': video, 'out': out});
     } catch (e) {
@@ -42,7 +48,7 @@ abstract final class MediaProbe {
   /// When the photo or [video] at [path] was taken, from the date its
   /// camera wrote into it, or null when it holds none.
   static Future<DateTime?> takenAt(String path, {required bool video}) async {
-    if (kIsWeb || !Platform.isAndroid) return null;
+    if (!_asks) return null;
     try {
       final ms = await _channel.invokeMethod<int>('takenAtMs', {'path': path, 'video': video});
       return ms == null ? null : DateTime.fromMillisecondsSinceEpoch(ms);

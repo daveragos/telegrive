@@ -1437,20 +1437,38 @@ class TransferQueue extends Notifier<TransfersState> {
         await source.length() != initial.totalBytes) {
       throw DriveException(_notWhole(initial));
     }
+    final kind = FileKind.detect(
+      fileName: initial.name,
+      mimeType: initial.mimeType,
+    );
+    final isMedia = kind == FileKind.image || kind == FileKind.video;
     // A video or audio file says how long it runs, so the caption can carry
     // it. Nothing is read for other kinds, and a file that won't say keeps
     // going without.
-    if (hasSource && initial.durationSeconds == null) {
-      final kind = FileKind.detect(
-        fileName: initial.name,
-        mimeType: initial.mimeType,
+    if (hasSource &&
+        initial.durationSeconds == null &&
+        (kind == FileKind.video || kind == FileKind.audio)) {
+      final seconds = await MediaProbe.durationSeconds(source.path);
+      if (seconds != null) {
+        initial = initial.copyWith(durationSeconds: Value(seconds));
+        await _save(initial);
+      }
+    }
+    // A photo or video says when it was taken, so it sits on that day in
+    // Photos rather than the day it went up. Backup already knows; one
+    // picked in Files or in a phone folder is read here, before the first
+    // part carries the date in its caption.
+    if (hasSource &&
+        isMedia &&
+        initial.takenAt == null &&
+        initial.completedParts == 0) {
+      final taken = await MediaProbe.takenAt(
+        source.path,
+        video: kind == FileKind.video,
       );
-      if (kind == FileKind.video || kind == FileKind.audio) {
-        final seconds = await MediaProbe.durationSeconds(source.path);
-        if (seconds != null) {
-          initial = initial.copyWith(durationSeconds: Value(seconds));
-          await _save(initial);
-        }
+      if (taken != null) {
+        initial = initial.copyWith(takenAt: Value(taken));
+        await _save(initial);
       }
     }
     // Telegram makes no preview for a video sent as a file, nor for a HEIC
@@ -1460,11 +1478,7 @@ class TransferQueue extends Notifier<TransfersState> {
         initial.thumbnailPath == null &&
         initial.completedParts == 0 &&
         !_smallCopyOf.containsKey(initial.id)) {
-      final kind = FileKind.detect(
-        fileName: initial.name,
-        mimeType: initial.mimeType,
-      );
-      if (kind == FileKind.image || kind == FileKind.video) {
+      if (isMedia) {
         final made = await MediaProbe.thumbnail(
           source.path,
           video: kind == FileKind.video,

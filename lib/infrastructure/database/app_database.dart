@@ -260,9 +260,9 @@ class AppDatabase extends _$AppDatabase {
     driveFiles,
   )..where((f) => _shown(f) & _inFolder(f.folderId, folderId))).get();
 
-  /// Newest additions first. With [excludeCameraRoll], only files added by
-  /// hand or forwarded in: photo backup is the only thing that records a
-  /// capture time, and a batch of new photos shouldn't bury the rest.
+  /// Newest additions first. With [excludeCameraRoll], photos and videos
+  /// that know when they were taken are left out: Photos shows them on that
+  /// day, and a batch of new photos shouldn't bury the rest.
   Stream<List<FileRow>> watchRecent({
     int limit = 20,
     bool excludeCameraRoll = false,
