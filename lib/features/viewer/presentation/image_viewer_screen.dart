@@ -16,6 +16,7 @@ import '../../backup/data/local_media.dart';
 import '../../drive/data/drive_repository.dart';
 import '../../drive/data/previews.dart';
 import '../../drive/domain/drive_models.dart';
+import '../../files/data/browse_preferences.dart';
 import '../../files/presentation/file_actions.dart';
 import '../../photos/data/photos_visibility.dart';
 import '../../player/data/stream_server.dart';
@@ -23,9 +24,9 @@ import '../../player/presentation/player_screen.dart';
 import '../../transfers/data/transfer_queue.dart';
 import 'vertical_swipe.dart';
 
-/// Full-screen viewer. Opened from the Photos timeline or an album it swipes
-/// through every photo and video there; opened on a single file it shows
-/// just that.
+/// Full-screen viewer. Opened from the Photos timeline, an album, a folder
+/// or a list of files it swipes through every photo and video there; opened
+/// on a single file it shows just that.
 /// The blurred inline preview shows instantly and the full image fades in
 /// over it; pinch or double-tap to zoom. A video waits on its poster and
 /// plays in place when tapped. Flick down to close, or up for the file's
@@ -36,8 +37,10 @@ class ImageViewerScreen extends ConsumerStatefulWidget {
   final String fileId;
 
   /// What to swipe through: `photos` (the timeline), `favorites`,
-  /// `videos`, `album:<id>`, or `backed-up` (what backup sent up since the
-  /// app opened). Null shows the one file.
+  /// `videos`, `album:<id>`, `backed-up` (what backup sent up since the
+  /// app opened), `folder:<id>` (with an empty id for the root), `kind:<name>`
+  /// or `starred`. A folder or file list gives its photos and videos, in the
+  /// order the list shows them. Null shows the one file.
   final String? source;
 
   @override
@@ -88,6 +91,15 @@ class _ImageViewerScreenState extends ConsumerState<ImageViewerScreen> {
     if (moved && last && mounted) await Navigator.of(context).maybePop();
   }
 
+  /// The root's files have no folder id.
+  static String? _folderId(String id) => id.isEmpty ? null : id;
+
+  /// The photos and videos of a list of files, in its order.
+  static List<DriveFile> _media(List<DriveFile>? files) => [
+    for (final file in files ?? const <DriveFile>[])
+      if (file.kind == FileKind.image || file.kind == FileKind.video) file,
+  ];
+
   @override
   Widget build(BuildContext context) {
     // The same list the grid showed, so a swipe never lands on a photo it
@@ -101,6 +113,19 @@ class _ImageViewerScreenState extends ConsumerState<ImageViewerScreen> {
       'backed-up' => ref.watch(recentBackupsProvider).value ?? const [],
       final String source when source.startsWith('album:') =>
         ref.watch(albumFilesProvider(source.substring(6))).value ?? const [],
+      final String source when source.startsWith('folder:') => _media(
+        ref
+            .watch(folderContentsProvider(_folderId(source.substring(7))))
+            .value
+            ?.sorted(ref.watch(browsePreferencesProvider).sort)
+            .files,
+      ),
+      final String source when source.startsWith('kind:') => _media(
+        ref
+            .watch(kindFilesProvider(FileKind.fromName(source.substring(5))))
+            .value,
+      ),
+      'starred' => _media(ref.watch(starredFilesProvider).value),
       _ => [?ref.watch(fileInfoProvider(widget.fileId)).value],
     };
 

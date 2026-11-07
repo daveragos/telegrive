@@ -135,6 +135,11 @@ class _FileListScreenState extends ConsumerState<FileListScreen> {
           selected: _selected,
           selecting: _selecting,
           onToggle: _toggle,
+          from: switch (widget.mode) {
+            FileListMode.kind => 'kind:${kind!.name}',
+            FileListMode.starred => 'starred',
+            FileListMode.recent => null,
+          },
         );
 
     return PopScope(
@@ -338,6 +343,7 @@ class _Files extends ConsumerWidget {
     this.folders = const [],
     this.folderSizes,
     this.subtitles,
+    this.from,
   });
 
   final List<DriveFile> files;
@@ -354,8 +360,14 @@ class _Files extends ConsumerWidget {
   /// "size · date". The grid keeps its size-only cards.
   final List<String>? subtitles;
 
-  void _tap(BuildContext context, WidgetRef ref, DriveFile file) =>
-      selecting ? onToggle(file) : FileActions.open(context, ref, file);
+  /// Where a file opened here was opened from, for [FileActions.open], so a
+  /// photo swipes through the list's others; null for Recent, which
+  /// reorders as files open.
+  final String? from;
+
+  void _tap(BuildContext context, WidgetRef ref, DriveFile file) => selecting
+      ? onToggle(file)
+      : FileActions.open(context, ref, file, from: from);
 
   VoidCallback? _openFolder(BuildContext context, DriveFolder folder) =>
       selecting ? null : () => context.go('/files/${folder.id}');

@@ -86,7 +86,9 @@ abstract final class FileActions {
   /// else downloads and opens in whichever app handles it. Home's Recent
   /// remembers it either way, without holding the file up. [from] names
   /// where the file was opened, as `folder:<id>` with an empty id for the
-  /// root; an audio file opened that way plays on through the folder.
+  /// root, `kind:<name>` or `starred`: a photo opened that way swipes
+  /// through the photos and videos there, and an audio file opened from a
+  /// folder plays on through it.
   static Future<void> open(
     BuildContext context,
     WidgetRef ref,
@@ -102,10 +104,17 @@ abstract final class FileActions {
       isSplit: file.isSplit,
     )) {
       case Preview.image:
-        await context.push('/viewer/${file.id}');
+        await context.push(
+          Uri(
+            path: '/viewer/${file.id}',
+            queryParameters: from == null ? null : {'from': from},
+          ).toString(),
+        );
       case Preview.media:
         await context.push(
-          file.kind == FileKind.audio && from != null
+          file.kind == FileKind.audio &&
+                  from != null &&
+                  from.startsWith('folder:')
               ? Uri(
                   path: '/play/${file.id}',
                   queryParameters: {'from': from},
@@ -153,13 +162,17 @@ abstract final class FileActions {
     final queue = ref.read(transferQueueProvider.notifier);
     final server = ref.read(streamServerProvider);
     final keepAlive = ref.read(transferKeepAliveProvider);
-    if (!OtherPlayers.supported || await queue.localPathIfAvailable(file) != null) {
+    if (!OtherPlayers.supported ||
+        await queue.localPathIfAvailable(file) != null) {
       if (context.mounted) await openExternally(context, ref, file);
       return;
     }
     void noPlayer() {
       if (context.mounted) {
-        showSnack(context, 'No app on this phone can play this. Install a video player, or download it first.');
+        showSnack(
+          context,
+          'No app on this phone can play this. Install a video player, or download it first.',
+        );
       }
     }
 
@@ -1853,12 +1866,18 @@ abstract final class FileActions {
                     onTap: () => run(() => open(context, ref, file)),
                   ),
                 if (OtherPlayers.supported &&
-                    (file.kind == FileKind.video || file.kind == FileKind.audio))
+                    (file.kind == FileKind.video ||
+                        file.kind == FileKind.audio))
                   _SheetAction(
                     icon: Icons.play_circle_outline_rounded,
                     label: 'Play in another app',
                     onTap: () => run(
-                      () => playInAnotherApp(context, ref, file, beforeLeaving: onLeaving),
+                      () => playInAnotherApp(
+                        context,
+                        ref,
+                        file,
+                        beforeLeaving: onLeaving,
+                      ),
                     ),
                   ),
                 _SheetAction(
@@ -1971,13 +1990,15 @@ abstract final class FileActions {
                   icon: Icons.send_outlined,
                   label: 'Send in Telegram',
                   onTap: () => run(
-                    () => sendToChats(context, ref, const [], folders: [folder]),
+                    () =>
+                        sendToChats(context, ref, const [], folders: [folder]),
                   ),
                 ),
                 _OfflineAction(
                   itemId: folder.id,
                   onTap: (pinned) => run(
-                    () => setOffline(context, ref, folder: folder, keep: !pinned),
+                    () =>
+                        setOffline(context, ref, folder: folder, keep: !pinned),
                   ),
                 ),
                 _SheetAction(
@@ -2046,7 +2067,8 @@ abstract final class FileActions {
                   icon: Icons.delete_outline_rounded,
                   label: 'Move to Trash',
                   destructive: true,
-                  onTap: () => run(() => delete(context, ref, folders: [folder])),
+                  onTap: () =>
+                      run(() => delete(context, ref, folders: [folder])),
                 ),
               ],
             ),

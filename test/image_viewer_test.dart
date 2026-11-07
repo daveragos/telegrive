@@ -48,6 +48,20 @@ final _video = DriveFile(
   durationSeconds: 84,
 );
 
+/// A document in the Camera folder, which a swipe passes over.
+final _notes = DriveFile(
+  id: 'notes',
+  folderId: 'camera',
+  name: 'notes.pdf',
+  mimeType: 'application/pdf',
+  kind: FileKind.document,
+  size: 4000,
+  createdAt: DateTime(2026, 9, 22),
+  modifiedAt: DateTime(2026, 9, 22),
+  partCount: 1,
+  starred: false,
+);
+
 /// Which of the photos are in the trash.
 class _Trashed extends Notifier<Set<String>> {
   @override
@@ -167,6 +181,17 @@ void main() {
           ],
           fileInfoProvider(_video.id)
               .overrideWith((ref) => Stream.value(_video)),
+          // Camera, as Files lists it, with a document among the photos.
+          folderContentsProvider('camera').overrideWith(
+            (ref) => Stream.value(
+              FolderContents(
+                folders: const [],
+                files: [_photos[2], _notes, _photos[0], _video, _photos[1]],
+              ),
+            ),
+          ),
+          kindFilesProvider(FileKind.image)
+              .overrideWith((ref) => Stream.value(_photos)),
         ],
         child: MaterialApp.router(
           theme: AppTheme.light(),
@@ -211,6 +236,40 @@ void main() {
       );
     },
   );
+
+  testWidgets(
+    'opened from a folder it swipes through the folder\'s photos and videos, '
+    'in the order Files lists them',
+    (tester) async {
+      await open(tester, '/viewer/b?from=folder:camera');
+      expect(bar('b.jpg'), findsOneWidget);
+      expect(subtitle('2 of 4'), findsOneWidget);
+
+      await tester.drag(page(), const Offset(-500, 0));
+      await settle(tester);
+      expect(bar('c.jpg'), findsOneWidget);
+      expect(subtitle('3 of 4'), findsOneWidget);
+
+      // The document between them is passed over. The pages take
+      // touches again once they have come to rest.
+      await tester.pump(const Duration(seconds: 1));
+      await tester.drag(page(), const Offset(-500, 0));
+      await settle(tester);
+      expect(bar('v.mp4'), findsOneWidget);
+      expect(subtitle('4 of 4'), findsOneWidget);
+    },
+  );
+
+  testWidgets('opened from the Images list it swipes through that list', (
+    tester,
+  ) async {
+    await open(tester, '/viewer/a?from=kind:image');
+    expect(subtitle('1 of 3'), findsOneWidget);
+    await tester.drag(page(), const Offset(-500, 0));
+    await settle(tester);
+    expect(bar('b.jpg'), findsOneWidget);
+    expect(subtitle('2 of 3'), findsOneWidget);
+  });
 
   testWidgets('the size shows only where no count takes its room', (
     tester,
