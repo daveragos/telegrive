@@ -188,6 +188,133 @@ void main() {
     for (var i = from; i < to; i++) (i < partOne ? i : i - partOne) % 251,
   ];
 
+  group('a stream handed to another app', () {
+    Future<void> settle() => Future<void>.delayed(const Duration(milliseconds: 50));
+
+    test('serves its file, ranges included, and says it is live', () async {
+      final server = container.read(streamServerProvider);
+      final file = (await container.read(driveRepositoryProvider).fileById('movie'))!;
+      expect(server.sharing.value, isFalse);
+
+      final url = await server.shareUrlFor(file);
+
+      expect(server.sharing.value, isTrue);
+      expect(url.host, '127.0.0.1');
+      expect(url.pathSegments.last, 'movie.mp4');
+      final (status, _, body) = await get(url, range: 'bytes=10-19');
+      expect(status, HttpStatus.partialContent);
+      expect(body, expected(10, 20));
+    });
+
+    test('opens nothing else, and the app\'s own token isn\'t in its URL', () async {
+      final server = container.read(streamServerProvider);
+      final repository = container.read(driveRepositoryProvider);
+      final movie = (await repository.fileById('movie'))!;
+      final own = await server.urlFor(movie);
+      final url = await server.shareUrlFor(movie);
+      final token = url.pathSegments.first;
+
+      expect(url.port, isNot(own.port));
+      expect(url.toString(), isNot(contains(own.pathSegments.first)));
+      Uri at(int port, List<String> path) => Uri(scheme: 'http', host: '127.0.0.1', port: port, pathSegments: path);
+      // Its token doesn't reach another file, on its port or the app's.
+      expect((await get(at(url.port, [token, 'long', 'long.mp4']))).$1, HttpStatus.notFound);
+      expect((await get(at(own.port, [token, 'long', 'long.mp4']))).$1, HttpStatus.notFound);
+      // Nor does a guess, nor the app's own token on its port.
+      expect((await get(at(url.port, ['guess', 'movie.mp4']))).$1, HttpStatus.notFound);
+      expect((await get(at(url.port, [own.pathSegments.first, 'long', 'long.mp4']))).$1, HttpStatus.notFound);
+    });
+
+    test('stopping hangs up, and the app\'s own player carries on', () async {
+      final server = container.read(streamServerProvider);
+      final file = (await container.read(driveRepositoryProvider).fileById('movie'))!;
+      final own = await server.urlFor(file);
+      final url = await server.shareUrlFor(file);
+
+      await server.stopSharing();
+
+      expect(server.sharing.value, isFalse);
+      await expectLater(get(url), throwsA(isA<SocketException>()));
+      expect((await get(own, range: 'bytes=0-9')).$1, HttpStatus.partialContent);
+    });
+
+    test('handing over another file retires the one before', () async {
+      final server = container.read(streamServerProvider);
+      final repository = container.read(driveRepositoryProvider);
+      final first = await server.shareUrlFor((await repository.fileById('movie'))!);
+      final second = await server.shareUrlFor((await repository.fileById('long'))!);
+
+      await settle();
+      expect(server.sharing.value, isTrue);
+      await expectLater(get(first), throwsA(isA<SocketException>()));
+      expect((await get(second, range: 'bytes=0-9')).$1, HttpStatus.partialContent);
+    });
+
+    ProviderContainer timed({required Duration unread, required Duration stalled}) {
+      final timedContainer = ProviderContainer(
+        overrides: [
+          appDatabaseProvider.overrideWithValue(db),
+          telegramClientProvider.overrideWithValue(telegram),
+          driveSessionProvider.overrideWith(TestSession.new),
+          streamServerProvider.overrideWith(
+            (ref) => StreamServer(
+              ref,
+              isMetered: () => false,
+              fetchingElsewhere: (_) => false,
+              cancelGrace: const Duration(milliseconds: 10),
+              sharedUnreadFor: unread,
+              sharedStalledFor: stalled,
+            ),
+          ),
+        ],
+      );
+      addTearDown(timedContainer.dispose);
+      return timedContainer;
+    }
+
+    test('ends once nobody reads it for a while', () async {
+      final timedContainer = timed(unread: const Duration(milliseconds: 150), stalled: const Duration(minutes: 1));
+      final server = timedContainer.read(streamServerProvider);
+      final file = (await timedContainer.read(driveRepositoryProvider).fileById('movie'))!;
+      final url = await server.shareUrlFor(file);
+
+      // Reading gives it its time again.
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      await get(url, range: 'bytes=0-9');
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      expect(server.sharing.value, isTrue);
+
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      expect(server.sharing.value, isFalse);
+    });
+
+    test('ends when a reader stays connected and takes nothing', () async {
+      final timedContainer = timed(unread: const Duration(minutes: 1), stalled: const Duration(milliseconds: 200));
+      final server = timedContainer.read(streamServerProvider);
+      final file = (await timedContainer.read(driveRepositoryProvider).fileById('long'))!;
+      final url = await server.shareUrlFor(file);
+
+      // A paused player: it asks for the file and doesn't read the answer.
+      final client = HttpClient();
+      addTearDown(() => client.close(force: true));
+      final response = await (await client.getUrl(url)).close();
+      final paused = response.listen((_) {})..pause();
+      addTearDown(paused.cancel);
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      expect(server.sharing.value, isTrue);
+
+      for (var i = 0; i < 100 && server.sharing.value; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+      }
+      expect(server.sharing.value, isFalse);
+      // Hanging up on it stops what TDLib was fetching for it.
+      for (var i = 0; i < 100 && telegram.cancels.isEmpty; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+      expect(telegram.cancels.map((c) => c.fileId), contains(103));
+    });
+  });
+
   test('a range across two parts streams the right bytes', () async {
     final file = (await container.read(driveRepositoryProvider).fileById('movie'))!;
     final url = await container.read(streamServerProvider).urlFor(file);

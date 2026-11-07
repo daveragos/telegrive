@@ -418,6 +418,16 @@ value goes back onto the line exactly as it came.
   once neither wait to be copied nor fill the phone. Access to them lasts
   while the app runs: one still waiting when Android stops the app fails
   as no longer available, to be picked again.
+- **Play in another app**, in a video or audio file's menu on Android,
+  hands the file to another player without downloading it first. The
+  player reads a listener of its own on the loopback address, with its own
+  port and token, that serves that one file; the token that opens every
+  file never leaves the app. It is fetched as it is read, as for the app's
+  own player, and the transfers' service keeps the app running meanwhile,
+  with Stop streaming in its notification. The stream ends after 5 minutes
+  with no reader, or 30 with a reader connected that takes nothing, which
+  is a player left paused. A file already on the phone opens from there.
+  A player that refuses plain HTTP can't use it; most video players don't.
 - A photo or video that goes up without a preview, one picked in Files
   say, gets one made from the file on Android before its first part, as
   backup's do: Telegram makes none for a video sent as a file, nor for a

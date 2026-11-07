@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:video_player/video_player.dart';
 
 import '../../../app/theme/tokens.dart';
@@ -100,7 +101,15 @@ class PlayerControls extends ConsumerWidget {
                 if (file != null)
                   IconButton(
                     onPressed: () =>
-                        FileActions.showFileSheet(context, ref, file!, fromViewer: true),
+                        FileActions.showFileSheet(
+                          context,
+                          ref,
+                          file!,
+                          fromViewer: true,
+                          onLeaving: () {
+                            if (context.mounted) context.pop();
+                          },
+                        ),
                     icon: const Icon(Icons.more_vert_rounded, color: white),
                     tooltip: 'More',
                   ),

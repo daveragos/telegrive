@@ -655,7 +655,7 @@ class _Problem extends ConsumerWidget {
               const SizedBox(height: 20),
               FilledButton.tonal(
                 onPressed: () =>
-                    FileActions.openExternally(context, ref, file!),
+                    FileActions.playInAnotherApp(context, ref, file!),
                 child: const Text('Open with another app'),
               ),
             ],

@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:telegrive/app/launch_action.dart';
 import 'package:telegrive/core/files/file_kind.dart';
+import 'package:telegrive/features/backup/data/backup_controller.dart';
 import 'package:telegrive/features/backup/data/backup_notifications.dart';
 import 'package:telegrive/features/backup/data/backup_worker.dart';
 import 'package:telegrive/features/private/data/private_space.dart';
@@ -394,6 +395,26 @@ void main() {
     });
   });
 
+  group('the ongoing notification while another app reads a stream', () {
+    const off = BackupState(phase: BackupPhase.off);
+
+    test('alone, says so and names no file', () {
+      final (title, text) = TransferKeepAlive.describe(TransfersState.empty, off, streaming: true);
+      expect(title, 'Streaming to another app');
+      expect(text, isNot(contains('.mp4')));
+    });
+
+    test('beside an upload, says both', () {
+      final (title, _) = TransferKeepAlive.describe(
+        TransfersState([_item('a.pdf', status: TransferStatus.running)]),
+        off,
+        streaming: true,
+      );
+      expect(title, contains('Uploading 1 file'));
+      expect(title, contains('streaming to another app'));
+    });
+  });
+
   group('the ongoing notification\'s buttons', () {
     test('Pause while an upload you started runs', () {
       final buttons = TransferKeepAlive.buttons(
@@ -406,6 +427,11 @@ void main() {
         ('pause', 'Pause'),
         ('pause-backup', 'Pause backup'),
       ]);
+    });
+
+    test('Stop streaming while another app reads a stream', () {
+      final buttons = TransferKeepAlive.buttons(TransfersState.empty, streaming: true);
+      expect(buttons.map((b) => (b.id, b.text)), [('stop-stream', 'Stop streaming')]);
     });
 
     test('only Pause backup while only photo backup runs', () {

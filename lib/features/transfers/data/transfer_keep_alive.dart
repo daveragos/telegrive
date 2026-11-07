@@ -13,6 +13,7 @@ import '../../../infrastructure/notifications/app_notifications.dart';
 import '../../../infrastructure/storage/preferences.dart';
 import '../../backup/data/backup_controller.dart';
 import '../../backup/data/watched_folders.dart';
+import '../../player/data/stream_server.dart';
 import '../../private/data/private_space.dart';
 import '../../takeout/data/takeout_import.dart';
 import '../domain/transfer_wait.dart';
@@ -59,6 +60,9 @@ class TransferKeepAlive {
   /// hour.
   static const String pauseBackupButton = 'pause-backup';
 
+  /// The id of the Stop button, which ends a stream to another app.
+  static const String stopStreamButton = 'stop-stream';
+
   /// What the service's isolate sends the app's when Android ends the
   /// service at its time limit.
   static const String timedOutSignal = 'timed-out';
@@ -101,6 +105,18 @@ class TransferKeepAlive {
   /// Where a Google Photos import stood at the last update.
   TakeoutState? _takeout;
 
+  /// Another app was reading a stream from Telegrive at the last update.
+  bool _streaming = false;
+
+  /// The service coming up, or the last time it did.
+  Completer<void>? _startup;
+
+  /// Completes once a start of the service under way is through, the
+  /// question about notifications included, so what is about to leave the
+  /// screen can wait for it: Android won't start the service from the
+  /// background.
+  Future<void> get started => _startup?.future ?? Future<void>.value();
+
   /// Android ended the service at its time limit, and won't let it start
   /// again until Telegrive is on screen.
   bool _timedOut = false;
@@ -133,7 +149,8 @@ class TransferKeepAlive {
   /// backup pass that is uploading or a check of the watched folders (both
   /// have short gaps between files that must not bounce the service off and
   /// on, since Android won't let an app in the background start it again),
-  /// or transfers that only just began to wait for Wi-Fi. Looking through
+  /// a stream another app is reading, or transfers that only just began to
+  /// wait for Wi-Fi. Looking through
   /// the library sends nothing, so it holds no wake or Wi-Fi lock. Once
   /// Android has ended the service at its time limit, nothing is until
   /// Telegrive is on screen.
@@ -142,6 +159,7 @@ class TransferKeepAlive {
       (state.activeCount > 0 ||
           _backingUp(state, backup) ||
           _sendingFromFolders(state) ||
+          _streaming ||
           _lingering);
 
   bool get _lingering {
@@ -167,7 +185,7 @@ class TransferKeepAlive {
       _lingerTimer = Timer(_lingerForWifi, () {
         _lingerTimer = null;
         final latest = _latest;
-        if (latest != null) unawaited(update(latest.$1, latest.$2, watching: _watching, takeout: _takeout));
+        if (latest != null) unawaited(update(latest.$1, latest.$2, watching: _watching, takeout: _takeout, streaming: _streaming));
       });
     }
   }
@@ -196,17 +214,19 @@ class TransferKeepAlive {
       !state.held.any((t) => t.wait is WaitingForTelegram || t.wait is WaitingForRoom);
 
   /// Brings the service in line with [state], [backup], whether the
-  /// watched folders or an import are [watching], and where the import
-  /// stands, [takeout].
+  /// watched folders or an import are [watching], where the import stands,
+  /// [takeout], and whether another app is [streaming] from Telegrive.
   Future<void> update(
     TransfersState state,
     BackupState backup, {
     bool watching = false,
     TakeoutState? takeout,
+    bool streaming = false,
   }) async {
     _latest = (state, backup);
     _watching = watching;
     _takeout = takeout;
+    _streaming = streaming;
     _noteHeld(state);
     if (!_isActive(state, backup)) {
       _pending = null;
@@ -236,7 +256,7 @@ class TransferKeepAlive {
       _refreshTimer ??= Timer(_updateEvery - since, () {
         _refreshTimer = null;
         final latest = _latest;
-        if (latest != null) unawaited(update(latest.$1, latest.$2, watching: _watching, takeout: _takeout));
+        if (latest != null) unawaited(update(latest.$1, latest.$2, watching: _watching, takeout: _takeout, streaming: _streaming));
       });
       return;
     }
@@ -246,19 +266,20 @@ class TransferKeepAlive {
     // a moment, and the notification keeps saying what it said. An import
     // says where the whole of it stands, files in hand or not.
     final importing = _importing(_takeout);
-    if (_watching && state.active.isEmpty && !_backingUp(state, backup) && !importing) return;
+    if (_watching && !_streaming && state.active.isEmpty && !_backingUp(state, backup) && !importing) return;
     _lastUpdate = now;
-    final (title, text) = describe(state, backup, takeout: _takeout);
+    final (title, text) = describe(state, backup, takeout: _takeout, streaming: _streaming);
     await FlutterForegroundTask.updateService(
       notificationTitle: title,
       notificationText: text,
       notificationIcon: _icon,
-      notificationButtons: buttons(state),
+      notificationButtons: buttons(state, streaming: _streaming),
     );
   }
 
   Future<void> _start(TransfersState state, BackupState backup) async {
     _starting = true;
+    final startup = _startup = Completer<void>();
     try {
       _init();
       // Asked once ever. Without it the service still runs; the
@@ -270,14 +291,14 @@ class TransferKeepAlive {
           await FlutterForegroundTask.requestNotificationPermission();
         }
       }
-      final (title, text) = describe(state, backup, takeout: _takeout);
+      final (title, text) = describe(state, backup, takeout: _takeout, streaming: _streaming);
       final result = await FlutterForegroundTask.startService(
         serviceId: _serviceId,
         serviceTypes: const [ForegroundServiceTypes.dataSync],
         notificationTitle: title,
         notificationText: text,
         notificationIcon: _icon,
-        notificationButtons: buttons(state),
+        notificationButtons: buttons(state, streaming: _streaming),
         notificationInitialRoute: notificationRoute,
         callback: transferServiceEntryPoint,
       );
@@ -287,10 +308,11 @@ class TransferKeepAlive {
       debugPrint('[KeepAlive] $e');
     } finally {
       _starting = false;
+      startup.complete();
     }
     final pending = _pending;
     _pending = null;
-    if (pending != null) await update(pending.$1, pending.$2, watching: _watching, takeout: _takeout);
+    if (pending != null) await update(pending.$1, pending.$2, watching: _watching, takeout: _takeout, streaming: _streaming);
   }
 
   /// Android ended the service at its time limit. It has stopped already,
@@ -315,7 +337,7 @@ class TransferKeepAlive {
     if (!_timedOut) return;
     _timedOut = false;
     final latest = _latest;
-    if (latest != null) await update(latest.$1, latest.$2, watching: _watching, takeout: _takeout);
+    if (latest != null) await update(latest.$1, latest.$2, watching: _watching, takeout: _takeout, streaming: _streaming);
   }
 
   Future<void> _stop() async {
@@ -330,10 +352,11 @@ class TransferKeepAlive {
   }
 
   /// The notification's buttons for [state]: Pause while any transfer the
-  /// person started is in flight, and Pause backup while photo backup
-  /// sends, which pauses it for an hour.
+  /// person started is in flight, Pause backup while photo backup sends,
+  /// which pauses it for an hour, and Stop while another app is [streaming].
   @visibleForTesting
-  static List<NotificationButton> buttons(TransfersState state) => [
+  static List<NotificationButton> buttons(TransfersState state, {bool streaming = false}) => [
+    if (streaming) const NotificationButton(id: stopStreamButton, text: 'Stop streaming'),
     if (state.active.any((t) => t.origin != TransferOrigin.backup))
       const NotificationButton(id: pauseButton, text: 'Pause'),
     if (state.active.any((t) => t.origin == TransferOrigin.backup))
@@ -349,10 +372,20 @@ class TransferKeepAlive {
   /// from uploads, since nothing goes up, and by file rather than by byte,
   /// since Telegram makes each in one request. An import counts as one job,
   /// by its photos and its pace over the last minute, not as the files it
-  /// has in hand: alone it has the notification to itself.
+  /// has in hand: alone it has the notification to itself. A stream names
+  /// no file, since the shade is there for anyone to see, and alone says
+  /// only that it runs.
   @visibleForTesting
-  static (String, String) describe(TransfersState state, BackupState backup, {TakeoutState? takeout}) {
+  static (String, String) describe(
+    TransfersState state,
+    BackupState backup, {
+    TakeoutState? takeout,
+    bool streaming = false,
+  }) {
     final inFlight = state.active;
+    if (streaming && inFlight.isEmpty && !_backingUp(state, backup) && !_importing(takeout)) {
+      return ('Streaming to another app', 'Telegrive stays on while the other app plays it');
+    }
     final percent = '${(state.activeProgress * 100).round()}%';
     if (inFlight.isNotEmpty && inFlight.every((t) => t.wait is WaitingForNetwork)) {
       return ('Waiting for network', 'Carries on when you\'re back online · $percent');
@@ -398,6 +431,7 @@ class TransferKeepAlive {
       if (downloads > 0) 'Downloading ${Formatters.count(downloads, 'file')}',
       if (copies > 0) 'Saving ${Formatters.count(copies, 'file')} from Telegram',
       if (backingUp) active.isEmpty && !importing ? 'Backing up photos' : 'backing up photos',
+      if (streaming) 'streaming to another app',
     ];
     final title = parts.isEmpty ? 'Telegrive' : parts.join(' · ');
     final text = [
@@ -451,7 +485,7 @@ class TransferTaskHandler extends TaskHandler {
   void onNotificationButtonPressed(String id) => FlutterForegroundTask.sendDataToMain(id);
 }
 
-/// Watched from the app root; does nothing off Android.
+/// Watched from the app root; does nothing off Android, where it is null.
 ///
 /// Besides the ongoing notification, it carries out Pause from the shade
 /// and posts the quiet notifications about the person's own transfers:
@@ -464,15 +498,17 @@ class TransferTaskHandler extends TaskHandler {
 /// is on screen the notice goes and everything carries on. One that ends
 /// while Telegrive is on screen starts again at once, since being there is
 /// what gives the time back.
-final transferKeepAliveProvider = Provider<void>((ref) {
-  if (kIsWeb || !Platform.isAndroid) return;
+final transferKeepAliveProvider = Provider<TransferKeepAlive?>((ref) {
+  if (kIsWeb || !Platform.isAndroid) return null;
   final keeper = TransferKeepAlive(ref.read(preferencesProvider));
+  final streamServer = ref.read(streamServerProvider);
   void push() => unawaited(
     keeper.update(
       ref.read(transferQueueProvider),
       ref.read(backupControllerProvider),
       watching: ref.read(watchedFoldersProvider).working || ref.read(takeoutImportProvider).working,
       takeout: ref.read(takeoutImportProvider),
+      streaming: streamServer.sharing.value,
     ),
   );
 
@@ -542,6 +578,7 @@ final transferKeepAliveProvider = Provider<void>((ref) {
             .pause(DateTime.now().add(const Duration(hours: 1))),
       );
     }
+    if (data == TransferKeepAlive.stopStreamButton) unawaited(streamServer.stopSharing());
     if (data == TransferKeepAlive.timedOutSignal) unawaited(stoppedAtTimeLimit());
   }
 
@@ -559,16 +596,19 @@ final transferKeepAliveProvider = Provider<void>((ref) {
   });
   ref.listen<BackupState>(backupControllerProvider, (_, _) => push(), fireImmediately: true);
   ref.listen<bool>(watchedFoldersProvider.select((s) => s.working), (_, _) => push());
+  streamServer.sharing.addListener(push);
   // The import's count and time left change between its files too.
   ref.listen<(bool, int?, int?)>(
     takeoutImportProvider.select((s) => (s.working, s.progress?.left, s.timeLeft?.inMinutes)),
     (_, _) => push(),
   );
   ref.onDispose(() {
+    streamServer.sharing.removeListener(push);
     lifecycle.dispose();
     FlutterForegroundTask.removeTaskDataCallback(onData);
     unawaited(
       keeper.update(TransfersState.empty, const BackupState(phase: BackupPhase.off)),
     );
   });
+  return keeper;
 });

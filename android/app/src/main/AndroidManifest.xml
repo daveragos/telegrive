@@ -150,6 +150,15 @@
             <action android:name="android.intent.action.VIEW"/>
             <data android:scheme="tg"/>
         </intent>
+        <!-- Whether another app is there to play a stream from the drive. -->
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="http" android:mimeType="video/*"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="http" android:mimeType="audio/*"/>
+        </intent>
         <!-- Whether a camera app is there to take a photo into the drive. -->
         <intent>
             <action android:name="android.media.action.IMAGE_CAPTURE"/>

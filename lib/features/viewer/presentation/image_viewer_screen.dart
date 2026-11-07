@@ -304,7 +304,15 @@ class _ViewerBar extends ConsumerWidget {
           tooltip: 'Move to Trash',
         ),
         IconButton(
-          onPressed: () => FileActions.showFileSheet(context, ref, file, fromViewer: true),
+          onPressed: () => FileActions.showFileSheet(
+            context,
+            ref,
+            file,
+            fromViewer: true,
+            onLeaving: () {
+              if (context.mounted) context.pop();
+            },
+          ),
           icon: const Icon(Icons.more_vert_rounded),
           tooltip: 'More',
         ),

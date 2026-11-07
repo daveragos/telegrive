@@ -2,6 +2,7 @@ package dev.ragoose.telegrive
 
 import android.Manifest
 import android.app.ActivityManager
+import android.content.ActivityNotFoundException
 import android.content.ComponentName
 import android.content.ContentValues
 import android.content.Context
@@ -257,6 +258,21 @@ class MainActivity : FlutterFragmentActivity() {
         }
         MethodChannel(messenger, "telegrive/media").setMethodCallHandler { call, result ->
             when (call.method) {
+                "canPlayStream" -> result.success(
+                    packageManager.queryIntentActivities(
+                        streamIntent(call.argument("url"), call.argument("mime"), null),
+                        0,
+                    ).isNotEmpty(),
+                )
+                "playStream" -> result.success(
+                    try {
+                        val play = streamIntent(call.argument("url"), call.argument("mime"), call.argument("title"))
+                        startActivity(Intent.createChooser(play, "Play with"))
+                        true
+                    } catch (e: ActivityNotFoundException) {
+                        false
+                    },
+                )
                 "durationMs" -> {
                     val path = call.argument<String>("path")
                     io.execute {
@@ -469,6 +485,15 @@ class MainActivity : FlutterFragmentActivity() {
      * and under 200 KB, Telegram's limits for a document's thumbnail, written
      * to [out]. Null when the file makes no picture.
      */
+    /**
+     * Asks another app to play [url], one of the stream server's, as [mime].
+     * Players show the extra "title" in place of the end of the URL.
+     */
+    private fun streamIntent(url: String?, mime: String?, title: String?): Intent =
+        Intent(Intent.ACTION_VIEW)
+            .setDataAndType(Uri.parse(url), mime)
+            .apply { if (title != null) putExtra("title", title) }
+
     private fun thumbnail(path: String, video: Boolean, out: String): String? = try {
         val picture = if (video) videoPicture(path) else photoPicture(path)
         picture?.let { bitmap ->

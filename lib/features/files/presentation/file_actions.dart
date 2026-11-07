@@ -34,6 +34,8 @@ import '../../lock/data/app_lock.dart';
 import '../../offline/presentation/keep_offline_sheet.dart';
 import '../../phone_albums/data/phone_albums.dart';
 import '../../phone_albums/presentation/phone_album_upload.dart';
+import '../../player/data/other_players.dart';
+import '../../player/data/stream_server.dart';
 import '../../send/data/send_bundle.dart';
 import '../../send/data/telegram_chats.dart';
 import '../../share/data/recent_destinations.dart';
@@ -44,6 +46,7 @@ import '../../drive/data/drive_session.dart';
 import '../../drive/domain/drive_models.dart';
 import '../../takeout/data/takeout_files.dart';
 import '../../takeout/data/takeout_import.dart';
+import '../../transfers/data/transfer_keep_alive.dart';
 import '../../transfers/data/transfer_policy.dart';
 import '../../transfers/data/transfer_queue.dart';
 import '../../transfers/domain/transfer_error.dart';
@@ -133,6 +136,45 @@ abstract final class FileActions {
         onAction: () => _sharePath(path, file),
       );
     }
+  }
+
+  /// Plays video or audio [file] in another app on this phone. One that is
+  /// on the phone already opens from there, and anywhere but Android it is
+  /// downloaded first, as [openExternally] does. Otherwise the other app
+  /// streams it, fetching only what it reads, and Telegrive stays running
+  /// for that. [beforeLeaving] is called just before the other app is asked,
+  /// for a player on screen to let go of the file.
+  static Future<void> playInAnotherApp(
+    BuildContext context,
+    WidgetRef ref,
+    DriveFile file, {
+    VoidCallback? beforeLeaving,
+  }) async {
+    final queue = ref.read(transferQueueProvider.notifier);
+    final server = ref.read(streamServerProvider);
+    final keepAlive = ref.read(transferKeepAliveProvider);
+    if (!OtherPlayers.supported || await queue.localPathIfAvailable(file) != null) {
+      if (context.mounted) await openExternally(context, ref, file);
+      return;
+    }
+    void noPlayer() {
+      if (context.mounted) {
+        showSnack(context, 'No app on this phone can play this. Install a video player, or download it first.');
+      }
+    }
+
+    final mime = OtherPlayers.typeOf(file);
+    if (!await OtherPlayers.canPlay(mime)) return noPlayer();
+    if (!context.mounted) return;
+    await guarded(context, () async {
+      final url = await server.shareUrlFor(file);
+      await keepAlive?.started;
+      beforeLeaving?.call();
+      if (!await OtherPlayers.play(url, mime: mime, title: file.name)) {
+        await server.stopSharing();
+        noPlayer();
+      }
+    });
   }
 
   static Future<void> share(
@@ -1764,13 +1806,15 @@ abstract final class FileActions {
   /// The file's actions. With [onMarkFinished], the sheet opens with Mark
   /// as finished, for a file Home offers to continue. From the file's own
   /// viewer or player ([fromViewer]) there is no Open, which would open
-  /// the same file over itself.
+  /// the same file over itself, and [onLeaving] closes it before another
+  /// app takes the file over.
   static Future<void> showFileSheet(
     BuildContext context,
     WidgetRef ref,
     DriveFile file, {
     VoidCallback? onMarkFinished,
     bool fromViewer = false,
+    VoidCallback? onLeaving,
   }) {
     return showModalBottomSheet<void>(
       context: context,
@@ -1807,6 +1851,15 @@ abstract final class FileActions {
                     icon: Icons.open_in_new_rounded,
                     label: 'Open',
                     onTap: () => run(() => open(context, ref, file)),
+                  ),
+                if (OtherPlayers.supported &&
+                    (file.kind == FileKind.video || file.kind == FileKind.audio))
+                  _SheetAction(
+                    icon: Icons.play_circle_outline_rounded,
+                    label: 'Play in another app',
+                    onTap: () => run(
+                      () => playInAnotherApp(context, ref, file, beforeLeaving: onLeaving),
+                    ),
                   ),
                 _SheetAction(
                   icon: Icons.download_rounded,

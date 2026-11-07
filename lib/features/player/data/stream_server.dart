@@ -33,12 +33,19 @@ import '../../transfers/data/transfer_queue.dart';
 /// a random token made fresh each launch. Android's file picker, which runs
 /// in Telegrive's own picker process, learns the port and token from
 /// [endpoint] through a file only this app can read.
+///
+/// That token opens every file, so it never leaves the app. A video handed
+/// to another app is read through [shareUrlFor] instead: a listener of its
+/// own, on its own port and token, that serves that one file and goes away
+/// when the other app has stopped reading.
 class StreamServer {
   StreamServer(
     this._ref, {
     bool Function()? isMetered,
     bool Function(int tdFileId)? fetchingElsewhere,
     this._cancelGrace = const Duration(seconds: 3),
+    this._sharedUnreadFor = const Duration(minutes: 5),
+    this._sharedStalledFor = const Duration(minutes: 30),
   }) : _isMetered =
            isMetered ?? (() => _ref.read(networkStatusProvider).metered),
        _fetchingElsewhere =
@@ -49,6 +56,11 @@ class StreamServer {
         timer.cancel();
       }
       _cancels.clear();
+      final shared = _shared;
+      _shared = null;
+      shared?.idle?.cancel();
+      unawaited(shared?.server.close(force: true));
+      sharing.dispose();
     });
   }
 
@@ -61,8 +73,24 @@ class StreamServer {
   /// PDF reader asks for one block after another, so a short gap must not
   /// stop the download about to be needed.
   final Duration _cancelGrace;
+
+  /// How long a stream handed to another app lasts with nobody reading it:
+  /// time to choose the app, or to come back to it after closing it.
+  final Duration _sharedUnreadFor;
+
+  /// How long it lasts with a reader connected that takes nothing, which is
+  /// a player left paused. The app stays awake for the stream, so that
+  /// can't be for ever.
+  final Duration _sharedStalledFor;
   final String _token = _randomToken();
   Future<HttpServer>? _server;
+
+  /// The stream handed to another app; one at a time.
+  _SharedStream? _shared;
+
+  /// Whether a stream handed to another app is live, which is reason to
+  /// keep the app running in the background.
+  final ValueNotifier<bool> sharing = ValueNotifier(false);
 
   /// Requests reading each TDLib file right now.
   final Map<int, int> _readers = {};
@@ -98,13 +126,83 @@ class StreamServer {
     );
   }
 
+  /// A URL another app on this phone can read [file] from, and nothing else,
+  /// in place of any stream handed over before. It lasts until [stopSharing],
+  /// or until the other app has left it for [_sharedUnreadFor], or left it
+  /// connected and taking nothing for [_sharedStalledFor].
+  Future<Uri> shareUrlFor(DriveFile file) async {
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    final shared = _SharedStream(server, token: _randomToken(), fileId: file.id);
+    final old = _shared;
+    _shared = shared;
+    old?.idle?.cancel();
+    unawaited(old?.server.close(force: true));
+    server.listen((request) => unawaited(_serveShared(shared, request)));
+    _noteShared(shared);
+    sharing.value = true;
+    return Uri(
+      scheme: 'http',
+      host: InternetAddress.loopbackIPv4.address,
+      port: server.port,
+      pathSegments: [shared.token, DeviceStorage.safeName(file.name)],
+    );
+  }
+
+  /// Ends the stream handed to another app, hanging up on it if it is
+  /// still reading, which stops what TDLib is fetching for it.
+  Future<void> stopSharing() async {
+    final shared = _shared;
+    if (shared == null) return;
+    _shared = null;
+    shared.idle?.cancel();
+    sharing.value = false;
+    await shared.server.close(force: true);
+  }
+
+  Future<void> _serveShared(_SharedStream shared, HttpRequest request) async {
+    final segments = request.uri.pathSegments;
+    final ours = segments.length == 2 && segments[0] == shared.token;
+    if (!ours) return _handle(request, (_) => null);
+    shared.readers++;
+    _noteShared(shared);
+    try {
+      await _handle(request, (_) => shared.fileId, onBytes: () => _noteShared(shared));
+    } finally {
+      shared.readers--;
+      _noteShared(shared);
+    }
+  }
+
+  /// Something happened on [shared], so it has its full time left again.
+  void _noteShared(_SharedStream shared) {
+    if (!identical(_shared, shared)) return;
+    shared.idle?.cancel();
+    shared.idle = Timer(
+      shared.readers > 0 ? _sharedStalledFor : _sharedUnreadFor,
+      () => unawaited(stopSharing()),
+    );
+  }
+
   Future<HttpServer> _start() async {
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
-    server.listen((request) => unawaited(_handle(request)));
+    server.listen(
+      (request) => unawaited(
+        _handle(
+          request,
+          (segments) => segments.length >= 2 && segments[0] == _token ? segments[1] : null,
+        ),
+      ),
+    );
     return server;
   }
 
-  Future<void> _handle(HttpRequest request) async {
+  /// Answers [request], for the file [fileIdIn] finds in its path; [onBytes]
+  /// hears each time the reader takes some.
+  Future<void> _handle(
+    HttpRequest request,
+    String? Function(List<String> segments) fileIdIn, {
+    void Function()? onBytes,
+  }) async {
     final response = request.response;
     try {
       final segments = request.uri.pathSegments;
@@ -115,9 +213,8 @@ class StreamServer {
         response.statusCode = HttpStatus.noContent;
         return;
       }
-      final file = segments.length >= 2 && segments[0] == _token
-          ? await _repository.fileById(segments[1])
-          : null;
+      final fileId = fileIdIn(segments);
+      final file = fileId == null ? null : await _repository.fileById(fileId);
       final parts = file == null
           ? const <PartRow>[]
           : await _repository.partsOf(file.id);
@@ -166,7 +263,7 @@ class StreamServer {
         ..contentLength = end - start + 1
         ..set(HttpHeaders.acceptRangesHeader, 'bytes');
       if (request.method == 'HEAD') return;
-      await _pipe(parts, start, end, response, openEnded: openEnded);
+      await _pipe(parts, start, end, response, openEnded: openEnded, onBytes: onBytes);
     } catch (e) {
       // Usually the player closing a connection to seek elsewhere.
       if (e is! HttpException && e is! SocketException) {
@@ -186,6 +283,7 @@ class StreamServer {
     int end,
     HttpResponse out, {
     required bool openEnded,
+    void Function()? onBytes,
   }) async {
     var base = 0;
     for (final part in parts) {
@@ -199,6 +297,7 @@ class StreamServer {
           math.min(end + 1, partEnd) - base,
           out,
           openEnded: openEnded,
+          onBytes: onBytes,
         );
       }
       base = partEnd;
@@ -222,6 +321,7 @@ class StreamServer {
     int to,
     HttpResponse out, {
     required bool openEnded,
+    void Function()? onBytes,
   }) async {
     _readers[fileId] = (_readers[fileId] ?? 0) + 1;
     _cancels.remove(fileId)?.cancel();
@@ -274,6 +374,7 @@ class StreamServer {
         // Waits for the player to take them; throws once it hangs up.
         await out.flush();
         position += bytes.length;
+        onBytes?.call();
       }
     } finally {
       _hangUp(fileId);
@@ -372,6 +473,21 @@ class StreamServer {
     final random = math.Random.secure();
     return base64Url.encode(List.generate(18, (_) => random.nextInt(256)));
   }
+}
+
+/// A stream handed to another app, and how it stands.
+class _SharedStream {
+  _SharedStream(this.server, {required this.token, required this.fileId});
+
+  final HttpServer server;
+  final String token;
+  final String fileId;
+
+  /// Requests reading it right now.
+  int readers = 0;
+
+  /// Ends it when nothing has happened for long enough.
+  Timer? idle;
 }
 
 final streamServerProvider = Provider<StreamServer>(StreamServer.new);
