@@ -442,6 +442,16 @@ value goes back onto the line exactly as it came.
   say, gets one made from the file on Android before its first part, as
   backup's do: Telegram makes none for a video sent as a file, nor for a
   HEIC photo.
+- RAW photos (DNG, CR2, CR3, NEF, NRW, ARW, ORF, RW2, RAF, SRW, PEF) count
+  as photos, under the types Android's media store gives them, so they
+  get a preview, show in Photos and open in the photo viewer. Android
+  makes the preview, from the picture a camera keeps inside the file when
+  it can't decode the rest. A photo the app's own decoder can't read, a
+  RAW file or an unusual HEIC or AVIF, is decoded by Android into a
+  screen-sized JPEG in the cache instead, before the viewer gives up. The
+  indexer's version went up with this, so a drive opened after the update
+  is read again in full and RAW files already in it become photos; Make
+  previews then gives them a preview.
 - A photo or video that goes up without a date taken, one picked in Files
   or in an uploaded folder say, gets the one its camera wrote into it
   (EXIF for a photo, the video's own header) on Android before its first

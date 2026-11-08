@@ -72,16 +72,28 @@ enum FileKind {
   };
 }
 
-/// Audio formats phones record or sell that the mime package doesn't
-/// know: call recordings (.amr, .awb, .3ga), audiobooks (.m4b) and
-/// ringtones (.m4r). Without them these files would count as Other and
-/// open in no app.
+/// Formats phones record, sell or shoot that the mime package doesn't
+/// know: call recordings (.amr, .awb, .3ga), audiobooks (.m4b), ringtones
+/// (.m4r), and the RAW files of cameras and phones, under the types
+/// Android's media store gives them. Without them these files would count
+/// as Other and open in no app.
 const Map<String, String> _appMimeTypes = {
   'amr': 'audio/amr',
   'awb': 'audio/amr-wb',
   '3ga': 'audio/3gpp',
   'm4b': 'audio/mp4',
   'm4r': 'audio/mp4',
+  'dng': 'image/x-adobe-dng',
+  'cr2': 'image/x-canon-cr2',
+  'cr3': 'image/x-canon-cr3',
+  'nef': 'image/x-nikon-nef',
+  'nrw': 'image/x-nikon-nrw',
+  'arw': 'image/x-sony-arw',
+  'orf': 'image/x-olympus-orf',
+  'rw2': 'image/x-panasonic-rw2',
+  'raf': 'image/x-fuji-raf',
+  'srw': 'image/x-samsung-srw',
+  'pef': 'image/x-pentax-pef',
 };
 
 /// The MIME type [fileName]'s extension stands for, or null when it is

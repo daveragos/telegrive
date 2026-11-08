@@ -285,7 +285,16 @@ class MainActivity : FlutterFragmentActivity() {
                     val out = call.argument<String>("out")
                     val video = call.argument<Boolean>("video") == true
                     io.execute {
-                        val made = if (path != null && out != null) thumbnail(path, video, out) else null
+                        val made = if (path != null && out != null) picture(path, video, out, THUMB_SIDE, THUMB_BYTES) else null
+                        main.post { result.success(made) }
+                    }
+                }
+                "picture" -> {
+                    val path = call.argument<String>("path")
+                    val out = call.argument<String>("out")
+                    val side = call.argument<Int>("side") ?: THUMB_SIDE
+                    io.execute {
+                        val made = if (path != null && out != null) picture(path, false, out, side, null) else null
                         main.post { result.success(made) }
                     }
                 }
@@ -481,11 +490,6 @@ class MainActivity : FlutterFragmentActivity() {
     }
 
     /**
-     * A JPEG preview of the photo or [video] at [path], no side over 320 px
-     * and under 200 KB, Telegram's limits for a document's thumbnail, written
-     * to [out]. Null when the file makes no picture.
-     */
-    /**
      * Asks another app to play [url], one of the stream server's, as [mime].
      * Players show the extra "title" in place of the end of the URL.
      */
@@ -494,10 +498,16 @@ class MainActivity : FlutterFragmentActivity() {
             .setDataAndType(Uri.parse(url), mime)
             .apply { if (title != null) putExtra("title", title) }
 
-    private fun thumbnail(path: String, video: Boolean, out: String): String? = try {
-        val picture = if (video) videoPicture(path) else photoPicture(path)
+    /**
+     * A JPEG of the photo or [video] at [path], no side over [side] px and,
+     * while [maxBytes] is given, no bigger than that, written to [out]. Null
+     * when the file makes no picture, or none that small. A document's
+     * thumbnail on Telegram is held to 320 px and 200 KB.
+     */
+    private fun picture(path: String, video: Boolean, out: String, side: Int, maxBytes: Int?): String? = try {
+        val picture = if (video) videoPicture(path, side) else photoPicture(path, side)
         picture?.let { bitmap ->
-            val scale = THUMB_SIDE.toFloat() / maxOf(bitmap.width, bitmap.height)
+            val scale = side.toFloat() / maxOf(bitmap.width, bitmap.height)
             val fitted = if (scale < 1f) {
                 android.graphics.Bitmap.createScaledBitmap(
                     bitmap,
@@ -508,15 +518,15 @@ class MainActivity : FlutterFragmentActivity() {
             } else {
                 bitmap
             }
-            var quality = 85
+            var quality = if (maxBytes == null) 90 else 85
             var bytes: ByteArray
             do {
                 bytes = java.io.ByteArrayOutputStream().also {
                     fitted.compress(android.graphics.Bitmap.CompressFormat.JPEG, quality, it)
                 }.toByteArray()
                 quality -= 15
-            } while (bytes.size > THUMB_BYTES && quality > 20)
-            if (bytes.size > THUMB_BYTES) {
+            } while (maxBytes != null && bytes.size > maxBytes && quality > 20)
+            if (maxBytes != null && bytes.size > maxBytes) {
                 null
             } else {
                 File(out).apply { parentFile?.mkdirs() }.writeBytes(bytes)
@@ -531,29 +541,30 @@ class MainActivity : FlutterFragmentActivity() {
      * A picture of the photo at [path], tried each way there is, since some
      * HEIC files, an iPhone's edited ones say, defeat one decoder and not
      * another: Android's thumbnailer, which turns the photo upright; a
-     * sampled decode; and the small picture a camera keeps in the EXIF.
+     * sampled decode, near [side] px; and the small picture a camera keeps
+     * in the EXIF, which is all some RAW files give.
      */
-    private fun photoPicture(path: String): android.graphics.Bitmap? {
+    private fun photoPicture(path: String, side: Int): android.graphics.Bitmap? {
         if (Build.VERSION.SDK_INT >= 29) {
             runCatching {
-                android.media.ThumbnailUtils.createImageThumbnail(File(path), android.util.Size(THUMB_SIDE, THUMB_SIDE), null)
+                android.media.ThumbnailUtils.createImageThumbnail(File(path), android.util.Size(side, side), null)
             }.getOrNull()?.let { return it }
         }
         runCatching {
             val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
             android.graphics.BitmapFactory.decodeFile(path, bounds)
             var sample = 1
-            while (bounds.outWidth / (sample * 2) >= THUMB_SIDE && bounds.outHeight / (sample * 2) >= THUMB_SIDE) sample *= 2
+            while (bounds.outWidth / (sample * 2) >= side && bounds.outHeight / (sample * 2) >= side) sample *= 2
             android.graphics.BitmapFactory.decodeFile(path, android.graphics.BitmapFactory.Options().apply { inSampleSize = sample })
         }.getOrNull()?.let { return it }
         return runCatching { android.media.ExifInterface(path).thumbnailBitmap }.getOrNull()
     }
 
     /** A frame of the video at [path], from Android's thumbnailer, or else straight from the file. */
-    private fun videoPicture(path: String): android.graphics.Bitmap? {
+    private fun videoPicture(path: String, side: Int): android.graphics.Bitmap? {
         if (Build.VERSION.SDK_INT >= 29) {
             runCatching {
-                android.media.ThumbnailUtils.createVideoThumbnail(File(path), android.util.Size(THUMB_SIDE, THUMB_SIDE), null)
+                android.media.ThumbnailUtils.createVideoThumbnail(File(path), android.util.Size(side, side), null)
             }.getOrNull()?.let { return it }
         }
         return runCatching {

@@ -57,6 +57,22 @@ void main() {
       expect(kind('x', 'application/ogg'), FileKind.audio);
     });
 
+    test('RAW photos are photos, under the types Android gives them', () {
+      for (final name in ['IMG_1.dng', 'a.CR2', 'a.cr3', 'a.nef', 'a.nrw', 'a.arw', 'a.orf', 'a.rw2', 'a.raf', 'a.srw', 'a.pef']) {
+        expect(kind(name, 'application/octet-stream'), FileKind.image, reason: name);
+        expect(kind(name), FileKind.image, reason: name);
+        expect(
+          Preview.of(name: name, mimeType: mimeTypeFor(name), kind: FileKind.image, size: 30 << 20),
+          Preview.image,
+          reason: name,
+        );
+      }
+      expect(mimeTypeFor('IMG_1.dng'), 'image/x-adobe-dng');
+      expect(mimeTypeFor('DSC_1.NEF'), 'image/x-nikon-nef');
+      expect(mimeTypeFor('photo.heic'), 'image/heic');
+      expect(mimeTypeFor('photo.avif'), 'image/avif');
+    });
+
     test('uploads carry an audio type the player understands', () {
       expect(mimeTypeFor('call.amr'), 'audio/amr');
       expect(mimeTypeFor('book.m4b'), 'audio/mp4');

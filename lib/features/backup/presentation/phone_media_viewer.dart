@@ -13,6 +13,7 @@ import '../../../core/format/formatters.dart';
 import '../../../core/widgets/common.dart';
 import '../data/backup_controller.dart';
 import '../data/local_media.dart';
+import '../../viewer/presentation/decoded_by_phone.dart';
 import '../../viewer/presentation/pinch_zoom.dart';
 import 'backup_queue_screen.dart';
 
@@ -333,7 +334,12 @@ class _PhotoPageState extends State<_PhotoPage> {
                 duration: const Duration(milliseconds: 250),
                 child: child,
               ),
-              errorBuilder: (_, _, _) => const _Message('This photo can\'t be shown here.'),
+              // A RAW photo, say, that only the phone can read.
+              errorBuilder: (_, _, _) => DecodedByPhone(
+                source: widget.path,
+                side: width,
+                fallback: const _Message('This photo can\'t be shown here.'),
+              ),
             ),
           ],
         ),

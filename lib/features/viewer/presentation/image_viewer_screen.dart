@@ -22,6 +22,7 @@ import '../../photos/data/photos_visibility.dart';
 import '../../player/data/stream_server.dart';
 import '../../player/presentation/player_screen.dart';
 import '../../transfers/data/transfer_queue.dart';
+import 'decoded_by_phone.dart';
 import 'pinch_zoom.dart';
 import 'vertical_swipe.dart';
 
@@ -445,9 +446,14 @@ class _ImagePageState extends ConsumerState<_ImagePage> {
                             duration: const Duration(milliseconds: 250),
                             child: child,
                           ),
-                      errorBuilder: (_, _, _) => const _Message(
-                        icon: Icons.broken_image_outlined,
-                        text: 'This image can\'t be shown here. Try opening it in another app.',
+                      // A RAW file, say, that only the phone can read.
+                      errorBuilder: (_, _, _) => DecodedByPhone(
+                        source: path,
+                        side: _decodeWidth(context),
+                        fallback: const _Message(
+                          icon: Icons.broken_image_outlined,
+                          text: 'This image can\'t be shown here. Try opening it in another app.',
+                        ),
                       ),
                     ),
                 ],
@@ -477,16 +483,19 @@ class _ImagePageState extends ConsumerState<_ImagePage> {
   /// the size and pixel ratio, so the status bar hiding during a drag
   /// doesn't rebuild the page.
   static ImageProvider _screenSized(BuildContext context, File file) {
-    final pixels =
-        MediaQuery.sizeOf(context).width *
-        MediaQuery.devicePixelRatioOf(context);
-    final width = (pixels * 2).round().clamp(1080, 4096);
     return ResizeImage(
       FileImage(file),
-      width: width,
+      width: _decodeWidth(context),
       policy: ResizeImagePolicy.fit,
       allowUpscaling: false,
     );
+  }
+
+  static int _decodeWidth(BuildContext context) {
+    final pixels =
+        MediaQuery.sizeOf(context).width *
+        MediaQuery.devicePixelRatioOf(context);
+    return (pixels * 2).round().clamp(1080, 4096);
   }
 }
 
