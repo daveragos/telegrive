@@ -359,6 +359,73 @@ void main() {
     expect(await repository.shownFolder('Inside old'), isNull);
     expect(await repository.shownFolder('missing'), isNull);
   });
+
+  group('search above the forwarded files', () {
+    test('every word has to be in the name, in any case', () {
+      final invoice = file('Invoice March 2026.pdf', null, adopted: true);
+      expect(forwardedMatches(invoice, 'invoice'), isTrue);
+      expect(forwardedMatches(invoice, 'MARCH  invoice'), isTrue);
+      expect(forwardedMatches(invoice, 'invoice april'), isFalse);
+    });
+
+    Future<void> pumpForwarded(WidgetTester tester, List<String> names) async {
+      tester.view.physicalSize = const Size(800, 3000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await pumpFiles(
+        tester,
+        '/files',
+        files: [for (final name in names) file(name, null, adopted: true)],
+        overrides: [
+          for (final name in names)
+            forwardOriginProvider(name).overrideWith(
+              (ref) async => (forwarded: true, name: 'Selam Tesfaye'),
+            ),
+        ],
+      );
+    }
+
+    final many = [
+      'Invoice March.pdf',
+      'invoice april.pdf',
+      for (var i = 1; i <= 10; i++) 'Lecture $i.pdf',
+    ];
+
+    testWidgets('narrows the files, and Move and Keep take what it found', (tester) async {
+      await pumpForwarded(tester, many);
+      expect(find.text('Forwarded · 12'), findsOneWidget);
+      expect(find.text('Move all'), findsOneWidget);
+
+      await tester.enterText(find.byType(TextField), 'invoice');
+      await settle(tester);
+      expect(find.text('Forwarded · 2 of 12'), findsOneWidget);
+      expect(find.text('Invoice March.pdf'), findsOneWidget);
+      expect(find.text('invoice april.pdf'), findsOneWidget);
+      expect(find.text('Lecture 1.pdf'), findsNothing);
+      expect(find.text('Move these'), findsOneWidget);
+      expect(find.text('Keep these'), findsOneWidget);
+
+      await tester.tap(find.byTooltip('Clear search'));
+      await settle(tester);
+      expect(find.text('Forwarded · 12'), findsOneWidget);
+      expect(find.text('Lecture 1.pdf'), findsOneWidget);
+    });
+
+    testWidgets('says so when nothing matches, with nothing to move', (tester) async {
+      await pumpForwarded(tester, many);
+      await tester.enterText(find.byType(TextField), 'receipt');
+      await settle(tester);
+      expect(find.text('Forwarded · 0 of 12'), findsOneWidget);
+      expect(find.text('No forwarded file has "receipt" in its name.'), findsOneWidget);
+      expect(find.text('Move these'), findsNothing);
+    });
+
+    testWidgets('a few forwarded files have no search', (tester) async {
+      await pumpForwarded(tester, ['a.pdf', 'b.pdf', 'c.pdf']);
+      expect(find.text('Forwarded · 3'), findsOneWidget);
+      expect(find.byType(TextField), findsNothing);
+    });
+  });
 }
 
 /// A few frames: enough for the folder to arrive, the row to be tinted and

@@ -117,6 +117,10 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
   final _filesListKey = GlobalKey();
   final _scroll = ScrollController();
 
+  /// What the search above the Forwarded files is looking for.
+  final _forwardedSearch = TextEditingController();
+  String _forwardedQuery = '';
+
   @override
   void initState() {
     super.initState();
@@ -143,6 +147,7 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
     }
     _highlightTimer?.cancel();
     _scroll.dispose();
+    _forwardedSearch.dispose();
     super.dispose();
   }
 
@@ -258,9 +263,12 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
     final picked = _picked(data);
     // At the root, what came in without a manifest waits in its own section
     // above the folders, so the rows below it are the rest.
-    final forwarded = widget.folderId == null && data != null
+    final allForwarded = widget.folderId == null && data != null
         ? data.files.where((f) => f.adopted).toList()
         : const <DriveFile>[];
+    final forwarded = _forwardedQuery.isEmpty
+        ? allForwarded
+        : allForwarded.where((f) => forwardedMatches(f, _forwardedQuery)).toList();
     final shown = forwarded.isEmpty || data == null
         ? data
         : FolderContents(
@@ -409,12 +417,16 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
                 )
               else ...[
                 SliverToBoxAdapter(child: _Summary(contents: data)),
-                if (forwarded.isNotEmpty)
-                  ..._forwardedSlivers(forwarded, grid: prefs.viewMode == ViewMode.grid),
+                if (allForwarded.isNotEmpty)
+                  ..._forwardedSlivers(
+                    forwarded,
+                    of: allForwarded.length,
+                    grid: prefs.viewMode == ViewMode.grid,
+                  ),
                 if (prefs.viewMode == ViewMode.list)
-                  ..._listSlivers(shown!, afterForwarded: forwarded.isNotEmpty)
+                  ..._listSlivers(shown!, afterForwarded: allForwarded.isNotEmpty)
                 else
-                  ..._gridSlivers(shown!, afterForwarded: forwarded.isNotEmpty),
+                  ..._gridSlivers(shown!, afterForwarded: allForwarded.isNotEmpty),
                 // Room for New to float over, or while selecting, when New
                 // is gone and the bar below takes its place, a margin.
                 SliverToBoxAdapter(
@@ -466,13 +478,23 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
           from: 'folder:${widget.folderId ?? ''}',
         );
 
+  /// From this many forwarded files on, a search sits above them.
+  static const _forwardedSearchFrom = 10;
+
   /// The files that came in without a manifest, under their own header with
   /// Move all and Keep here, the way the rest of the root is laid out in
   /// list or [grid] view. Each row says who it came from. The two actions
-  /// are quiet, in text-2, since New already carries the accent here.
-  List<Widget> _forwardedSlivers(List<DriveFile> forwarded, {required bool grid}) {
+  /// are quiet, in text-2, since New already carries the accent here. Once
+  /// there are many, a search narrows [forwarded] out of the [of] there
+  /// are, and the two actions take what it found.
+  List<Widget> _forwardedSlivers(
+    List<DriveFile> forwarded, {
+    required int of,
+    required bool grid,
+  }) {
     final repository = ref.read(driveRepositoryProvider);
     final count = Formatters.count(forwarded.length, 'file');
+    final searching = _forwardedQuery.isNotEmpty;
     Widget action(String label, VoidCallback onPressed) => TextButton(
       style: TextButton.styleFrom(
         foregroundColor: context.colors.text2,
@@ -486,28 +508,68 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
     return [
       SliverToBoxAdapter(
         child: SectionHeader(
-          'Forwarded · ${Formatters.number(forwarded.length)}',
+          searching
+              ? 'Forwarded · ${Formatters.number(forwarded.length)} of ${Formatters.number(of)}'
+              : 'Forwarded · ${Formatters.number(of)}',
           padding: _firstHeader,
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              action(
-                'Move all',
-                () => FileActions.move(context, ref, files: forwarded),
-              ),
-              const SizedBox(width: Space.s),
-              action(
-                'Keep here',
-                () => FileActions.guarded(
-                  context,
-                  () => repository.keepAtRoot(forwarded),
-                  success: 'Kept $count in My Drive',
+          trailing: forwarded.isEmpty
+              ? null
+              : Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    action(
+                      searching ? 'Move these' : 'Move all',
+                      () => FileActions.move(context, ref, files: forwarded),
+                    ),
+                    const SizedBox(width: Space.s),
+                    action(
+                      searching ? 'Keep these' : 'Keep here',
+                      () => FileActions.guarded(
+                        context,
+                        () => repository.keepAtRoot(forwarded),
+                        success: 'Kept $count in My Drive',
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-            ],
-          ),
         ),
       ),
+      if (of >= _forwardedSearchFrom || searching)
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(Space.gutter, 0, Space.gutter, Space.s),
+            child: TextField(
+              controller: _forwardedSearch,
+              textInputAction: TextInputAction.search,
+              decoration: InputDecoration(
+                isDense: true,
+                hintText: 'Search forwarded files',
+                prefixIcon: const Icon(Icons.search_rounded),
+                suffixIcon: searching
+                    ? IconButton(
+                        tooltip: 'Clear search',
+                        icon: const Icon(Icons.close_rounded),
+                        onPressed: () {
+                          _forwardedSearch.clear();
+                          setState(() => _forwardedQuery = '');
+                        },
+                      )
+                    : null,
+              ),
+              onChanged: (text) => setState(() => _forwardedQuery = text.trim()),
+            ),
+          ),
+        ),
+      if (searching && forwarded.isEmpty)
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(Space.gutter, Space.s, Space.gutter, Space.l),
+            child: Text(
+              'No forwarded file has "$_forwardedQuery" in its name.',
+              style: context.text.bodyMedium,
+            ),
+          ),
+        ),
       if (grid)
         SliverPadding(
           padding: const EdgeInsets.symmetric(horizontal: Space.l),
@@ -671,6 +733,14 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
     files: data?.files.where((f) => _files.contains(f.id)).toList() ?? [],
     folders: data?.folders.where((f) => _folders.contains(f.id)).toList() ?? [],
   );
+}
+
+/// Whether forwarded [file] is one [query] looks for: every word of it is
+/// in the file's name, in any case.
+@visibleForTesting
+bool forwardedMatches(DriveFile file, String query) {
+  final name = file.name.toLowerCase();
+  return query.toLowerCase().split(RegExp(r'\s+')).where((w) => w.isNotEmpty).every(name.contains);
 }
 
 enum _FilesMenu { select, trash }

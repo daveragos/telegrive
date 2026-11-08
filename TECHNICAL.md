@@ -316,6 +316,10 @@ has moved. Only forwards newer than the first read of the channel are
 filed this way, so nothing already there moves on its own. Telegram won't
 edit a forwarded message, which is why filing one copies it.
 
+From ten forwarded files on, a search sits above them that keeps the ones
+with every word of it in their name; Move all and Keep here then become
+Move these and Keep these, and take only what it found.
+
 ### The copy of the index
 
 The channel also keeps a copy of the whole index: one document,
