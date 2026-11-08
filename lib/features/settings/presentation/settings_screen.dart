@@ -304,6 +304,17 @@ class SettingsScreen extends ConsumerWidget {
                 value: viewMode == ViewMode.grid,
                 onChanged: (_) => ref.read(browsePreferencesProvider.notifier).toggleViewMode(),
               ),
+              SwitchListTile(
+                title: const Text('Show Recent on Home'),
+                subtitle: const Text(
+                  'Files you opened, shared or added lately, and what you were playing',
+                ),
+                value: prefs.homeShowsRecent,
+                onChanged: (on) async {
+                  await prefs.setHomeShowsRecent(on);
+                  ref.invalidate(preferencesProvider);
+                },
+              ),
             ],
           ),
           const SectionHeader('Search'),

@@ -44,14 +44,18 @@ import 'drive_health.dart';
 /// space goes, which doubles as the way into each kind of file and, once
 /// something is kept offline, into what this phone keeps; then the starred
 /// folders, each a tap from wherever it sits; then the files this phone
-/// opened or added lately.
+/// opened or added lately. The first and the last stay off Home while
+/// Settings says not to show Recent there.
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final summary = ref.watch(storageSummaryProvider).value;
-    final recent = ref.watch(recentActivityProvider(12));
+    final showsRecent = ref.watch(
+      preferencesProvider.select((p) => p.homeShowsRecent),
+    );
+    final recent = showsRecent ? ref.watch(recentActivityProvider(12)) : null;
     final starredFolders =
         ref.watch(starredFoldersProvider).value ?? const <DriveFolder>[];
     final starredSizes = ref.watch(starredFolderSizesProvider).value;
@@ -91,7 +95,8 @@ class HomeScreen extends ConsumerWidget {
               sliver: SliverToBoxAdapter(child: _Header()),
             ),
             const SliverToBoxAdapter(child: _Activity()),
-            const SliverToBoxAdapter(child: _ContinuePlaying()),
+            if (showsRecent)
+              const SliverToBoxAdapter(child: _ContinuePlaying()),
             if (summary != null && summary.fileCount > 0) ...[
               const SliverToBoxAdapter(child: SectionHeader('Storage')),
               SliverToBoxAdapter(
@@ -125,55 +130,68 @@ class HomeScreen extends ConsumerWidget {
                 ),
               ),
             ],
-            SliverToBoxAdapter(
-              child: SectionHeader(
-                'Recent',
-                trailing: _SeeAll(onPressed: () => context.push('/recent')),
+            if (recent == null)
+              SliverToBoxAdapter(
+                child: switch (summary) {
+                  StorageSummary(fileCount: 0) => const _NothingYet(),
+                  _ when starredRow != null => Padding(
+                    padding: const EdgeInsets.only(top: Space.l),
+                    child: ListGroup(children: [starredRow]),
+                  ),
+                  _ => const SizedBox.shrink(),
+                },
+              )
+            else ...[
+              SliverToBoxAdapter(
+                child: SectionHeader(
+                  'Recent',
+                  trailing: _SeeAll(onPressed: () => context.push('/recent')),
+                ),
               ),
-            ),
-            SliverToBoxAdapter(
-              child: switch (recent) {
-                // Until the drive has been counted it isn't known to be
-                // empty, so nothing is said yet.
-                AsyncData(value: final entries) when entries.isEmpty =>
-                  switch (summary) {
-                    null => const SizedBox.shrink(),
-                    StorageSummary(fileCount: 0) => const _NothingYet(),
-                    _ => Column(
-                      children: [
-                        const EmptyState(
-                          title: 'Nothing opened yet',
-                          message: 'Files you open, share or add show up here.',
-                          compact: true,
-                        ),
-                        if (starredRow != null)
-                          ListGroup(children: [starredRow]),
-                      ],
-                    ),
-                  },
-                AsyncData(value: final entries) => ListGroup(
-                  children: [
-                    for (final entry in entries.take(5))
-                      FileListTile(
-                        file: entry.file,
-                        subtitle:
-                            '${Formatters.bytes(entry.file.size)} · '
-                            '${entry.verb} ${Formatters.date(entry.at)}',
-                        onTap: () => FileActions.open(context, ref, entry.file),
-                        onLongPress: () =>
-                            FileActions.showFileSheet(context, ref, entry.file),
-                        onMore: () =>
-                            FileActions.showFileSheet(context, ref, entry.file),
+              SliverToBoxAdapter(
+                child: switch (recent) {
+                  // Until the drive has been counted it isn't known to be
+                  // empty, so nothing is said yet.
+                  AsyncData(value: final entries) when entries.isEmpty =>
+                    switch (summary) {
+                      null => const SizedBox.shrink(),
+                      StorageSummary(fileCount: 0) => const _NothingYet(),
+                      _ => Column(
+                        children: [
+                          const EmptyState(
+                            title: 'Nothing opened yet',
+                            message: 'Files you open, share or add show up here.',
+                            compact: true,
+                          ),
+                          if (starredRow != null)
+                            ListGroup(children: [starredRow]),
+                        ],
                       ),
-                    ?starredRow,
-                  ],
-                ),
-                _ => const Padding(
-                  padding: EdgeInsets.all(Space.x3),
-                  child: Center(child: CircularProgressIndicator()),
-                ),
-              },
-            ),
+                    },
+                  AsyncData(value: final entries) => ListGroup(
+                    children: [
+                      for (final entry in entries.take(5))
+                        FileListTile(
+                          file: entry.file,
+                          subtitle:
+                              '${Formatters.bytes(entry.file.size)} · '
+                              '${entry.verb} ${Formatters.date(entry.at)}',
+                          onTap: () => FileActions.open(context, ref, entry.file),
+                          onLongPress: () =>
+                              FileActions.showFileSheet(context, ref, entry.file),
+                          onMore: () =>
+                              FileActions.showFileSheet(context, ref, entry.file),
+                        ),
+                      ?starredRow,
+                    ],
+                  ),
+                  _ => const Padding(
+                    padding: EdgeInsets.all(Space.x3),
+                    child: Center(child: CircularProgressIndicator()),
+                  ),
+                },
+              ),
+            ],
             const SliverToBoxAdapter(child: SizedBox(height: 112)),
           ],
         ),

@@ -673,7 +673,9 @@ the new file's Details. Folders can be starred and sit at the top of
 Home. Long-press or Select puts labelled actions in a bar along the
 bottom. Recent lists what you opened, shared or sent on this phone and
 what you added, apart from photos and videos that know when they were
-taken, which Photos shows on that day.
+taken, which Photos shows on that day. Settings › Show Recent on Home
+turns off both Recent and Continue playing on Home, for privacy; neither
+is deleted, and an empty drive still shows how to start.
 
 **Trash and undo.** Deleting moves things to the trash for 30 days.
 Moving, renaming, starring, album changes and restoring all offer Undo for

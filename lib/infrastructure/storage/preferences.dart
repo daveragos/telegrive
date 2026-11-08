@@ -192,6 +192,12 @@ class Preferences {
         if (key.startsWith(prefix)) ?int.tryParse(key.substring(prefix.length)),
   };
 
+  /// Home shows what this phone opened, shared or added lately, and what
+  /// it was partway through playing. Off keeps both off Home, for someone
+  /// looking over the shoulder. On until switched off.
+  bool get homeShowsRecent => _prefs.getBool('home_shows_recent') ?? true;
+  Future<void> setHomeShowsRecent(bool on) => _prefs.setBool('home_shows_recent', on);
+
   /// Transfers of 200 MB or more that start without anyone being asked wait
   /// for Wi-Fi, so moving onto mobile data mid-way doesn't spend the plan.
   /// On until switched off.

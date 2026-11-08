@@ -61,9 +61,9 @@ void main() {
     );
   }
 
-  Future<SharedPreferences> prefs() async {
+  Future<SharedPreferences> prefs([Map<String, Object> values = const {}]) async {
     // ignore: invalid_use_of_visible_for_testing_member
-    SharedPreferences.setMockInitialValues({});
+    SharedPreferences.setMockInitialValues(values);
     return SharedPreferences.getInstance();
   }
 
@@ -76,8 +76,9 @@ void main() {
       Map<String, FolderSize>? starredSizes = const {},
       // Null stands for positions that can't be read.
       List<ContinueItem>? continuing = const [],
+      bool showsRecent = true,
     }) async {
-      final shared = await prefs();
+      final shared = await prefs({if (!showsRecent) 'home_shows_recent': false});
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
@@ -311,6 +312,49 @@ void main() {
         );
       },
     );
+
+    testWidgets('with Recent turned off, Home shows neither Recent nor what was playing', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(800, 2400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await pumpHome(
+        tester,
+        Stream.value(
+          const StorageSummary(totals: [KindTotal(FileKind.video, 3, 3000)]),
+        ),
+        continuing: [
+          ContinueItem(
+            file: playable('Lecture 7.mp4', FileKind.video),
+            position: const Duration(minutes: 34),
+            length: const Duration(minutes: 72),
+            place: 'Files',
+          ),
+        ],
+        showsRecent: false,
+      );
+      await tester.pump();
+
+      expect(find.text('Storage', skipOffstage: false), findsOneWidget);
+      expect(find.text('Recent', skipOffstage: false), findsNothing);
+      expect(find.text('Nothing opened yet', skipOffstage: false), findsNothing);
+      expect(find.textContaining('Continue', skipOffstage: false), findsNothing);
+      expect(find.text('Lecture 7.mp4', skipOffstage: false), findsNothing);
+    });
+
+    testWidgets('with Recent turned off, an empty drive still says how to start', (
+      tester,
+    ) async {
+      await pumpHome(
+        tester,
+        Stream.value(const StorageSummary(totals: [])),
+        showsRecent: false,
+      );
+      await tester.pump();
+      expect(find.text('Your drive is empty', skipOffstage: false), findsOneWidget);
+      expect(find.text('Recent', skipOffstage: false), findsNothing);
+    });
 
     testWidgets('with nothing starred Home has no Starred group', (
       tester,
