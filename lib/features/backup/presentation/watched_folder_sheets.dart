@@ -7,17 +7,26 @@ import '../../../core/format/formatters.dart';
 import '../../../core/widgets/common.dart';
 import '../../../infrastructure/database/app_database.dart';
 import '../../drive/data/drive_repository.dart';
+import '../../files/presentation/file_actions.dart';
 import '../../files/presentation/folder_picker.dart';
 import '../data/phone_folders.dart';
 import '../data/watched_folders.dart';
 
-/// What the person settled on in a watched folder's sheet.
+/// What the person settled on in a watched folder's sheet. [inPhotos] is
+/// null when the Show in Photos choice is left as it stands.
 typedef _Choice = ({
   WatchFilter filter,
   bool subfolders,
   String? destinationId,
   bool includeExisting,
+  bool? inPhotos,
 });
+
+/// The drive's folders as they stand, for whether a destination shows in
+/// Photos.
+final _driveFoldersProvider = StreamProvider.autoDispose<List<FolderRow>>(
+  (ref) => ref.watch(appDatabaseProvider).watchAllFolders(),
+);
 
 /// Adds a phone folder whose new files upload by themselves: Android's
 /// folder picker first, where backing out ends it without a word, then the
@@ -51,8 +60,9 @@ Future<void> showAddWatchedFolder(BuildContext context, WidgetRef ref) async {
     await folders.release(picked.uri);
     return;
   }
+  final String id;
   try {
-    await controller.add(
+    id = await controller.add(
       picked,
       filter: choice.filter,
       subfolders: choice.subfolders,
@@ -63,6 +73,33 @@ Future<void> showAddWatchedFolder(BuildContext context, WidgetRef ref) async {
     debugPrint('[Folders] ${picked.name}: $e');
     await folders.release(picked.uri);
     if (context.mounted) showSnack(context, 'Telegrive can\'t read ${picked.name}.');
+    return;
+  }
+  if (!context.mounted) return;
+  await _applyInPhotos(context, controller, id, picked.name, choice.inPhotos);
+}
+
+/// Carries out the Show in Photos choice of folder [id], when it changed,
+/// and says so if the drive can't take it.
+Future<void> _applyInPhotos(
+  BuildContext context,
+  WatchedFoldersController controller,
+  String id,
+  String name,
+  bool? inPhotos,
+) async {
+  if (inPhotos == null) return;
+  try {
+    await controller.showInPhotos(id, shown: inPhotos);
+  } catch (e) {
+    debugPrint('[Folders] $name in Photos: $e');
+    if (!context.mounted) return;
+    showSnack(
+      context,
+      inPhotos
+          ? 'Couldn\'t show $name in Photos: ${FileActions.failureOf(e)}'
+          : 'Couldn\'t keep $name out of Photos: ${FileActions.failureOf(e)}',
+    );
   }
 }
 
@@ -91,6 +128,8 @@ Future<void> showWatchedFolderSheet(
     subfolders: choice.subfolders,
     destinationId: choice.destinationId,
   );
+  if (!context.mounted) return;
+  await _applyInPhotos(context, controller, view.row.id, view.row.label, choice.inPhotos);
 }
 
 /// 'Choose again' on a folder Telegrive can't read: the picker
@@ -136,6 +175,9 @@ class _WatchedFolderSheetState extends ConsumerState<_WatchedFolderSheet> {
   late String _destination =
       widget.existing?.destinationLabel ?? '${WatchedFoldersController.rootFolder} › ${widget.name}';
   bool _includeExisting = true;
+
+  /// Show in Photos as the person set it; null while left as it stands.
+  bool? _inPhotos;
 
   /// Files can't hold the uploads loose, so picking it is turned down.
   bool _rootRefused = false;
@@ -229,11 +271,19 @@ class _WatchedFolderSheetState extends ConsumerState<_WatchedFolderSheet> {
     await controller.remove(widget.existing!.row.id);
   }
 
+  /// Whether the photos and videos land in a folder kept out of Photos,
+  /// and the folder around it that does so, if any.
+  ({bool hidden, String? by}) _photosStanding(List<FolderRow>? folders) => folders == null
+      ? (hidden: false, by: null)
+      : photosStanding(folders, destinationId: _destinationId, label: widget.name);
+
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
     final matching = _matching;
     final existingCount = matching?.$1 ?? 0;
+    final standing = _photosStanding(ref.watch(_driveFoldersProvider).value);
+    final inPhotos = standing.by == null ? _inPhotos ?? !standing.hidden : false;
 
     return SafeArea(
       child: SingleChildScrollView(
@@ -303,6 +353,32 @@ class _WatchedFolderSheetState extends ConsumerState<_WatchedFolderSheet> {
               duration: _motion,
               curve: Curves.easeOut,
               alignment: Alignment.topLeft,
+              child: _filter == WatchFilter.everything
+                  ? Padding(
+                      padding: const EdgeInsets.only(top: Space.s),
+                      child: SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('Show in Photos'),
+                        subtitle: Text(
+                          standing.by != null
+                              ? 'Kept out with "${standing.by}". Show that folder in '
+                                    'Photos from Files.'
+                              : inPhotos
+                              ? 'Its photos and videos show in Photos too.'
+                              : 'Everything in $_destination stays in Files only.',
+                        ),
+                        value: inPhotos,
+                        onChanged: standing.by != null
+                            ? null
+                            : (value) => setState(() => _inPhotos = value),
+                      ),
+                    )
+                  : const SizedBox(width: double.infinity),
+            ),
+            AnimatedSize(
+              duration: _motion,
+              curve: Curves.easeOut,
+              alignment: Alignment.topLeft,
               child: _adding && existingCount > 0
                   ? Padding(
                       padding: const EdgeInsets.only(top: Space.s),
@@ -350,6 +426,13 @@ class _WatchedFolderSheetState extends ConsumerState<_WatchedFolderSheet> {
                             subfolders: _subfolders,
                             destinationId: _destinationId,
                             includeExisting: _includeExisting,
+                            inPhotos:
+                                _filter == WatchFilter.everything &&
+                                    standing.by == null &&
+                                    _inPhotos != null &&
+                                    _inPhotos != !standing.hidden
+                                ? _inPhotos
+                                : null,
                           )),
                     child: Text(_adding ? 'Start uploading' : 'Save'),
                   ),

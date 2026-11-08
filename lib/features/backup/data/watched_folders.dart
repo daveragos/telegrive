@@ -166,6 +166,43 @@ List<WatchedFilesCompanion> baseline(String ruleId, List<PhoneDocument> listing,
     ),
 ];
 
+/// Whether the photos and videos a watched folder sends into
+/// [destinationId] are kept out of Photos, as [folders] stand. While that
+/// folder isn't in the drive, they go into Auto upload › [label], which is
+/// looked up by name and may not be made yet. [by] names the folder around
+/// it that keeps them out, when it isn't the folder itself.
+({bool hidden, String? by}) photosStanding(
+  List<FolderRow> folders, {
+  String? destinationId,
+  required String label,
+}) {
+  final byId = {for (final folder in folders) folder.id: folder};
+  FolderRow? folder;
+  String? parentId;
+  final chosen = destinationId == null ? null : byId[destinationId];
+  if (chosen != null && !chosen.hidden) {
+    folder = chosen;
+    parentId = chosen.parentId;
+  } else {
+    final root = _childFolder(folders, null, WatchedFoldersController.rootFolder);
+    if (root == null) return (hidden: false, by: null);
+    folder = _childFolder(folders, root.id, label);
+    parentId = root.id;
+  }
+  if (folder?.hiddenFromPhotos ?? false) return (hidden: true, by: null);
+  final seen = <String>{};
+  for (var cursor = byId[parentId]; cursor != null && seen.add(cursor.id); cursor = byId[cursor.parentId]) {
+    if (cursor.hiddenFromPhotos) return (hidden: true, by: cursor.name);
+  }
+  return (hidden: false, by: null);
+}
+
+/// The folder of [folders] named [name], in any case, directly inside
+/// [parentId], or at the top when null, while the drive shows it.
+FolderRow? _childFolder(List<FolderRow> folders, String? parentId, String name) => folders
+    .where((f) => f.parentId == parentId && !f.hidden && f.name.toLowerCase() == name.toLowerCase())
+    .firstOrNull;
+
 // -----------------------------------------------------------------------------
 // The watcher
 // -----------------------------------------------------------------------------
@@ -347,8 +384,8 @@ class WatchedFoldersController extends Notifier<WatchState> {
   /// its [subfolders] too, into [destinationId], or Auto upload › its name
   /// when null. With [includeExisting] off, the files in it now are set
   /// aside, those in its subfolders included, so only files added later go
-  /// up.
-  Future<void> add(
+  /// up. Answers the new folder's id.
+  Future<String> add(
     PickedFolder folder, {
     required WatchFilter filter,
     required bool subfolders,
@@ -373,6 +410,31 @@ class WatchedFoldersController extends Notifier<WatchState> {
       ),
     );
     schedule(immediate: true);
+    return id;
+  }
+
+  /// Shows the photos and videos folder [id] sends in Photos, or keeps
+  /// them in Files only, on every phone: Hide from Photos on the drive
+  /// folder they go into, made now if keeping them out needs it. Showing
+  /// them needs nothing while that folder isn't made yet. A folder around
+  /// it that is kept out of Photos keeps it out still.
+  Future<void> showInPhotos(String id, {required bool shown}) async {
+    final rule = (await _db.watchedFolderList()).where((r) => r.id == id).firstOrNull;
+    if (rule == null) return;
+    final String? folderId;
+    final chosen = rule.destinationId;
+    if (!shown) {
+      folderId = await _destinationOf(rule);
+    } else if (chosen != null && await _repository.shownFolder(chosen) != null) {
+      folderId = chosen;
+    } else {
+      final folders = await _db.allFolders();
+      final root = _childFolder(folders, null, rootFolder);
+      folderId = root == null ? null : _childFolder(folders, root.id, rule.label)?.id;
+    }
+    final folder = folderId == null ? null : await _repository.folderById(folderId);
+    if (folder == null) return;
+    await _repository.setFolderHiddenFromPhotos([folder], hidden: !shown);
   }
 
   /// Changes what folder [id] sends and where to; the check that follows

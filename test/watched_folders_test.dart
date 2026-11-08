@@ -305,4 +305,58 @@ void main() {
     expect(_names(plan), ['Given up.pdf', 'Once.pdf']);
     expect(plan.gaveUp, 0);
   });
+
+  group('whether a watched folder shows in Photos', () {
+    FolderRow folder(String id, String name, {String? parent, bool kept = false, bool trashed = false}) =>
+        FolderRow(
+          id: id,
+          parentId: parent,
+          name: name,
+          messageId: 1,
+          createdAt: _now,
+          modifiedAt: _now,
+          hidden: trashed,
+          starred: false,
+          hiddenFromPhotos: kept,
+          private: false,
+          inPrivate: false,
+        );
+
+    test('a folder not made yet shows, unless Auto upload is kept out', () {
+      expect(photosStanding(const [], label: 'Download'), (hidden: false, by: null));
+      expect(
+        photosStanding([folder('au', 'auto upload', kept: true)], label: 'Download'),
+        (hidden: true, by: 'auto upload'),
+      );
+    });
+
+    test('Auto upload › its name is found by name until it is remembered', () {
+      final folders = [
+        folder('au', 'Auto upload'),
+        folder('dl', 'download', parent: 'au', kept: true),
+      ];
+      expect(photosStanding(folders, label: 'Download'), (hidden: true, by: null));
+      expect(photosStanding(folders, label: 'Bank'), (hidden: false, by: null));
+    });
+
+    test('a chosen folder goes by its own choice and the folders around it', () {
+      final folders = [
+        folder('docs', 'Documents', kept: true),
+        folder('bank', 'Bank', parent: 'docs'),
+        folder('pics', 'Pictures', kept: true),
+        folder('cam', 'Camera'),
+      ];
+      expect(photosStanding(folders, destinationId: 'bank', label: 'x'), (hidden: true, by: 'Documents'));
+      expect(photosStanding(folders, destinationId: 'pics', label: 'x'), (hidden: true, by: null));
+      expect(photosStanding(folders, destinationId: 'cam', label: 'x'), (hidden: false, by: null));
+    });
+
+    test('a chosen folder in the trash falls back to Auto upload', () {
+      final folders = [
+        folder('old', 'Old', kept: true, trashed: true),
+        folder('au', 'Auto upload'),
+      ];
+      expect(photosStanding(folders, destinationId: 'old', label: 'Download'), (hidden: false, by: null));
+    });
+  });
 }

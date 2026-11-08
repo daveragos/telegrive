@@ -534,7 +534,12 @@ value goes back onto the line exactly as it came.
   last check left on the phone: files its filter doesn't send, files
   changed in the last minute, and files that couldn't upload, with a
   Retry that gives those back their three tries. The sheet that adds a
-  folder counts the files its filter sends out of all those in it.
+  folder counts the files its filter sends out of all those in it. A
+  folder that sends everything has Show in Photos, on when adding and
+  changeable later: off sets Hide from Photos on the drive folder its
+  files go into, making that folder first if needed, so it holds on
+  every phone. A folder kept out by one around it can't be shown from
+  there.
 - **Free up space** deletes the phone's copies of photos and videos that
   are safely in the drive, optionally keeping the last 30 or 90 days. A
   photo with only a small copy in the drive is never among them.
