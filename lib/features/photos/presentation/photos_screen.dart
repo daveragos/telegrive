@@ -19,7 +19,8 @@ import 'media_selection_bar.dart';
 enum _PhotosMenu { select, fromChat, download, duplicates }
 
 /// Every photo and video in the drive as one timeline, newest moment first,
-/// with backup status on top.
+/// with backup status on top. Chips above the grid narrow it to photos or
+/// to videos, and it can run oldest first.
 class PhotosScreen extends ConsumerStatefulWidget {
   const PhotosScreen({super.key});
 
@@ -58,9 +59,12 @@ class _PhotosScreenState extends ConsumerState<PhotosScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final media = ref.watch(photosTimelineProvider);
-    // Hide, or a file going away, can take selected photos off screen.
-    ref.listen(photosTimelineProvider, (_, next) {
+    final media = ref.watch(photosTabProvider);
+    final view = ref.watch(photosViewProvider);
+    final anything = ref.watch(photosTimelineProvider).value?.isNotEmpty ?? false;
+    // Hide, a filter, or a file going away, can take selected photos off
+    // screen.
+    ref.listen(photosTabProvider, (_, next) {
       if (next.value case final files?) _selection.keepOnly(files);
     });
     // A selection stays on its tab: the shell, switching tabs, says nothing
@@ -94,7 +98,7 @@ class _PhotosScreenState extends ConsumerState<PhotosScreen> {
                     IconButton(
                       onPressed: () => context.push('/albums'),
                       tooltip: 'Albums',
-                      icon: const Icon(Icons.photo_album_outlined),
+                      icon: const Icon(Icons.photo_library_outlined),
                     ),
                     IconButton(
                       onPressed: () => context.push('/backup'),
@@ -139,9 +143,13 @@ class _PhotosScreenState extends ConsumerState<PhotosScreen> {
                           child: Text('Remove duplicate backups'),
                         ),
                         if (files != null && files.isNotEmpty)
-                          const PopupMenuItem(
+                          PopupMenuItem(
                             value: _PhotosMenu.download,
-                            child: Text('Download all to this phone'),
+                            child: Text(switch (view.show) {
+                              PhotosShow.all => 'Download all to this phone',
+                              PhotosShow.photos => 'Download all photos to this phone',
+                              PhotosShow.videos => 'Download all videos to this phone',
+                            }),
                           ),
                       ],
                     ),
@@ -171,8 +179,15 @@ class _PhotosScreenState extends ConsumerState<PhotosScreen> {
                     ),
                     const SliverToBoxAdapter(child: _StuckRow()),
                     const SliverToBoxAdapter(child: _KeptOutRow()),
+                    if (anything) const SliverToBoxAdapter(child: _ShowRow()),
                   ],
-                  empty: keptOut.count > 0
+                  empty: anything && view.show != PhotosShow.all
+                      ? EmptyState(
+                          title: view.show == PhotosShow.videos ? 'No videos' : 'No photos',
+                          message: 'Tap All to see everything.',
+                          compact: true,
+                        )
+                      : keptOut.count > 0
                       ? const EmptyState(
                           title: 'No photos to show',
                           message: 'Everything here is in folders kept out of this view. '
@@ -188,6 +203,57 @@ class _PhotosScreenState extends ConsumerState<PhotosScreen> {
                         ),
                 ),
         ),
+      ),
+    );
+  }
+}
+
+/// All, Photos or Videos, and the order the timeline runs in.
+class _ShowRow extends ConsumerWidget {
+  const _ShowRow();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colors = context.colors;
+    final view = ref.watch(photosViewProvider);
+    final choice = ref.read(photosViewProvider.notifier);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(Space.gutter, Space.s, Space.s, Space.s),
+      child: Row(
+        children: [
+          for (final show in PhotosShow.values) ...[
+            ChoiceChip(
+              label: Text(show.label),
+              selected: view.show == show,
+              showCheckmark: false,
+              onSelected: (_) => choice.show(show),
+            ),
+            const SizedBox(width: Space.s),
+          ],
+          const Spacer(),
+          PopupMenuButton<bool>(
+            tooltip: 'Order',
+            initialValue: view.oldestFirst,
+            onSelected: choice.setOldestFirst,
+            itemBuilder: (_) => const [
+              PopupMenuItem(value: false, child: Text('Newest first')),
+              PopupMenuItem(value: true, child: Text('Oldest first')),
+            ],
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: Space.s, vertical: Space.xs),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    view.oldestFirst ? 'Oldest first' : 'Newest first',
+                    style: context.text.labelLarge?.copyWith(color: colors.text2),
+                  ),
+                  Icon(Icons.arrow_drop_down_rounded, color: colors.text3),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

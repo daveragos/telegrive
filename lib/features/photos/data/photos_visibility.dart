@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show immutable;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/files/file_kind.dart';
@@ -184,3 +185,66 @@ final keptOutSummaryProvider = Provider.autoDispose<({int count, List<String> na
   final sorted = names.keys.toList()..sort();
   return (count: count, names: [for (final key in sorted) names[key]!]);
 });
+
+/// What the Photos tab shows of the timeline.
+enum PhotosShow {
+  all('All'),
+  photos('Photos'),
+  videos('Videos');
+
+  const PhotosShow(this.label);
+
+  final String label;
+}
+
+/// The Photos tab's choice of what to show and in which order, remembered.
+@immutable
+class PhotosView {
+  const PhotosView({this.show = PhotosShow.all, this.oldestFirst = false});
+
+  final PhotosShow show;
+  final bool oldestFirst;
+}
+
+class PhotosViewChoice extends Notifier<PhotosView> {
+  @override
+  PhotosView build() {
+    final prefs = ref.watch(preferencesProvider);
+    return PhotosView(
+      show: PhotosShow.values.where((s) => s.name == prefs.photosShow).firstOrNull ?? PhotosShow.all,
+      oldestFirst: prefs.photosOldestFirst,
+    );
+  }
+
+  void show(PhotosShow show) {
+    if (show == state.show) return;
+    state = PhotosView(show: show, oldestFirst: state.oldestFirst);
+    ref.read(preferencesProvider).setPhotosShow(show.name);
+  }
+
+  void setOldestFirst(bool on) {
+    if (on == state.oldestFirst) return;
+    state = PhotosView(show: state.show, oldestFirst: on);
+    ref.read(preferencesProvider).setPhotosOldestFirst(on);
+  }
+}
+
+final photosViewProvider = NotifierProvider<PhotosViewChoice, PhotosView>(PhotosViewChoice.new);
+
+/// [timeline], newest first, as [view] has the Photos tab show it: only
+/// its photos or only its videos, and oldest first.
+List<DriveFile> photosTab(List<DriveFile> timeline, PhotosView view) {
+  final shown = switch (view.show) {
+    PhotosShow.all => timeline,
+    PhotosShow.photos => [for (final f in timeline) if (f.kind != FileKind.video) f],
+    PhotosShow.videos => [for (final f in timeline) if (f.kind == FileKind.video) f],
+  };
+  return view.oldestFirst ? shown.reversed.toList() : shown;
+}
+
+/// The Photos tab's grid, and its viewer, which swipes in the same order.
+final photosTabProvider = Provider.autoDispose<AsyncValue<List<DriveFile>>>((ref) {
+  final view = ref.watch(photosViewProvider);
+  return ref.watch(photosTimelineProvider).whenData((files) => photosTab(files, view));
+});
+

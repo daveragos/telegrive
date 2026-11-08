@@ -66,6 +66,13 @@ class Preferences {
   Future<void> setPhotoColumns(int columns) =>
       _prefs.setInt('photo_columns', columns);
 
+  /// What the Photos tab shows, by name ('all', 'photos', 'videos'), and
+  /// whether its oldest photos come first. All, newest first, until chosen.
+  String? get photosShow => _prefs.getString('photos_show');
+  Future<void> setPhotosShow(String show) => _prefs.setString('photos_show', show);
+  bool get photosOldestFirst => _prefs.getBool('photos_oldest_first') ?? false;
+  Future<void> setPhotosOldestFirst(bool on) => _prefs.setBool('photos_oldest_first', on);
+
   /// The playback speed the player last used for audio, or for video, so a
   /// newly opened file of that kind starts at it. The player checks the
   /// value against the speeds it offers.

@@ -57,6 +57,38 @@ void main() {
     starred: starred,
   );
 
+  DriveFile video(String id) => DriveFile(
+    id: id,
+    folderId: null,
+    name: '$id.mp4',
+    mimeType: 'video/mp4',
+    kind: FileKind.video,
+    size: 100,
+    createdAt: now,
+    modifiedAt: now,
+    partCount: 1,
+    starred: false,
+  );
+
+  group('photosTab', () {
+    final timeline = [photo('new'), video('clip'), photo('old')];
+    List<String> ids(PhotosView view) => [for (final f in photosTab(timeline, view)) f.id];
+
+    test('shows everything newest first until told otherwise', () {
+      expect(ids(const PhotosView()), ['new', 'clip', 'old']);
+    });
+
+    test('narrows to photos or to videos', () {
+      expect(ids(const PhotosView(show: PhotosShow.photos)), ['new', 'old']);
+      expect(ids(const PhotosView(show: PhotosShow.videos)), ['clip']);
+    });
+
+    test('runs oldest first, filtered or not', () {
+      expect(ids(const PhotosView(oldestFirst: true)), ['old', 'clip', 'new']);
+      expect(ids(const PhotosView(show: PhotosShow.photos, oldestFirst: true)), ['old', 'new']);
+    });
+  });
+
   group('hiddenBackupFolders', () {
     test('finds the named folders directly under Photo backup, whatever the case', () {
       final folders = [
@@ -284,9 +316,13 @@ void main() {
   setUp(() => shown = ValueNotifier(true));
   tearDown(() => shown.dispose());
 
-  Future<ProviderContainer> pumpPhotos(WidgetTester tester) async {
+  Future<ProviderContainer> pumpPhotos(
+    WidgetTester tester, {
+    List<DriveFile>? media,
+    Map<String, Object> prefs = const {},
+  }) async {
     // ignore: invalid_use_of_visible_for_testing_member
-    SharedPreferences.setMockInitialValues({});
+    SharedPreferences.setMockInitialValues(prefs);
     final shared = await SharedPreferences.getInstance();
     await tester.pumpWidget(
       ProviderScope(
@@ -295,7 +331,7 @@ void main() {
           backupControllerProvider.overrideWith(_Backup.new),
           transferQueueProvider.overrideWith(_Queue.new),
           mediaTimelineProvider.overrideWith(
-            (ref) => Stream.value([photo('camera'), photo('screenshot', folderId: 'scr')]),
+            (ref) => Stream.value(media ?? [photo('camera'), photo('screenshot', folderId: 'scr')]),
           ),
           hiddenBackupFoldersProvider.overrideWith((ref) => Stream.value({'scr': 'Screenshots'})),
           photosHiddenFoldersProvider.overrideWith((ref) => Stream.value(const {})),
@@ -378,5 +414,49 @@ void main() {
     await tester.pump();
     await tester.pump();
     expect(container.read(selectionActiveProvider), isFalse);
+  });
+
+  group('the chips above the grid', () {
+    Finder tile(String id) => find.byWidgetPredicate((w) => w is FileThumbnail && w.file.id == id);
+
+    testWidgets('narrow the grid to videos, and the choice is remembered', (tester) async {
+      final container = await pumpPhotos(tester, media: [photo('beach'), video('surf')]);
+      expect(tile('beach'), findsOneWidget);
+      expect(tile('surf'), findsOneWidget);
+
+      await tester.tap(find.widgetWithText(ChoiceChip, 'Videos'));
+      await tester.pump();
+      expect(tile('beach'), findsNothing);
+      expect(tile('surf'), findsOneWidget);
+      expect(container.read(preferencesProvider).photosShow, 'videos');
+      // The viewer swipes through the same list.
+      expect(container.read(photosTabProvider).value!.map((f) => f.id), ['surf']);
+    });
+
+    testWidgets('say when the chosen kind has nothing in it', (tester) async {
+      await pumpPhotos(tester, media: [photo('beach')], prefs: {'photos_show': 'videos'});
+      expect(find.text('No videos'), findsOneWidget);
+      await tester.tap(find.widgetWithText(ChoiceChip, 'All'));
+      await tester.pump();
+      expect(tile('beach'), findsOneWidget);
+    });
+
+    testWidgets('turn the timeline oldest first', (tester) async {
+      final container = await pumpPhotos(tester, media: [photo('new'), photo('old')]);
+      await tester.tap(find.text('Newest first'));
+      await settle(tester);
+      await tester.tap(find.text('Oldest first').last);
+      // The menu's closing fade.
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
+      expect(find.text('Oldest first'), findsOneWidget);
+      expect(container.read(preferencesProvider).photosOldestFirst, isTrue);
+      expect(container.read(photosTabProvider).value!.map((f) => f.id), ['old', 'new']);
+    });
+
+    testWidgets('stay away while there are no photos at all', (tester) async {
+      await pumpPhotos(tester, media: const []);
+      expect(find.byType(ChoiceChip), findsNothing);
+    });
   });
 }

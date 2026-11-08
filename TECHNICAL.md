@@ -686,7 +686,11 @@ time.
 
 **Photos.** A timeline grouped by month, with a scrubber that names the
 month beside your finger, select-a-month, drag to select, pinch to change
-the grid, albums, Favorites and Videos. The viewer flicks down to close
+the grid, albums, Favorites and Videos. Chips above the grid show All,
+only Photos or only Videos, and the timeline runs newest or oldest first;
+both choices are remembered, and the viewer swipes in the same order. The
+timeline keeps to dates, since its months are its sections: Files sorts by
+name, size or type. The viewer flicks down to close
 and up for Details, and plays videos in place. A photo zooms with a pinch
 or a double-tap and pans once zoomed; a pinch wins as its second finger
 lands, before the page swipe or the flick can take the drag, which on

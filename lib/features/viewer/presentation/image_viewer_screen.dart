@@ -109,7 +109,8 @@ class _ImageViewerScreenState extends ConsumerState<ImageViewerScreen> {
     List<DriveFile> timeline() =>
         ref.watch(photosTimelineProvider).value ?? const [];
     final List<DriveFile> files = switch (widget.source) {
-      'photos' => timeline(),
+      // Only its photos or its videos, and oldest first, as the tab has it.
+      'photos' => ref.watch(photosTabProvider).value ?? const [],
       'favorites' => timeline().where((f) => f.starred).toList(),
       'videos' => timeline().where((f) => f.kind == FileKind.video).toList(),
       'backed-up' => ref.watch(recentBackupsProvider).value ?? const [],
