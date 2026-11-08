@@ -155,6 +155,7 @@ class StatusLine extends StatelessWidget {
     required this.icon,
     required this.text,
     this.detail,
+    this.detailLines = 2,
     this.progress,
     this.color,
     this.progressColor,
@@ -165,6 +166,9 @@ class StatusLine extends StatelessWidget {
   final IconData icon;
   final String text;
   final String? detail;
+
+  /// The most lines [detail] takes before it is cut short.
+  final int detailLines;
 
   /// 0..1 for a bar, null for none. Use a negative value for an
   /// indeterminate bar.
@@ -200,7 +204,7 @@ class StatusLine extends StatelessWidget {
                       if (detail != null && detail!.isNotEmpty)
                         Text(
                           detail!,
-                          maxLines: 2,
+                          maxLines: detailLines,
                           overflow: TextOverflow.ellipsis,
                           style: context.text.bodySmall?.copyWith(
                             fontFeatures: tabularFigures,

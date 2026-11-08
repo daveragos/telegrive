@@ -39,11 +39,15 @@ const Duration watchRecheck = Duration(seconds: 62);
 /// Failed tries after which a file of a watched folder stops being tried.
 const int watchMaxFailures = 3;
 
-/// Whether [doc] is a file [filter] sends up. Names that start with a dot
-/// are left out, which covers the '.pending-' and '.trashed-' names Android
-/// gives files still being written or in its trash, and so are empty files.
+/// Whether [doc] is a file any filter could send. Names that start with a
+/// dot are left out, which covers the '.pending-' and '.trashed-' names
+/// Android gives files still being written or in its trash, and so are
+/// empty files.
+bool watchCounts(PhoneDocument doc) => !doc.name.startsWith('.') && doc.size > 0;
+
+/// Whether [doc] is a file [filter] sends up.
 bool watchMatches(PhoneDocument doc, WatchFilter filter) {
-  if (doc.name.startsWith('.') || doc.size <= 0) return false;
+  if (!watchCounts(doc)) return false;
   final kind = FileKind.detect(
     fileName: doc.name,
     mimeType: doc.mimeType.isEmpty ? null : doc.mimeType,
@@ -63,6 +67,7 @@ class WatchPlan {
     required this.alreadyInDrive,
     required this.settling,
     required this.gaveUp,
+    this.leftOut = 0,
   });
 
   /// The files to send up, oldest first.
@@ -77,10 +82,14 @@ class WatchPlan {
 
   /// Files that failed [watchMaxFailures] times, which aren't tried again.
   final int gaveUp;
+
+  /// Files the filter doesn't send, hidden and empty ones apart.
+  final int leftOut;
 }
 
 /// Sorts [listing] by what [ledger] knows of each file. A file [filter]
-/// leaves out is passed over, and so is one in the drive, one set aside,
+/// leaves out is counted in [WatchPlan.leftOut] unless it is hidden or
+/// empty, and passed over, and so is one in the drive, one set aside,
 /// and one whose upload is still in [inFlight]. One that failed
 /// [watchMaxFailures] times counts as [WatchPlan.gaveUp], and one changed
 /// within [watchSettle] of [now] as [WatchPlan.settling]. Of the rest, a
@@ -98,9 +107,13 @@ WatchPlan planUploads({
   final alreadyInDrive = <String, String>{};
   var settling = 0;
   var gaveUp = 0;
+  var leftOut = 0;
   final settledBefore = now.subtract(watchSettle);
   for (final doc in listing) {
-    if (!watchMatches(doc, filter)) continue;
+    if (!watchMatches(doc, filter)) {
+      if (watchCounts(doc)) leftOut++;
+      continue;
+    }
     final entry = ledger[doc.id];
     switch (entry?.state) {
       case WatchedFileState.done || WatchedFileState.skipped:
@@ -130,6 +143,7 @@ WatchPlan planUploads({
     alreadyInDrive: alreadyInDrive,
     settling: settling,
     gaveUp: gaveUp,
+    leftOut: leftOut,
   );
 }
 
@@ -175,6 +189,10 @@ enum RulePhase {
   /// Telegrive can't read it: it was renamed, deleted or on a card that
   /// was taken out.
   noAccess,
+
+  /// Not checked, since what is in the drive is judged against the index,
+  /// and the drive hasn't synced in full, or its last sync failed.
+  waitingForSync,
 }
 
 @immutable
@@ -186,6 +204,9 @@ class RuleStatus {
     this.current,
     this.waiting = 0,
     this.truncated = false,
+    this.leftOut = 0,
+    this.settling = 0,
+    this.failed = 0,
   });
 
   final RulePhase phase;
@@ -205,15 +226,31 @@ class RuleStatus {
   /// The last listing stopped at [PhoneFolders.listLimit] files.
   final bool truncated;
 
+  /// What the last check left on the phone: files the filter doesn't send,
+  /// files changed within [watchSettle] that go up at the next check, and
+  /// files whose last try failed, those given up on included.
+  final int leftOut;
+  final int settling;
+  final int failed;
+
   double get progress => total == 0 ? 0 : (done / total).clamp(0.0, 1.0);
 
-  RuleStatus copyWith({int? done, String? current}) => RuleStatus(
+  RuleStatus copyWith({
+    int? done,
+    String? current,
+    int? leftOut,
+    int? settling,
+    int? failed,
+  }) => RuleStatus(
     phase: phase,
     total: total,
     done: done ?? this.done,
     current: current ?? this.current,
     waiting: waiting,
     truncated: truncated,
+    leftOut: leftOut ?? this.leftOut,
+    settling: settling ?? this.settling,
+    failed: failed ?? this.failed,
   );
 }
 
@@ -486,6 +523,9 @@ class WatchedFoldersController extends Notifier<WatchState> {
     // "Already in the drive" is judged against the index, so it has to hold
     // the whole channel, as photo backup needs it to.
     if (_prefs.lastFullSync(session.chatId) == null || ref.read(driveSyncProvider).error != null) {
+      for (final rule in rules) {
+        _setRule(rule.id, const RuleStatus(phase: RulePhase.waitingForSync));
+      }
       return;
     }
     // A small copy stands for its original under the original's size, so
@@ -552,7 +592,21 @@ class WatchedFoldersController extends Notifier<WatchState> {
           )
         : await _send(rule, plan.toUpload, ledger, fingerprints, held: held, truncated: listing.truncated);
     await _db.updateWatchedFolder(rule.id, WatchedFoldersCompanion(checkedAt: Value(DateTime.now())));
-    _setRule(rule.id, status);
+    final settled = await _db.watchedLedger(rule.id);
+    final failed = listing.files
+        .where((doc) => watchMatches(doc, rule.filter) && settled[doc.id]?.state == WatchedFileState.failed)
+        .length;
+    _setRule(
+      rule.id,
+      status.copyWith(leftOut: plan.leftOut, settling: plan.settling, failed: failed),
+    );
+  }
+
+  /// 'Retry' on a folder with files that couldn't upload: they get their
+  /// tries back, those given up on included, and the folder is checked now.
+  Future<void> retryFailed(String id) async {
+    await _db.resetWatchedFailures(id);
+    schedule(immediate: true);
   }
 
   /// Settles what [ledger] says is still going up against the queue: an

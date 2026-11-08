@@ -174,18 +174,21 @@ class _WatchedFolderSheetState extends ConsumerState<_WatchedFolderSheet> {
     }
   }
 
-  /// How many of the files the chosen filter sends, and their size.
-  (int, int)? get _matching {
+  /// How many of the files the chosen filter sends and their size, and
+  /// how many files any filter could send.
+  (int, int, int)? get _matching {
     final files = _files;
     if (files == null) return null;
     var count = 0;
     var bytes = 0;
+    var all = 0;
     for (final doc in files) {
+      if (watchCounts(doc)) all++;
       if (!watchMatches(doc, _filter)) continue;
       count++;
       bytes += doc.size;
     }
-    return (count, bytes);
+    return (count, bytes, all);
   }
 
   Future<void> _changeDestination() async {
@@ -360,8 +363,9 @@ class _WatchedFolderSheetState extends ConsumerState<_WatchedFolderSheet> {
   }
 
   /// The line under the title: a bar while the files are counted, then
-  /// how many the filter sends and their size.
-  Widget _meta(BuildContext context, (int, int)? matching) {
+  /// how many the filter sends, out of how many when it leaves some out,
+  /// and their size.
+  Widget _meta(BuildContext context, (int, int, int)? matching) {
     if (_unreadable) {
       return Text('Telegrive can\'t read this folder.', style: context.text.bodyMedium);
     }
@@ -378,13 +382,18 @@ class _WatchedFolderSheetState extends ConsumerState<_WatchedFolderSheet> {
         ],
       );
     }
-    final (count, bytes) = matching;
+    final (count, bytes, all) = matching;
     final tabular = context.text.bodyMedium?.copyWith(fontFeatures: tabularFigures);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          [Formatters.count(count, 'file'), if (count > 0) Formatters.bytes(bytes)].join(' · '),
+          [
+            count < all
+                ? '${Formatters.number(count)} of ${Formatters.count(all, 'file')}'
+                : Formatters.count(count, 'file'),
+            if (count > 0) Formatters.bytes(bytes),
+          ].join(' · '),
           style: tabular,
         ),
         if (_truncated)

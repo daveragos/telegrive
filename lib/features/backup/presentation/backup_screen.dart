@@ -8,8 +8,10 @@ import 'package:photo_manager/photo_manager.dart';
 import '../../../app/theme/tokens.dart';
 import '../../../core/format/formatters.dart';
 import '../../../core/widgets/common.dart';
+import '../../../infrastructure/database/app_database.dart';
 import '../../../infrastructure/notifications/app_notifications.dart';
 import '../../../infrastructure/storage/preferences.dart';
+import '../../drive/data/drive_sync.dart';
 import '../../network/data/mobile_data.dart';
 import '../../takeout/data/takeout_files.dart';
 import '../../takeout/data/takeout_import.dart';
@@ -617,23 +619,70 @@ class _WatchedFolderRow extends ConsumerWidget {
             onTap: open,
           ),
         );
-      case RulePhase.idle || RulePhase.checking:
-        final checked = view.row.checkedAt;
+      case RulePhase.waitingForSync:
+        final syncFailed = ref.watch(driveSyncProvider.select((s) => s.error != null));
         return StatusLine(
           icon: Icons.folder_outlined,
           text: view.row.label,
-          detail: checked == null
-              ? 'Not checked yet'
-              : [
-                  '${Formatters.number(view.uploadedCount)} uploaded to ${view.destinationLabel} · '
-                      'checked ${Formatters.date(checked)}',
-                  if (status.truncated)
-                    'Only the first ${Formatters.number(PhoneFolders.listLimit)} files are checked.',
-                ].join('. '),
+          detail: syncFailed
+              ? 'Waits until the drive syncs without an error.'
+              : 'Waits until the drive has synced in full.',
+          onTap: open,
+        );
+      case RulePhase.idle || RulePhase.checking:
+        return StatusLine(
+          icon: Icons.folder_outlined,
+          color: status.failed > 0 ? colors.danger : null,
+          text: view.row.label,
+          detail: watchedFolderDetail(view),
+          detailLines: 4,
+          trailing: status.failed > 0
+              ? TextButton(
+                  onPressed: () => ref.read(watchedFoldersProvider.notifier).retryFailed(view.row.id),
+                  child: const Text('Retry'),
+                )
+              : null,
           onTap: open,
         );
     }
   }
+}
+
+/// What an idle watched folder's row says: how many of its files went up,
+/// where to and when it was last checked, then what that check left on the
+/// phone and why.
+@visibleForTesting
+String watchedFolderDetail(WatchedFolderView view) {
+  final checked = view.row.checkedAt;
+  if (checked == null) return 'Not checked yet';
+  final status = view.status;
+  String files(int n, String one, String many) =>
+      n == 1 ? '1 file $one' : '${Formatters.number(n)} files $many';
+  final parts = [
+    '${Formatters.number(view.uploadedCount)} uploaded to ${view.destinationLabel} · '
+        'checked ${Formatters.date(checked)}',
+    if (status.failed > 0) files(status.failed, 'couldn\'t upload', 'couldn\'t upload'),
+    if (status.settling > 0)
+      status.settling == 1
+          ? '1 new file goes up in a minute'
+          : '${Formatters.number(status.settling)} new files go up in a minute',
+    if (status.leftOut > 0)
+      switch (view.row.filter) {
+        WatchFilter.audio => files(
+          status.leftOut,
+          'isn\'t audio, so it stays on the phone',
+          'aren\'t audio, so they stay on the phone',
+        ),
+        _ => files(
+          status.leftOut,
+          'isn\'t a document or PDF, so it stays on the phone',
+          'aren\'t documents or PDFs, so they stay on the phone',
+        ),
+      },
+    if (status.truncated)
+      'Only the first ${Formatters.number(PhoneFolders.listLimit)} files are checked',
+  ];
+  return parts.length == 1 ? parts.single : '${parts.join('. ')}.';
 }
 
 /// The way into importing a Google Photos library, or where an import

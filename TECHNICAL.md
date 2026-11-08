@@ -528,6 +528,13 @@ value goes back onto the line exactly as it came.
   in it goes up once to Files › Auto upload, or a folder you choose, once
   it has been left alone for a minute. Android's folder picker grants
   access to that folder alone, so no storage permission is asked for.
+  Folders are checked while Telegrive is open: when the drive opens, when
+  it comes back to the foreground and after each sync, and only once the
+  drive has synced in full without an error. A folder's row says what its
+  last check left on the phone: files its filter doesn't send, files
+  changed in the last minute, and files that couldn't upload, with a
+  Retry that gives those back their three tries. The sheet that adds a
+  folder counts the files its filter sends out of all those in it.
 - **Free up space** deletes the phone's copies of photos and videos that
   are safely in the drive, optionally keeping the last 30 or 90 days. A
   photo with only a small copy in the drive is never among them.

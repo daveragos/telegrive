@@ -1728,6 +1728,13 @@ class AppDatabase extends _$AppDatabase {
   Future<void> saveWatchedFiles(Iterable<WatchedFilesCompanion> rows) =>
       batch((b) => b.insertAllOnConflictUpdate(watchedFiles, rows.toList()));
 
+  /// Gives the files of watched folder [ruleId] that failed their tries
+  /// back, so the next check sends them again.
+  Future<void> resetWatchedFailures(String ruleId) =>
+      (update(watchedFiles)
+            ..where((f) => f.ruleId.equals(ruleId) & f.state.equalsValue(WatchedFileState.failed)))
+          .write(const WatchedFilesCompanion(failures: Value(0)));
+
   /// How many files each watched folder has in the drive, by rule id.
   Stream<Map<String, int>> watchUploadedCounts() => customSelect(
     "SELECT rule_id, COUNT(*) AS n FROM watched_files WHERE state = 'done' GROUP BY rule_id",

@@ -1,6 +1,8 @@
+import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:telegrive/features/backup/data/phone_folders.dart';
 import 'package:telegrive/features/backup/data/watched_folders.dart';
+import 'package:telegrive/features/backup/presentation/backup_screen.dart';
 import 'package:telegrive/infrastructure/database/app_database.dart';
 
 final _now = DateTime(2026, 10, 4, 14, 0);
@@ -52,6 +54,25 @@ WatchPlan _plan(
 
 List<String> _names(WatchPlan plan) => [for (final doc in plan.toUpload) doc.name];
 
+WatchedFolderView _view(
+  RuleStatus status, {
+  WatchFilter filter = WatchFilter.documents,
+  bool checked = true,
+}) => WatchedFolderView(
+  row: WatchedFolderRow(
+    id: 'download',
+    treeUri: 'content://com.android.externalstorage.documents/tree/primary%3ADownload',
+    label: 'Download',
+    filter: filter,
+    subfolders: true,
+    createdAt: _now,
+    checkedAt: checked ? _now : null,
+  ),
+  uploadedCount: 0,
+  status: status,
+  destinationLabel: 'Auto upload › Download',
+);
+
 void main() {
   group('watchMatches', () {
     final statement = _doc('Statement-0925.pdf', mime: 'application/pdf');
@@ -99,13 +120,22 @@ void main() {
   group('planUploads', () {
     test('sends what the filter takes and leaves the rest', () {
       final plan = _plan(
-        [_doc('Statement.pdf'), _doc('Memo.m4a'), _doc('.pending-Next.pdf')],
+        [
+          _doc('Statement.pdf'),
+          _doc('Memo.m4a'),
+          _doc('Photo.jpg'),
+          _doc('.pending-Next.pdf'),
+          _doc('Empty.zip', size: 0),
+        ],
         filter: WatchFilter.documents,
       );
       expect(_names(plan), ['Statement.pdf']);
       expect(plan.alreadyInDrive, isEmpty);
       expect(plan.settling, 0);
       expect(plan.gaveUp, 0);
+      // Hidden and empty files aren't counted as left out: no filter sends them.
+      expect(plan.leftOut, 2);
+      expect(_plan([_doc('Memo.m4a'), _doc('Photo.jpg')]).leftOut, 0);
     });
 
     test('a file changed less than a minute ago waits as settling', () {
@@ -202,5 +232,77 @@ void main() {
         _entry(listing.firstWhere((d) => d.id == row.documentId.value), WatchedFileState.skipped),
     ]);
     expect(plan.toUpload, isEmpty);
+  });
+
+  group('the row says what stayed on the phone', () {
+    test('a folder whose files the filter all leaves out says so', () {
+      final detail = watchedFolderDetail(_view(const RuleStatus(leftOut: 14)));
+      expect(detail, startsWith('0 uploaded to Auto upload › Download · checked '));
+      expect(detail, endsWith('. 14 files aren\'t documents or PDFs, so they stay on the phone.'));
+      expect(
+        watchedFolderDetail(_view(const RuleStatus(leftOut: 1), filter: WatchFilter.audio)),
+        endsWith('. 1 file isn\'t audio, so it stays on the phone.'),
+      );
+    });
+
+    test('files still settling and files that failed are named', () {
+      final detail = watchedFolderDetail(_view(const RuleStatus(failed: 3, settling: 1)));
+      expect(detail, contains('. 3 files couldn\'t upload. 1 new file goes up in a minute.'));
+      expect(
+        watchedFolderDetail(_view(const RuleStatus(settling: 2))),
+        endsWith('. 2 new files go up in a minute.'),
+      );
+    });
+
+    test('a folder with nothing left behind says only what went up', () {
+      final detail = watchedFolderDetail(_view(const RuleStatus()));
+      expect(detail, startsWith('0 uploaded to Auto upload › Download · checked '));
+      expect(detail, isNot(endsWith('.')));
+      expect(watchedFolderDetail(_view(const RuleStatus(), checked: false)), 'Not checked yet');
+    });
+
+    test('a status keeps what was left behind through a copy', () {
+      const status = RuleStatus(leftOut: 4, settling: 1, failed: 2);
+      final next = status.copyWith(done: 1);
+      expect((next.leftOut, next.settling, next.failed), (4, 1, 2));
+    });
+  });
+
+  test('Retry gives a folder\'s failed files their tries back, and only its own', () async {
+    final db = AppDatabase(NativeDatabase.memory());
+    addTearDown(db.close);
+    final given = _doc('Given up.pdf');
+    final once = _doc('Once.pdf');
+    final done = _doc('Done.pdf');
+    final other = WatchedFileRow(
+      ruleId: 'other',
+      documentId: given.id,
+      size: given.size,
+      modifiedAt: given.modifiedAt,
+      state: WatchedFileState.failed,
+      failures: watchMaxFailures,
+      updatedAt: _now,
+    );
+    await db.saveWatchedFiles([
+      for (final row in [
+        _entry(given, WatchedFileState.failed, failures: watchMaxFailures),
+        _entry(once, WatchedFileState.failed, failures: 1),
+        _entry(done, WatchedFileState.done, failures: 2),
+        other,
+      ])
+        row.toCompanion(false),
+    ]);
+
+    await db.resetWatchedFailures('bank');
+
+    final ledger = await db.watchedLedger('bank');
+    expect(ledger[given.id]!.failures, 0);
+    expect(ledger[given.id]!.state, WatchedFileState.failed);
+    expect(ledger[once.id]!.failures, 0);
+    expect(ledger[done.id]!.failures, 2);
+    expect((await db.watchedLedger('other'))[given.id]!.failures, watchMaxFailures);
+    final plan = _plan([given, once, done], ledger: ledger.values.toList());
+    expect(_names(plan), ['Given up.pdf', 'Once.pdf']);
+    expect(plan.gaveUp, 0);
   });
 }
