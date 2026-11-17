@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:handy_tdlib/api.dart' as td;
@@ -45,13 +47,23 @@ class _PasswordScreenState extends ConsumerState<PasswordScreen> {
   Widget build(BuildContext context) {
     final state = ref.watch(authStateProvider).value;
     final hint = state is td.AuthorizationStateWaitPassword ? state.passwordHint : '';
+    // Back to the number or QR code, for an account signed in by mistake.
+    void useAnother() {
+      setState(() => _busy = true);
+      unawaited(ref.read(authControllerProvider.notifier).startOver());
+    }
 
     return AuthLayout(
       title: 'Two-step verification',
       subtitle: const Text(
         'Your account has an extra password. Enter it to finish signing in.',
       ),
+      onBack: _busy ? null : useAnother,
       primary: BusyButton(label: 'Unlock', busy: _busy, onPressed: _submit),
+      secondary: TextButton(
+        onPressed: _busy ? null : useAnother,
+        child: const Text('Wrong account? Use another'),
+      ),
       children: [
         TextField(
           controller: _password,

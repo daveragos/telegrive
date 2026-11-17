@@ -215,6 +215,32 @@ void main() {
     expect(container.read(appPhaseProvider), AppPhase.welcome);
   });
 
+  test('a sign-in that reached the wrong account starts over at the number', () async {
+    final (container, telegram, prefs, _) = await start({});
+    await emit(
+      const td.AuthorizationStateWaitPassword(
+        passwordHint: '',
+        hasRecoveryEmailAddress: false,
+        hasPassportData: false,
+        recoveryEmailAddressPattern: '',
+      ),
+    );
+    expect(container.read(appPhaseProvider), AppPhase.password);
+
+    // Telegram ties the session to the account that took the QR code, so
+    // it is ended rather than asked for another code.
+    final startingOver = container.read(authControllerProvider.notifier).startOver();
+    await emit(const td.AuthorizationStateLoggingOut());
+    await emit(const td.AuthorizationStateClosed());
+    telegram.loggedOut.complete();
+    await startingOver;
+    await emit(const td.AuthorizationStateWaitPhoneNumber());
+
+    // Not taken for a session ended from another device.
+    expect(prefs.sessionEndedAt, isNull);
+    expect(container.read(appPhaseProvider), AppPhase.phone);
+  });
+
   test('without a saved drive the app starts at the splash', () async {
     final (container, _, _, _) = await start({
       'drive_chat_1': testChatId,

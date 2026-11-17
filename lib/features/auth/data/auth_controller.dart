@@ -152,6 +152,21 @@ class AuthController extends Notifier<AuthUiState> {
   Future<void> submitPassword(String password) =>
       _client.send<td.Ok>(td.CheckAuthenticationPassword(password: password));
 
+  /// Drops a sign-in that reached the wrong account, one waiting for that
+  /// account's password. Telegram ties the session to the account that
+  /// took its QR code and turns away a new code as already accepted, so
+  /// the session is ended and a new one starts at the number. The index of
+  /// a drive this phone had stays, as at any other step of signing in.
+  Future<void> startOver() async {
+    _signingOut = true;
+    try {
+      state = state.copyWith(startedSignIn: true, editingPhone: false);
+      await _client.logOut();
+    } finally {
+      _signingOut = false;
+    }
+  }
+
   /// Signs out of Telegram and removes every local trace of the drive. The
   /// files themselves stay safe in the channel.
   Future<void> signOut() async {
