@@ -59,14 +59,19 @@ class _FakeTelegram extends TelegramClient {
 }
 
 /// A channel holding [history], read 100 messages a page, newest first, as
-/// Telegram pages it. The [failOnCall]th request is turned away.
+/// Telegram pages it. The [failOnCall]th request is turned away. Pages
+/// pass over the messages in [holes], as TDLib does over holes in its copy
+/// of the history, while they are still there when asked for by number
+/// and in Telegram's count of files.
 class _Paged extends TelegramClient {
-  _Paged(List<td.Message> history, {this.failOnCall})
+  _Paged(List<td.Message> history, {this.failOnCall, this.holes = const {}})
     : _history = [...history]..sort((a, b) => b.id.compareTo(a.id)),
       super(SecureStore());
 
   final List<td.Message> _history;
   final int? failOnCall;
+  final Set<int> holes;
+  final List<List<int>> askedFor = [];
   int _calls = 0;
 
   @override
@@ -77,8 +82,22 @@ class _Paged extends TelegramClient {
     if (function is td.GetChatHistory) {
       if (++_calls == failOnCall) throw const TelegramException(400, 'CHANNEL_INVALID');
       final from = function.fromMessageId;
-      final page = _history.where((m) => from == 0 || m.id < from).take(function.limit);
+      final page = _history
+          .where((m) => (from == 0 || m.id < from) && !holes.contains(m.id))
+          .take(function.limit);
       return td.Messages(totalCount: _history.length, messages: page.toList()) as T;
+    }
+    if (function is td.GetChat) {
+      return channelChat().copyWith(lastMessage: _history.firstOrNull) as T;
+    }
+    if (function is td.GetChatMessageCount) {
+      return td.Count(count: _history.where((m) => m.content is td.MessageDocument).length) as T;
+    }
+    if (function is td.GetMessages) {
+      askedFor.add(function.messageIds);
+      final ids = function.messageIds.toSet();
+      final found = _history.where((m) => ids.contains(m.id)).toList();
+      return td.Messages(totalCount: found.length, messages: found) as T;
     }
     if (function is td.OpenChat || function is td.CloseChat) return const td.Ok() as T;
     throw UnsupportedError('$function');
@@ -259,12 +278,13 @@ void main() {
     Future<(ProviderContainer, AppDatabase, _Paged)> open(
       List<td.Message> history, {
       int? failOnCall,
+      Set<int> holes = const {},
     }) async {
       // ignore: invalid_use_of_visible_for_testing_member
       SharedPreferences.setMockInitialValues({});
       final prefs = await SharedPreferences.getInstance();
       final db = AppDatabase(NativeDatabase.memory());
-      final telegram = _Paged(history, failOnCall: failOnCall);
+      final telegram = _Paged(history, failOnCall: failOnCall, holes: holes);
       final container = ProviderContainer(
         overrides: [
           sharedPreferencesProvider.overrideWithValue(prefs),
@@ -305,6 +325,68 @@ void main() {
 
       expect(container.read(driveSyncProvider).error, isNotNull);
       expect(await db.knownMessageIds(), hasLength(200));
+    });
+
+    test('messages the history passes over are asked for by number', () async {
+      // TDLib's ids for a channel's messages are their numbers times 2^20.
+      int id(int number) => number << 20;
+      td.Message part(int number, int index) => documentMessage(
+        id(number),
+        index == 0
+            ? ManifestCodec.encodeFile(
+                FileManifest(
+                  id: 'film',
+                  name: 'Film.mp4',
+                  folderId: null,
+                  mimeType: 'video/mp4',
+                  size: 30,
+                  createdAt: at,
+                  modifiedAt: at,
+                  partCount: 3,
+                ),
+              ).text
+            : ManifestCodec.encodePart(
+                PartRecord(fileId: 'film', index: index, count: 3, size: 30),
+              ).text,
+        fileName: 'Film.mp4.00${index + 1}',
+      );
+      // Photos 1 to 300, a deleted message at 301, then a film in three
+      // parts; the history passes over 150 to 250 and the film's last two
+      // parts.
+      final history = [
+        for (var number = 1; number <= 300; number++) photo(id(number)),
+        part(302, 0),
+        part(303, 1),
+        part(304, 2),
+      ];
+      final holes = {
+        for (var number = 150; number <= 250; number++) id(number),
+        id(303),
+        id(304),
+      };
+      final (container, db, telegram) = await open(history, holes: holes);
+
+      await container.read(driveSyncProvider.notifier).fullSync();
+
+      expect(await db.knownMessageIds(), hasLength(303));
+      final film = (await db.fileById('film'))!;
+      expect((film.partsPresent, film.partCount), (3, 3));
+      // Only the numbers the history passed over, the deleted one with them.
+      expect(
+        telegram.askedFor.expand((ids) => ids).toSet(),
+        {...holes, id(301)},
+      );
+    });
+
+    test('a read that found every file asks for nothing by number', () async {
+      final (container, db, telegram) = await open([
+        for (var number = 1; number <= 120; number++) photo(number << 20),
+      ]);
+
+      await container.read(driveSyncProvider.notifier).fullSync();
+
+      expect(await db.knownMessageIds(), hasLength(120));
+      expect(telegram.askedFor, isEmpty);
     });
 
     test('a file read before its folder still lands hidden or in Private', () async {

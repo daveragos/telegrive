@@ -179,6 +179,17 @@ class DriveSync extends Notifier<SyncState> {
         await _repository.ingestAll(lot);
       }
 
+      // How many of the messages read hold a file, which a full read
+      // checks against Telegram's own count.
+      var files = 0;
+      void take(td.Message message) {
+        seen.add(message.id);
+        if (message.id > newest) newest = message.id;
+        if (message.content is td.MessageDocument) files++;
+        unwritten.add(message);
+        if (MessageIndexer.isAdopted(message)) adopted.add(message);
+      }
+
       try {
         // TDLib's history paging can return short pages (the first often
         // has a single message from its cache); only an empty page means
@@ -194,15 +205,21 @@ class DriveSync extends Notifier<SyncState> {
               break;
             }
             if (message.sendingState != null) continue;
-            seen.add(message.id);
-            if (message.id > newest) newest = message.id;
-            unwritten.add(message);
-            if (MessageIndexer.isAdopted(message)) adopted.add(message);
+            take(message);
           }
           if (unwritten.length >= writeEvery) await write();
           state = state.copyWith(scanned: seen.length);
           if (reachedKnown) break;
           from = page.messages.last.id;
+        }
+        if (full) {
+          for (final message in await _passedOver(chatId, seen, files: files)) {
+            if (message.sendingState == null && !seen.contains(message.id)) {
+              take(message);
+            }
+            if (unwritten.length >= writeEvery) await write();
+          }
+          state = state.copyWith(scanned: seen.length);
         }
       } finally {
         // What was read before a failure is kept too.
@@ -261,23 +278,97 @@ class DriveSync extends Notifier<SyncState> {
     }
   }
 
-  /// One page of the channel's history. Reading thousands of messages after
-  /// a reinstall is exactly when Telegram rate-limits, so waits it asks for
+  /// One page of the channel's history.
+  Future<td.Messages> _page(int chatId, int from) => _ask<td.Messages>(
+    td.GetChatHistory(
+      chatId: chatId,
+      fromMessageId: from,
+      offset: 0,
+      limit: 100,
+      onlyLocal: false,
+    ),
+  );
+
+  /// Messages of the channel the read passed over, when Telegram counts
+  /// more files in it than the [files] the read found among [seen]. TDLib
+  /// keeps a copy of the history, and pages over holes in that copy, left
+  /// by a database written by two processes at once say, as if the
+  /// messages weren't there. Each message number missing from what was
+  /// read is then asked for directly, a hundred at a time, which TDLib
+  /// fetches from Telegram; a number whose message was deleted comes back
+  /// with nothing. A check that fails leaves the read as it was.
+  Future<List<td.Message>> _passedOver(int chatId, Set<int> seen, {required int files}) async {
+    final found = <td.Message>[];
+    try {
+      return await _askPassedOver(chatId, seen, files: files, into: found);
+    } catch (e) {
+      debugPrint('[DriveSync] Checking the read against Telegram\'s count: $e');
+      return found;
+    }
+  }
+
+  Future<List<td.Message>> _askPassedOver(
+    int chatId,
+    Set<int> seen, {
+    required int files,
+    required List<td.Message> into,
+  }) async {
+    final counted = await _ask<td.Count>(
+      td.GetChatMessageCount(
+        chatId: chatId,
+        filter: const td.SearchMessagesFilterDocument(),
+        savedMessagesTopicId: 0,
+        returnLocal: false,
+      ),
+    );
+    if (counted.count <= files) return into;
+    final numbers = {
+      for (final id in seen)
+        if (id % _serverIdStep == 0) id ~/ _serverIdStep,
+    };
+    if (numbers.isEmpty) return into;
+    // Up to the channel's last message, which may itself be in a hole; the
+    // newest one read stands in when the channel can't be looked up.
+    var newest = numbers.reduce(math.max);
+    try {
+      final last = (await _client.send<td.Chat>(td.GetChat(chatId: chatId))).lastMessage?.id;
+      if (last != null && last % _serverIdStep == 0) {
+        newest = math.max(newest, last ~/ _serverIdStep);
+      }
+    } on TelegramException catch (e) {
+      debugPrint('[DriveSync] The channel\'s last message: $e');
+    }
+    final missing = [
+      for (var number = newest; number >= 1; number--)
+        if (!numbers.contains(number)) number * _serverIdStep,
+    ];
+    for (var start = 0; start < missing.length; start += 100) {
+      final reply = await _ask<td.Messages>(
+        td.GetMessages(
+          chatId: chatId,
+          messageIds: missing.sublist(start, math.min(start + 100, missing.length)),
+        ),
+      );
+      into.addAll(reply.messages);
+    }
+    debugPrint(
+      '[DriveSync] The history read found $files of ${counted.count} files; '
+      '${into.length} more messages were asked for directly',
+    );
+    return into;
+  }
+
+  /// TDLib's id for message number n of a channel is n times this.
+  static const int _serverIdStep = 1 << 20;
+
+  /// Sends [function] for a read. Reading thousands of messages after a
+  /// reinstall is exactly when Telegram rate-limits, so waits it asks for
   /// are sat out and brief network trouble is retried, rather than leaving
   /// the index half built.
-  Future<td.Messages> _page(int chatId, int from) async {
+  Future<T> _ask<T extends td.TdObject>(td.TdFunction function) async {
     for (var attempt = 1; ; attempt++) {
       try {
-        return await _client.send<td.Messages>(
-          td.GetChatHistory(
-            chatId: chatId,
-            fromMessageId: from,
-            offset: 0,
-            limit: 100,
-            onlyLocal: false,
-          ),
-          timeout: const Duration(seconds: 60),
-        );
+        return await _client.send<T>(function, timeout: const Duration(seconds: 60));
       } on TelegramException catch (e) {
         final wait = e.retryAfterSeconds;
         if (e.isFloodWait && wait != null && wait <= 600) {

@@ -388,6 +388,11 @@ value goes back onto the line exactly as it came.
   in one transaction, so the screens open meanwhile look again once a lot
   rather than after every message, which on a drive of thousands of
   files would make the read take many times longer than the reading.
+  TDLib keeps its own copy of the history and pages over holes in it as
+  if they weren't there, so a full read that finds fewer files than
+  Telegram counts in the channel asks for each message number it passed
+  over directly, a hundred at a time, and TDLib fetches those from
+  Telegram.
 - **Home before Telegram answers.** Each time the drive opens, the phone
   keeps the account's name and id and which channel holds the drive
   (never the phone number), and the next start shows Home from them and

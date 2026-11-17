@@ -367,6 +367,21 @@ class TelegramClient {
     return result;
   }
 
+  /// TDLib answers a request for messages by id with null for each one
+  /// that is gone, which the parser can't read; those are left out, so the
+  /// reply lists the messages there are.
+  @visibleForTesting
+  static Map<String, dynamic> withoutGoneMessages(Map<String, dynamic> map) {
+    final messages = map['messages'];
+    if (map['@type'] != 'messages' || messages is! List || !messages.contains(null)) {
+      return map;
+    }
+    return {
+      ...map,
+      'messages': [for (final message in messages) ?message],
+    };
+  }
+
   void _handlePayload(Map<String, dynamic> map) {
     // Leftovers from a client closed by sign-out still drain through the
     // shared receiver; they belong to nobody now.
@@ -376,7 +391,7 @@ class TelegramClient {
     if (map.containsKey('@extra')) {
       final completer = _pending.remove('${map['@extra']}');
       if (completer == null) return;
-      final object = td.convertMapToObject(map);
+      final object = td.convertMapToObject(withoutGoneMessages(map));
       if (object == null) {
         completer.completeError(
           TelegramException(500, 'Unreadable reply: ${map['@type']}'),
