@@ -2307,18 +2307,29 @@ class TransferQueue extends Notifier<TransfersState> {
 
   /// The copies made for uploads that nothing needs any more, with the
   /// bytes in each: those of transfers that are gone, those left when the
-  /// app was stopped as it made them, and the channel photo from setting up
-  /// the drive. Nothing in [pathsInUse] is among them.
+  /// app was stopped as it made them, on iOS the photo library's and the
+  /// file picker's copies, and the channel photo from setting up the
+  /// drive. Nothing in [pathsInUse] is among them.
   Future<List<Leftover>> leftovers() async {
-    final (roots, files) = await _leftoverPlaces();
-    return findLeftovers(roots: roots, files: files, keep: await pathsInUse());
+    final places = leftoverPlaces(await CopyFolders.find());
+    return findLeftovers(
+      roots: places.roots,
+      fileRoots: places.fileRoots,
+      files: places.files,
+      keep: await pathsInUse(),
+    );
   }
 
   /// Deletes the [leftovers], and returns the bytes it freed. It runs when
   /// the drive opens, from the daily trim and from Space's Clear.
   Future<int> clearLeftovers() async {
-    final (roots, files) = await _leftoverPlaces();
-    return sweepLeftovers(roots: roots, files: files, keep: await pathsInUse());
+    final places = leftoverPlaces(await CopyFolders.find());
+    return sweepLeftovers(
+      roots: places.roots,
+      fileRoots: places.fileRoots,
+      files: places.files,
+      keep: await pathsInUse(),
+    );
   }
 
   /// Deletes the split files joined back together to open them that no
@@ -2339,14 +2350,6 @@ class TransferQueue extends Notifier<TransfersState> {
       },
       minAge: olderThan,
       now: now,
-    );
-  }
-
-  static Future<(List<Directory>, List<File>)> _leftoverPlaces() async {
-    final temp = (await getTemporaryDirectory()).path;
-    return (
-      [for (final dir in leftoverDirs) Directory(p.join(temp, dir))],
-      [for (final name in leftoverFiles) File(p.join(temp, name))],
     );
   }
 

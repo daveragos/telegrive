@@ -75,4 +75,68 @@ void main() {
 
     expect(await sweep({}), 0);
   });
+
+  group('the iOS temporary folder', () {
+    late Directory tmp;
+
+    setUp(() => tmp = Directory(p.join(temp.path, 'tmp'))..createSync());
+
+    Future<int> sweepFiles(Set<String> keep) =>
+        sweepLeftovers(roots: const [], fileRoots: [tmp], keep: keep, now: now);
+
+    test('each gallery copy goes on its own, beside one a backup still sends', () async {
+      final sent = file('tmp/.image/A_o_IMG_0001.HEIC', 500);
+      final sending = file('tmp/.image/B_o_IMG_0002.HEIC', 70);
+      final video = file('tmp/.video/C_o_IMG_0003.MOV', 900);
+
+      expect(await sweepFiles({sending.path}), 1400);
+      expect(sent.existsSync(), isFalse);
+      expect(video.existsSync(), isFalse);
+      expect(sending.existsSync(), isTrue);
+      // The plugin writes into its folders again.
+      expect(Directory(p.join(tmp.path, '.video')).existsSync(), isTrue);
+    });
+
+    test('a picked copy goes, and one just made stays', () async {
+      final picked = file('tmp/9F2C/report.pdf', 40);
+      final copying = file('tmp/.video/D_o_IMG_0004.MOV', 60)
+        ..setLastModifiedSync(now.subtract(const Duration(minutes: 2)));
+
+      expect(await sweepFiles({}), 40);
+      expect(picked.existsSync(), isFalse);
+      expect(copying.existsSync(), isTrue);
+    });
+  });
+
+  group('the app\'s own copies', () {
+    const container = '/var/mobile/Containers/Data/Application/AB12';
+    const ios = CopyFolders(cache: '$container/Library/Caches', iosTemp: '$container/tmp');
+    const android = CopyFolders(cache: '/data/user/0/app/cache');
+
+    test('an iOS app\'s temporary folder is tmp, beside Library', () {
+      expect(iosTempBeside('$container/Library/Caches'), '$container/tmp');
+      expect(iosTempBeside('/data/user/0/app/cache'), isNull);
+    });
+
+    test('on iOS, what the gallery or the picker hands over is a copy', () {
+      expect(ios.holds('$container/tmp/.image/A_o_IMG_0001.HEIC'), isTrue);
+      expect(ios.holds('$container/tmp/9F2C/report.pdf'), isTrue);
+      expect(ios.holds('$container/Library/Caches/file_picker/a.txt'), isTrue);
+      expect(ios.holds('$container/Documents/notes.txt'), isFalse);
+    });
+
+    test('on Android, the photo itself is not', () {
+      expect(android.holds('/storage/emulated/0/DCIM/Camera/IMG_1.jpg'), isFalse);
+      expect(android.holds('/data/user/0/app/cache/file_picker/a.txt'), isTrue);
+    });
+
+    test('only iOS has a temporary folder swept file by file', () {
+      expect(leftoverPlaces(ios).fileRoots.map((d) => d.path), ['$container/tmp']);
+      expect(leftoverPlaces(android).fileRoots, isEmpty);
+      expect(
+        leftoverPlaces(android).roots.map((d) => d.path),
+        contains('/data/user/0/app/cache/telegrive-album-thumbs'),
+      );
+    });
+  });
 }

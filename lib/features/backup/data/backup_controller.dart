@@ -20,6 +20,7 @@ import '../../drive/data/drive_session.dart';
 import '../../drive/data/drive_sync.dart';
 import '../../drive/domain/drive_models.dart';
 import '../../network/data/mobile_data.dart';
+import '../../transfers/data/leftovers.dart';
 import '../../transfers/data/transfer_queue.dart';
 import '../../transfers/domain/transfer_error.dart';
 import 'background_backup.dart';
@@ -1535,6 +1536,10 @@ class BackupController extends Notifier<BackupState> {
     if (!_activeAssets.add(asset.id)) return _Outcome.skipped;
     final isVideo = asset.type == AssetType.video;
     String? thumbnail;
+    // The copy of the photo made for this upload, on iOS where the gallery
+    // copies each original out for the app, until the queue takes it over;
+    // whatever this pass ends with, it isn't left behind.
+    String? copy;
     try {
       // Going up already with an album uploaded from the gallery, which
       // records it as backed up once it lands: this pass leaves it to that.
@@ -1599,6 +1604,10 @@ class BackupController extends Notifier<BackupState> {
           'This photo is no longer on this phone.',
         );
       }
+      // Android 11+ hands back the original and iOS a copy; only copies
+      // are deleted.
+      final ownsSource = (await CopyFolders.find()).holds(file.path);
+      if (ownsSource) copy = file.path;
       final name = await _nameOf(asset, file);
       final size = await file.length();
 
@@ -1620,14 +1629,10 @@ class BackupController extends Notifier<BackupState> {
         }
       }
 
-      // Android 11+ hands back the original; only delete our own copies.
-      final temp = (await getTemporaryDirectory()).path;
-      final ownsSource = file.path.startsWith(temp);
       final allowance = await _allowance(isVideo: isVideo, bytes: size);
 
       if (small != null) {
         if (allowance != BackupAllowance.go) {
-          if (ownsSource) await _deleteQuietly(file.path);
           final held = _hold(isVideo: false);
           return recognised ? _Outcome.smallCopy : held;
         }
@@ -1651,14 +1656,15 @@ class BackupController extends Notifier<BackupState> {
         if (ids.isEmpty) {
           return await _fail(asset, record, 'Couldn\'t start the upload.');
         }
-        thumbnail = null; // The queue owns it now.
+        // The queue owns them now.
+        thumbnail = null;
+        copy = null;
         return await _follow(asset, ids.first, record, uploaded: (fileId) {
           fingerprints['$name|$size'] = (fileId: fileId, smallCopy: false);
         });
       }
 
       if (allowance != BackupAllowance.go) {
-        if (ownsSource) await _deleteQuietly(file.path);
         // The original may not go now; a photo can still go as a small
         // copy, as long as the monthly limit has room for it.
         return _smallCopyTier(asset)
@@ -1695,7 +1701,9 @@ class BackupController extends Notifier<BackupState> {
       if (ids.isEmpty) {
         return await _fail(asset, record, 'Couldn\'t start the upload.');
       }
-      thumbnail = null; // The queue owns it now.
+      // The queue owns them now.
+      thumbnail = null;
+      copy = null;
 
       return await _follow(asset, ids.first, record, uploaded: (fileId) {
         fingerprints['$name|$size'] = (fileId: fileId, smallCopy: false);
@@ -1707,6 +1715,7 @@ class BackupController extends Notifier<BackupState> {
     } finally {
       _activeAssets.remove(asset.id);
       if (thumbnail != null) await _deleteQuietly(thumbnail);
+      if (copy != null) await _deleteQuietly(copy);
     }
   }
 

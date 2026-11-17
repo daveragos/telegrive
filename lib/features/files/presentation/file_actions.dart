@@ -8,7 +8,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -46,6 +45,7 @@ import '../../drive/data/drive_session.dart';
 import '../../drive/domain/drive_models.dart';
 import '../../takeout/data/takeout_files.dart';
 import '../../takeout/data/takeout_import.dart';
+import '../../transfers/data/leftovers.dart';
 import '../../transfers/data/transfer_keep_alive.dart';
 import '../../transfers/data/transfer_policy.dart';
 import '../../transfers/data/transfer_queue.dart';
@@ -673,7 +673,8 @@ abstract final class FileActions {
     final picked = await FilePicker.pickFiles(
       type: mediaOnly ? FileType.media : FileType.any,
     );
-    final temp = (await getTemporaryDirectory()).path;
+    // The picker's copies, in the cache or, on iOS, the temporary folder.
+    final copyFolders = await CopyFolders.find();
     return [
       for (final file in picked)
         (
@@ -682,7 +683,7 @@ abstract final class FileActions {
           size: file.lengthSync(),
           openRead: file.path == null ? file.readAsByteStream : null,
           copyTo: null,
-          owned: file.path?.startsWith(temp) ?? false,
+          owned: file.path != null && copyFolders.holds(file.path!),
         ),
     ];
   }

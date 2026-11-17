@@ -422,6 +422,15 @@ value goes back onto the line exactly as it came.
   once neither wait to be copied nor fill the phone. Access to them lasts
   while the app runs: one still waiting when Android stops the app fails
   as no longer available, to be picked again.
+- Copies made for an upload are deleted once it is sent or called off.
+  Whatever no transfer still needs, and that hasn't changed in ten
+  minutes, is swept when the drive opens, once a day and from Space's
+  Clear: the folders the app copies into in its cache and, on iOS, every
+  file in the app's temporary folder, one by one. There the photo library
+  and the file picker put the copies they hand over for backup, album
+  uploads and picks: iOS gives an app no path into the library or another
+  app's files, so each is a copy. Android 11 and later hand over a photo
+  where it lies, and only the app's own copies are deleted.
 - **Upload a folder**, in the "+" sheet on Android, picks a folder in
   Android's folder picker and sends it up as a folder of its name inside
   the one open, with the folders inside it made in the drive as they are

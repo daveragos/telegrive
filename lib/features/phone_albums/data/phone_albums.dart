@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:photo_manager/photo_manager.dart';
 
 import '../../../infrastructure/storage/device_storage.dart';
+import '../../transfers/data/leftovers.dart';
 
 /// Albums in the phone's own gallery, and getting one ready to go up into
 /// the drive as a folder and an album of the same name.
@@ -268,6 +269,7 @@ Future<AlbumUploadPlan?> prepareAlbumUpload({
   required bool Function() cancelled,
 }) async {
   final temp = (await getTemporaryDirectory()).path;
+  final copyFolders = await CopyFolders.find();
   final total = await album.path.assetCountAsync;
   final uploads = <PreparedUpload>[];
   final inDrive = <String>[];
@@ -340,7 +342,7 @@ Future<AlbumUploadPlan?> prepareAlbumUpload({
         onProgress(++done, total);
         continue;
       }
-      final owned = file.path.startsWith(temp);
+      final owned = copyFolders.holds(file.path);
       copies = copies || owned;
       final name = await _nameOf(asset, file);
       final size = await file.length();
