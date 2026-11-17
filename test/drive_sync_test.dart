@@ -1,3 +1,4 @@
+import 'package:drift/drift.dart' show TableUpdateQuery;
 import 'package:drift/native.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -51,6 +52,33 @@ class _FakeTelegram extends TelegramClient {
       if (failures.isNotEmpty) throw failures.removeAt(0);
       final page = function.fromMessageId == 0 ? history : const <td.Message>[];
       return td.Messages(totalCount: history.length, messages: page) as T;
+    }
+    if (function is td.OpenChat || function is td.CloseChat) return const td.Ok() as T;
+    throw UnsupportedError('$function');
+  }
+}
+
+/// A channel holding [history], read 100 messages a page, newest first, as
+/// Telegram pages it. The [failOnCall]th request is turned away.
+class _Paged extends TelegramClient {
+  _Paged(List<td.Message> history, {this.failOnCall})
+    : _history = [...history]..sort((a, b) => b.id.compareTo(a.id)),
+      super(SecureStore());
+
+  final List<td.Message> _history;
+  final int? failOnCall;
+  int _calls = 0;
+
+  @override
+  Future<T> send<T extends td.TdObject>(
+    td.TdFunction function, {
+    Duration timeout = const Duration(seconds: 30),
+  }) async {
+    if (function is td.GetChatHistory) {
+      if (++_calls == failOnCall) throw const TelegramException(400, 'CHANNEL_INVALID');
+      final from = function.fromMessageId;
+      final page = _history.where((m) => from == 0 || m.id < from).take(function.limit);
+      return td.Messages(totalCount: _history.length, messages: page.toList()) as T;
     }
     if (function is td.OpenChat || function is td.CloseChat) return const td.Ok() as T;
     throw UnsupportedError('$function');
@@ -191,6 +219,110 @@ void main() {
     expect(await db.fileById(MessageIndexer.adoptedId(11)), isNotNull);
     expect(await db.fileById(MessageIndexer.adoptedId(10)), isNull);
     expect(prefs.lastSyncedMessageId(_chatId), 11);
+  });
+
+  group('a big drive', () {
+    final at = DateTime(2025, 3, 1);
+
+    td.Message folder(int id, String folderId, {bool private = false, bool trashed = false}) =>
+        textMessage(
+          id,
+          ManifestCodec.encodeFolder(
+            FolderManifest(
+              id: folderId,
+              name: folderId,
+              parentId: null,
+              createdAt: at,
+              modifiedAt: at,
+              trashedAt: trashed ? at : null,
+              private: private,
+            ),
+          ).text,
+        );
+    td.Message photo(int id, {String? folderId}) => documentMessage(
+      id,
+      ManifestCodec.encodeFile(
+        FileManifest(
+          id: 'p$id',
+          name: 'IMG_$id.jpg',
+          folderId: folderId,
+          mimeType: 'image/jpeg',
+          size: 9,
+          createdAt: at,
+          modifiedAt: at,
+        ),
+      ).text,
+      fileName: 'IMG_$id.jpg',
+      mimeType: 'image/jpeg',
+    );
+
+    Future<(ProviderContainer, AppDatabase, _Paged)> open(
+      List<td.Message> history, {
+      int? failOnCall,
+    }) async {
+      // ignore: invalid_use_of_visible_for_testing_member
+      SharedPreferences.setMockInitialValues({});
+      final prefs = await SharedPreferences.getInstance();
+      final db = AppDatabase(NativeDatabase.memory());
+      final telegram = _Paged(history, failOnCall: failOnCall);
+      final container = ProviderContainer(
+        overrides: [
+          sharedPreferencesProvider.overrideWithValue(prefs),
+          appDatabaseProvider.overrideWithValue(db),
+          telegramClientProvider.overrideWithValue(telegram),
+          driveSessionProvider.overrideWith(_Session.new),
+        ],
+      );
+      addTearDown(() async {
+        container.dispose();
+        await db.close();
+      });
+      return (container, db, telegram);
+    }
+
+    test('is written a lot at a time, so the screens watching it look again rarely', () async {
+      final (container, db, _) = await open([for (var id = 1; id <= 1200; id++) photo(id)]);
+      var writes = 0;
+      final watching = db
+          .tableUpdates(TableUpdateQuery.onTable(db.driveFiles))
+          .listen((_) => writes++);
+      addTearDown(watching.cancel);
+
+      await container.read(driveSyncProvider.notifier).fullSync();
+      await pumpEventQueue();
+
+      expect(await db.knownMessageIds(), hasLength(1200));
+      // 500, 500 and the last 200, rather than once for each of 1,200.
+      expect(writes, lessThanOrEqualTo(4));
+    });
+
+    test('what was read before a failure is kept', () async {
+      final (container, db, _) = await open(
+        [for (var id = 1; id <= 300; id++) photo(id)],
+        failOnCall: 3,
+      );
+      await container.read(driveSyncProvider.notifier).fullSync();
+
+      expect(container.read(driveSyncProvider).error, isNotNull);
+      expect(await db.knownMessageIds(), hasLength(200));
+    });
+
+    test('a file read before its folder still lands hidden or in Private', () async {
+      // Newest first: the files come before the folders they are in.
+      final (container, db, _) = await open([
+        folder(1, 'secret', private: true),
+        folder(2, 'old', trashed: true),
+        photo(3, folderId: 'secret'),
+        photo(4, folderId: 'old'),
+        photo(5),
+      ]);
+      await container.read(driveSyncProvider.notifier).fullSync();
+
+      expect((await db.fileById('p3'))!.inPrivate, isTrue);
+      expect((await db.fileById('p4'))!.hidden, isTrue);
+      final loose = (await db.fileById('p5'))!;
+      expect((loose.hidden, loose.inPrivate), (false, false));
+    });
   });
 
   group('forward filing', () {

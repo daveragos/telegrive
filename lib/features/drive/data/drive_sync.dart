@@ -92,6 +92,12 @@ class DriveSync extends Notifier<SyncState> {
 
   static const Duration _fullSyncInterval = Duration(hours: 24);
 
+  /// How many messages a read gathers before writing them into the index
+  /// together: a few seconds of reading on a phone, so the drive still
+  /// fills in as it is read.
+  @visibleForTesting
+  static int writeEvery = 500;
+
   /// Kept from [build]: closing the chat happens while the provider is
   /// disposed, when reading other providers is no longer allowed.
   late TelegramClient _client;
@@ -155,6 +161,7 @@ class DriveSync extends Notifier<SyncState> {
     final chatId = ref.read(driveSessionProvider)?.chatId;
     if (chatId == null) return;
     state = state.copyWith(running: true, scanned: 0);
+    final took = Stopwatch()..start();
 
     try {
       final stopAt = full ? 0 : _prefs.lastSyncedMessageId(chatId);
@@ -163,27 +170,43 @@ class DriveSync extends Notifier<SyncState> {
       var newest = 0;
       var from = 0;
 
-      // TDLib's history paging can return short pages (the first often has
-      // a single message from its cache); only an empty page means the end.
-      while (true) {
-        final page = await _page(chatId, from);
-        if (page.messages.isEmpty) break;
+      // Written [writeEvery] at a time, so the screens showing the index
+      // look again once for each lot rather than after every message.
+      final unwritten = <td.Message>[];
+      Future<void> write() async {
+        final lot = [...unwritten];
+        unwritten.clear();
+        await _repository.ingestAll(lot);
+      }
 
-        var reachedKnown = false;
-        for (final message in page.messages) {
-          if (message.id <= stopAt) {
-            reachedKnown = true;
-            break;
+      try {
+        // TDLib's history paging can return short pages (the first often
+        // has a single message from its cache); only an empty page means
+        // the end.
+        while (true) {
+          final page = await _page(chatId, from);
+          if (page.messages.isEmpty) break;
+
+          var reachedKnown = false;
+          for (final message in page.messages) {
+            if (message.id <= stopAt) {
+              reachedKnown = true;
+              break;
+            }
+            if (message.sendingState != null) continue;
+            seen.add(message.id);
+            if (message.id > newest) newest = message.id;
+            unwritten.add(message);
+            if (MessageIndexer.isAdopted(message)) adopted.add(message);
           }
-          if (message.sendingState != null) continue;
-          seen.add(message.id);
-          if (message.id > newest) newest = message.id;
-          await _repository.ingest(message);
-          if (MessageIndexer.isAdopted(message)) adopted.add(message);
+          if (unwritten.length >= writeEvery) await write();
+          state = state.copyWith(scanned: seen.length);
+          if (reachedKnown) break;
+          from = page.messages.last.id;
         }
-        state = state.copyWith(scanned: seen.length);
-        if (reachedKnown) break;
-        from = page.messages.last.id;
+      } finally {
+        // What was read before a failure is kept too.
+        await write();
       }
 
       if (full) {
@@ -216,6 +239,10 @@ class DriveSync extends Notifier<SyncState> {
       }
 
       _failedFullSyncs = 0;
+      debugPrint(
+        '[DriveSync] ${full ? 'Full read' : 'Catch-up'}: '
+        '${seen.length} messages in ${took.elapsedMilliseconds} ms',
+      );
       final now = DateTime.now();
       state = state.copyWith(
         running: false,

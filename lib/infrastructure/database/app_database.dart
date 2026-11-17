@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 
@@ -1080,7 +1081,7 @@ class AppDatabase extends _$AppDatabase {
 
   /// Replaces the albums [fileId] is in with [albumIds].
   Future<void> setFileAlbums(String fileId, List<String> albumIds) =>
-      transaction(() async {
+      _atomically(() async {
         await (delete(albumFiles)..where((a) => a.fileId.equals(fileId))).go();
         await batch(
           (b) => b.insertAll(albumFiles, [
@@ -1279,22 +1280,40 @@ class AppDatabase extends _$AppDatabase {
   // Writing the index
   // ---------------------------------------------------------------------------
 
+  static final Object _together = Object();
+
+  /// Runs [action] in one transaction, which the writes below that would
+  /// each open a transaction of their own share instead. The screens
+  /// watching the index then hear of everything [action] wrote once, when
+  /// it ends, rather than as each of those writes finishes.
+  Future<T> writeTogether<T>(Future<T> Function() action) =>
+      transaction(() => runZoned(action, zoneValues: {_together: true}));
+
+  /// [action] in a transaction of its own, or in [writeTogether]'s.
+  Future<T> _atomically<T>(Future<T> Function() action) =>
+      Zone.current[_together] == true ? action() : transaction(action);
+
   /// A folder's trash state or place in the tree may have changed, which
-  /// can show or hide everything beneath it.
-  Future<void> upsertFolder(FoldersCompanion folder) => transaction(() async {
-    await into(folders).insertOnConflictUpdate(folder);
-    await refreshHidden();
-  });
+  /// can show or hide everything beneath it; without [refreshHidden], the
+  /// caller works that out once it has written all it has.
+  Future<void> upsertFolder(FoldersCompanion folder, {bool refreshHidden = true}) =>
+      _atomically(() async {
+        await into(folders).insertOnConflictUpdate(folder);
+        if (refreshHidden) await this.refreshHidden();
+      });
 
   /// Inserts or refreshes one of a file's parts, keeping
   /// [DriveFiles.partsPresent] in step, and writes the file's row as
-  /// [write] allows. True when the row was written from [file].
+  /// [write] allows. True when the row was written from [file]. Without
+  /// [refreshHidden], the caller works out whether it is hidden or in
+  /// Private once it has written all it has.
   Future<bool> upsertFilePart(
     DriveFilesCompanion file,
     FilePartsCompanion part, {
     FileRowWrite write = FileRowWrite.always,
+    bool refreshHidden = true,
   }) {
-    return transaction(() async {
+    return _atomically(() async {
       // A message id belongs to exactly one part; if a caption edit moved it
       // (rare, but forwarded files get adopted this way) drop the stale row.
       Expression<bool> stale($FilePartsTable p) =>
@@ -1303,9 +1322,11 @@ class AppDatabase extends _$AppDatabase {
       final previousOwners = await (select(
         fileParts,
       )..where(stale)).map((p) => p.fileId).get();
-      await (delete(fileParts)..where(stale)).go();
-      for (final owner in previousOwners) {
-        await _recountParts(owner);
+      if (previousOwners.isNotEmpty) {
+        await (delete(fileParts)..where(stale)).go();
+        for (final owner in previousOwners) {
+          await _recountParts(owner);
+        }
       }
       final fileId = part.fileId.value;
       final writes = switch (write) {
@@ -1317,7 +1338,7 @@ class AppDatabase extends _$AppDatabase {
       if (writes) await into(driveFiles).insertOnConflictUpdate(file);
       await into(fileParts).insertOnConflictUpdate(part);
       await _recountParts(fileId);
-      await _refreshHiddenFile(fileId);
+      if (refreshHidden) await _refreshHiddenFile(fileId);
       return writes;
     });
   }

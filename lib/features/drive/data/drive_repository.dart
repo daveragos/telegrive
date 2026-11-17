@@ -111,19 +111,48 @@ class DriveRepository {
   /// waiting shows that change over what the message says, so a sync never
   /// makes a change made on this phone look undone.
   Future<void> ingest(td.Message message) async {
-    switch (await _withWaitingChange(MessageIndexer.entryFor(message))) {
+    if (await _write(message, refreshHidden: true) case FilePartEntry(:final part)) {
+      _ingested.add(part.fileId.value);
+    }
+  }
+
+  /// Writes what each of [messages] holds into the index, as [ingest] does,
+  /// in one transaction. The screens watching the index then look again
+  /// once for the lot rather than after each message, which on a drive of
+  /// thousands of files is where a full read would spend nearly all its
+  /// time. What is hidden or in Private is worked out once, at the end.
+  Future<void> ingestAll(List<td.Message> messages) async {
+    if (messages.isEmpty) return;
+    final fileIds = <String>[];
+    await _db.writeTogether(() async {
+      for (final message in messages) {
+        if (await _write(message, refreshHidden: false) case FilePartEntry(:final part)) {
+          fileIds.add(part.fileId.value);
+        }
+      }
+      await _db.refreshHidden();
+    });
+    fileIds.forEach(_ingested.add);
+  }
+
+  /// Writes [message]'s entry into the index, and returns it; null when
+  /// the message holds none. What is hidden or in Private is worked out
+  /// again when [refreshHidden] says so.
+  Future<IndexEntry?> _write(td.Message message, {required bool refreshHidden}) async {
+    final entry = await _withWaitingChange(MessageIndexer.entryFor(message));
+    switch (entry) {
       case FilePartEntry(:final file, :final part, :final albums, :final write):
-        if (await _db.upsertFilePart(file, part, write: write)) {
+        if (await _db.upsertFilePart(file, part, write: write, refreshHidden: refreshHidden)) {
           await _db.setFileAlbums(part.fileId.value, albums);
         }
-        _ingested.add(part.fileId.value);
       case FolderEntry(:final folder):
-        await _db.upsertFolder(folder);
+        await _db.upsertFolder(folder, refreshHidden: refreshHidden);
       case AlbumEntry(:final album):
         await _db.upsertAlbum(album);
       case null:
         break;
     }
+    return entry;
   }
 
   Future<void> forget(Iterable<int> messageIds) =>

@@ -383,7 +383,11 @@ value goes back onto the line exactly as it came.
   pull-to-refresh, and reads the channel in full daily, once after an
   update that changes how messages are indexed (`MessageIndexer.version`),
   and from Settings › Rebuild index. A full read drops what the channel no
-  longer has and empties what has been in the trash for 30 days.
+  longer has and empties what has been in the trash for 30 days. A read
+  writes what it has read into the index 500 messages at a time, each lot
+  in one transaction, so the screens open meanwhile look again once a lot
+  rather than after every message, which on a drive of thousands of
+  files would make the read take many times longer than the reading.
 - **Home before Telegram answers.** Each time the drive opens, the phone
   keeps the account's name and id and which channel holds the drive
   (never the phone number), and the next start shows Home from them and
