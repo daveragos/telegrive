@@ -255,10 +255,11 @@ class _Import extends ConsumerWidget {
                       '${state.withoutPreview.count == 1 ? 'has' : 'have'} no preview',
                   detail:
                       'Making previews fetches each and sends it again · '
-                      '${Formatters.bytes(state.withoutPreview.bytes)}, on Wi-Fi.',
+                      '${Formatters.bytes(state.withoutPreview.bytes)} each way.',
                   trailing: TextButton(
                     onPressed: () => confirmMakePreviews(
                       context,
+                      ref,
                       state.withoutPreview,
                       ref.read(takeoutImportProvider.notifier).makePreviews,
                     ),

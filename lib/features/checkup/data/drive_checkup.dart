@@ -469,10 +469,10 @@ class DriveCheckup extends AsyncNotifier<CheckupReport> {
 
   /// Makes previews for the photos and videos that have none, as
   /// [PreviewMaker.make] does.
-  Future<({BulkOutcome outcome, int noPicture})> makePreviews() async {
+  Future<({BulkOutcome outcome, int noPicture})> makePreviews({bool onMobileData = false}) async {
     final result = await ref
         .read(previewMakerProvider)
-        .make(await _db.driveFilesWithoutPreview());
+        .make(await _db.driveFilesWithoutPreview(), onMobileData: onMobileData);
     if (ref.mounted) ref.invalidateSelf();
     return result;
   }

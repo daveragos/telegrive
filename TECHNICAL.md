@@ -787,10 +787,12 @@ missing a part, whether every photo backed up from this phone is still
 there, what in the trash goes soon, which photos and videos have no
 preview, whether two-step verification is on and when an unused account
 is deleted, with a fix beside each that has one. Make previews, on
-Android and on Wi-Fi, fetches each photo or video without one, smallest
-first, makes a preview from it and sends its bytes again into the same
-message, since Telegram takes a document's preview only with the
-document. A file that makes no picture isn't tried again in that run.
+Android, fetches each photo or video without one, smallest first, makes
+a preview from it and sends its bytes again into the same message, since
+Telegram takes a document's preview only with the document. On mobile
+data it says how much data that takes and goes ahead only if asked to.
+A file that makes no picture isn't tried again in that run. The
+previews are in the channel, so every phone shows them.
 
 ## Known limits
 

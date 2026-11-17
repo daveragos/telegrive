@@ -376,11 +376,12 @@ class CheckupScreen extends ConsumerWidget {
             '${one ? 'has' : 'have'} no preview',
             detail:
                 '${one ? 'It shows' : 'They show'} as an icon. Making previews fetches each and '
-                'sends it again · ${Formatters.bytes(finding.bytes)}, on Wi-Fi.',
+                'sends it again · ${Formatters.bytes(finding.bytes)} each way.',
             fixes: [
               TextButton(
                 onPressed: () => confirmMakePreviews(
                   context,
+                  ref,
                   (count: finding.count, bytes: finding.bytes),
                   checkup.makePreviews,
                 ),

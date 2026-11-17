@@ -47,11 +47,15 @@ class PreviewMaker {
   ];
 
   /// Makes previews for [rows], smallest first, as a bulk change the screen
-  /// follows. Wi-Fi only, since each costs its size twice. Stops when the
-  /// phone runs short of room. Answers how it went, with how many files
-  /// made no picture.
-  Future<({BulkOutcome outcome, int noPicture})> make(List<FileRow> rows) async {
-    if (_ref.read(networkStatusProvider).metered) {
+  /// follows. On Wi-Fi unless [onMobileData] says the person agreed to
+  /// mobile data, since each costs its size twice. Stops when the phone
+  /// runs short of room. Answers how it went, with how many files made no
+  /// picture.
+  Future<({BulkOutcome outcome, int noPicture})> make(
+    List<FileRow> rows, {
+    bool onMobileData = false,
+  }) async {
+    if (!onMobileData && _ref.read(networkStatusProvider).metered) {
       throw const DriveException('Connect to Wi-Fi first: each file is fetched and sent again.');
     }
     final files = worthTrying(rows)..sort((a, b) => a.size.compareTo(b.size));

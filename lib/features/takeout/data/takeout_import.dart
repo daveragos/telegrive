@@ -1517,8 +1517,10 @@ class TakeoutImport extends Notifier<TakeoutState> {
   /// Gives the photos and videos the import sent without a preview one each,
   /// as [PreviewMaker.make] does. Answers how it went, with how many files
   /// made no picture.
-  Future<({BulkOutcome outcome, int noPicture})> makePreviews() async {
-    final result = await ref.read(previewMakerProvider).make(await _withoutPreview());
+  Future<({BulkOutcome outcome, int noPicture})> makePreviews({bool onMobileData = false}) async {
+    final result = await ref
+        .read(previewMakerProvider)
+        .make(await _withoutPreview(), onMobileData: onMobileData);
     schedule(immediate: true);
     return result;
   }
