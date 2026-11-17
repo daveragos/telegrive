@@ -887,6 +887,10 @@ class BackupController extends Notifier<BackupState> {
     final missing = await _db.backedUpButMissing();
     final verified = await _db.countBackedUpWithFile();
     if (missing.length > suspectAbove && missing.length > verified * suspectShare) {
+      debugPrint(
+        '[Backup] ${missing.length} of $verified photos backed up from this '
+        'phone have no whole file in the index; the index is doubted',
+      );
       return VerifyOutcome.suspect;
     }
     await _db.markAssetsMissing(missing);

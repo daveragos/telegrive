@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:drift/drift.dart' show Value;
@@ -23,13 +24,32 @@ import 'support/fake_telegram.dart';
 /// An account whose channel has a one-month auto-delete timer, no public
 /// link, no two-step verification and a six-month inactivity timer.
 class _Telegram extends FakeTelegram {
-  _Telegram({this.passwordFails = false});
+  _Telegram({this.passwordFails = false, this.slowAccount = false});
 
   final bool passwordFails;
+
+  /// Holds the account's two questions until the test answers them from
+  /// [waiting].
+  final bool slowAccount;
   final List<td.TdFunction> requests = [];
+  final Map<Type, Duration> timeouts = {};
+  final Map<Type, Completer<td.TdObject>> waiting = {};
   int autoDelete = 2592000;
   List<String> usernames = const [];
   int ttl = 180;
+
+  @override
+  Future<T> send<T extends td.TdObject>(
+    td.TdFunction function, {
+    Duration timeout = const Duration(seconds: 30),
+  }) async {
+    timeouts[function.runtimeType] = timeout;
+    if (slowAccount && (function is td.GetPasswordState || function is td.GetAccountTtl)) {
+      final asked = waiting[function.runtimeType] = Completer<td.TdObject>();
+      return await asked.future as T;
+    }
+    return super.send(function, timeout: timeout);
+  }
 
   @override
   Future<td.TdObject?> answer(td.TdFunction function) async {
@@ -98,6 +118,7 @@ void main() {
 
   Future<(ProviderContainer, _Telegram, AppDatabase)> open({
     bool passwordFails = false,
+    bool slowAccount = false,
     bool driveOpen = true,
     Map<String, Object> stored = const {},
   }) async {
@@ -105,7 +126,7 @@ void main() {
     SharedPreferences.setMockInitialValues(stored);
     final shared = await SharedPreferences.getInstance();
     final db = AppDatabase(NativeDatabase.memory());
-    final telegram = _Telegram(passwordFails: passwordFails);
+    final telegram = _Telegram(passwordFails: passwordFails, slowAccount: slowAccount);
     final container = ProviderContainer(
       retry: (_, _) => null,
       overrides: [
@@ -214,6 +235,28 @@ void main() {
     expect(report.find<TwoStepFinding>()!.severity, CheckSeverity.neutral);
     expect(report.find<ChannelFinding>()!.autoDeleteSeconds, 2592000);
     expect(report.find<AccountTtlFinding>()!.days, 180);
+  });
+
+  test('Telegram is asked everything at once, the account questions with a shorter wait', () async {
+    final (container, telegram, _) = await open(slowAccount: true);
+    final keep = container.listen(driveCheckupProvider, (_, _) {});
+    addTearDown(keep.close);
+    final checking = container.read(driveCheckupProvider.future);
+    await pumpEventQueue();
+
+    // Both are out before either answers, so a slow connection costs one
+    // wait rather than one after the other.
+    expect(telegram.waiting.keys, containsAll([td.GetPasswordState, td.GetAccountTtl]));
+    expect(telegram.timeouts[td.GetPasswordState], DriveCheckup.accountAnswerWithin);
+    expect(telegram.timeouts[td.GetAccountTtl], DriveCheckup.accountAnswerWithin);
+
+    for (final asked in telegram.waiting.values) {
+      asked.completeError(const TelegramException(408, 'Request timeout'));
+    }
+    final report = await checking;
+    expect(report.find<TwoStepFinding>()!.hasPassword, isNull);
+    expect(report.find<AccountTtlFinding>()!.days, isNull);
+    expect(report.find<ChannelFinding>()!.autoDeleteSeconds, 2592000);
   });
 
   test('with no drive open the check-up fails rather than report an empty all-clear', () async {

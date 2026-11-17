@@ -234,8 +234,9 @@ class CheckupReport {
 const List<int> accountTtlChoices = [30, 90, 180, 365, 548, 730];
 
 /// Looks the drive over: the channel, the index, split files, photo
-/// backup, the trash, previews and the account, each in its own try, so a check that
-/// fails only degrades its own row. Reading it runs the check-up;
+/// backup, the trash, previews and the account, all at once and each in
+/// its own try, so a check that fails only degrades its own row. Reading
+/// it runs the check-up;
 /// invalidating it runs it again. With no drive open there is nothing to
 /// look at, so it fails rather than report an empty all-clear.
 class DriveCheckup extends AsyncNotifier<CheckupReport> {
@@ -248,19 +249,35 @@ class DriveCheckup extends AsyncNotifier<CheckupReport> {
   /// only under way.
   static const Duration settlesWithin = Duration(hours: 24);
 
+  /// How long the account's own questions, two-step verification and the
+  /// inactive-account timer, wait for Telegram before saying it didn't
+  /// answer.
+  static const Duration accountAnswerWithin = Duration(seconds: 10);
+
   @override
   Future<CheckupReport> build() async {
     final session = ref.read(driveSessionProvider);
     if (session == null) throw driveNotOpen(ref.read(driveSnapshotProvider));
+    // All asked at once: on a slow connection the questions to Telegram
+    // would otherwise wait out their timeouts one after another.
+    final (channel, split, backup, trash, previews, twoStep, accountTtl) = await (
+      _channel(session.chatId),
+      _split(),
+      _backup(),
+      _trash(),
+      _previews(),
+      _twoStep(),
+      _accountTtl(),
+    ).wait;
     final findings = <CheckFinding>[
-      await _channel(session.chatId),
+      channel,
       _index(session.chatId),
-      ?await _split(),
-      await _backup(),
-      ?await _trash(),
-      ?await _previews(),
-      await _twoStep(),
-      await _accountTtl(),
+      ?split,
+      backup,
+      ?trash,
+      ?previews,
+      twoStep,
+      accountTtl,
     ];
     final at = DateTime.now();
     await ref.read(checkupLastRunProvider.notifier).set(at);
@@ -345,16 +362,21 @@ class DriveCheckup extends AsyncNotifier<CheckupReport> {
       );
     }
     var outcome = VerifyOutcome.skipped;
+    var verifiedCount = 0;
+    var missingCount = 0;
     try {
       outcome = await ref.read(backupControllerProvider.notifier).verify();
+      verifiedCount = await _db.countBackedUpWithFile();
+      missingCount = await _db.watchMissingCount().first;
     } catch (e) {
       debugPrint('[Checkup] backup: $e');
+      outcome = VerifyOutcome.skipped;
     }
     return BackupFinding(
       enabled: true,
       outcome: outcome,
-      verifiedCount: await _db.countBackedUpWithFile(),
-      missingCount: await _db.watchMissingCount().first,
+      verifiedCount: verifiedCount,
+      missingCount: missingCount,
       verifiedAt: _prefs.backupVerifiedAt,
     );
   }
@@ -396,7 +418,10 @@ class DriveCheckup extends AsyncNotifier<CheckupReport> {
 
   Future<TwoStepFinding> _twoStep() async {
     try {
-      final state = await _client.send<td.PasswordState>(const td.GetPasswordState());
+      final state = await _client.send<td.PasswordState>(
+        const td.GetPasswordState(),
+        timeout: accountAnswerWithin,
+      );
       return TwoStepFinding(state.hasPassword);
     } catch (e) {
       debugPrint('[Checkup] two-step: $e');
@@ -406,7 +431,10 @@ class DriveCheckup extends AsyncNotifier<CheckupReport> {
 
   Future<AccountTtlFinding> _accountTtl() async {
     try {
-      final ttl = await _client.send<td.AccountTtl>(const td.GetAccountTtl());
+      final ttl = await _client.send<td.AccountTtl>(
+        const td.GetAccountTtl(),
+        timeout: accountAnswerWithin,
+      );
       return AccountTtlFinding(ttl.days);
     } catch (e) {
       debugPrint('[Checkup] account timer: $e');
