@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:photo_manager/photo_manager.dart';
 
 import '../../core/platform/app_platform.dart';
+import 'disk_space.dart';
 
 /// The device's own storage, where downloads to it are kept.
 ///
@@ -46,8 +47,14 @@ class DeviceStorage {
     return Directory(p.join(downloads.path, _folder));
   }
 
-  /// Space left on the phone, or null when it can't be read.
+  /// Room on a computer's disk where the app keeps what it fetches, which
+  /// is where a download lands first.
+  static Future<({int free, int total})?> _desktopSpace() async =>
+      DiskSpace.of((await getApplicationCacheDirectory()).path);
+
+  /// Space left on the device, or null when it can't be read.
   Future<int?> freeBytes() async {
+    if (AppPlatform.isDesktop) return (await _desktopSpace())?.free;
     try {
       return await _channel.invokeMethod<int>('freeBytes');
     } catch (_) {
@@ -55,8 +62,9 @@ class DeviceStorage {
     }
   }
 
-  /// The size of the phone's storage, or null when it can't be read.
+  /// The size of the device's storage, or null when it can't be read.
   Future<int?> totalBytes() async {
+    if (AppPlatform.isDesktop) return (await _desktopSpace())?.total;
     try {
       return await _channel.invokeMethod<int>('totalBytes');
     } catch (_) {

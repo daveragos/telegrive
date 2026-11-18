@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -13,7 +12,7 @@ import '../../drive/data/previews.dart';
 import '../../transfers/data/transfer_queue.dart';
 import 'phone_usage.dart';
 
-/// Keeps what Telegrive leaves on the phone in check without being asked.
+/// Keeps what Telegrive leaves on the device in check without being asked.
 ///
 /// Once a day, from a little after the drive opens for as long as it stays
 /// open, Telegram's copies of files are trimmed to [openedFilesBudget],
@@ -33,7 +32,7 @@ class CacheJanitor extends Notifier<void> {
 
   Timer? _timer;
 
-  static bool get _supported => !kIsWeb && (Platform.isAndroid || Platform.isIOS);
+  static bool get _supported => !kIsWeb;
 
   @override
   void build() {
