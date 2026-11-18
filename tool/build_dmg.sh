@@ -45,6 +45,10 @@ done
 [ -e "$app/Contents/Frameworks/tdjson.framework" ] || fail "$app doesn't carry TDLib"
 
 codesign --verify --deep --strict "$app" || fail "$app isn't signed as a whole"
+# The file picker asks the signature for this before it opens, sandbox or
+# not, and every picker in the app fails without it.
+codesign -d --entitlements - --xml "$app" 2>/dev/null | grep -q 'com.apple.security.files.user-selected.read-write' ||
+  fail "$app lacks the user-selected files entitlement"
 
 stage="$(mktemp -d)"
 trap 'rm -rf "$stage"' EXIT
