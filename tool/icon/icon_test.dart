@@ -9,7 +9,8 @@
 // mark.png is the mark alone, filling its square, for BrandMark in the app.
 // icon.png is the full-bleed square (iOS, legacy Android); foreground.png is
 // the plane alone for Android's adaptive icon, and doubles as the themed
-// (monochrome) icon.
+// (monochrome) icon. desktop_icon.png is the mark on a rounded tile for
+// macOS, Windows and Linux.
 
 import 'dart:io';
 import 'dart:ui' as ui;
@@ -99,6 +100,18 @@ void main() {
     await renderMark(tester, 'icon', scale: _iconScale, tile: _tile);
   });
 
+  testWidgets('desktop icon', (tester) async {
+    // macOS draws no mask of its own, so the tile is the rounded square of
+    // Apple's icon grid: 824 of 1024, with a soft shadow below. Windows
+    // and Linux take the same picture.
+    final (image, box) = await loadMark(tester);
+    await render(
+      tester,
+      _DesktopIconPainter(_MarkPainter(image, box, scale: _iconScale)),
+      'desktop_icon',
+    );
+  });
+
   testWidgets('adaptive foreground', (tester) async {
     // flutter_launcher_icons insets the foreground by 16% on each side,
     // which is already Android's visible area, so the mark is drawn at the
@@ -141,6 +154,39 @@ class _Tile extends CustomPainter {
 
   @override
   bool shouldRepaint(_Tile old) => old.color != color;
+}
+
+/// [mark] on a white rounded square of Apple's icon grid, inset on a clear
+/// canvas, with a soft shadow below it.
+class _DesktopIconPainter extends CustomPainter {
+  const _DesktopIconPainter(this.mark);
+
+  final _MarkPainter mark;
+
+  /// The tile's side and corner radius as shares of the canvas.
+  static const _tileShare = 824 / 1024;
+  static const _radiusShare = 185.4 / 1024;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final side = size.shortestSide * _tileShare;
+    final tile = Rect.fromCenter(center: size.center(Offset.zero), width: side, height: side);
+    final shape = RRect.fromRectAndRadius(tile, Radius.circular(size.shortestSide * _radiusShare));
+    canvas.drawRRect(
+      shape.shift(Offset(0, size.shortestSide * 0.012)),
+      Paint()
+        ..color = const Color(0x40000000)
+        ..maskFilter = MaskFilter.blur(BlurStyle.normal, size.shortestSide * 0.012),
+    );
+    canvas.drawRRect(shape, Paint()..color = _tile);
+    canvas.save();
+    canvas.translate(tile.left, tile.top);
+    mark.paint(canvas, tile.size);
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(_DesktopIconPainter old) => mark.shouldRepaint(old.mark);
 }
 
 /// [image]'s mark, the part of it inside [box], centred on a square and

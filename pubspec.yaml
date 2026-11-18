@@ -87,3 +87,10 @@ flutter_launcher_icons:
   adaptive_icon_background: tool/icon/out/background.png
   adaptive_icon_foreground: tool/icon/out/foreground.png
   adaptive_icon_monochrome: tool/icon/out/foreground.png
+  macos:
+    generate: true
+    image_path: tool/icon/out/desktop_icon.png
+  windows:
+    generate: true
+    image_path: tool/icon/out/desktop_icon.png
+    icon_size: 256
