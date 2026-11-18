@@ -16,6 +16,27 @@ enum FileKind {
 
   final String label;
 
+  /// One file of the kind, as a list's Kind column names it.
+  String get singular => switch (this) {
+    FileKind.image => 'image',
+    FileKind.video => 'video',
+    FileKind.audio => 'audio',
+    FileKind.document => 'document',
+    FileKind.archive => 'archive',
+    FileKind.app => 'app',
+    FileKind.other => 'file',
+  };
+
+  /// What [fileName] is, as the Kind column says it: its extension and
+  /// [singular], as "PDF document", or the kind alone without one.
+  String describe(String fileName) {
+    final extension = p.extension(fileName).replaceFirst('.', '').toUpperCase();
+    if (extension.isEmpty || extension.length > 5) {
+      return '${singular[0].toUpperCase()}${singular.substring(1)}';
+    }
+    return '$extension $singular';
+  }
+
   static FileKind fromName(String? name) =>
       values.firstWhere((k) => k.name == name, orElse: () => FileKind.other);
 

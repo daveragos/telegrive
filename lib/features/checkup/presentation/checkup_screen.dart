@@ -7,6 +7,7 @@ import '../../../app/theme/tokens.dart';
 import '../../../core/format/formatters.dart';
 import '../../../core/widgets/adaptive_sheet.dart';
 import '../../../core/widgets/common.dart';
+import '../../../core/widgets/readable_width.dart';
 import '../../backup/data/backup_controller.dart';
 import '../../drive/data/drive_session.dart';
 import '../../drive/data/drive_sync.dart';
@@ -34,7 +35,7 @@ class CheckupScreen extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(title: const Text('Check my drive')),
       body: ListView(
-        padding: const EdgeInsets.only(bottom: Space.x4),
+        padding: readableListPadding(context, bottom: Space.x4),
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(Space.gutter, Space.s, Space.gutter, Space.l),

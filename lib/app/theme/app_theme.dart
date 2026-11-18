@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart' show CupertinoPageTransitionsBuilder;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../core/platform/app_platform.dart';
 import 'tokens.dart';
 
 /// Material themed to DESIGN.md: neutral surfaces, one accent, IBM Plex
@@ -82,6 +83,8 @@ abstract final class AppTheme {
 
     return ThemeData(
       useMaterial3: true,
+      // Tighter on a computer, where a pointer is finer than a finger.
+      visualDensity: AppPlatform.isDesktop ? VisualDensity.compact : VisualDensity.standard,
       brightness: brightness,
       colorScheme: scheme,
       fontFamily: fontFamily,

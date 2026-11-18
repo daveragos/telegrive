@@ -9,6 +9,7 @@ import '../../../core/format/formatters.dart';
 import '../../../core/platform/app_platform.dart';
 import '../../../core/widgets/common.dart';
 import '../../../core/widgets/file_visuals.dart';
+import '../../../core/widgets/readable_width.dart';
 import '../../../infrastructure/database/app_database.dart' show FolderSize;
 import '../../backup/data/free_up_space.dart';
 import '../../backup/presentation/free_up_space_sheet.dart';
@@ -79,7 +80,7 @@ class _SpaceScreenState extends ConsumerState<SpaceScreen> {
         // Built whole rather than as rows come into view, so it can open at
         // this phone's figures however long the lists above them are.
         body: SingleChildScrollView(
-          padding: const EdgeInsets.only(bottom: Space.x4),
+          padding: readableListPadding(context, bottom: Space.x4),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [

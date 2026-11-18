@@ -8,6 +8,7 @@ import '../../../core/format/formatters.dart';
 import '../../../core/platform/app_platform.dart';
 import '../../../core/widgets/common.dart';
 import '../../../core/widgets/file_visuals.dart';
+import '../../../core/widgets/readable_width.dart';
 import '../../../infrastructure/database/app_database.dart';
 import '../../../infrastructure/storage/device_storage.dart';
 import '../../backup/data/backup_controller.dart';
@@ -98,7 +99,7 @@ class TransfersScreen extends ConsumerWidget {
               message: 'Uploads and downloads show up here while they run.',
             )
           : ListView(
-              padding: const EdgeInsets.only(bottom: Space.x4),
+              padding: readableListPadding(context, bottom: Space.x4),
               children: [
                 if (backingUp) ...[
                   const SectionHeader('Photo backup'),

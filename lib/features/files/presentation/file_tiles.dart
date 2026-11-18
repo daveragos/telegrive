@@ -46,9 +46,14 @@ class FileListTile extends ConsumerWidget {
     this.subtitleColor,
     this.trailing,
     this.progress,
+    this.columns = false,
   });
 
   final DriveFile file;
+
+  /// Kind, size and date in columns on one line, under [FileColumnsHeader],
+  /// as the Files list has them on a computer.
+  final bool columns;
   final VoidCallback onTap;
   final VoidCallback? onLongPress;
   final VoidCallback? onMore;
@@ -88,10 +93,14 @@ class FileListTile extends ConsumerWidget {
       onLongPress: onLongPress,
       slot: _Selectable(
         selected: selected,
-        child: FileThumbnail(file: file),
+        size: columns ? FileColumns.slot : 44,
+        child: FileThumbnail(file: file, size: columns ? FileColumns.slot : 44),
       ),
       title: file.name,
       meta: subtitle ?? fileMetaLine(file),
+      cells: columns
+          ? [file.kind.describe(file.name), Formatters.bytes(file.size), Formatters.date(file.modifiedAt)]
+          : null,
       metaColor: subtitleColor,
       starred: file.starred,
       offline: offline,
@@ -117,9 +126,13 @@ class FolderListTile extends ConsumerWidget {
     this.subtitle,
     this.subtitleColor,
     this.trailing,
+    this.columns = false,
   });
 
   final DriveFolder folder;
+
+  /// Kind and date in columns on one line, as [FileListTile.columns].
+  final bool columns;
 
   /// Replaces the default "Folder · date" line.
   final String? subtitle;
@@ -151,9 +164,14 @@ class FolderListTile extends ConsumerWidget {
       onLongPress: onLongPress,
       offline: offline,
       pending: pending,
-      slot: _Selectable(selected: selected, child: const FolderIconTile()),
+      slot: _Selectable(
+        selected: selected,
+        size: columns ? FileColumns.slot : 44,
+        child: FolderIconTile(size: columns ? FileColumns.slot : 44),
+      ),
       title: folder.name,
       meta: subtitle ?? 'Folder · ${Formatters.date(folder.modifiedAt)}',
+      cells: columns ? ['Folder', '', Formatters.date(folder.modifiedAt)] : null,
       metaColor: subtitleColor,
       starred: folder.starred,
       trailing: trailing,
@@ -178,10 +196,15 @@ class _Row extends StatelessWidget {
     this.metaColor,
     this.trailing,
     this.progress,
+    this.cells,
   });
 
   final bool selected;
   final bool highlighted;
+
+  /// Kind, size and date, drawn in [FileColumns] on one line in place of
+  /// [meta]; null for the two-line row.
+  final List<String>? cells;
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
   final Widget slot;
@@ -202,9 +225,80 @@ class _Row extends StatelessWidget {
   /// line, or null for no bar.
   final double? progress;
 
+  /// The marks after a name: waiting to reach Telegram, starred, kept
+  /// offline.
+  List<Widget> _badges(Color color) => [
+    if (pending) ...[
+      Icon(Icons.schedule_rounded, size: 14, color: color),
+      const SizedBox(width: Space.xs),
+    ],
+    if (starred) ...[
+      Icon(Icons.star_rounded, size: 14, color: color),
+      const SizedBox(width: Space.xs),
+    ],
+    if (offline) ...[
+      Icon(Icons.offline_pin_rounded, size: 14, color: color),
+      const SizedBox(width: Space.xs),
+    ],
+  ];
+
+  /// One line: the picture, the name and its marks, then the [cells] in
+  /// their columns.
+  Widget _columnsRow(BuildContext context, List<String> cells) {
+    final colors = context.colors;
+    final meta = context.text.bodySmall?.copyWith(color: colors.text2, fontFeatures: tabularFigures);
+    return Padding(
+      padding: EdgeInsets.fromLTRB(Space.gutter, 6, onMore == null ? Space.gutter : Space.xs, 6),
+      child: Row(
+        children: [
+          slot,
+          const SizedBox(width: Space.m),
+          Expanded(
+            child: Row(
+              children: [
+                Flexible(
+                  child: Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: context.text.bodyMedium,
+                  ),
+                ),
+                const SizedBox(width: Space.s),
+                ..._badges(colors.text3),
+              ],
+            ),
+          ),
+          for (final (index, width) in FileColumns.widths.indexed)
+            Container(
+              width: width,
+              padding: FileColumns.paddings[index],
+              child: Text(
+                index < cells.length ? cells[index] : '',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: index == 1 ? TextAlign.end : TextAlign.start,
+                style: meta,
+              ),
+            ),
+          const SizedBox(width: Space.s),
+          ?trailing,
+          if (onMore != null)
+            IconButton(
+              onPressed: onMore,
+              visualDensity: VisualDensity.compact,
+              icon: Icon(Icons.more_vert_rounded, color: colors.text3, size: 20),
+              tooltip: 'More',
+            ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    final cells = this.cells;
     return _Tint(
       on: highlighted,
       child: Material(
@@ -214,7 +308,7 @@ class _Row extends StatelessWidget {
           onLongPress: onLongPress,
           // A right-click opens what ⋮ does, where the pointer is.
           onSecondaryTap: onMore,
-          child: Padding(
+          child: cells != null ? _columnsRow(context, cells) : Padding(
             padding: EdgeInsets.fromLTRB(
               Space.gutter,
               Space.s + 2,
@@ -308,10 +402,13 @@ class _Row extends StatelessWidget {
 
 /// Swaps the slot for a check while selected.
 class _Selectable extends StatelessWidget {
-  const _Selectable({required this.selected, required this.child});
+  const _Selectable({required this.selected, required this.child, this.size = 44});
 
   final bool selected;
   final Widget child;
+
+  /// The slot's side, the picture's.
+  final double size;
 
   @override
   Widget build(BuildContext context) {
@@ -321,8 +418,8 @@ class _Selectable extends StatelessWidget {
       child: selected
           ? Container(
               key: const ValueKey('selected'),
-              width: 44,
-              height: 44,
+              width: size,
+              height: size,
               decoration: BoxDecoration(
                 color: colors.accent,
                 borderRadius: BorderRadius.circular(Radii.thumb),
@@ -583,6 +680,89 @@ class FolderGridCard extends ConsumerWidget {
                 const SizedBox(width: Space.m),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The columns of the Files list on a computer, shared by its rows and
+/// [FileColumnsHeader] so they line up.
+abstract final class FileColumns {
+  /// The picture's side in a row.
+  static const double slot = 32;
+
+  /// Kind, size and date, in that order.
+  static const List<double> widths = [160, 100, 150];
+
+  /// Room inside each: the date keeps clear of the size, which ends at the
+  /// right of its column.
+  static const List<EdgeInsets> paddings = [
+    EdgeInsets.only(right: Space.m),
+    EdgeInsets.zero,
+    EdgeInsets.only(left: Space.xl),
+  ];
+
+  /// What each column sorts by, in that order.
+  static const List<SortField> fields = [SortField.type, SortField.size, SortField.modified];
+}
+
+/// The labels above the Files list's columns on a computer. Clicking one
+/// sorts by it, and clicking it again turns the order around.
+class FileColumnsHeader extends StatelessWidget {
+  const FileColumnsHeader({super.key, required this.sort, required this.onSort});
+
+  final SortOrder sort;
+  final void Function(SortField field) onSort;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    Widget label(SortField field, String text, {bool end = false}) {
+      final active = sort.field == field;
+      final style = context.text.labelMedium?.copyWith(
+        color: active ? colors.text : colors.text2,
+        fontWeight: active ? FontWeight.w600 : null,
+      );
+      return InkWell(
+        onTap: () => onSort(field),
+        borderRadius: BorderRadius.circular(Radii.thumb),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: Space.s),
+          child: Row(
+            mainAxisAlignment: end ? MainAxisAlignment.end : MainAxisAlignment.start,
+            children: [
+              Flexible(child: Text(text, style: style, overflow: TextOverflow.ellipsis)),
+              if (active)
+                Icon(
+                  sort.descending ? Icons.arrow_downward_rounded : Icons.arrow_upward_rounded,
+                  size: 14,
+                  color: colors.text2,
+                ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    const names = ['Kind', 'Size', 'Modified'];
+    return DecoratedBox(
+      decoration: BoxDecoration(border: Border(bottom: BorderSide(color: colors.line))),
+      child: Padding(
+        // Where the rows' names and columns start and end, the menu's width
+        // left at the end.
+        padding: const EdgeInsets.fromLTRB(Space.gutter + FileColumns.slot + Space.m, 0, Space.xs + 40, 0),
+        child: Row(
+          children: [
+            Expanded(child: Align(alignment: Alignment.centerLeft, child: label(SortField.name, 'Name'))),
+            for (final (index, width) in FileColumns.widths.indexed)
+              Container(
+                width: width,
+                padding: FileColumns.paddings[index],
+                child: label(FileColumns.fields[index], names[index], end: index == 1),
+              ),
+            const SizedBox(width: Space.s),
+          ],
         ),
       ),
     );

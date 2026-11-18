@@ -10,6 +10,7 @@ import '../../../core/platform/app_platform.dart';
 import '../../../core/widgets/adaptive_sheet.dart';
 import '../../../core/widgets/brand_mark.dart';
 import '../../../core/widgets/common.dart';
+import '../../../core/widgets/readable_width.dart';
 import '../../../infrastructure/notifications/app_notifications.dart';
 import '../../../infrastructure/storage/device_profile.dart';
 import '../../../infrastructure/storage/preferences.dart';
@@ -83,7 +84,7 @@ class SettingsScreen extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(title: const Text('Settings')),
       body: ListView(
-        padding: const EdgeInsets.only(bottom: Space.x4),
+        padding: readableListPadding(context, bottom: Space.x4),
         children: [
           if (session != null)
             Padding(

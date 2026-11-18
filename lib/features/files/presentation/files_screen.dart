@@ -737,8 +737,17 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
   /// The folders and files of this folder. With [afterForwarded], the
   /// Forwarded section sits above, so both groups keep their headers and
   /// the first follows that section's spacing.
+  /// The rows. On a computer they are a table: folders, then files, each
+  /// on one line under labels that sort it.
   List<Widget> _listSlivers(FolderContents data, {bool afterForwarded = false}) => [
-    if (data.folders.isNotEmpty && (data.files.isNotEmpty || afterForwarded))
+    if (AppPlatform.isDesktop)
+      SliverToBoxAdapter(
+        child: FileColumnsHeader(
+          sort: ref.watch(browsePreferencesProvider).sort,
+          onSort: ref.read(browsePreferencesProvider.notifier).sortBy,
+        ),
+      ),
+    if (!AppPlatform.isDesktop && data.folders.isNotEmpty && (data.files.isNotEmpty || afterForwarded))
       SliverToBoxAdapter(
         child: SectionHeader(
           'Folders',
@@ -751,6 +760,7 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
         final folder = data.folders[index];
         return FolderListTile(
           folder: folder,
+          columns: AppPlatform.isDesktop,
           selected: _folders.contains(folder.id),
           selecting: _selecting,
           onTap: () => _onFolderTap(folder),
@@ -759,7 +769,7 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
         );
       },
     ),
-    if (data.files.isNotEmpty && (data.folders.isNotEmpty || afterForwarded))
+    if (!AppPlatform.isDesktop && data.files.isNotEmpty && (data.folders.isNotEmpty || afterForwarded))
       const SliverToBoxAdapter(child: SectionHeader('Files')),
     SliverList.builder(
       key: _filesListKey,
@@ -770,6 +780,7 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
         return FileListTile(
           key: pointed ? _highlightKey : null,
           file: file,
+          columns: AppPlatform.isDesktop,
           highlighted: pointed && _tinted,
           selected: _files.contains(file.id),
           selecting: _selecting,
