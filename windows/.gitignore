@@ -15,3 +15,6 @@ x86/
 *.[Cc]ache
 # but keep track of directories ending in .cache
 !*.[Cc]ache/
+
+# TDLib for Windows, built by tool/build_tdlib_windows.ps1.
+tdlib/

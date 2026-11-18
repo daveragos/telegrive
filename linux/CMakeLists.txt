@@ -110,6 +110,17 @@ foreach(bundled_library ${PLUGIN_BUNDLED_LIBRARIES})
     COMPONENT Runtime)
 endforeach(bundled_library)
 
+# TDLib, built by tool/build_tdlib_linux.sh for the platform being built.
+if(NOT DEFINED FLUTTER_TARGET_PLATFORM)
+  set(FLUTTER_TARGET_PLATFORM "linux-x64")
+endif()
+set(TDJSON_LIBRARY "${CMAKE_CURRENT_SOURCE_DIR}/tdlib/${FLUTTER_TARGET_PLATFORM}/libtdjson.so")
+if(NOT EXISTS "${TDJSON_LIBRARY}")
+  message(FATAL_ERROR "${TDJSON_LIBRARY} is missing: run tool/build_tdlib_linux.sh first.")
+endif()
+install(FILES "${TDJSON_LIBRARY}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
+  COMPONENT Runtime)
+
 # Copy the native assets provided by the build.dart from all packages.
 set(NATIVE_ASSETS_DIR "${PROJECT_BUILD_DIR}native_assets/linux/")
 install(DIRECTORY "${NATIVE_ASSETS_DIR}"

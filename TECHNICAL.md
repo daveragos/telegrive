@@ -409,7 +409,9 @@ value goes back onto the line exactly as it came.
   phones with a changed system, stops the splash with what went wrong and
   Try again, as does TDLib not saying what state it is in within 45
   seconds; neither is ever taken for no key, which would start the
-  sign-in over.
+  sign-in over. On a computer any failure to read the key stops the
+  splash the same way, since there it means a locked or missing keychain
+  or keyring rather than a key that no longer opens.
 - **Never online.** Telegrive sets TDLib's `online` option off once signed
   in, so browsing the drive doesn't show the account as online to its
   contacts.
@@ -941,8 +943,51 @@ Apple team. The script builds the app afresh, since an unsigned build would
 otherwise keep the signature and provisioning profile of an earlier signed
 one, and a profile names its team and the devices it was made for.
 
-When handy_tdlib moves to a new TDLib, set `TD_COMMIT` in both scripts to
-match and run them again.
+On a Mac, before the first macOS build, with Xcode, CMake and gperf
+installed, run:
+
+```bash
+tool/build_tdlib_macos.sh
+```
+
+It builds the same TDLib commit for Apple silicon and Intel Macs as one
+framework, into `macos/Frameworks/tdjson.xcframework`, which git ignores.
+Runner links and embeds it as on iOS, and `openTdLibrary()` opens it from
+the app's `Contents/Frameworks`. Then `flutter run -d macos`. The Mac app
+runs without the App Sandbox, as an app from outside the App Store may, so
+watched folders and queued uploads stay readable after a restart; its
+database key goes in the login keychain.
+
+On Linux, TDLib is built inside an Ubuntu 22.04 container, so the library
+runs on any Linux with glibc 2.35 or newer whatever machine built it. It
+needs Docker, and runs from a Mac too, emulating x64 on Apple silicon
+slowly:
+
+```bash
+tool/build_tdlib_linux.sh x64        # or arm64
+```
+
+It writes `linux/tdlib/linux-<arch>/libtdjson.so`, which git ignores, with
+OpenSSL and the C++ runtime linked in; the Linux build installs it into
+the bundle's `lib` and stops if it is missing. Building the app needs
+libsecret's headers besides Flutter's own (`libsecret-1-dev` on Debian and
+Ubuntu), and running it a Secret Service keyring, GNOME Keyring or
+KWallet, for the database key.
+
+On Windows, with Visual Studio 2022 (Desktop development with C++), Git,
+CMake and Strawberry Perl installed, run in PowerShell:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tool/build_tdlib_windows.ps1
+```
+
+It builds `windows/tdlib/windows-x64/tdjson.dll`, which git ignores, with
+OpenSSL linked in and zlib and gperf from a vcpkg clone at a fixed tag;
+the Windows build copies it beside `Telegrive.exe` and stops if it is
+missing. Then `flutter run -d windows`.
+
+When handy_tdlib moves to a new TDLib, set `TD_COMMIT` in every
+`tool/build_tdlib_*` script to match and run them again.
 
 Tests and generated code:
 
@@ -1074,7 +1119,9 @@ app, and every feature is there for everyone.
 | --- | --- |
 | Android (arm64, armv7, x86, x86_64) | Supported |
 | iOS (arm64, and the Apple silicon simulator) | Released as an unsigned IPA to sideload, with TDLib built by `tool/build_tdlib_ios.sh`. Photo backup runs while the app is open; the features below that need Android are off. |
-| macOS | Not yet. |
+| macOS (Apple silicon and Intel, macOS 12 or later) | In development, with TDLib built by `tool/build_tdlib_macos.sh`. |
+| Windows (x64) | In development, with TDLib built by `tool/build_tdlib_windows.ps1` on Windows. |
+| Linux (x64, arm64) | In development, with TDLib built by `tool/build_tdlib_linux.sh`. |
 
 - **Newer TDLib.** The app builds TDLib itself, aligned for 16 KB pages, but
   stays on 1.8.36, the version `handy_tdlib`'s Dart API was generated from.
@@ -1082,6 +1129,11 @@ app, and every feature is there for everyone.
 - **iOS**: backup in the background, a share extension, and the features
   that use Android's own channels: watched folders, the Google Photos
   import, the drive in the system file picker, and the scanner and camera.
-- **macOS**, with a TDLib framework through the same FFI binding.
+- **Desktop** (#12): the drive client for mouse and keyboard, with drag
+  and drop, folder sync from the computer to the drive, and the drive in
+  Finder, File Explorer or the Linux file manager over WebDAV. On a
+  computer the app keeps its own copies in a scratch folder in its cache,
+  never in the temporary folder other apps share, and a lock file keeps a
+  second copy of the app away from TDLib's database.
 - **End-to-end encryption** of file contents and details, with a recovery
   passphrase.

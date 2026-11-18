@@ -87,6 +87,17 @@ if(PLUGIN_BUNDLED_LIBRARIES)
     COMPONENT Runtime)
 endif()
 
+# TDLib, built by tool/build_tdlib_windows.ps1 for the platform being built.
+if(NOT DEFINED FLUTTER_TARGET_PLATFORM)
+  set(FLUTTER_TARGET_PLATFORM "windows-x64")
+endif()
+set(TDJSON_LIBRARY "${CMAKE_CURRENT_SOURCE_DIR}/tdlib/${FLUTTER_TARGET_PLATFORM}/tdjson.dll")
+if(NOT EXISTS "${TDJSON_LIBRARY}")
+  message(FATAL_ERROR "${TDJSON_LIBRARY} is missing: run tool/build_tdlib_windows.ps1 first.")
+endif()
+install(FILES "${TDJSON_LIBRARY}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
+  COMPONENT Runtime)
+
 # Copy the native assets provided by the build.dart from all packages.
 set(NATIVE_ASSETS_DIR "${PROJECT_BUILD_DIR}native_assets/windows/")
 install(DIRECTORY "${NATIVE_ASSETS_DIR}"
