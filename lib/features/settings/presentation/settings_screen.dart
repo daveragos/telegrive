@@ -30,6 +30,7 @@ import '../../drive/data/edit_outbox.dart';
 import '../../files/data/browse_preferences.dart';
 import '../../files/presentation/file_actions.dart';
 import '../../lock/data/app_lock.dart';
+import '../../mount/presentation/drive_mount_section.dart';
 import '../../network/data/mobile_data.dart';
 import '../../network/data/proxies.dart';
 import '../../network/presentation/proxy_sheet.dart';
@@ -544,6 +545,7 @@ class SettingsScreen extends ConsumerWidget {
               ),
             ],
           ),
+          if (AppPlatform.isDesktop) const DriveMountSection(),
           const SectionHeader('About'),
           ListGroup(
             children: [

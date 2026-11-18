@@ -66,6 +66,19 @@ class Preferences {
   bool get foldersPaused => _prefs.getBool('folders_paused') ?? false;
   Future<void> setFoldersPaused(bool paused) => _prefs.setBool('folders_paused', paused);
 
+  /// The port and token of the drive's WebDAV server on a computer, kept so
+  /// its address, and a mount of it, stay the same from one start to the
+  /// next.
+  int? get davPort => _prefs.getInt('dav_port');
+  Future<void> setDavPort(int port) => _prefs.setInt('dav_port', port);
+  String? get davToken => _prefs.getString('dav_token');
+  Future<void> setDavToken(String token) => _prefs.setString('dav_token', token);
+
+  /// Whether the drive shows in Finder or File Explorer as soon as
+  /// Telegrive opens it.
+  bool get mountAtStart => _prefs.getBool('mount_at_start') ?? false;
+  Future<void> setMountAtStart(bool on) => _prefs.setBool('mount_at_start', on);
+
   bool get appLock => _prefs.getBool('app_lock') ?? false;
   Future<void> setAppLock(bool on) => _prefs.setBool('app_lock', on);
 

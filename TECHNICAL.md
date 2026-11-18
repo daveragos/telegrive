@@ -621,6 +621,39 @@ value goes back onto the line exactly as it came.
   and `SetThreadExecutionState` on Windows. The screen still turns off,
   and closing a laptop's lid still puts it to sleep. Each lets go if the
   app ends, since `caffeinate` and the inhibitor follow its process.
+- **The drive in Finder, File Explorer or Files**, from Settings on a
+  computer, mounts the drive as a disk with the WebDAV client each
+  system has: AppleScript's `mount volume` on a Mac, which shows it under
+  /Volumes, `net use` and the WebClient service on Windows, which gives
+  it a drive letter, and GVfs's `gio mount` on Linux. A WebDAV server in
+  the app (`DavServer`) answers it on 127.0.0.1 alone, on a port and
+  under a random token both kept from one start to the next, so the
+  address stays the same; Copy address gives it to VLC, Kodi or rclone.
+  - Paths come from the index. Two things of one name in a folder are
+    told apart as a download would be, `Report (2).pdf`, the first by id
+    keeping the name, so a name stays with its file. Private and Trash
+    stay out.
+  - Reading goes through the stream server, ranges and split files
+    included, fetched from Telegram as it is read.
+  - A file written in is kept in the scratch folder and shown where it
+    was put at once, and goes up as an ordinary upload once the system
+    has stopped writing it for three seconds: Explorer writes an empty
+    file first and the bytes after, and both systems lock, set times and
+    unlock around a write. Written over a drive file, it replaces it, and
+    the file before goes to Trash. An empty file is shown but not sent.
+  - New folders, renames and moves are the drive's own, and a delete
+    sends to Trash. What the systems and apps leave behind, Finder's
+    `._` files and `.DS_Store`, `Thumbs.db`, Office's lock files and an
+    app's temporary file while it saves, is kept on the computer and
+    never sent; a temporary file renamed into place is sent then, as
+    that is how apps save.
+  - Locks bind nothing; they are answered because Finder and Explorer
+    won't write without them. Copying inside the drive isn't offered.
+  - Show it whenever Telegrive starts mounts it as the drive opens, and
+    quitting unmounts it first, so the system isn't left with a disk
+    nobody answers for. Windows lets 50 MB through a drive letter at
+    most, and Allow files up to 4 GB raises that, with the permission
+    Windows asks for.
 - **Free up space** deletes the phone's copies of photos and videos that
   are safely in the drive, optionally keeping the last 30 or 90 days. A
   photo with only a small copy in the drive is never among them.
@@ -851,6 +884,12 @@ previews are in the channel, so every phone shows them.
   joins them back.
 - A video the phone's player can't decode, such as some MKV files, keeps
   its poster and offers Open with another app. A computer plays them.
+- The drive in Finder or File Explorer works only while Telegrive runs,
+  which the tray covers. Both download a whole file before opening it, so
+  a big video plays sooner in Telegrive, or from the address in VLC.
+  Through a Windows drive letter no file can pass 4 GB. Microsoft has
+  deprecated WebClient but still ships it; should it go, a file system
+  driver (WinFsp, macFUSE, libfuse) would take its place.
 - A group in slow mode takes one message at a time, so sending files there
   delivers the first only, and says so.
 - When Telegram asks for a pause longer than five minutes, Telegrive lets

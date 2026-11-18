@@ -49,6 +49,7 @@ dependencies:
   video_player_media_kit: ^2.0.0
   window_manager: ^0.5.1
   workmanager: ^0.10.10
+  xml: ^7.0.1
 
 dev_dependencies:
   flutter_test:

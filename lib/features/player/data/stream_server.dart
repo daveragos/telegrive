@@ -203,22 +203,35 @@ class StreamServer {
     String? Function(List<String> segments) fileIdIn, {
     void Function()? onBytes,
   }) async {
+    final segments = request.uri.pathSegments;
+    // The file picker asks this to tell a running app from a bridge file
+    // left behind by one that has gone. Without the token it gets the 404
+    // any stranger does.
+    if (segments.length == 2 && segments[0] == _token && segments[1] == 'ping') {
+      request.response.statusCode = HttpStatus.noContent;
+      await _close(request.response);
+      return;
+    }
+    final fileId = fileIdIn(segments);
+    final file = fileId == null ? null : await _repository.fileById(fileId);
+    if (file == null) {
+      request.response.statusCode = HttpStatus.notFound;
+      await _close(request.response);
+      return;
+    }
+    await serve(request, file, onBytes: onBytes);
+  }
+
+  /// Answers a GET or HEAD [request] for [file] and closes the response:
+  /// the whole file, or the range asked for, its parts joined when it is
+  /// split, fetched from Telegram as it is read. [onBytes] hears each time
+  /// the reader takes some. The drive in Finder and File Explorer reads
+  /// through here too.
+  Future<void> serve(HttpRequest request, DriveFile file, {void Function()? onBytes}) async {
     final response = request.response;
     try {
-      final segments = request.uri.pathSegments;
-      // The file picker asks this to tell a running app from a bridge file
-      // left behind by one that has gone. Without the token it gets the 404
-      // any stranger does.
-      if (segments.length == 2 && segments[0] == _token && segments[1] == 'ping') {
-        response.statusCode = HttpStatus.noContent;
-        return;
-      }
-      final fileId = fileIdIn(segments);
-      final file = fileId == null ? null : await _repository.fileById(fileId);
-      final parts = file == null
-          ? const <PartRow>[]
-          : await _repository.partsOf(file.id);
-      if (file == null || parts.isEmpty) {
+      final parts = await _repository.partsOf(file.id);
+      if (parts.isEmpty) {
         response.statusCode = HttpStatus.notFound;
         return;
       }
@@ -262,7 +275,7 @@ class StreamServer {
         ..contentType = ContentType.parse(file.mimeType)
         ..contentLength = end - start + 1
         ..set(HttpHeaders.acceptRangesHeader, 'bytes');
-      if (request.method == 'HEAD') return;
+      if (request.method == 'HEAD' || total == 0) return;
       await _pipe(parts, start, end, response, openEnded: openEnded, onBytes: onBytes);
     } catch (e) {
       // Usually the player closing a connection to seek elsewhere.
@@ -270,10 +283,14 @@ class StreamServer {
         debugPrint('[Stream] $e');
       }
     } finally {
-      try {
-        await response.close();
-      } catch (_) {}
+      await _close(response);
     }
+  }
+
+  static Future<void> _close(HttpResponse response) async {
+    try {
+      await response.close();
+    } catch (_) {}
   }
 
   /// Writes bytes [start]..[end] (inclusive) of a file made of [parts].

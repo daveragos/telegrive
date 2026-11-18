@@ -15,6 +15,7 @@ import '../features/backup/data/watched_folders.dart';
 import '../features/drive/data/drive_session.dart';
 import '../features/drive/data/drive_sync.dart';
 import '../features/drive/data/edit_outbox.dart';
+import '../features/mount/data/drive_mount_controller.dart';
 import '../features/network/data/proxies.dart';
 import '../features/network/data/proxy_link_intake.dart';
 import '../features/network/domain/proxy_link.dart';
@@ -117,9 +118,13 @@ class _TelegriveAppState extends ConsumerState<TelegriveApp>
   Future<AppExitResponse> didRequestAppExit() async {
     if (AppPlatform.isDesktop) {
       final client = ref.read(telegramClientProvider);
+      final mount = ref.read(driveMountProvider.notifier);
       await ref
           .read(pendingDeletesProvider.notifier)
           .appPaused()
+          // The disk goes first, so the system isn't left with one nobody
+          // answers for.
+          .then((_) => mount.letGo())
           .then((_) => client.shutDown())
           .timeout(_quitWithin, onTimeout: () {})
           .catchError((Object e) => debugPrint('[App] Quitting: $e'));
@@ -168,6 +173,8 @@ class _TelegriveAppState extends ConsumerState<TelegriveApp>
     // window does.
     ref.watch(desktopTrayProvider);
     ref.watch(desktopKeepAwakeProvider);
+    // The drive as a disk, shown as soon as it opens when that was asked.
+    ref.watch(driveMountProvider.select((m) => m.mounted));
     // Opens a drive this phone knows behind Home, as soon as Telegram is
     // signed in.
     ref.watch(driveOpenerProvider);
