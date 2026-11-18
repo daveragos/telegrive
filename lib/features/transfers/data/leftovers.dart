@@ -1,7 +1,8 @@
 import 'dart:io';
 
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
+
+import '../../../infrastructure/storage/app_dirs.dart';
 
 /// The folders in the app's cache where copies made for an upload wait:
 /// staged picks, split parts, thumbnails, those of a gallery album's photos,
@@ -26,25 +27,26 @@ const leftoverDirs = [
 /// channel photo handed to Telegram.
 const leftoverFiles = ['telegrive-channel-photo.jpg'];
 
-/// Where the app's own copies of files are: its cache, where it makes them
-/// itself, and on iOS its temporary folder, where the photo library and
-/// the file picker put the copies they hand over. iOS gives an app no path
-/// into the photo library or into another app's files, so everything they
-/// hand over there is a copy. Android 11 and later hand over the photo
-/// itself, where it lies.
+/// Where the app's own copies of files are: its scratch folder (see
+/// [scratchDirectory]), where it makes them itself, and on iOS its
+/// temporary folder, where the photo library and the file picker put the
+/// copies they hand over. iOS gives an app no path into the photo library
+/// or into another app's files, so everything they hand over there is a
+/// copy. Android 11 and later hand over the photo itself, where it lies,
+/// and a computer's file picker the file itself, wherever it is.
 class CopyFolders {
   const CopyFolders({required this.cache, this.iosTemp});
 
-  /// This phone's.
+  /// This device's.
   static Future<CopyFolders> find() async {
-    final cache = (await getTemporaryDirectory()).path;
+    final cache = (await scratchDirectory()).path;
     return CopyFolders(
       cache: cache,
       iosTemp: Platform.isIOS ? iosTempBeside(cache) : null,
     );
   }
 
-  /// The app's cache, which the [leftoverDirs] are in.
+  /// The app's scratch folder, which the [leftoverDirs] are in.
   final String cache;
 
   /// The app's temporary folder on iOS; null elsewhere.

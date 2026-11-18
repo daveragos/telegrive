@@ -2,9 +2,9 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 
 import '../../../infrastructure/media/media_probe.dart';
+import '../../../infrastructure/storage/app_dirs.dart';
 
 /// A photo the app's own decoder couldn't read, a RAW file say, decoded by
 /// the phone instead into a JPEG no side over [side] pixels and shown in
@@ -46,7 +46,7 @@ class _DecodedByPhoneState extends State<DecodedByPhone> {
     if (made != null && File(made).existsSync()) return made;
     // In the cache's previews folder, which is swept like the other
     // leftovers once nothing has used it for a while.
-    final dir = Directory(p.join((await getTemporaryDirectory()).path, 'previews', 'viewer'));
+    final dir = Directory(p.join((await scratchDirectory()).path, 'previews', 'viewer'));
     await dir.create(recursive: true);
     final out = p.join(dir.path, '${key.hashCode.toUnsigned(32)}.jpg');
     final copy = await MediaProbe.picture(widget.source, side: widget.side, out: out);

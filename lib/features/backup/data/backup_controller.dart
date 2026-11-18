@@ -7,12 +7,12 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 import 'package:photo_manager/photo_manager.dart';
 
 import '../../../core/files/file_kind.dart';
 import '../../../infrastructure/database/app_database.dart';
 import '../../../infrastructure/network/network_status.dart';
+import '../../../infrastructure/storage/app_dirs.dart';
 import '../../../infrastructure/storage/device_profile.dart';
 import '../../../infrastructure/storage/preferences.dart';
 import '../../drive/data/drive_repository.dart';
@@ -2144,7 +2144,7 @@ class BackupController extends Notifier<BackupState> {
         return null;
       }
       final dir = Directory(
-        p.join((await getTemporaryDirectory()).path, 'telegrive-small'),
+        p.join((await scratchDirectory()).path, 'telegrive-small'),
       );
       await dir.create(recursive: true);
       final file = File(p.join(dir.path, '${asset.id.hashCode}.jpg'));
@@ -2168,7 +2168,7 @@ class BackupController extends Notifier<BackupState> {
         return null;
       }
       final dir = Directory(
-        p.join((await getTemporaryDirectory()).path, 'telegrive-thumbs'),
+        p.join((await scratchDirectory()).path, 'telegrive-thumbs'),
       );
       await dir.create(recursive: true);
       final file = File(p.join(dir.path, '${asset.id.hashCode}.jpg'));

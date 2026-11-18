@@ -3,8 +3,9 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 import 'package:pdfrx/pdfrx.dart';
+
+import '../../../infrastructure/storage/app_dirs.dart';
 
 /// Where pdfrx keeps the blocks it has read of PDFs opened by range, one
 /// file per URL. They are pieces of the drive's own documents.
@@ -13,7 +14,7 @@ import 'package:pdfrx/pdfrx.dart';
 /// the one pdfrx picks for itself, so the place is known without starting
 /// the PDF engine, which measuring or clearing the blocks has no use for.
 Future<Directory> pdfBlockCache() async {
-  Pdfrx.cacheDirectoryPath ??= (await getTemporaryDirectory()).path;
+  Pdfrx.cacheDirectoryPath ??= (await scratchDirectory()).path;
   return Directory(p.join(Pdfrx.cacheDirectoryPath!, 'pdfrx.cache'));
 }
 

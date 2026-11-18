@@ -13,6 +13,7 @@ import '../../../core/files/file_kind.dart';
 import '../../../infrastructure/database/app_database.dart';
 import '../../../infrastructure/media/media_probe.dart';
 import '../../../infrastructure/network/network_status.dart';
+import '../../../infrastructure/storage/app_dirs.dart';
 import '../../../infrastructure/storage/device_profile.dart';
 import '../../../infrastructure/storage/device_storage.dart';
 import '../../../infrastructure/telegram/telegram_client.dart';
@@ -1483,7 +1484,7 @@ class TransferQueue extends Notifier<TransfersState> {
           source.path,
           video: kind == FileKind.video,
           out: p.join(
-            (await getTemporaryDirectory()).path,
+            (await scratchDirectory()).path,
             'telegrive-thumbs',
             'upload-${initial.id}.jpg',
           ),
@@ -1823,7 +1824,7 @@ class TransferQueue extends Notifier<TransfersState> {
       if (row.ownsSource && source != null) {
         await _deleteQuietly(File(source));
         final folder = File(source).parent;
-        final temp = (await getTemporaryDirectory()).path;
+        final temp = (await scratchDirectory()).path;
         if (leftoverDirs.any(
           (dir) => p.isWithin(p.join(temp, dir), folder.path),
         )) {
@@ -1847,7 +1848,7 @@ class TransferQueue extends Notifier<TransfersState> {
   }
 
   static Future<Directory> _stagingDir() async {
-    final temp = await getTemporaryDirectory();
+    final temp = await scratchDirectory();
     return Directory(p.join(temp.path, 'telegrive-staging'));
   }
 
@@ -1870,7 +1871,7 @@ class TransferQueue extends Notifier<TransfersState> {
   }
 
   Future<Directory> _partsDir(String transferId) async {
-    final temp = await getTemporaryDirectory();
+    final temp = await scratchDirectory();
     return Directory(p.join(temp.path, 'telegrive-parts', transferId));
   }
 

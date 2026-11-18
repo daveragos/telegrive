@@ -5,10 +5,10 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:handy_tdlib/api.dart' as td;
-import 'package:path_provider/path_provider.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../../infrastructure/database/app_database.dart';
+import '../../../infrastructure/storage/app_dirs.dart';
 import '../../../infrastructure/storage/preferences.dart';
 import '../../../infrastructure/telegram/telegram_client.dart';
 import '../../../infrastructure/telegram/telegram_exception.dart';
@@ -340,7 +340,7 @@ class DriveSetup extends Notifier<SetupState> {
   /// The bundled channel photo, copied to disk where TDLib can read it.
   static Future<String> _channelPhotoFile() async {
     final data = await rootBundle.load('assets/brand/channel_photo.jpg');
-    final dir = await getTemporaryDirectory();
+    final dir = await scratchDirectory();
     final file = File('${dir.path}/telegrive-channel-photo.jpg');
     await file.writeAsBytes(data.buffer.asUint8List(), flush: true);
     return file.path;

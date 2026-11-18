@@ -5,11 +5,11 @@ import 'package:drift/drift.dart' show Value;
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:handy_tdlib/api.dart' as td;
-import 'package:path_provider/path_provider.dart';
 
 import '../../../core/files/file_kind.dart';
 import '../../../infrastructure/database/app_database.dart';
 import '../../../infrastructure/network/network_status.dart';
+import '../../../infrastructure/storage/app_dirs.dart';
 import '../../../infrastructure/storage/preferences.dart';
 import '../../../infrastructure/telegram/message_number.dart';
 import '../../../infrastructure/telegram/telegram_client.dart';
@@ -85,7 +85,7 @@ class IndexCopies {
       final card = await _driveManifest(chatId, cardId);
       if (card == null) return _skip('the drive message is gone');
 
-      file = File('${(await getTemporaryDirectory()).path}/$fileName');
+      file = File('${(await scratchDirectory()).path}/$fileName');
       await file.writeAsBytes(gzipped, flush: true);
       final caption = ManifestCodec.encodeIndex(
         IndexRecord(

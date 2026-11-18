@@ -3,9 +3,9 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 import 'package:photo_manager/photo_manager.dart';
 
+import '../../../infrastructure/storage/app_dirs.dart';
 import '../../../infrastructure/storage/device_storage.dart';
 import '../../transfers/data/leftovers.dart';
 
@@ -268,7 +268,7 @@ Future<AlbumUploadPlan?> prepareAlbumUpload({
   required void Function(int done, int total) onProgress,
   required bool Function() cancelled,
 }) async {
-  final temp = (await getTemporaryDirectory()).path;
+  final temp = (await scratchDirectory()).path;
   final copyFolders = await CopyFolders.find();
   final total = await album.path.assetCountAsync;
   final uploads = <PreparedUpload>[];
