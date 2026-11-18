@@ -1,3 +1,4 @@
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -7,12 +8,14 @@ import '../../../app/theme/tokens.dart';
 import '../../../core/config/app_config.dart';
 import '../../../core/format/formatters.dart';
 import '../../../core/platform/app_platform.dart';
+import '../../../core/platform/file_manager.dart';
 import '../../../core/widgets/adaptive_sheet.dart';
 import '../../../core/widgets/brand_mark.dart';
 import '../../../core/widgets/common.dart';
 import '../../../core/widgets/readable_width.dart';
 import '../../../infrastructure/notifications/app_notifications.dart';
 import '../../../infrastructure/storage/device_profile.dart';
+import '../../../infrastructure/storage/device_storage.dart';
 import '../../../infrastructure/storage/preferences.dart';
 import '../../../infrastructure/telegram/message_number.dart';
 import '../../auth/data/auth_controller.dart';
@@ -431,6 +434,17 @@ class SettingsScreen extends ConsumerWidget {
           SectionHeader('This ${AppPlatform.device}'),
           ListGroup(
             children: [
+              if (AppPlatform.isDesktop)
+                ListTile(
+                  title: const Text('Download to'),
+                  subtitle: Text(DeviceStorage.location),
+                  trailing: IconButton(
+                    onPressed: () async => FileManager.open((await DeviceStorage.desktopRoot()).path),
+                    icon: Icon(Icons.folder_open_outlined, color: colors.text3),
+                    tooltip: FileManager.showIn,
+                  ),
+                  onTap: () => _chooseDownloadFolder(ref),
+                ),
               if (pickerSupported)
                 SwitchListTile(
                   title: const Text('Show the drive in other apps'),
@@ -572,6 +586,18 @@ class SettingsScreen extends ConsumerWidget {
   static void _openChannel(BuildContext context, WidgetRef ref, DriveSession session) {
     final latest = ref.read(preferencesProvider).lastSyncedMessageId(session.chatId);
     FileActions.openInTelegram(context, ref, latest > 0 ? latest : MessageNumber.idOf(1));
+  }
+
+  /// Picks the folder downloads go to on a computer.
+  static Future<void> _chooseDownloadFolder(WidgetRef ref) async {
+    final chosen = await FilePicker.getDirectoryPath(
+      dialogTitle: 'Download to',
+      initialDirectory: (await DeviceStorage.desktopRoot()).path,
+    );
+    if (chosen == null) return;
+    await ref.read(preferencesProvider).setDownloadFolder(chosen);
+    DeviceStorage.desktopFolder = chosen;
+    ref.invalidate(preferencesProvider);
   }
 
   void _showHowItWorks(BuildContext context) {

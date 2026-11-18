@@ -46,6 +46,11 @@ class Preferences {
   bool? get saveMemory => _prefs.getBool('save_memory');
   Future<void> setSaveMemory(bool on) => _prefs.setBool('save_memory', on);
 
+  /// Where downloads go on a computer, or null for Downloads › Telegrive.
+  String? get downloadFolder => _prefs.getString('download_folder');
+  Future<void> setDownloadFolder(String? path) =>
+      path == null ? _prefs.remove('download_folder') : _prefs.setString('download_folder', path);
+
   bool get appLock => _prefs.getBool('app_lock') ?? false;
   Future<void> setAppLock(bool on) => _prefs.setBool('app_lock', on);
 

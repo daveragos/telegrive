@@ -14,6 +14,7 @@ import 'core/platform/app_platform.dart';
 import 'features/backup/data/backup_worker.dart';
 import 'infrastructure/notifications/app_notifications.dart';
 import 'infrastructure/storage/device_profile.dart';
+import 'infrastructure/storage/device_storage.dart';
 import 'infrastructure/storage/preferences.dart';
 import 'infrastructure/telegram/telegram_client.dart';
 
@@ -27,6 +28,7 @@ Future<void> main() async {
   final (prefs, profile) = await (SharedPreferences.getInstance(), DeviceProfile.read()).wait;
   // On a computer, the window opens at its size and place from last time.
   await DesktopWindow.open(prefs);
+  DeviceStorage.desktopFolder = Preferences(prefs).downloadFolder;
   final container = ProviderContainer(
     overrides: [
       sharedPreferencesProvider.overrideWithValue(prefs),

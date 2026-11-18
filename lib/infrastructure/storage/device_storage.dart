@@ -6,21 +6,45 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:photo_manager/photo_manager.dart';
 
-/// The phone's own storage, where downloads to this phone are kept.
+import '../../core/platform/app_platform.dart';
+
+/// The device's own storage, where downloads to it are kept.
 ///
 /// * **Android** — `Download/Telegrive/…`, written through MediaStore, so the
 ///   Files app and every file manager see it.
 /// * **iOS** — the app's Documents folder, which the Files app shows as
 ///   On My iPhone › Telegrive.
+/// * **A computer** — `Downloads/Telegrive/…` in the person's home, or the
+///   folder they chose in Settings.
 ///
-/// Photos and videos can go to the gallery instead.
+/// Photos and videos can go to the gallery instead, on a phone.
 class DeviceStorage {
   static const _channel = MethodChannel('telegrive/device_storage');
   static const _folder = 'Telegrive';
 
+  /// The folder downloads go to on a computer, as chosen in Settings, or
+  /// null for Downloads › Telegrive. Set from preferences as the app
+  /// starts and when the choice changes.
+  static String? desktopFolder;
+
   /// Where saved files are, in words a person can follow to find them.
-  static String get location =>
-      Platform.isIOS ? 'Files › On My iPhone › Telegrive' : 'Download › Telegrive';
+  static String get location {
+    if (Platform.isIOS) return 'Files › On My iPhone › Telegrive';
+    if (!AppPlatform.isDesktop) return 'Download › Telegrive';
+    final chosen = desktopFolder;
+    if (chosen == null) return 'Downloads › Telegrive';
+    final home = Platform.environment['HOME'] ?? Platform.environment['USERPROFILE'];
+    return home != null && p.isWithin(home, chosen)
+        ? p.split(p.relative(chosen, from: home)).join(' › ')
+        : chosen;
+  }
+
+  /// The folder downloads go to on a computer.
+  static Future<Directory> desktopRoot() async {
+    if (desktopFolder case final chosen?) return Directory(chosen);
+    final downloads = await getDownloadsDirectory() ?? await getApplicationDocumentsDirectory();
+    return Directory(p.join(downloads.path, _folder));
+  }
 
   /// Space left on the phone, or null when it can't be read.
   Future<int?> freeBytes() async {
@@ -81,8 +105,8 @@ class DeviceStorage {
       return saved;
     }
 
-    final documents = await getApplicationDocumentsDirectory();
-    final dir = Directory(p.joinAll([documents.path, ...dirs]));
+    final root = AppPlatform.isDesktop ? await desktopRoot() : await getApplicationDocumentsDirectory();
+    final dir = Directory(p.joinAll([root.path, ...dirs]));
     await dir.create(recursive: true);
     final size = await File(source).length();
     var target = File(p.join(dir.path, fileName));

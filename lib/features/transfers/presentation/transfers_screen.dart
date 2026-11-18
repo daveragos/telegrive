@@ -6,6 +6,7 @@ import '../../../app/theme/file_style.dart';
 import '../../../app/theme/tokens.dart';
 import '../../../core/format/formatters.dart';
 import '../../../core/platform/app_platform.dart';
+import '../../../core/platform/file_manager.dart';
 import '../../../core/widgets/common.dart';
 import '../../../core/widgets/file_visuals.dart';
 import '../../../core/widgets/readable_width.dart';
@@ -283,11 +284,21 @@ class _SaveGroup extends ConsumerWidget {
     }
 
     if (!moving) {
+      // On a computer the newest file saved can be shown where it is.
+      final shown = AppPlatform.isDesktop
+          ? saved.where((t) => t.row.saveTo == SaveTarget.files && t.row.resultPath != null).lastOrNull
+          : null;
       return StatusLine(
         icon: Icons.download_done_rounded,
         color: colors.success,
         text: 'Saved ${Formatters.count(saved.length, 'file')}',
         detail: 'In $where',
+        trailing: shown == null
+            ? null
+            : TextButton(
+                onPressed: () => FileManager.reveal(shown.row.resultPath!),
+                child: Text(FileManager.showIn),
+              ),
       );
     }
 
