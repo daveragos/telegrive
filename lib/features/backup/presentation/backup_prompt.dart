@@ -2,12 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/theme/tokens.dart';
+import '../../../core/platform/app_platform.dart';
 import '../../../core/widgets/common.dart';
 import '../../../infrastructure/storage/preferences.dart';
 import '../data/backup_controller.dart';
 
 /// Asks once, right after the drive first opens: "Back up your photos?"
 Future<void> maybeAskToBackUp(BuildContext context, WidgetRef ref) async {
+  // A computer has no camera roll to back up.
+  if (!AppPlatform.isMobile) return;
   final prefs = ref.read(preferencesProvider);
   if (prefs.backupPromptShown || prefs.backupEnabled) return;
   await prefs.setBackupPromptShown();

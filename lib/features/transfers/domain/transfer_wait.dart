@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import '../../../core/format/formatters.dart';
+import '../../../core/platform/app_platform.dart';
 
 /// Why a transfer that will carry on by itself isn't moving yet. Waiting is
 /// not failing: the row stays in progress, says what it is waiting for, and
@@ -68,7 +69,7 @@ final class WaitingForRoom extends TransferWait {
 
   /// 'Needs 1.3 GB free · 180 MB free on this phone'.
   String get sentence =>
-      'Needs ${Formatters.bytes(needed)} free · ${Formatters.bytes(free)} free on this phone';
+      'Needs ${Formatters.bytes(needed)} free · ${Formatters.bytes(free)} free on ${AppPlatform.thisDevice}';
 
   @override
   bool holdsAt(DateTime now) => true;

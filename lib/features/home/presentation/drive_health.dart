@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../../core/format/formatters.dart';
 import '../../../infrastructure/database/app_database.dart'
     show TransferOrigin, TransferStatus;
+import '../../../core/platform/app_platform.dart';
 import '../../backup/data/backup_controller.dart';
 import '../../drive/data/drive_sync.dart';
 import '../../drive/data/edit_outbox.dart';
@@ -629,7 +630,7 @@ DriveHealth _nearlyFull(List<TransferItem> waiting) {
   return DriveHealth(
     icon: Icons.sd_card_alert_outlined,
     tone: HealthTone.neutral,
-    text: 'This phone is nearly full',
+    text: 'This ${AppPlatform.device} is nearly full',
     detail:
         '${Formatters.count(waiting.length, 'transfer')} '
         '${waiting.length == 1 ? 'is' : 'are'} waiting for ${Formatters.bytes(needed)} of room.',

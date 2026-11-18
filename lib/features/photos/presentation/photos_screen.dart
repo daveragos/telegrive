@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../app/theme/tokens.dart';
 import '../../../core/format/formatters.dart';
+import '../../../core/platform/app_platform.dart';
 import '../../../core/widgets/common.dart';
 import '../../../core/widgets/selection_bar.dart';
 import '../../backup/data/backup_controller.dart';
@@ -100,18 +101,19 @@ class _PhotosScreenState extends ConsumerState<PhotosScreen> {
                       tooltip: 'Albums',
                       icon: const Icon(Icons.photo_library_outlined),
                     ),
-                    IconButton(
-                      onPressed: () => context.push('/backup'),
-                      tooltip: 'Backup settings',
-                      icon: Icon(switch (backup.phase) {
-                        BackupPhase.off => Icons.cloud_off_outlined,
-                        BackupPhase.upToDate => Icons.cloud_done_outlined,
-                        BackupPhase.needsPermission => Icons.cloud_off_outlined,
-                        BackupPhase.stopped => Icons.cloud_off_outlined,
-                        BackupPhase.paused => Icons.pause_circle_outline_rounded,
-                        _ => Icons.cloud_sync_outlined,
-                      }),
-                    ),
+                    if (AppPlatform.isMobile)
+                      IconButton(
+                        onPressed: () => context.push('/backup'),
+                        tooltip: 'Backup settings',
+                        icon: Icon(switch (backup.phase) {
+                          BackupPhase.off => Icons.cloud_off_outlined,
+                          BackupPhase.upToDate => Icons.cloud_done_outlined,
+                          BackupPhase.needsPermission => Icons.cloud_off_outlined,
+                          BackupPhase.stopped => Icons.cloud_off_outlined,
+                          BackupPhase.paused => Icons.pause_circle_outline_rounded,
+                          _ => Icons.cloud_sync_outlined,
+                        }),
+                      ),
                     PopupMenuButton<_PhotosMenu>(
                       tooltip: 'More',
                       onSelected: (choice) => switch (choice) {
@@ -138,17 +140,18 @@ class _PhotosScreenState extends ConsumerState<PhotosScreen> {
                           value: _PhotosMenu.fromChat,
                           child: Text('Save photos from a Telegram chat'),
                         ),
-                        const PopupMenuItem(
-                          value: _PhotosMenu.duplicates,
-                          child: Text('Remove duplicate backups'),
-                        ),
+                        if (AppPlatform.isMobile)
+                          const PopupMenuItem(
+                            value: _PhotosMenu.duplicates,
+                            child: Text('Remove duplicate backups'),
+                          ),
                         if (files != null && files.isNotEmpty)
                           PopupMenuItem(
                             value: _PhotosMenu.download,
                             child: Text(switch (view.show) {
-                              PhotosShow.all => 'Download all to this phone',
-                              PhotosShow.photos => 'Download all photos to this phone',
-                              PhotosShow.videos => 'Download all videos to this phone',
+                              PhotosShow.all => 'Download all to ${AppPlatform.thisDevice}',
+                              PhotosShow.photos => 'Download all photos to ${AppPlatform.thisDevice}',
+                              PhotosShow.videos => 'Download all videos to ${AppPlatform.thisDevice}',
                             }),
                           ),
                       ],

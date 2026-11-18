@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import 'package:photo_manager/photo_manager.dart';
 
 import '../../../core/format/formatters.dart';
+import '../../../core/platform/app_platform.dart';
 import '../../../infrastructure/database/app_database.dart';
 import '../../../infrastructure/storage/device_storage.dart';
 import '../../../infrastructure/storage/preferences.dart';
@@ -138,7 +139,8 @@ void _afterEachPass(Ref ref) => ref.watch(
 /// It reads the whole photo library, so it is worked out again only when a
 /// backup pass ends.
 final freeableProvider = FutureProvider.autoDispose<Freeable>((ref) async {
-  if (kIsWeb) return Freeable.none;
+  // A computer backs up no photo library, so it has none to free.
+  if (kIsWeb || !AppPlatform.isMobile) return Freeable.none;
   _afterEachPass(ref);
   final safe = await ref.watch(appDatabaseProvider).safelyBackedUp();
   if (safe.isEmpty) return Freeable.none;

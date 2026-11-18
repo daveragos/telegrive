@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../app/theme/tokens.dart';
 import '../../../core/format/formatters.dart';
+import '../../../core/platform/app_platform.dart';
 import '../../../core/widgets/common.dart';
 import '../../../infrastructure/database/app_database.dart' show SaveTarget, TransferRow;
 import '../../files/presentation/file_actions.dart';
@@ -41,12 +42,12 @@ class OfflineScreen extends ConsumerWidget {
       body: AsyncView(
         value: overview,
         data: (overview) => overview.pins.isEmpty
-            ? const EmptyState(
+            ? EmptyState(
                 icon: Icons.offline_pin_outlined,
                 title: 'Nothing kept offline yet',
                 message:
                     'Choose Make available offline from a file or folder\'s menu and it '
-                    'stays on this phone.',
+                    'stays on ${AppPlatform.thisDevice}.',
               )
             : ListView(
                 padding: const EdgeInsets.only(top: Space.s, bottom: Space.x4),
@@ -66,7 +67,7 @@ class OfflineScreen extends ConsumerWidget {
                   ),
                   const SizedBox(height: Space.m),
                   const ListGroup(children: [_WifiOnlySwitch()]),
-                  const SectionHeader('Kept on this phone'),
+                  SectionHeader('Kept on ${AppPlatform.thisDevice}'),
                   ListGroup(
                     children: [for (final pin in overview.pins) _PinRow(pin: pin)],
                   ),
@@ -80,7 +81,7 @@ class OfflineScreen extends ConsumerWidget {
     final ok = await showConfirmDialog(
       context,
       title: 'Stop keeping files offline?',
-      message: 'Their copies on this phone are removed. The files stay in your drive.',
+      message: 'Their copies on ${AppPlatform.thisDevice} are removed. The files stay in your drive.',
       confirmLabel: 'Remove',
     );
     if (ok) await ref.read(offlineSyncProvider.notifier).removeAll();
@@ -172,7 +173,7 @@ class _Summary extends ConsumerWidget {
         color: colors.success,
         text:
             '${Formatters.count(o.keptFiles, 'file')} · ${Formatters.bytes(o.keptBytes)} '
-            'on this phone',
+            'on ${AppPlatform.thisDevice}',
       ),
     };
   }
@@ -277,7 +278,7 @@ class _PinRow extends ConsumerWidget {
       return (
         text: pin.kept > 0
             ? 'Kept · ${Formatters.bytes(pin.keptBytes)}'
-            : 'Not on this phone yet · ${Formatters.bytes(pin.bytes)}',
+            : 'Not on ${AppPlatform.thisDevice} yet · ${Formatters.bytes(pin.bytes)}',
         failed: false,
       );
     }

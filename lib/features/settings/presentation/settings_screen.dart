@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../app/theme/tokens.dart';
 import '../../../core/config/app_config.dart';
 import '../../../core/format/formatters.dart';
+import '../../../core/platform/app_platform.dart';
 import '../../../core/widgets/brand_mark.dart';
 import '../../../core/widgets/common.dart';
 import '../../../infrastructure/notifications/app_notifications.dart';
@@ -126,28 +127,29 @@ class SettingsScreen extends ConsumerWidget {
           const SectionHeader('Drive'),
           ListGroup(
             children: [
-              ListTile(
-                title: const Text('Photo backup'),
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    trailingValue(switch (backup.phase) {
-                      BackupPhase.off => 'Off',
-                      BackupPhase.upToDate => 'Up to date',
-                      BackupPhase.uploading =>
-                        '${Formatters.number(backup.remaining)} left',
-                      BackupPhase.waitingForWifi => 'Waiting for Wi-Fi',
-                      BackupPhase.waitingForBudget => 'Limit reached',
-                      BackupPhase.paused => 'Paused',
-                      BackupPhase.needsPermission => 'Needs access',
-                      BackupPhase.stopped => 'Stopped',
-                      _ => 'On',
-                    }),
-                    Icon(Icons.chevron_right_rounded, color: colors.text3),
-                  ],
+              if (AppPlatform.isMobile)
+                ListTile(
+                  title: const Text('Photo backup'),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      trailingValue(switch (backup.phase) {
+                        BackupPhase.off => 'Off',
+                        BackupPhase.upToDate => 'Up to date',
+                        BackupPhase.uploading =>
+                          '${Formatters.number(backup.remaining)} left',
+                        BackupPhase.waitingForWifi => 'Waiting for Wi-Fi',
+                        BackupPhase.waitingForBudget => 'Limit reached',
+                        BackupPhase.paused => 'Paused',
+                        BackupPhase.needsPermission => 'Needs access',
+                        BackupPhase.stopped => 'Stopped',
+                        _ => 'On',
+                      }),
+                      Icon(Icons.chevron_right_rounded, color: colors.text3),
+                    ],
+                  ),
+                  onTap: () => context.push('/backup'),
                 ),
-                onTap: () => context.push('/backup'),
-              ),
               ListTile(
                 title: const Text('Transfers'),
                 trailing: Icon(Icons.chevron_right_rounded, color: colors.text3),
@@ -182,7 +184,7 @@ class SettingsScreen extends ConsumerWidget {
               ),
               ListTile(
                 title: const Text('Download everything'),
-                subtitle: const Text('Every file, onto this phone'),
+                subtitle: Text('Every file, onto ${AppPlatform.thisDevice}'),
                 trailing: Icon(Icons.download_rounded, size: 20, color: colors.text3),
                 onTap: summary == null || summary.fileCount == 0
                     ? null
@@ -238,40 +240,42 @@ class SettingsScreen extends ConsumerWidget {
               ),
             ],
           ),
-          const SectionHeader('Mobile data'),
-          ListGroup(
-            children: [
-              _MonthlyLimit(data: mobileData),
-              if (!mobileData.failed)
-                ListTile(
-                  title: Text(
-                    mobileData.renewDay == 1
-                        ? 'This month'
-                        : 'Since the ${Formatters.dayOfMonth(mobileData.renewDay)}',
+          if (AppPlatform.isMobile) ...[
+            const SectionHeader('Mobile data'),
+            ListGroup(
+              children: [
+                _MonthlyLimit(data: mobileData),
+                if (!mobileData.failed)
+                  ListTile(
+                    title: Text(
+                      mobileData.renewDay == 1
+                          ? 'This month'
+                          : 'Since the ${Formatters.dayOfMonth(mobileData.renewDay)}',
+                    ),
+                    subtitle: Text(
+                      mobileData.measured
+                          ? '${Formatters.bytes(mobileData.mobileBytes)} on mobile data · '
+                                '${Formatters.bytes(mobileData.wifiBytes)} on Wi-Fi'
+                          : 'Measuring',
+                      style: context.text.bodySmall?.copyWith(fontFeatures: tabularFigures),
+                    ),
                   ),
-                  subtitle: Text(
-                    mobileData.measured
-                        ? '${Formatters.bytes(mobileData.mobileBytes)} on mobile data · '
-                              '${Formatters.bytes(mobileData.wifiBytes)} on Wi-Fi'
-                        : 'Measuring',
-                    style: context.text.bodySmall?.copyWith(fontFeatures: tabularFigures),
+                SwitchListTile(
+                  title: const Text('Big transfers wait for Wi-Fi'),
+                  // A non-breaking hyphen, so a wrapped line never ends in 'Wi-'.
+                  subtitle: const Text(
+                    'Uploads and downloads of 200 MB or more pause on mobile data and '
+                    'carry on over Wi\u2011Fi. A phone\'s hotspot counts as mobile data.',
                   ),
+                  value: prefs.bigTransfersWifiOnly,
+                  onChanged: (on) async {
+                    await prefs.setBigTransfersWifiOnly(on);
+                    ref.invalidate(preferencesProvider);
+                  },
                 ),
-              SwitchListTile(
-                title: const Text('Big transfers wait for Wi-Fi'),
-                // A non-breaking hyphen, so a wrapped line never ends in 'Wi-'.
-                subtitle: const Text(
-                  'Uploads and downloads of 200 MB or more pause on mobile data and '
-                  'carry on over Wi\u2011Fi. A phone\'s hotspot counts as mobile data.',
-                ),
-                value: prefs.bigTransfersWifiOnly,
-                onChanged: (on) async {
-                  await prefs.setBigTransfersWifiOnly(on);
-                  ref.invalidate(preferencesProvider);
-                },
-              ),
-            ],
-          ),
+              ],
+            ),
+          ],
           const SectionHeader('Appearance'),
           ListGroup(
             children: [
@@ -317,62 +321,69 @@ class SettingsScreen extends ConsumerWidget {
               ),
             ],
           ),
-          const SectionHeader('Search'),
-          ListGroup(
-            children: [
-              SwitchListTile(
-                title: const Text('Search inside documents'),
-                subtitle: Text(
-                  indexer.running && indexer.left > 0
-                      ? 'Reading · ${Formatters.count(indexer.left, 'file')} to go'
-                      : 'Finds PDFs, scans included, and text files by the words '
-                            'in them. Read on this phone, on Wi-Fi. Keeps no copies'
-                            '${indexed > 0 ? ' · ${Formatters.count(indexed, 'file')} read' : ''}.',
+          if (AppPlatform.isMobile) ...[
+            const SectionHeader('Search'),
+            ListGroup(
+              children: [
+                SwitchListTile(
+                  title: const Text('Search inside documents'),
+                  subtitle: Text(
+                    indexer.running && indexer.left > 0
+                        ? 'Reading · ${Formatters.count(indexer.left, 'file')} to go'
+                        : 'Finds PDFs, scans included, and text files by the words '
+                              'in them. Read on this phone, on Wi-Fi. Keeps no copies'
+                              '${indexed > 0 ? ' · ${Formatters.count(indexed, 'file')} read' : ''}.',
+                  ),
+                  value: indexer.enabled,
+                  onChanged: (on) => ref.read(contentIndexerProvider.notifier).setEnabled(on),
                 ),
-                value: indexer.enabled,
-                onChanged: (on) => ref.read(contentIndexerProvider.notifier).setEnabled(on),
-              ),
-            ],
-          ),
+              ],
+            ),
+          ],
           const SectionHeader('Security'),
           ListGroup(
             children: [
-              SwitchListTile(
-                title: const Text('App lock'),
-                subtitle: const Text('Ask for your fingerprint, face or screen lock to open Telegrive'),
-                value: lock.enabled,
-                onChanged: (on) async {
-                  final done = await ref.read(appLockProvider.notifier).setEnabled(on);
-                  if (!done && on && context.mounted) {
-                    showSnack(context, 'Set up a screen lock on this phone first, then try again.');
-                  }
-                },
-              ),
-              if (lock.enabled)
-                ListTile(
-                  title: const Text('Lock'),
-                  trailing: PopupMenuButton<LockAfter>(
-                    initialValue: lock.after,
-                    onSelected: (after) => ref.read(appLockProvider.notifier).setAfter(after),
-                    itemBuilder: (_) => [
-                      for (final after in LockAfter.values)
-                        PopupMenuItem(value: after, child: Text(after.label)),
-                    ],
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        trailingValue(lock.after.label),
-                        Icon(Icons.arrow_drop_down_rounded, color: colors.text3),
+              if (AppPlatform.canLock) ...[
+                SwitchListTile(
+                  title: const Text('App lock'),
+                  subtitle: Text('Ask for ${AppPlatform.unlockMethods} to open Telegrive'),
+                  value: lock.enabled,
+                  onChanged: (on) async {
+                    final done = await ref.read(appLockProvider.notifier).setEnabled(on);
+                    if (!done && on && context.mounted) {
+                      showSnack(
+                        context,
+                        'Set up a screen lock on ${AppPlatform.thisDevice} first, then try again.',
+                      );
+                    }
+                  },
+                ),
+                if (lock.enabled)
+                  ListTile(
+                    title: const Text('Lock'),
+                    trailing: PopupMenuButton<LockAfter>(
+                      initialValue: lock.after,
+                      onSelected: (after) => ref.read(appLockProvider.notifier).setAfter(after),
+                      itemBuilder: (_) => [
+                        for (final after in LockAfter.values)
+                          PopupMenuItem(value: after, child: Text(after.label)),
                       ],
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          trailingValue(lock.after.label),
+                          Icon(Icons.arrow_drop_down_rounded, color: colors.text3),
+                        ],
+                      ),
                     ),
                   ),
+                ListTile(
+                  title: const Text('Private'),
+                  subtitle: Text('Folders that open only with ${AppPlatform.unlockMethods}'),
+                  trailing: Icon(Icons.chevron_right_rounded, color: colors.text3),
+                  onTap: () => context.push('/private'),
                 ),
-              ListTile(
-                title: const Text('Private'),
-                subtitle: const Text('Folders that open only with your fingerprint, face or screen lock'),
-                trailing: Icon(Icons.chevron_right_rounded, color: colors.text3),
-                onTap: () => context.push('/private'),
-              ),
+              ],
               ListTile(
                 title: const Text('This session'),
                 subtitle: Text(
@@ -415,7 +426,7 @@ class SettingsScreen extends ConsumerWidget {
               ),
             ],
           ),
-          const SectionHeader('This phone'),
+          SectionHeader('This ${AppPlatform.device}'),
           ListGroup(
             children: [
               if (pickerSupported)
@@ -434,15 +445,16 @@ class SettingsScreen extends ConsumerWidget {
                   value: picker && !lock.enabled,
                   onChanged: lock.enabled ? null : ref.read(pickerEnabledProvider.notifier).set,
                 ),
-              SwitchListTile(
-                title: const Text('Save memory'),
-                subtitle: Text(
-                  'Fewer transfers at once, a smaller image cache and plain previews.$memoryReason',
-                  style: context.text.bodySmall?.copyWith(fontFeatures: tabularFigures),
+              if (AppPlatform.isMobile)
+                SwitchListTile(
+                  title: const Text('Save memory'),
+                  subtitle: Text(
+                    'Fewer transfers at once, a smaller image cache and plain previews.$memoryReason',
+                    style: context.text.bodySmall?.copyWith(fontFeatures: tabularFigures),
+                  ),
+                  value: saveMemory,
+                  onChanged: ref.read(saveMemoryProvider.notifier).set,
                 ),
-                value: saveMemory,
-                onChanged: ref.read(saveMemoryProvider.notifier).set,
-              ),
               ListTile(
                 title: const Text('Available offline'),
                 subtitle: Text(switch (offline) {
@@ -454,10 +466,10 @@ class SettingsScreen extends ConsumerWidget {
                 onTap: () => context.push('/offline'),
               ),
               ListTile(
-                title: const Text('Space on this phone'),
+                title: Text('Space on ${AppPlatform.thisDevice}'),
                 subtitle: Text(switch (cache) {
                   AsyncData(:final value) =>
-                    '${Formatters.bytes(value)} · What Telegrive keeps on this phone',
+                    '${Formatters.bytes(value)} · What Telegrive keeps on ${AppPlatform.thisDevice}',
                   _ => 'Measuring',
                 }),
                 trailing: Icon(Icons.chevron_right_rounded, color: colors.text3),

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/theme/tokens.dart';
 import '../../../core/format/formatters.dart';
+import '../../../core/platform/app_platform.dart';
 import '../../../core/widgets/common.dart';
 import '../../files/presentation/file_actions.dart';
 import '../../files/presentation/file_tiles.dart';
@@ -60,7 +61,7 @@ class WaitingChangesScreen extends ConsumerWidget {
                       Space.l,
                     ),
                     child: Text(
-                      'These changes are on this phone. They go to Telegram in the order you '
+                      'These changes are on ${AppPlatform.thisDevice}. They go to Telegram in the order you '
                       'made them when the connection is back.',
                       style: context.text.bodyMedium,
                     ),

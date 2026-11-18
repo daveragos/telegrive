@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../app/theme/tokens.dart';
 import '../../../core/format/formatters.dart';
+import '../../../core/platform/app_platform.dart';
 
 /// Asks before moving [count] files to the trash when [onPhone] of them are
 /// photos or videos this phone still has, and whether the phone's copies
@@ -83,11 +84,11 @@ class _TrashSheetState extends State<TrashSheet> {
             CheckboxListTile(
               contentPadding: EdgeInsets.zero,
               controlAffinity: ListTileControlAffinity.leading,
-              title: const Text('Also delete from this phone'),
+              title: Text('Also delete from ${AppPlatform.thisDevice}'),
               subtitle: onPhone < widget.count
                   ? Text(
                       '${Formatters.number(onPhone)} of these '
-                      '${onPhone == 1 ? 'is' : 'are'} on this phone',
+                      '${onPhone == 1 ? 'is' : 'are'} on ${AppPlatform.thisDevice}',
                       style: context.text.bodySmall?.copyWith(fontFeatures: tabularFigures),
                     )
                   : null,

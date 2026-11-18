@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/services.dart' show PlatformException;
 
+import '../../../core/platform/app_platform.dart';
 import '../../../infrastructure/storage/device_storage.dart';
 import '../../../infrastructure/telegram/telegram_exception.dart';
 import '../../drive/data/channel_messenger.dart';
@@ -20,7 +21,7 @@ String describeTransferError(Object? error) => switch (error) {
     'The original file is no longer available.',
   FileSystemException(osError: OSError(errorCode: 13)) =>
     'Telegrive can no longer read this file.',
-  FileSystemException() => 'Couldn\'t read or write the file on this phone.',
+  FileSystemException() => 'Couldn\'t read or write the file on ${AppPlatform.thisDevice}.',
   SocketException() || TimeoutException() || TelegramException(code: 408) =>
     'Lost the connection to Telegram. Retry when you\'re back online.',
   TelegramException e => e.friendlyMessage,
@@ -32,7 +33,7 @@ String describeTransferError(Object? error) => switch (error) {
   _ => 'Something went wrong.',
 };
 
-const _noSpace = 'Not enough space on this phone.';
+String get _noSpace => 'Not enough space on ${AppPlatform.thisDevice}.';
 
 bool _saysNoSpace(String message) =>
     message.contains('No space left') ||

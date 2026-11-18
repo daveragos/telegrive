@@ -5,6 +5,7 @@ import 'package:open_filex/open_filex.dart';
 import '../../../app/theme/file_style.dart';
 import '../../../app/theme/tokens.dart';
 import '../../../core/format/formatters.dart';
+import '../../../core/platform/app_platform.dart';
 import '../../../core/widgets/common.dart';
 import '../../../core/widgets/file_visuals.dart';
 import '../../../infrastructure/database/app_database.dart';
@@ -108,7 +109,7 @@ class TransfersScreen extends ConsumerWidget {
                   const ListGroup(children: [TakeoutStatusLine()]),
                 ],
                 if (saves.any((t) => t.status != TransferStatus.cancelled)) ...[
-                  const SectionHeader('Download to this phone'),
+                  SectionHeader('Download to ${AppPlatform.thisDevice}'),
                   ListGroup(children: [_SaveGroup(saves: saves)]),
                 ],
                 // Comes and goes as the phone moves between Wi-Fi and mobile
@@ -215,7 +216,7 @@ class _SaveGroup extends ConsumerWidget {
         final confirmed = await showConfirmDialog(
           context,
           title: 'Stop downloading?',
-          message: 'Files already saved stay on this phone.',
+          message: 'Files already saved stay on ${AppPlatform.thisDevice}.',
           confirmLabel: 'Stop',
         );
         if (confirmed) await queue.cancelSaves();

@@ -15,6 +15,7 @@ import '../../../app/theme/file_style.dart';
 import '../../../app/theme/tokens.dart';
 import '../../../core/files/file_kind.dart';
 import '../../../core/format/formatters.dart';
+import '../../../core/platform/app_platform.dart';
 import '../../../core/widgets/common.dart';
 import '../../../core/widgets/file_visuals.dart';
 import '../../../infrastructure/database/app_database.dart'
@@ -142,8 +143,8 @@ abstract final class FileActions {
       showSnack(
         context,
         'No app on this device opens ${file.extension.isEmpty ? 'this file' : '.${file.extension.toLowerCase()} files'}.',
-        actionLabel: 'Share',
-        onAction: () => _sharePath(path, file),
+        actionLabel: AppPlatform.canShareFiles ? 'Share' : null,
+        onAction: AppPlatform.canShareFiles ? () => _sharePath(path, file) : null,
       );
     }
   }
@@ -172,7 +173,7 @@ abstract final class FileActions {
       if (context.mounted) {
         showSnack(
           context,
-          'No app on this phone can play this. Install a video player, or download it first.',
+          'No app on ${AppPlatform.thisDevice} can play this. Install a video player, or download it first.',
         );
       }
     }
@@ -272,7 +273,10 @@ abstract final class FileActions {
       builder: (_) => _SaveSheet(
         items: items,
         freeBytes: free,
-        preferGallery: preferGallery ?? items.every((i) => fitsGallery(i.file)),
+        // A computer saves everything as files, with no photo library to
+        // put pictures in.
+        preferGallery:
+            AppPlatform.isMobile && (preferGallery ?? items.every((i) => fitsGallery(i.file))),
         network: ref.read(networkStatusProvider),
       ),
     );
@@ -285,7 +289,7 @@ abstract final class FileActions {
           context,
           useGallery
               ? 'Allow access to your photos to put them back in your library.'
-              : 'Allow storage access to save files on this phone.',
+              : 'Allow storage access to save files on ${AppPlatform.thisDevice}.',
         );
       }
       return false;
@@ -321,10 +325,10 @@ abstract final class FileActions {
     showSnack(
       context,
       queued == 0
-          ? 'Already downloading to this phone'
+          ? 'Already downloading to ${AppPlatform.thisDevice}'
           : choice.wifiOnly == true
           ? 'Waiting for Wi-Fi to download ${Formatters.count(queued, 'file')}'
-          : 'Downloading ${Formatters.count(queued, 'file')} to this phone',
+          : 'Downloading ${Formatters.count(queued, 'file')} to ${AppPlatform.thisDevice}',
       actionLabel: 'View',
       onAction: () => router.push('/transfers'),
     );
@@ -1098,7 +1102,7 @@ abstract final class FileActions {
                       _CreateOption(
                         icon: Icons.upload_file_outlined,
                         label: 'Upload files',
-                        detail: 'Anything on this phone, any size',
+                        detail: 'Anything on ${AppPlatform.thisDevice}, any size',
                         onTap: () =>
                             run(() => upload(context, ref, folderId: folderId)),
                       ),
@@ -1510,7 +1514,7 @@ abstract final class FileActions {
         if (context.mounted) {
           showSnack(
             context,
-            'Set up a fingerprint, face or screen lock on this phone to use Private.',
+            'Set up ${AppPlatform.unlockMethods} on ${AppPlatform.thisDevice} to use Private.',
           );
         }
         return false;
@@ -1520,9 +1524,9 @@ abstract final class FileActions {
         context,
         title: 'Move "${folder.name}" to Private?',
         message:
-            'It leaves Files, Photos, Search and Home on every phone signed '
+            'It leaves Files, Photos, Search and Home on every device signed '
             'in, with everything in it, and opens only from Settings › '
-            'Private with the phone\'s fingerprint, face or screen lock. Its '
+            'Private with ${AppPlatform.unlockMethods}. Its '
             'files stay in your Telegram channel, where Telegram shows them '
             'as it always does.',
         confirmLabel: 'Move to Private',
@@ -1897,7 +1901,7 @@ abstract final class FileActions {
                   ),
                 _SheetAction(
                   icon: Icons.download_rounded,
-                  label: 'Download to this phone',
+                  label: 'Download to ${AppPlatform.thisDevice}',
                   onTap: () =>
                       run(() => saveToDevice(context, ref, files: [file])),
                 ),
@@ -1912,11 +1916,12 @@ abstract final class FileActions {
                     () => setOffline(context, ref, file: file, keep: !pinned),
                   ),
                 ),
-                _SheetAction(
-                  icon: Icons.ios_share_rounded,
-                  label: 'Share',
-                  onTap: () => run(() => share(context, ref, file)),
-                ),
+                if (AppPlatform.canShareFiles)
+                  _SheetAction(
+                    icon: Icons.ios_share_rounded,
+                    label: 'Share',
+                    onTap: () => run(() => share(context, ref, file)),
+                  ),
                 _SheetAction(
                   icon: file.starred
                       ? Icons.star_rounded
@@ -1997,7 +2002,7 @@ abstract final class FileActions {
                 const Divider(height: 16),
                 _SheetAction(
                   icon: Icons.download_rounded,
-                  label: 'Download to this phone',
+                  label: 'Download to ${AppPlatform.thisDevice}',
                   onTap: () =>
                       run(() => saveToDevice(context, ref, folders: [folder])),
                 ),
@@ -2050,8 +2055,9 @@ abstract final class FileActions {
                   ),
                 ),
                 // A folder inside a private one is private with it, and
-                // goes in or out with that folder.
-                if (folder.private || !folder.inPrivate)
+                // goes in or out with that folder. Private needs a lock the
+                // device can ask for.
+                if (folder.private || (!folder.inPrivate && AppPlatform.canLock))
                   _SheetAction(
                     icon: folder.private
                         ? Icons.lock_open_outlined
@@ -2277,7 +2283,7 @@ abstract final class FileActions {
       );
     } catch (_) {}
     if (!opened && context.mounted) {
-      showSnack(context, 'Telegram isn\'t installed on this phone.');
+      showSnack(context, 'Telegram isn\'t installed on ${AppPlatform.thisDevice}.');
     }
   }
 
@@ -2708,7 +2714,7 @@ class _SaveSheetState extends State<_SaveSheet> {
           children: [
             Text(
               single
-                  ? 'Download to this phone'
+                  ? 'Download to ${AppPlatform.thisDevice}'
                   : 'Download ${Formatters.count(items.length, 'file')}',
               style: context.text.titleMedium,
             ),
@@ -2724,7 +2730,7 @@ class _SaveSheetState extends State<_SaveSheet> {
               ),
             ),
             const SizedBox(height: Space.l),
-            if (media > 0)
+            if (media > 0 && AppPlatform.isMobile)
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
                 title: Text('Photos and videos to $library'),
@@ -2747,8 +2753,8 @@ class _SaveSheetState extends State<_SaveSheet> {
               Text(
                 tooBig
                     ? 'Not enough space: this needs ${Formatters.bytes(needed)} '
-                          'and the phone has ${Formatters.bytes(free)} free.'
-                    : '${Formatters.bytes(free)} free on this phone',
+                          'and the ${AppPlatform.device} has ${Formatters.bytes(free)} free.'
+                    : '${Formatters.bytes(free)} free on ${AppPlatform.thisDevice}',
                 style: context.text.bodySmall?.copyWith(
                   color: tooBig ? colors.danger : null,
                   fontFeatures: tabularFigures,

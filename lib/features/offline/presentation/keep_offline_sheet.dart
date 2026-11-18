@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/theme/tokens.dart';
 import '../../../core/format/formatters.dart';
+import '../../../core/platform/app_platform.dart';
 import '../../../infrastructure/network/network_status.dart';
 import '../../drive/domain/drive_models.dart';
 import '../../transfers/data/transfer_policy.dart';
@@ -116,7 +117,7 @@ class KeepOfflineSheet extends ConsumerWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Keep "$folderName" on this phone?', style: context.text.titleMedium),
+            Text('Keep "$folderName" on ${AppPlatform.thisDevice}?', style: context.text.titleMedium),
             const SizedBox(height: 2),
             Text(
               '${Formatters.count(count, 'file')} · ${Formatters.bytes(bytes)}',
@@ -129,8 +130,8 @@ class KeepOfflineSheet extends ConsumerWidget {
               Text(
                 estimate.tooBig
                     ? 'Not enough space: this needs ${Formatters.bytes(estimate.needed)} '
-                          'and the phone has ${Formatters.bytes(free)} free.'
-                    : '${Formatters.bytes(free)} free on this phone',
+                          'and the ${AppPlatform.device} has ${Formatters.bytes(free)} free.'
+                    : '${Formatters.bytes(free)} free on ${AppPlatform.thisDevice}',
                 style: small?.copyWith(color: estimate.tooBig ? colors.danger : null),
               ),
             if (onData != null)

@@ -11,6 +11,7 @@ import 'package:video_player/video_player.dart';
 import '../../../app/theme/tokens.dart';
 import '../../../core/files/file_kind.dart';
 import '../../../core/format/formatters.dart';
+import '../../../core/platform/app_platform.dart';
 import '../../backup/data/backup_controller.dart';
 import '../../backup/data/local_media.dart';
 import '../../drive/data/drive_repository.dart';
@@ -321,11 +322,12 @@ class _ViewerBar extends ConsumerWidget {
           ),
           tooltip: file.starred ? 'Unstar' : 'Star',
         ),
-        IconButton(
-          onPressed: () => FileActions.share(context, ref, file),
-          icon: const Icon(Icons.ios_share_rounded),
-          tooltip: 'Share',
-        ),
+        if (AppPlatform.canShareFiles)
+          IconButton(
+            onPressed: () => FileActions.share(context, ref, file),
+            icon: const Icon(Icons.ios_share_rounded),
+            tooltip: 'Share',
+          ),
         IconButton(
           onPressed: onTrash,
           icon: const Icon(Icons.delete_outline_rounded),

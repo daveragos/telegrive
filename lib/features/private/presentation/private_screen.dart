@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../app/theme/tokens.dart';
+import '../../../core/platform/app_platform.dart';
 import '../../../core/widgets/common.dart';
 import '../../files/presentation/file_actions.dart';
 import '../../files/presentation/file_tiles.dart';
@@ -127,7 +128,7 @@ class _PrivateGateState extends ConsumerState<PrivateGate> {
       if (mounted) {
         showSnack(
           context,
-          'Set up a fingerprint, face or screen lock on this phone to use Private.',
+          'Set up ${AppPlatform.unlockMethods} on ${AppPlatform.thisDevice} to use Private.',
         );
       }
       return;
@@ -155,7 +156,7 @@ class _PrivateGateState extends ConsumerState<PrivateGate> {
       body: EmptyState(
         icon: Icons.lock_outline_rounded,
         title: 'Private is locked',
-        message: 'It opens with this phone\'s fingerprint, face or screen lock.',
+        message: 'It opens with ${AppPlatform.unlockMethods}.',
         action: FilledButton(onPressed: _unlock, child: const Text('Unlock')),
       ),
     );

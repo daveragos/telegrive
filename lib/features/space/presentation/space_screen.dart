@@ -6,6 +6,7 @@ import '../../../app/theme/file_style.dart';
 import '../../../app/theme/tokens.dart';
 import '../../../core/files/file_kind.dart';
 import '../../../core/format/formatters.dart';
+import '../../../core/platform/app_platform.dart';
 import '../../../core/widgets/common.dart';
 import '../../../core/widgets/file_visuals.dart';
 import '../../../infrastructure/database/app_database.dart' show FolderSize;
@@ -191,7 +192,7 @@ class _DriveTotal extends StatelessWidget {
           const SizedBox(height: Space.xs),
           Text(
             '${Formatters.count(summary.fileCount, 'file')} · '
-            'Stored in Telegram, not on this phone.',
+            'Stored in Telegram, not on ${AppPlatform.thisDevice}.',
             style: context.text.bodyMedium?.merge(figures),
           ),
         ],
@@ -294,7 +295,7 @@ class _OnThisPhone extends ConsumerWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         SectionHeader(
-          'On this phone',
+          'On ${AppPlatform.thisDevice}',
           key: headerKey,
           padding: const EdgeInsets.fromLTRB(Space.gutter, Space.x3, Space.gutter, Space.s),
           trailing: _Figure(figure((u) => u.total)),

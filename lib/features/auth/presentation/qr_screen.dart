@@ -5,6 +5,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../app/theme/tokens.dart';
+import '../../../core/platform/app_platform.dart';
 import '../../../core/widgets/common.dart';
 import '../../../infrastructure/telegram/telegram_client.dart';
 import '../../network/presentation/connection_notice.dart';
@@ -44,7 +45,7 @@ class QrScreen extends ConsumerWidget {
                   showSnack(context, 'Telegram isn\'t installed on this device.');
                 }
               },
-        child: const Text('Confirm in Telegram on this phone'),
+        child: Text('Confirm in Telegram on ${AppPlatform.thisDevice}'),
       ),
       secondary: TextButton(
         onPressed: () => ref.read(authControllerProvider.notifier).editPhone(),

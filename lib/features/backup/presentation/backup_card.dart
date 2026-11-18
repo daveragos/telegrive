@@ -7,6 +7,7 @@ import 'package:photo_manager/photo_manager.dart';
 
 import '../../../app/theme/tokens.dart';
 import '../../../core/format/formatters.dart';
+import '../../../core/platform/app_platform.dart';
 import '../../../core/widgets/common.dart';
 import '../../../infrastructure/storage/preferences.dart';
 import '../../network/data/mobile_data.dart';
@@ -16,7 +17,8 @@ import '../data/backup_controller.dart';
 /// Where backup stands, said in one line — on Photos, Transfers and the
 /// Backup queue. It opens the queue while there are photos waiting or some
 /// went up since the app opened, the Backup screen otherwise, and carries
-/// at most one action: whatever would unblock backup right now.
+/// at most one action: whatever would unblock backup right now. A computer
+/// has no camera roll to back up, so it shows nothing there.
 class BackupStatusLine extends ConsumerWidget {
   const BackupStatusLine({super.key, this.linked = true});
 
@@ -25,6 +27,7 @@ class BackupStatusLine extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    if (!AppPlatform.isMobile) return const SizedBox.shrink();
     final colors = context.colors;
     final backup = ref.watch(backupControllerProvider);
     final speed = ref.watch(
@@ -85,12 +88,14 @@ class BackupStatusLine extends ConsumerWidget {
   }
 }
 
-/// The same status, larger, at the top of the Backup screen.
+/// The same status, larger, at the top of the Backup screen; nothing on a
+/// computer, as [BackupStatusLine].
 class BackupStatusPanel extends ConsumerWidget {
   const BackupStatusPanel({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    if (!AppPlatform.isMobile) return const SizedBox.shrink();
     final colors = context.colors;
     final backup = ref.watch(backupControllerProvider);
     final speed = ref.watch(
