@@ -410,6 +410,41 @@ List<WatchedFolderView> _watchedFolders() {
   ];
 }
 
+/// Two folders on a computer: Invoices sending a file just saved into it,
+/// and Screenshots up to date.
+List<WatchedFolderView> _desktopWatchedFolders() {
+  final now = DateTime.now();
+  WatchedFolderRow row(String label, String path, {required DateTime checkedAt}) => WatchedFolderRow(
+    id: label,
+    treeUri: path,
+    label: label,
+    destinationId: 'auto-$label',
+    filter: WatchFilter.everything,
+    subfolders: true,
+    createdAt: DateTime(2026, 11, 1),
+    checkedAt: checkedAt,
+  );
+  return [
+    WatchedFolderView(
+      row: row('Invoices', '/Users/sam/Documents/Invoices', checkedAt: now),
+      uploadedCount: 212,
+      status: const RuleStatus(
+        phase: RulePhase.uploading,
+        total: 3,
+        done: 1,
+        current: 'Invoice-1118.pdf',
+      ),
+      destinationLabel: 'Auto upload › Invoices',
+    ),
+    WatchedFolderView(
+      row: row('Screenshots', '/Users/sam/Desktop/Screenshots', checkedAt: now.subtract(const Duration(minutes: 12))),
+      uploadedCount: 1408,
+      status: const RuleStatus(),
+      destinationLabel: 'Work › Screenshots',
+    ),
+  ];
+}
+
 /// Files another app just shared in, waiting for the sheet.
 class _Intake extends ShareIntake {
   @override
@@ -1013,7 +1048,7 @@ void main() {
         ),
         GoRoute(
           path: '/backup',
-          builder: (_, _) => const BackupScreen(),
+          builder: (_, _) => framed(const BackupScreen()),
           routes: [
             GoRoute(
               path: 'not-backed-up',
@@ -1152,7 +1187,8 @@ void main() {
               .overrideWith((ref) => Stream.value(folders[2])),
           cacheSizeProvider.overrideWith((ref) async => 734 * _mb),
           // Settings draws its file picker switch as it does on a phone.
-          pickerSupportedProvider.overrideWithValue(true),
+          // Android's file picker is a phone's alone.
+          pickerSupportedProvider.overrideWithValue(!desktop),
           backgroundHealthProvider.overrideWith((ref) async => background),
           notificationsEnabledProvider.overrideWith(
             (ref) async => notificationsEnabled,
@@ -1395,6 +1431,21 @@ void main() {
       await tester.pump(const Duration(milliseconds: 100));
     }
     await snap(tester, 'desktop_file_menu');
+  });
+
+  testWidgets('desktop settings for this computer', (tester) async {
+    await prepareData(tester);
+    await pumpApp(tester, location: '/settings', desktop: true);
+    await tester.scrollUntilVisible(find.text('Stay awake for transfers'), 300, scrollable: find.byType(Scrollable).last);
+    await tester.scrollUntilVisible(find.text('This computer'), -100, scrollable: find.byType(Scrollable).last);
+    await tester.pump(const Duration(milliseconds: 300));
+    await snap(tester, 'desktop_settings_computer');
+  });
+
+  testWidgets('desktop folder sync', (tester) async {
+    await prepareData(tester);
+    await pumpApp(tester, location: '/backup', desktop: true, watched: _desktopWatchedFolders());
+    await snap(tester, 'desktop_folder_sync');
   });
 
   testWidgets('desktop new menu', (tester) async {
