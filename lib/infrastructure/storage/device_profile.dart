@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -35,10 +37,11 @@ class DeviceProfile {
   /// Whether this phone should start with Save memory on.
   bool get suggestSaveMemory => lowRam || (totalRamBytes > 0 && totalRamBytes < _smallRam);
 
-  /// Asks Android once. Any failure, or a platform without the channel,
-  /// gives [unknown], so the app starts the same way it would on an
-  /// ordinary phone.
+  /// Asks Android once. Any failure, and any other platform, gives
+  /// [unknown], so the app starts the same way it would on an ordinary
+  /// phone.
   static Future<DeviceProfile> read() async {
+    if (kIsWeb || !Platform.isAndroid) return unknown;
     try {
       final profile = await _channel.invokeMapMethod<String, Object?>('profile');
       if (profile == null) return unknown;
