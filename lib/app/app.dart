@@ -24,6 +24,7 @@ import '../features/settings/data/settings_providers.dart';
 import '../features/setup/data/drive_opener.dart';
 import '../features/setup/data/drive_setup.dart';
 import '../features/takeout/data/takeout_import.dart';
+import '../features/transfers/data/desktop_transfer_notices.dart';
 import '../features/transfers/data/transfer_keep_alive.dart';
 import '../features/transfers/data/transfer_queue.dart';
 import '../features/trash/data/pending_deletes.dart';
@@ -160,6 +161,7 @@ class _TelegriveAppState extends ConsumerState<TelegriveApp>
     // opens, not the first time someone visits the Transfers tab.
     ref.watch(transferQueueProvider.select((s) => s.activeCount));
     ref.watch(transferKeepAliveProvider);
+    ref.watch(desktopTransferNoticesProvider);
     // Opens a drive this phone knows behind Home, as soon as Telegram is
     // signed in.
     ref.watch(driveOpenerProvider);

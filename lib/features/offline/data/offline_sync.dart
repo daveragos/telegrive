@@ -44,7 +44,7 @@ class OfflineSync extends Notifier<bool> {
   @override
   bool build() {
     final wifiOnly = _prefs.offlineWifiOnly;
-    if (kIsWeb || !(Platform.isAndroid || Platform.isIOS)) return wifiOnly;
+    if (kIsWeb) return wifiOnly;
     ref.listen<DriveSession?>(driveSessionProvider, (_, session) {
       if (session != null) _soon();
     }, fireImmediately: true);

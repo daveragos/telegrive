@@ -116,7 +116,7 @@ abstract final class AppNotifications {
     } catch (_) {}
   }
 
-  /// Asks Android for permission to post notifications.
+  /// Asks Android, or a Mac, for permission to post notifications.
   static Future<void> requestPermission() async {
     try {
       await _plugin
@@ -124,6 +124,11 @@ abstract final class AppNotifications {
             AndroidFlutterLocalNotificationsPlugin
           >()
           ?.requestNotificationsPermission();
+      await _plugin
+          .resolvePlatformSpecificImplementation<
+            MacOSFlutterLocalNotificationsPlugin
+          >()
+          ?.requestPermissions(alert: true);
     } catch (e) {
       debugPrint('[AppNotifications] permission request failed: $e');
     }

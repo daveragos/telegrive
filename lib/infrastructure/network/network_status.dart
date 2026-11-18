@@ -1,11 +1,13 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:handy_tdlib/api.dart' as td;
 
+import '../../core/platform/app_platform.dart';
 import '../telegram/telegram_client.dart';
 
 /// The phone's connection as Android reports it: whether there is internet
@@ -76,12 +78,14 @@ class NetworkStatus extends Notifier<NetworkState> {
   bool _heard = false;
   bool _telegramConfigured = false;
 
+  /// Whether to listen to connectivity_plus instead, as a computer does.
+  @visibleForTesting
+  static bool onDesktop = AppPlatform.isDesktop;
+
   @override
   NetworkState build() {
-    if (!onAndroid) return NetworkState.unknown;
-    final events = _channel
-        .receiveBroadcastStream()
-        .map(NetworkState.fromEvent)
+    if (!onAndroid && !onDesktop) return NetworkState.unknown;
+    final events = (onAndroid ? _channel.receiveBroadcastStream().map(NetworkState.fromEvent) : _desktopEvents())
         .distinct()
         .listen(_onNetwork, onError: (Object e) => debugPrint('[Network] $e'));
     ref.onDispose(events.cancel);
@@ -92,6 +96,21 @@ class NetworkStatus extends Notifier<NetworkState> {
     );
     return _network;
   }
+
+  /// A computer's connections, as connectivity_plus reports them: online
+  /// with any, never metered, since a computer's own connection is no
+  /// guide to whether its data costs, and nothing on it asks.
+  static Stream<NetworkState> _desktopEvents() async* {
+    final connectivity = Connectivity();
+    yield desktopState(await connectivity.checkConnectivity());
+    yield* connectivity.onConnectivityChanged.map(desktopState);
+  }
+
+  @visibleForTesting
+  static NetworkState desktopState(List<ConnectivityResult> results) => NetworkState(
+    online: results.any((r) => r != ConnectivityResult.none),
+    metered: false,
+  );
 
   void _onNetwork(NetworkState next) {
     _network = next;
@@ -108,8 +127,8 @@ class NetworkStatus extends Notifier<NetworkState> {
     if (configured) _tellTelegram();
   }
 
-  /// Only what Android actually said: a guess is no better than the default
-  /// TDLib starts with.
+  /// Only what Android or the computer actually said: a guess is no better
+  /// than the default TDLib starts with.
   void _tellTelegram() {
     if (!_heard || !_telegramConfigured) return;
     unawaited(

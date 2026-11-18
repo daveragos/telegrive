@@ -326,25 +326,23 @@ class SettingsScreen extends ConsumerWidget {
               ),
             ],
           ),
-          if (AppPlatform.isMobile) ...[
-            const SectionHeader('Search'),
-            ListGroup(
-              children: [
-                SwitchListTile(
-                  title: const Text('Search inside documents'),
-                  subtitle: Text(
-                    indexer.running && indexer.left > 0
-                        ? 'Reading · ${Formatters.count(indexer.left, 'file')} to go'
-                        : 'Finds PDFs, scans included, and text files by the words '
-                              'in them. Read on this phone, on Wi-Fi. Keeps no copies'
-                              '${indexed > 0 ? ' · ${Formatters.count(indexed, 'file')} read' : ''}.',
-                  ),
-                  value: indexer.enabled,
-                  onChanged: (on) => ref.read(contentIndexerProvider.notifier).setEnabled(on),
+          const SectionHeader('Search'),
+          ListGroup(
+            children: [
+              SwitchListTile(
+                title: const Text('Search inside documents'),
+                subtitle: Text(
+                  indexer.running && indexer.left > 0
+                      ? 'Reading · ${Formatters.count(indexer.left, 'file')} to go'
+                      : 'Finds PDFs, scans included, and text files by the words '
+                            'in them. Read on ${AppPlatform.thisDevice}, on Wi-Fi. Keeps no copies'
+                            '${indexed > 0 ? ' · ${Formatters.count(indexed, 'file')} read' : ''}.',
                 ),
-              ],
-            ),
-          ],
+                value: indexer.enabled,
+                onChanged: (on) => ref.read(contentIndexerProvider.notifier).setEnabled(on),
+              ),
+            ],
+          ),
           const SectionHeader('Security'),
           ListGroup(
             children: [

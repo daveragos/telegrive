@@ -78,7 +78,7 @@ class ContentIndexer extends Notifier<IndexerState> {
   AppDatabase get _db => ref.read(appDatabaseProvider);
   TelegramClient get _client => ref.read(telegramClientProvider);
 
-  static bool get _supported => !kIsWeb && (Platform.isAndroid || Platform.isIOS);
+  static bool get _supported => !kIsWeb;
 
   @override
   IndexerState build() {
