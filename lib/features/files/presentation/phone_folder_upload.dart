@@ -1,14 +1,18 @@
 import 'dart:async';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:path/path.dart' as p;
 
 import '../../../app/theme/tokens.dart';
 import '../../../core/format/formatters.dart';
+import '../../../core/platform/app_platform.dart';
 import '../../../core/widgets/common.dart';
 import '../../../infrastructure/network/network_status.dart';
 import '../../../infrastructure/storage/preferences.dart';
+import '../../backup/data/desktop_folders.dart';
 import '../../backup/data/phone_folders.dart';
 import '../../drive/data/drive_repository.dart';
 import '../../share/data/recent_destinations.dart';
@@ -19,13 +23,20 @@ import '../data/folder_upload_plan.dart';
 import '../data/phone_picks.dart';
 import 'file_actions.dart';
 
-/// Uploading a folder from the phone with the folders inside it: the
-/// person picks it in Android's folder picker, and it goes up as a folder
-/// of its name, its folders made in the drive as they are on the phone.
-/// Nothing is copied up front: each file is copied as its upload starts,
-/// as Upload files does, and the folder is readable while the app runs.
+/// Where a file of a folder going up is read from: a copy made as its
+/// upload starts, as from Android's picker, or the file itself, where it
+/// is on a computer.
+typedef _Source = ({Future<void> Function(String path)? copyTo, String? path, bool owned});
+
+/// Uploading a folder with the folders inside it. On a phone the person
+/// picks it in Android's folder picker, and each file is copied as its
+/// upload starts, as Upload files does; the folder is readable while the
+/// app runs. On a computer it is picked in the system's folder picker, or
+/// dropped on the window, and each file goes up from where it is. Either
+/// way it goes up as a folder of its name, its folders made in the drive
+/// as they are on the device.
 abstract final class PhoneFolderUpload {
-  static bool get supported => PhoneFolders.supported;
+  static bool get supported => PhoneFolders.supported || AppPlatform.isDesktop;
 
   /// Has the person pick a folder and sends it up inside [folderId], the
   /// root when null.
@@ -35,11 +46,19 @@ abstract final class PhoneFolderUpload {
     String? folderId,
   }) async {
     if (!FileActions.connected(context, ref)) return;
+    if (AppPlatform.isDesktop) {
+      final String? path;
+      try {
+        path = await FilePicker.getDirectoryPath(dialogTitle: 'Upload a folder');
+      } catch (e) {
+        debugPrint('[Folder upload] Picking: $e');
+        if (context.mounted) showSnack(context, 'Couldn\'t open the folder picker.');
+        return;
+      }
+      if (path == null || !context.mounted) return;
+      return uploadFrom(context, ref, path, folderId: folderId);
+    }
     final folders = ref.read(phoneFoldersProvider);
-    final repository = ref.read(driveRepositoryProvider);
-    final queue = ref.read(transferQueueProvider.notifier);
-    final recent = ref.read(recentDestinationsProvider.notifier);
-    final bigWait = ref.read(preferencesProvider).bigTransfersWifiOnly;
 
     final PickedFolder? picked;
     try {
@@ -52,19 +71,58 @@ abstract final class PhoneFolderUpload {
       return;
     }
     if (picked == null || !context.mounted) return;
-    final name = picked.name;
+    final uri = picked.uri;
+    return _upload(
+      context,
+      ref,
+      picked.name,
+      folderId: folderId,
+      read: () => folders.list(uri, recursive: true),
+      source: (doc) => (copyTo: (String path) => PhonePicks.copy(doc.uri!, path), path: null, owned: true),
+    );
+  }
+
+  /// The folder at [path] on this computer, sent up inside [folderId] from
+  /// where its files are.
+  static Future<void> uploadFrom(
+    BuildContext context,
+    WidgetRef ref,
+    String path, {
+    String? folderId,
+  }) async {
+    if (!FileActions.connected(context, ref)) return;
+    return _upload(
+      context,
+      ref,
+      p.basename(path),
+      folderId: folderId,
+      read: () => DesktopFolders.list(path),
+      source: (doc) => (copyTo: null, path: doc.uri, owned: false),
+    );
+  }
+
+  /// Reads the folder [name] with [read], and once it is confirmed sends it
+  /// up inside [folderId], each file from [source].
+  static Future<void> _upload(
+    BuildContext context,
+    WidgetRef ref,
+    String name, {
+    String? folderId,
+    required Future<({List<PhoneDocument> files, bool truncated})> Function() read,
+    required _Source Function(PhoneDocument doc) source,
+  }) async {
+    final repository = ref.read(driveRepositoryProvider);
+    final queue = ref.read(transferQueueProvider.notifier);
+    final recent = ref.read(recentDestinationsProvider.notifier);
+    final bigWait = ref.read(preferencesProvider).bigTransfersWifiOnly;
 
     final ({List<PhoneDocument> files, bool truncated}) listed;
     try {
-      listed = await _whileReading(
-        context,
-        name,
-        folders.list(picked.uri, recursive: true),
-      );
+      listed = await _whileReading(context, name, read());
     } catch (e) {
       debugPrint('[Folder upload] Reading "$name": $e');
       if (context.mounted) {
-        showSnack(context, 'Couldn\'t read "$name" on this phone.');
+        showSnack(context, 'Couldn\'t read "$name" on ${AppPlatform.thisDevice}.');
       }
       return;
     }
@@ -126,8 +184,9 @@ abstract final class PhoneFolderUpload {
             UploadRequest(
               name: doc.name,
               size: doc.size,
-              copyTo: (String path) => PhonePicks.copy(doc.uri!, path),
-              ownsSource: true,
+              copyTo: source(doc).copyTo,
+              path: source(doc).path,
+              ownsSource: source(doc).owned,
               wifiOnly:
                   wifiOnlyFrom(choice) ??
                   TransferPolicy.wifiOnlyFor(doc.size, bigWaitForWifi: bigWait),

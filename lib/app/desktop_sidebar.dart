@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../core/format/formatters.dart';
 import '../core/widgets/brand_mark.dart';
 import '../core/widgets/selection_bar.dart';
+import '../features/files/presentation/drop_to_upload.dart';
 import '../features/files/presentation/file_actions.dart';
 import '../features/transfers/data/transfer_queue.dart';
 import '../infrastructure/database/app_database.dart' show TransferOrigin;
@@ -240,7 +241,8 @@ class _SidebarRow extends StatelessWidget {
   }
 }
 
-/// A page with the sidebar beside it, on a computer.
+/// A page with the sidebar beside it, on a computer, taking files dropped
+/// from the system.
 class DesktopFrame extends StatelessWidget {
   const DesktopFrame({super.key, required this.child});
 
@@ -252,7 +254,11 @@ class DesktopFrame extends StatelessWidget {
       children: [
         const DesktopSidebar(),
         VerticalDivider(width: 1, thickness: 1, color: context.colors.line),
-        Expanded(child: child),
+        Expanded(
+          // Files dropped from the system go into the folder open, or the
+          // top of the drive.
+          child: DropToUpload(folderOf: DesktopNavigation.openFolder, child: child),
+        ),
       ],
     );
   }

@@ -567,8 +567,41 @@ abstract final class FileActions {
       }
       return;
     }
-    if (picked.isEmpty) return;
+    if (picked.isEmpty || !context.mounted) return;
+    return _send(context, ref, picked, folderId: folderId);
+  }
 
+  /// Files on this computer, dropped on the window or a folder, going up
+  /// into [folderId] from where they are, nothing copied.
+  static Future<void> uploadPaths(
+    BuildContext context,
+    WidgetRef ref,
+    List<String> paths, {
+    String? folderId,
+  }) async {
+    final picked = <_Pick>[
+      for (final path in paths)
+        (
+          name: p.basename(path),
+          path: path,
+          size: await File(path).length(),
+          openRead: null,
+          copyTo: null,
+          owned: false,
+        ),
+    ];
+    if (picked.isEmpty || !context.mounted) return;
+    return _send(context, ref, picked, folderId: folderId);
+  }
+
+  /// Sends [picked] up into [folderId], asking first on mobile data and
+  /// about names already there.
+  static Future<void> _send(
+    BuildContext context,
+    WidgetRef ref,
+    List<_Pick> picked, {
+    String? folderId,
+  }) async {
     // Copies the plugin made at once go when the upload is called off.
     Future<void> dropCopies() async {
       for (final file in picked) {
