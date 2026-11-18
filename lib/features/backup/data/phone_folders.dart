@@ -1,16 +1,22 @@
 import 'dart:io';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path/path.dart' as p;
+
+import '../../../core/platform/app_platform.dart';
+import 'desktop_folders.dart';
 
 /// A folder the person picked in Android's folder picker, with the read
-/// access Android keeps for it.
+/// access Android keeps for it, or in a computer's own.
 @immutable
 class PickedFolder {
   const PickedFolder({required this.uri, required this.name});
 
-  /// The tree URI, which lists the folder and gives the access back.
+  /// The tree URI, which lists the folder and gives the access back; on a
+  /// computer, the folder's path.
   final String uri;
 
   /// The folder's own name, as the picker showed it.
@@ -62,6 +68,10 @@ class PhoneDocument {
 /// Phone folders picked through Android's folder picker, reached through
 /// the telegrive/folders channel. Nothing needs a storage permission: each
 /// folder is read on the access granted when it was picked.
+///
+/// On a computer the folders are picked in the system's own picker and
+/// read where they are, through [DesktopFolders], and their files go up
+/// from there with no copy made.
 class PhoneFolders {
   static const _channel = MethodChannel('telegrive/folders');
 
@@ -69,20 +79,30 @@ class PhoneFolders {
   /// short, with `truncated` set.
   static const int listLimit = 20000;
 
-  /// Whether this phone has the folder picker. Off Android the Backup
-  /// screen leaves the group out and nothing is checked.
-  static bool get supported => _supported;
-  static bool _supported = !kIsWeb && Platform.isAndroid;
+  /// Whether folders can be picked and watched: on Android and on a
+  /// computer. Elsewhere the Backup screen leaves the group out and nothing
+  /// is checked.
+  static bool get supported =>
+      _supported ?? (!kIsWeb && (Platform.isAndroid || AppPlatform.isDesktop));
+  static bool? _supported;
 
   /// Tests that render the group or run a check turn it on.
   @visibleForTesting
   static set supported(bool value) => _supported = value;
+
+  /// Whether a file goes up from a copy in the app's cache, which needs
+  /// room for it: on a phone, not on a computer.
+  bool get copies => !AppPlatform.isDesktop;
 
   /// Opens the picker and waits for a folder, or null when the person backed
   /// out. With [keep] the folder stays readable after a restart, and a
   /// [PlatformException] coded `not_persisted` means Android wouldn't keep
   /// access to it; without, it is readable while the app runs.
   Future<PickedFolder?> pick({bool keep = true}) async {
+    if (AppPlatform.isDesktop) {
+      final path = await FilePicker.getDirectoryPath(dialogTitle: 'Choose a folder to upload from');
+      return path == null ? null : PickedFolder(uri: path, name: p.basename(path));
+    }
     final map = await _channel.invokeMapMethod<Object?, Object?>('pick', {'keep': keep});
     if (map == null) return null;
     return PickedFolder(uri: map['uri']! as String, name: map['name']! as String);
@@ -95,6 +115,9 @@ class PhoneFolders {
     String uri, {
     required bool recursive,
   }) async {
+    if (AppPlatform.isDesktop) {
+      return DesktopFolders.list(uri, recursive: recursive, skipHidden: true);
+    }
     final map = await _channel.invokeMapMethod<Object?, Object?>('list', {
       'uri': uri,
       'recursive': recursive,
@@ -103,6 +126,18 @@ class PhoneFolders {
         .map((file) => PhoneDocument.fromMap(file! as Map<Object?, Object?>))
         .toList();
     return (files: files, truncated: map?['truncated'] == true);
+  }
+
+  /// Where [doc] of folder [uri] goes up from: on a phone a copy in the
+  /// app's cache, which the upload owns and deletes once it is sent; on a
+  /// computer the file itself, as it is now.
+  Future<({String path, int size, bool owned})> source(String uri, PhoneDocument doc) async {
+    if (AppPlatform.isDesktop) {
+      final file = File(doc.uri ?? p.joinAll([uri, ...doc.id.split('/')]));
+      return (path: file.path, size: await file.length(), owned: false);
+    }
+    final copied = await copy(uri, doc);
+    return (path: copied.path, size: copied.size, owned: true);
   }
 
   /// Copies [doc] from folder [uri] into the app's cache, for an upload
@@ -121,6 +156,7 @@ class PhoneFolders {
   /// stay readable. Access that is already gone, or a phone with no
   /// picker, leaves nothing to give back.
   Future<void> release(String uri) async {
+    if (AppPlatform.isDesktop) return;
     try {
       final left = await _channel.invokeMethod<int>('release', {'uri': uri});
       debugPrint('[Folders] Gave back $uri; $left still readable');
@@ -132,6 +168,14 @@ class PhoneFolders {
   /// Whether folder [uri] can still be read: the access is kept and the
   /// folder is still there.
   Future<bool> canRead(String uri) async {
+    if (AppPlatform.isDesktop) {
+      try {
+        await Directory(uri).list(followLinks: false).isEmpty;
+        return true;
+      } on FileSystemException {
+        return false;
+      }
+    }
     try {
       return await _channel.invokeMethod<bool>('canRead', {'uri': uri}) ?? false;
     } catch (e) {

@@ -13,26 +13,31 @@ PhoneDocument _doc(
   String mime = '',
   int size = 1000,
   Duration age = const Duration(hours: 1),
+  String dir = '',
 }) => PhoneDocument(
   id: id ?? 'primary:Download/Bank/$name',
   name: name,
   mimeType: mime,
   size: size,
   modifiedAt: _now.subtract(age),
+  dir: dir,
 );
 
 WatchedFileRow _entry(
   PhoneDocument doc,
   WatchedFileState state, {
   String? transferId,
+  String? fileId,
   int failures = 0,
 }) => WatchedFileRow(
   ruleId: 'bank',
   documentId: doc.id,
   size: doc.size,
-  modifiedAt: doc.modifiedAt,
+  // To the second, as the ledger keeps it.
+  modifiedAt: DateTime.fromMillisecondsSinceEpoch(doc.modifiedAt.millisecondsSinceEpoch ~/ 1000 * 1000),
   state: state,
   transferId: transferId,
+  fileId: fileId,
   failures: failures,
   updatedAt: _now,
 );
@@ -43,6 +48,7 @@ WatchPlan _plan(
   Map<String, String> fingerprints = const {},
   WatchFilter filter = WatchFilter.everything,
   Set<String> inFlight = const {},
+  bool resendChanged = false,
 }) => planUploads(
   listing: listing,
   ledger: {for (final entry in ledger) entry.documentId: entry},
@@ -50,6 +56,7 @@ WatchPlan _plan(
   filter: filter,
   now: _now,
   inFlight: inFlight.contains,
+  resendChanged: resendChanged,
 );
 
 List<String> _names(WatchPlan plan) => [for (final doc in plan.toUpload) doc.name];
@@ -109,6 +116,7 @@ void main() {
         _doc('.pending-1759579200-Statement.pdf', mime: 'application/pdf'),
         _doc('.trashed-1759579200-Old.pdf', mime: 'application/pdf'),
         _doc('Empty.pdf', mime: 'application/pdf', size: 0),
+        _doc('HEAD', dir: 'Project/.git'),
       ]) {
         for (final filter in WatchFilter.values) {
           expect(watchMatches(doc, filter), isFalse, reason: '${doc.name}, $filter');
@@ -201,6 +209,43 @@ void main() {
       );
       expect(plan.alreadyInDrive, {kept.id: 'file-1'});
       expect(_names(plan), ['Lease.pdf']);
+    });
+
+    test('a file changed since it went up goes again on a computer, in place of its copy', () {
+      final kept = _doc('Budget.xlsx', size: 1000);
+      final grown = _doc('Notes.txt', size: 1200);
+      final edited = _doc('Lease.pdf', size: 900);
+      final touched = _doc('Old.pdf', size: 500);
+      final ledger = [
+        _entry(kept, WatchedFileState.done, fileId: 'f-budget'),
+        _entry(_doc('Notes.txt', size: 1000), WatchedFileState.done, fileId: 'f-notes'),
+        // The same size, written since: a change only the time shows.
+        _entry(_doc('Lease.pdf', size: 900, age: const Duration(days: 2)), WatchedFileState.done, fileId: 'f-lease'),
+        _entry(_doc('Old.pdf', size: 500, age: const Duration(days: 9)), WatchedFileState.skipped),
+      ];
+      final fingerprints = {'Lease.pdf|900': 'f-lease', 'Budget.xlsx|1000': 'f-budget'};
+      final onComputer = _plan(
+        [kept, grown, edited, touched],
+        ledger: ledger,
+        fingerprints: fingerprints,
+        resendChanged: true,
+      );
+      expect(_names(onComputer), unorderedEquals(['Notes.txt', 'Lease.pdf']));
+      expect(onComputer.replacing, {grown.id: 'f-notes', edited.id: 'f-lease'});
+
+      final onPhone = _plan([kept, grown, edited, touched], ledger: ledger, fingerprints: fingerprints);
+      expect(onPhone.toUpload, isEmpty);
+    });
+
+    test('a changed file still being written waits like a new one', () {
+      final writing = _doc('Notes.txt', size: 1200, age: const Duration(seconds: 10));
+      final plan = _plan(
+        [writing],
+        ledger: [_entry(_doc('Notes.txt', size: 1000), WatchedFileState.done, fileId: 'f-notes')],
+        resendChanged: true,
+      );
+      expect(plan.toUpload, isEmpty);
+      expect(plan.settling, 1);
     });
 
     test('the oldest file goes first', () {

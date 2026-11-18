@@ -22,6 +22,7 @@ void main() {
     write('movie.mkv.part');
     write('empty.txt', 0);
     write('.hidden/secret.txt');
+    write('Photos Library.photoslibrary/originals/A/IMG_1.heic');
   });
 
   tearDown(() => root.delete(recursive: true));
@@ -53,5 +54,37 @@ void main() {
     final listed = await DesktopFolders.list(root.path, limit: 2);
     expect(listed.files, hasLength(2));
     expect(listed.truncated, isTrue);
+  });
+
+  test('a package is never gone into, and hidden folders are left out when asked', () async {
+    final all = await DesktopFolders.list(root.path);
+    expect(all.files.where((doc) => doc.id.contains('photoslibrary')), isEmpty);
+    expect(all.files.map((doc) => doc.id), contains('.hidden/secret.txt'));
+
+    final watched = await DesktopFolders.list(root.path, skipHidden: true);
+    expect(watched.files.map((doc) => doc.id), isNot(contains('.hidden/secret.txt')));
+    expect(watched.files.map((doc) => doc.id), contains('Trip/Day 1/beach.jpg'));
+  });
+
+  test('only the top is listed without subfolders', () async {
+    final top = await DesktopFolders.list(root.path, recursive: false);
+    expect(top.files.map((doc) => doc.id), unorderedEquals(['notes.txt', 'empty.txt']));
+  });
+
+  test('the folders below are found, hidden ones and packages left out', () async {
+    final found = [
+      for (final path in await DesktopFolders.folders(root.path)) p.relative(path, from: root.path),
+    ];
+    expect(found, unorderedEquals(['Trip', p.join('Trip', 'Day 1')]));
+  });
+
+  test('changes a check would pass over are ignored', () {
+    expect(DesktopFolders.ignored('notes.txt'), isFalse);
+    expect(DesktopFolders.ignored(p.join('Trip', 'map.pdf')), isFalse);
+    expect(DesktopFolders.ignored(p.join('Trip', '.DS_Store')), isTrue);
+    expect(DesktopFolders.ignored(p.join('.git', 'index')), isTrue);
+    expect(DesktopFolders.ignored(p.join('Photos Library.photoslibrary', 'database')), isTrue);
+    expect(DesktopFolders.ignored('movie.mkv.part'), isTrue);
+    expect(DesktopFolders.ignored(p.join('..', 'elsewhere.txt')), isTrue);
   });
 }

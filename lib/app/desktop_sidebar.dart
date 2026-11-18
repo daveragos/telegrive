@@ -49,6 +49,7 @@ abstract final class DesktopNavigation {
     SidebarPlace('Recent', Icons.schedule_outlined, Icons.schedule_rounded, '/recent'),
     SidebarPlace('Albums', Icons.photo_album_outlined, Icons.photo_album_rounded, '/albums'),
     SidebarPlace('Available offline', Icons.offline_pin_outlined, Icons.offline_pin_rounded, '/offline'),
+    SidebarPlace('Folder sync', Icons.drive_folder_upload_outlined, Icons.drive_folder_upload_rounded, '/backup'),
     SidebarPlace('Trash', Icons.delete_outline_rounded, Icons.delete_rounded, '/trash'),
   ];
 

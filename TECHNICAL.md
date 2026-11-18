@@ -583,7 +583,20 @@ value goes back onto the line exactly as it came.
   changeable later: off sets Hide from Photos on the drive folder its
   files go into, making that folder first if needed, so it holds on
   every phone. A folder kept out by one around it can't be shown from
-  there.
+  there. Files inside hidden folders stay behind, as hidden files do.
+- **Folder sync** is the same on a computer, under Folder sync in the
+  sidebar: a folder is picked in the system's picker, read where it is
+  and its files sent from there with no copy, and it sends everything
+  unless told otherwise. Each folder is watched, through FSEvents on
+  macOS, ReadDirectoryChangesW on Windows and one inotify watch per
+  folder on Linux, so a file saved into it goes up a minute later; every
+  folder is looked through again every 15 minutes for what a watch
+  missed. A file that changes after it went up goes up again in place of
+  its copy, which goes to Trash as replaced, so the drive keeps the
+  latest and Trash the one before for 30 days. Nothing deleted on the
+  computer is deleted from the drive. A Mac's apps and libraries, the
+  Photos library in Pictures say, are never gone into. What folder sync
+  sends brings no notification.
 - **Free up space** deletes the phone's copies of photos and videos that
   are safely in the drive, optionally keeping the last 30 or 90 days. A
   photo with only a small copy in the drive is never among them.
@@ -833,8 +846,10 @@ previews are in the channel, so every phone shows them.
   about the monthly limit.
 - Saving a file to the phone needs room for it twice over for a moment.
 - Signing out forgets saved proxies with the rest of Telegram's data.
-- A watched folder sends each file once; a file changed after it went up
-  isn't sent again, and one renamed on the phone looks new.
+- A watched folder on a phone sends each file once; a file changed after
+  it went up isn't sent again. On a phone or a computer, a file renamed
+  or moved within the folder looks new, and goes up again under its new
+  name.
 - Android's file picker shows the drive only while app lock is off, and a
   file that isn't on the phone comes down only while Telegrive runs.
 - A change made without a connection stays on this phone until it reaches

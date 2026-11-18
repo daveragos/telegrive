@@ -7,7 +7,9 @@ import 'package:photo_manager/photo_manager.dart';
 
 import '../../../app/theme/tokens.dart';
 import '../../../core/format/formatters.dart';
+import '../../../core/platform/app_platform.dart';
 import '../../../core/widgets/common.dart';
+import '../../../core/widgets/readable_width.dart';
 import '../../../infrastructure/database/app_database.dart';
 import '../../../infrastructure/notifications/app_notifications.dart';
 import '../../../infrastructure/storage/preferences.dart';
@@ -39,6 +41,7 @@ class BackupScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    if (AppPlatform.isDesktop) return const _FolderSync();
     final colors = context.colors;
     final backup = ref.watch(backupControllerProvider);
     final controller = ref.read(backupControllerProvider.notifier);
@@ -523,6 +526,37 @@ class _FolderList extends ConsumerWidget {
 
 /// The other folders on this phone whose new files upload by themselves,
 /// one row each, and the way to add one.
+/// The Backup screen on a computer: the folders whose new and changed
+/// files upload by themselves. A computer has no camera roll to back up,
+/// no mobile data to mind, and no Google Takeout to read.
+class _FolderSync extends ConsumerWidget {
+  const _FolderSync();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Folder sync')),
+      body: ListView(
+        padding: readableListPadding(context, bottom: Space.x4),
+        children: [
+          const _WatchedFolders(),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(Space.gutter, Space.xxl, Space.gutter, 0),
+            child: Text(
+              'New files in these folders go up a minute after they land, to Files › '
+              '${WatchedFoldersController.rootFolder} unless you pick a drive folder, '
+              'while Telegrive runs. A file that changes goes up again in place of its '
+              'copy, which goes to Trash. Deleting a file from this computer never '
+              'deletes it from your drive. This list stays on this computer.',
+              style: context.text.bodySmall,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _WatchedFolders extends ConsumerWidget {
   const _WatchedFolders();
 
@@ -532,7 +566,7 @@ class _WatchedFolders extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const SectionHeader('Other folders on this phone'),
+        SectionHeader(AppPlatform.isDesktop ? 'Folders on this computer' : 'Other folders on this phone'),
         AsyncView<List<WatchedFolderView>>(
           value: ref.watch(watchedFolderViewsProvider),
           data: (views) => AnimatedSize(
@@ -546,9 +580,12 @@ class _WatchedFolders extends ConsumerWidget {
                   leading: Icon(Icons.add_rounded, color: colors.text2),
                   title: const Text('Add a folder'),
                   subtitle: views.isEmpty
-                      ? const Text(
-                          'New files in it upload by themselves, like Recordings or '
-                          'Download › Bank.',
+                      ? Text(
+                          AppPlatform.isDesktop
+                              ? 'New and changed files in it upload by themselves, like '
+                                    'Documents › Invoices or Screenshots.'
+                              : 'New files in it upload by themselves, like Recordings or '
+                                    'Download › Bank.',
                         )
                       : null,
                   onTap: () => showAddWatchedFolder(context, ref),
@@ -670,13 +707,13 @@ String watchedFolderDetail(WatchedFolderView view) {
       switch (view.row.filter) {
         WatchFilter.audio => files(
           status.leftOut,
-          'isn\'t audio, so it stays on the phone',
-          'aren\'t audio, so they stay on the phone',
+          'isn\'t audio, so it stays on the ${AppPlatform.device}',
+          'aren\'t audio, so they stay on the ${AppPlatform.device}',
         ),
         _ => files(
           status.leftOut,
-          'isn\'t a document or PDF, so it stays on the phone',
-          'aren\'t documents or PDFs, so they stay on the phone',
+          'isn\'t a document or PDF, so it stays on the ${AppPlatform.device}',
+          'aren\'t documents or PDFs, so they stay on the ${AppPlatform.device}',
         ),
       },
     if (status.truncated)

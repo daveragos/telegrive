@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/async/combine.dart';
 import '../../../core/files/file_kind.dart';
+import '../../../core/platform/app_platform.dart';
 import '../../../infrastructure/database/app_database.dart';
 import '../../../infrastructure/network/network_status.dart';
 import '../../../infrastructure/storage/device_storage.dart';
@@ -21,6 +22,7 @@ import '../../transfers/data/transfer_queue.dart';
 import '../../transfers/domain/transfer_wait.dart';
 import 'backup_controller.dart';
 import 'backup_rules.dart';
+import 'folder_watcher.dart';
 import 'phone_folders.dart';
 
 // -----------------------------------------------------------------------------
@@ -42,8 +44,18 @@ const int watchMaxFailures = 3;
 /// Whether [doc] is a file any filter could send. Names that start with a
 /// dot are left out, which covers the '.pending-' and '.trashed-' names
 /// Android gives files still being written or in its trash, and so are
-/// empty files.
-bool watchCounts(PhoneDocument doc) => !doc.name.startsWith('.') && doc.size > 0;
+/// files inside hidden folders and empty files.
+bool watchCounts(PhoneDocument doc) =>
+    !doc.name.startsWith('.') &&
+    doc.size > 0 &&
+    !doc.dir.split('/').any((part) => part.startsWith('.'));
+
+/// Whether [doc] is not the file [entry] recorded: another size, or a time
+/// it was changed other than the one written down, to the second the
+/// ledger keeps.
+bool watchChanged(WatchedFileRow entry, PhoneDocument doc) =>
+    entry.size != doc.size ||
+    entry.modifiedAt.millisecondsSinceEpoch ~/ 1000 != doc.modifiedAt.millisecondsSinceEpoch ~/ 1000;
 
 /// Whether [doc] is a file [filter] sends up.
 bool watchMatches(PhoneDocument doc, WatchFilter filter) {
@@ -68,10 +80,15 @@ class WatchPlan {
     required this.settling,
     required this.gaveUp,
     this.leftOut = 0,
+    this.replacing = const {},
   });
 
   /// The files to send up, oldest first.
   final List<PhoneDocument> toUpload;
+
+  /// Files of [toUpload] that went up before and have changed since, by
+  /// document id, each with the drive file the new upload replaces.
+  final Map<String, String> replacing;
 
   /// Files the drive already holds under the same name and size, by
   /// document id, each with the drive file's id.
@@ -90,11 +107,12 @@ class WatchPlan {
 /// Sorts [listing] by what [ledger] knows of each file. A file [filter]
 /// leaves out is counted in [WatchPlan.leftOut] unless it is hidden or
 /// empty, and passed over, and so is one in the drive, one set aside,
-/// and one whose upload is still in [inFlight]. One that failed
-/// [watchMaxFailures] times counts as [WatchPlan.gaveUp], and one changed
-/// within [watchSettle] of [now] as [WatchPlan.settling]. Of the rest, a
-/// file whose `name|size` is in [fingerprints] is already in the drive, and
-/// everything else goes up, oldest first.
+/// and one whose upload is still in [inFlight]. With [resendChanged], one
+/// in the drive that has changed since goes up again, replacing it. One
+/// that failed [watchMaxFailures] times counts as [WatchPlan.gaveUp], and
+/// one changed within [watchSettle] of [now] as [WatchPlan.settling]. Of
+/// the rest, a file whose `name|size` is in [fingerprints] is already in
+/// the drive, and everything else goes up, oldest first.
 WatchPlan planUploads({
   required List<PhoneDocument> listing,
   required Map<String, WatchedFileRow> ledger,
@@ -102,9 +120,11 @@ WatchPlan planUploads({
   required WatchFilter filter,
   required DateTime now,
   required bool Function(String transferId) inFlight,
+  bool resendChanged = false,
 }) {
   final toUpload = <PhoneDocument>[];
   final alreadyInDrive = <String, String>{};
+  final replacing = <String, String>{};
   var settling = 0;
   var gaveUp = 0;
   var leftOut = 0;
@@ -115,7 +135,12 @@ WatchPlan planUploads({
       continue;
     }
     final entry = ledger[doc.id];
+    final replaces = resendChanged && entry?.state == WatchedFileState.done && watchChanged(entry!, doc)
+        ? entry.fileId
+        : null;
     switch (entry?.state) {
+      case WatchedFileState.done when replaces != null:
+        break;
       case WatchedFileState.done || WatchedFileState.skipped:
         continue;
       case WatchedFileState.pending
@@ -130,12 +155,15 @@ WatchPlan planUploads({
       settling++;
       continue;
     }
+    // A changed file of the same size matches the copy it replaces, which
+    // doesn't make it the same file.
     final existing = fingerprints['${doc.name}|${doc.size}'];
-    if (existing != null) {
+    if (existing != null && existing != replaces) {
       alreadyInDrive[doc.id] = existing;
       continue;
     }
     toUpload.add(doc);
+    if (replaces != null) replacing[doc.id] = replaces;
   }
   toUpload.sort((a, b) => a.modifiedAt.compareTo(b.modifiedAt));
   return WatchPlan(
@@ -144,6 +172,7 @@ WatchPlan planUploads({
     settling: settling,
     gaveUp: gaveUp,
     leftOut: leftOut,
+    replacing: replacing,
   );
 }
 
@@ -319,9 +348,20 @@ class WatchState {
 /// what went up, and a file the drive already holds under the same name
 /// and size is recognised and passed over, after a reinstall say. Photo
 /// backup's Mobile data choice and monthly limit govern these uploads too.
+///
+/// On a computer the folders are watched as well, through [FolderWatcher],
+/// so a file saved into one goes up a minute later, and looked through
+/// again every [rescanEvery] for what a watch can miss. Files go up from
+/// where they are, and a file that changes after it went up goes up again
+/// in place of the one in the drive, which goes to Trash. Nothing deleted
+/// from the computer is deleted from the drive.
 class WatchedFoldersController extends Notifier<WatchState> {
   static const String rootFolder = 'Auto upload';
   static const int _parallel = 2;
+
+  /// How often a computer looks through its watched folders even when no
+  /// watch has said anything changed.
+  static const Duration rescanEvery = Duration(minutes: 15);
 
   /// Left free on the phone on top of each copy, so a folder of big files
   /// never fills it.
@@ -340,9 +380,21 @@ class WatchedFoldersController extends Notifier<WatchState> {
   /// Folders removed while a check may still be sending their files.
   final Set<String> _dropped = {};
 
+  /// On a computer, the watch on each folder, by rule id, with the folder
+  /// and the subfolder choice it was started for.
+  final Map<String, ({FolderWatcher watcher, String uri, bool subfolders})> _watchers = {};
+  Timer? _rescan;
+
   /// The uploads checks are waiting on, for what the monthly limit has
   /// already let onto mobile data.
   final Set<String> _following = {};
+
+  /// Every upload a check has queued while the app has run.
+  final Set<String> _queued = {};
+
+  /// Whether upload [transferId] is one a check of the folders queued,
+  /// rather than one the person started.
+  bool queuedUpload(String transferId) => _queued.contains(transferId);
 
   /// Ends once the last upload asked for has its name and its place in the
   /// queue, so two files of one name get names of their own.
@@ -373,9 +425,14 @@ class WatchedFoldersController extends Notifier<WatchState> {
       final waiting = state.rules.values.any((r) => r.phase == RulePhase.waitingForWifi);
       if (waiting && next.online && !next.metered) schedule(immediate: true);
     });
+    if (AppPlatform.isDesktop) {
+      _rescan = Timer.periodic(rescanEvery, (_) => schedule());
+    }
     ref.onDispose(() {
       _debounce?.cancel();
       _settle?.cancel();
+      _rescan?.cancel();
+      _unwatch();
     });
     return const WatchState();
   }
@@ -464,6 +521,7 @@ class WatchedFoldersController extends Notifier<WatchState> {
     final rule = rules.where((r) => r.id == id).firstOrNull;
     if (rule == null) return;
     _dropped.add(id);
+    _unwatch(id);
     await _db.deleteWatchedFolder(id);
     if (!rules.any((r) => r.id != id && r.treeUri == rule.treeUri)) {
       await _folders.release(rule.treeUri);
@@ -500,6 +558,7 @@ class WatchedFoldersController extends Notifier<WatchState> {
     _stopRequested = true;
     _debounce?.cancel();
     _settle?.cancel();
+    _unwatch();
     final rules = await _db.watchedFolderList();
     for (final uri in {for (final rule in rules) rule.treeUri}) {
       await _folders.release(uri);
@@ -576,6 +635,7 @@ class WatchedFoldersController extends Notifier<WatchState> {
     state = state.copyWith(
       rules: {for (final rule in rules) rule.id: state.rules[rule.id] ?? const RuleStatus()},
     );
+    _watch(rules);
     if (rules.isEmpty) return;
     // Uploads an earlier run left going are in the queue only once it has
     // read its rows; without them they would be taken for lost and sent a
@@ -627,6 +687,7 @@ class WatchedFoldersController extends Notifier<WatchState> {
       filter: rule.filter,
       now: now,
       inFlight: (id) => transfers.byId(id)?.status.isPending ?? false,
+      resendChanged: AppPlatform.isDesktop,
     );
     if (recheckAfter(plan) case final recheck?) {
       _settle?.cancel();
@@ -652,7 +713,15 @@ class WatchedFoldersController extends Notifier<WatchState> {
             waiting: held,
             truncated: listing.truncated,
           )
-        : await _send(rule, plan.toUpload, ledger, fingerprints, held: held, truncated: listing.truncated);
+        : await _send(
+            rule,
+            plan.toUpload,
+            ledger,
+            fingerprints,
+            replacing: plan.replacing,
+            held: held,
+            truncated: listing.truncated,
+          );
     await _db.updateWatchedFolder(rule.id, WatchedFoldersCompanion(checkedAt: Value(DateTime.now())));
     final settled = await _db.watchedLedger(rule.id);
     final failed = listing.files
@@ -730,15 +799,17 @@ class WatchedFoldersController extends Notifier<WatchState> {
     }
   }
 
-  /// Sends [files] of [rule] up, [_parallel] at a time, and says where the
+  /// Sends [files] of [rule] up, [_parallel] at a time, those in
+  /// [replacing] in place of the drive file named there, and says where the
   /// folder stands after. It stops early once the phone is on mobile data
-  /// the files may not use, when the phone runs short of room, and when the
-  /// folder is removed.
+  /// the files may not use, when the phone runs short of room for a copy,
+  /// and when the folder is removed.
   Future<RuleStatus> _send(
     WatchedFolderRow rule,
     List<PhoneDocument> files,
     Map<String, WatchedFileRow> ledger,
     Map<String, String> fingerprints, {
+    required Map<String, String> replacing,
     required int held,
     required bool truncated,
   }) async {
@@ -771,13 +842,14 @@ class WatchedFoldersController extends Notifier<WatchState> {
           return;
         }
         final entry = ledger[doc.id];
-        if (await Room.shortfall(ref.read(deviceStorageProvider), doc.size + _keepFree) != null) {
+        if (_folders.copies &&
+            await Room.shortfall(ref.read(deviceStorageProvider), doc.size + _keepFree) != null) {
           await _failed(rule.id, doc, entry);
           full = true;
           return;
         }
         show(status.copyWith(current: doc.name));
-        if (!await _upload(rule, doc, destination, entry, fingerprints)) {
+        if (!await _upload(rule, doc, destination, entry, fingerprints, replaces: replacing[doc.id])) {
           waiting = true;
           return;
         }
@@ -790,7 +862,8 @@ class WatchedFoldersController extends Notifier<WatchState> {
     return RuleStatus(truncated: truncated);
   }
 
-  /// Copies [doc] into the cache and sends it up into [destination], and
+  /// Sends [doc] up into [destination], from a copy in the cache on a
+  /// phone, in place of drive file [replaces] when it went up before, and
   /// records how that went. False when the upload steps back into the
   /// queue to wait for Wi-Fi: the queue starts it again by itself, and a
   /// later check follows it from the ledger.
@@ -799,15 +872,18 @@ class WatchedFoldersController extends Notifier<WatchState> {
     PhoneDocument doc,
     String destination,
     WatchedFileRow? entry,
-    Map<String, String> fingerprints,
-  ) async {
+    Map<String, String> fingerprints, {
+    String? replaces,
+  }) async {
     // An upload an earlier check left failed in Transfers gives way to this
     // one, so its Retry can't send the file a second time.
-    if (entry?.transferId case final old?) await _queue.remove(old);
+    if (entry?.transferId case final old? when entry?.state != WatchedFileState.done) {
+      await _queue.remove(old);
+    }
     final String id;
     try {
-      final copy = await _folders.copy(rule.treeUri, doc);
-      id = await _enqueue(doc, copy, destination);
+      final source = await _folders.source(rule.treeUri, doc);
+      id = await _enqueue(doc, source, destination, replaces: replaces);
     } catch (e) {
       debugPrint('[Folders] ${doc.name}: $e');
       await _failed(rule.id, doc, entry);
@@ -846,30 +922,43 @@ class WatchedFoldersController extends Notifier<WatchState> {
     }
   }
 
-  /// Queues the upload of [copy], made from [doc], into [destination]. A
+  /// Queues the upload of [source], read from [doc], into [destination]. A
   /// name the folder already has, or that an upload is still taking there,
-  /// gets a number, since there is nobody to ask. The upload waits for
+  /// gets a number, since there is nobody to ask, unless the upload
+  /// [replaces] the file of that name. A copy the app owns takes the name
+  /// on disk too; a file on a computer keeps its own. The upload waits for
   /// Wi-Fi unless the Mobile data choice lets these files use mobile data,
   /// so it steps back if the phone leaves Wi-Fi while it runs.
-  Future<String> _enqueue(PhoneDocument doc, ({String path, int size}) copy, String destination) {
+  Future<String> _enqueue(
+    PhoneDocument doc,
+    ({String path, int size, bool owned}) source,
+    String destination, {
+    String? replaces,
+  }) {
     final queued = _naming.then((_) async {
-      final [name] = await FileActions.namesKeepingBoth(
-        _repository,
-        ref.read(transferQueueProvider),
-        [doc.name],
-        folderId: destination,
-      );
-      final path = name == doc.name ? copy.path : await FileActions.renamedOnDisk(copy.path, name);
+      final [name] = replaces != null
+          ? [doc.name]
+          : await FileActions.namesKeepingBoth(
+              _repository,
+              ref.read(transferQueueProvider),
+              [doc.name],
+              folderId: destination,
+            );
+      final path = name == doc.name || !source.owned
+          ? source.path
+          : await FileActions.renamedOnDisk(source.path, name);
       final ids = await _queue.enqueueUploads([
         UploadRequest(
           name: name,
           path: path,
-          size: copy.size,
-          ownsSource: true,
+          size: source.size,
+          ownsSource: source.owned,
+          replacesFileId: replaces,
           wifiOnly: !foldersMayUseMobileData(_prefs.backupMobileData),
         ),
       ], folderId: destination);
       if (ids.isEmpty) throw const DriveException('Couldn\'t start the upload.');
+      _queued.add(ids.single);
       return ids.single;
     });
     _naming = queued.then((_) {}, onError: (_) {});
@@ -941,6 +1030,31 @@ class WatchedFoldersController extends Notifier<WatchState> {
     failures: Value(failures),
     updatedAt: DateTime.now(),
   );
+
+  /// Keeps a watch on each of [rules]' folders on a computer, starting one
+  /// for a folder new to the list or changed, and stopping those of folders
+  /// gone from it. A change seen sends the folders to be checked.
+  void _watch(List<WatchedFolderRow> rules) {
+    if (!AppPlatform.isDesktop) return;
+    final byId = {for (final rule in rules) rule.id: rule};
+    for (final MapEntry(key: id, value: watch) in [..._watchers.entries]) {
+      final rule = byId[id];
+      if (rule == null || rule.treeUri != watch.uri || rule.subfolders != watch.subfolders) _unwatch(id);
+    }
+    for (final rule in rules) {
+      if (_watchers.containsKey(rule.id)) continue;
+      final watcher = FolderWatcher(rule.treeUri, recursive: rule.subfolders, onChange: schedule);
+      _watchers[rule.id] = (watcher: watcher, uri: rule.treeUri, subfolders: rule.subfolders);
+      unawaited(watcher.start());
+    }
+  }
+
+  /// Stops the watch on folder [id], or on every folder when null.
+  void _unwatch([String? id]) {
+    for (final key in id == null ? [..._watchers.keys] : [id]) {
+      _watchers.remove(key)?.watcher.stop();
+    }
+  }
 
   void _setRule(String id, RuleStatus status) {
     if (!ref.mounted || _dropped.contains(id)) return;

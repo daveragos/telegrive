@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/theme/tokens.dart';
 import '../../../core/format/formatters.dart';
+import '../../../core/platform/app_platform.dart';
 import '../../../core/widgets/adaptive_sheet.dart';
 import '../../../core/widgets/common.dart';
 import '../../../infrastructure/database/app_database.dart';
@@ -29,11 +30,12 @@ final _driveFoldersProvider = StreamProvider.autoDispose<List<FolderRow>>(
   (ref) => ref.watch(appDatabaseProvider).watchAllFolders(),
 );
 
-/// Adds a phone folder whose new files upload by themselves: Android's
-/// folder picker first, where backing out ends it without a word, then the
-/// sheet that says how many files are in it and what to send where. A
-/// folder that is on the list already isn't added twice, and the access
-/// to one that isn't added after all goes back to Android.
+/// Adds a folder whose new files upload by themselves: Android's or the
+/// computer's folder picker first, where backing out ends it without a
+/// word, then the sheet that says how many files are in it and what to
+/// send where. A folder that is on the list already isn't added twice, and
+/// on a phone the access to one that isn't added after all goes back to
+/// Android.
 Future<void> showAddWatchedFolder(BuildContext context, WidgetRef ref) async {
   final folders = ref.read(phoneFoldersProvider);
   final controller = ref.read(watchedFoldersProvider.notifier);
@@ -172,7 +174,9 @@ class _WatchedFolderSheet extends ConsumerStatefulWidget {
 class _WatchedFolderSheetState extends ConsumerState<_WatchedFolderSheet> {
   static const _motion = Duration(milliseconds: 200);
 
-  late WatchFilter _filter = widget.existing?.row.filter ?? WatchFilter.documents;
+  // A folder picked on a computer is one to keep in the drive whole.
+  late WatchFilter _filter =
+      widget.existing?.row.filter ?? (AppPlatform.isDesktop ? WatchFilter.everything : WatchFilter.documents);
   late bool _subfolders = widget.existing?.row.subfolders ?? true;
   late String? _destinationId = widget.existing?.row.destinationId;
   late String _destination =
