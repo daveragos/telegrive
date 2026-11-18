@@ -58,8 +58,14 @@ abstract final class DesktopNavigation {
   static const settings =
       SidebarPlace('Settings', Icons.settings_outlined, Icons.settings_rounded, '/settings');
 
-  /// Where the app is now, as the router has it.
-  static String location(GoRouter router) => router.routerDelegate.currentConfiguration.uri.path;
+  /// Where the app is now: the page on top, which for one pushed over the
+  /// shell is the last match, while the matches' own address stays the
+  /// shell's.
+  static String location(GoRouter router) {
+    final configuration = router.routerDelegate.currentConfiguration;
+    if (configuration.isEmpty) return configuration.uri.path;
+    return router.state.uri.path;
+  }
 
   /// Opens [place]. A tab tapped again while it is showing goes back to its
   /// start, as on a phone.
