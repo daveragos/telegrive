@@ -308,16 +308,38 @@ class StreamServer {
       if (end < base) break;
       if (start < partEnd) {
         final tdFile = await _repository.resolveTdFile(part);
-        await _pipePart(
-          tdFile.id,
-          math.max(start, base) - base,
-          math.min(end + 1, partEnd) - base,
-          out,
-          openEnded: openEnded,
-          onBytes: onBytes,
-        );
+        final from = math.max(start, base) - base;
+        final to = math.min(end + 1, partEnd) - base;
+        final whole = await wholeOnDisk(tdFile, part.size);
+        if (whole != null) {
+          await out.addStream(
+            whole.openRead(from, to).map((bytes) {
+              onBytes?.call();
+              return bytes;
+            }),
+          );
+        } else {
+          await _pipePart(tdFile.id, from, to, out, openEnded: openEnded, onBytes: onBytes);
+        }
       }
       base = partEnd;
+    }
+  }
+
+  /// The file on this device holding all of [tdFile]'s [size] bytes, or
+  /// null while TDLib has yet to fetch it. One whole already is read
+  /// straight from disk: one uploaded from where it is on a computer is
+  /// one TDLib won't read itself, since it lies outside TDLib's cache.
+  @visibleForTesting
+  static Future<File?> wholeOnDisk(td.File tdFile, int size) async {
+    final local = tdFile.local;
+    if (!local.isDownloadingCompleted || local.path.isEmpty) return null;
+    final file = File(local.path);
+    try {
+      // A file changed since it went up isn't the one in the drive.
+      return await file.length() == size ? file : null;
+    } on FileSystemException {
+      return null;
     }
   }
 
