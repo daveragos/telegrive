@@ -14,6 +14,7 @@ import 'app/desktop_window.dart';
 import 'app/launch_action.dart';
 import 'app/licenses.dart';
 import 'core/platform/app_platform.dart';
+import 'core/platform/open_at_login.dart';
 import 'features/backup/data/backup_worker.dart';
 import 'infrastructure/notifications/app_notifications.dart';
 import 'infrastructure/storage/device_profile.dart';
@@ -22,7 +23,7 @@ import 'infrastructure/storage/preferences.dart';
 import 'infrastructure/telegram/instance_lock.dart';
 import 'infrastructure/telegram/telegram_client.dart';
 
-Future<void> main() async {
+Future<void> main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
   // Phones draw behind the status and navigation bars; computers have
   // neither, and their engines don't take the call.
@@ -43,8 +44,15 @@ Future<void> main() async {
   }
 
   final (prefs, profile) = await (SharedPreferences.getInstance(), DeviceProfile.read()).wait;
-  // On a computer, the window opens at its size and place from last time.
-  await DesktopWindow.open(prefs);
+  // On a computer, the window opens at its size and place from last time,
+  // or stays hidden in the menu bar or tray when Telegrive started at
+  // login, as long as it keeps running there.
+  await DesktopWindow.open(
+    prefs,
+    hidden: AppPlatform.isDesktop && OpenAtLogin.startedHidden(args) && Preferences(prefs).keepRunning,
+  );
+  // The login entry follows the app to wherever it is now.
+  if (AppPlatform.isDesktop) unawaited(OpenAtLogin.refresh());
   DeviceStorage.desktopFolder = Preferences(prefs).downloadFolder;
   final container = ProviderContainer(
     overrides: [

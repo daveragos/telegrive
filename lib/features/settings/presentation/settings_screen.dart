@@ -9,6 +9,7 @@ import '../../../core/config/app_config.dart';
 import '../../../core/format/formatters.dart';
 import '../../../core/platform/app_platform.dart';
 import '../../../core/platform/file_manager.dart';
+import '../../../core/platform/open_at_login.dart';
 import '../../../core/widgets/adaptive_sheet.dart';
 import '../../../core/widgets/brand_mark.dart';
 import '../../../core/widgets/common.dart';
@@ -38,6 +39,9 @@ import '../../search/data/content_indexer.dart';
 import '../../trash/data/pending_deletes.dart';
 import '../data/settings_providers.dart';
 import 'data_limit_sheet.dart';
+
+/// Whether Telegrive starts at login, as the computer has it.
+final _openAtLoginProvider = FutureProvider.autoDispose<bool>((_) => OpenAtLogin.isOn());
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -455,6 +459,40 @@ class SettingsScreen extends ConsumerWidget {
                   value: prefs.keepRunning,
                   onChanged: (on) async {
                     await prefs.setKeepRunning(on);
+                    ref.invalidate(preferencesProvider);
+                  },
+                ),
+              if (AppPlatform.isDesktop)
+                SwitchListTile(
+                  title: const Text('Open at login'),
+                  subtitle: Text(
+                    prefs.keepRunning
+                        ? 'Starts in the ${AppPlatform.tray}, with no window, and syncs your folders.'
+                        : 'Starts with its window open.',
+                  ),
+                  value: ref.watch(_openAtLoginProvider).value ?? false,
+                  onChanged: (on) async {
+                    try {
+                      await OpenAtLogin.set(on);
+                    } catch (e) {
+                      debugPrint('[Login] $e');
+                      if (context.mounted) {
+                        showSnack(context, on ? 'Couldn\'t open Telegrive at login.' : 'Couldn\'t stop opening Telegrive at login.');
+                      }
+                    }
+                    ref.invalidate(_openAtLoginProvider);
+                  },
+                ),
+              if (AppPlatform.isDesktop)
+                SwitchListTile(
+                  title: const Text('Stay awake for transfers'),
+                  subtitle: Text(
+                    'This computer doesn\'t go to sleep on its own while files go up or come down. '
+                    'The screen still turns off.',
+                  ),
+                  value: prefs.keepAwake,
+                  onChanged: (on) async {
+                    await prefs.setKeepAwake(on);
                     ref.invalidate(preferencesProvider);
                   },
                 ),

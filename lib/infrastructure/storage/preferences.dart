@@ -56,6 +56,11 @@ class Preferences {
   bool get keepRunning => _prefs.getBool('keep_running') ?? true;
   Future<void> setKeepRunning(bool on) => _prefs.setBool('keep_running', on);
 
+  /// Whether a computer stays awake while files go up or come down. On
+  /// until switched off.
+  bool get keepAwake => _prefs.getBool('keep_awake') ?? true;
+  Future<void> setKeepAwake(bool on) => _prefs.setBool('keep_awake', on);
+
   /// Whether folder sync is paused, from the tray or its screen, until it
   /// is resumed there.
   bool get foldersPaused => _prefs.getBool('folders_paused') ?? false;

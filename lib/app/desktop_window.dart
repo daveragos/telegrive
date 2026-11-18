@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:ui';
 
 import 'package:flutter/foundation.dart';
@@ -19,8 +20,10 @@ abstract final class DesktopWindow {
   static const String _boundsKey = 'window_bounds';
 
   /// Sets the window up and shows it, where it was left when that place is
-  /// still on a screen. Nothing on a phone.
-  static Future<void> open(SharedPreferences prefs) async {
+  /// still on a screen; with [hidden], as at login, it is placed but left
+  /// hidden, out of the Dock on a Mac, until the tray brings it up.
+  /// Nothing on a phone.
+  static Future<void> open(SharedPreferences prefs, {bool hidden = false}) async {
     if (!AppPlatform.isDesktop) return;
     await windowManager.ensureInitialized();
     final saved = readBounds(prefs.getString(_boundsKey));
@@ -32,8 +35,12 @@ abstract final class DesktopWindow {
         } catch (e) {
           debugPrint('[Window] $e');
         } finally {
-          await windowManager.show();
-          await windowManager.focus();
+          if (!hidden) {
+            await windowManager.show();
+            await windowManager.focus();
+          } else if (Platform.isMacOS) {
+            await windowManager.setSkipTaskbar(true);
+          }
         }
       },
     );

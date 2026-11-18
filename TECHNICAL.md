@@ -609,6 +609,18 @@ value goes back onto the line exactly as it came.
   beside the instance lock, asks it to show itself and quits. With the
   setting off, or on a Linux desktop without a tray, closing the window
   quits. Quitting either way closes TDLib first.
+- **Open at login** starts Telegrive in the menu bar or tray with no
+  window: a LaunchAgent in `~/Library/LaunchAgents` on a Mac, which sets
+  `TELEGRIVE_HIDDEN` since a Mac app's arguments don't reach Dart, the
+  Run key on Windows and an autostart entry on Linux, which pass
+  `--hidden`. Each start writes the entry again for wherever the app is
+  now. With Keep running off it starts with its window open.
+- **Stay awake for transfers**, on to begin with, keeps a computer from
+  sleeping on its own while files go up or come down or folder sync
+  sends: `caffeinate -i` on a Mac, a systemd sleep inhibitor on Linux,
+  and `SetThreadExecutionState` on Windows. The screen still turns off,
+  and closing a laptop's lid still puts it to sleep. Each lets go if the
+  app ends, since `caffeinate` and the inhibitor follow its process.
 - **Free up space** deletes the phone's copies of photos and videos that
   are safely in the drive, optionally keeping the last 30 or 90 days. A
   photo with only a small copy in the drive is never among them.
