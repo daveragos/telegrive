@@ -8,6 +8,7 @@ import '../../../app/theme/file_style.dart';
 import '../../../app/theme/tokens.dart';
 import '../../../core/files/file_kind.dart';
 import '../../../core/format/formatters.dart';
+import '../../../core/platform/app_platform.dart';
 import '../../../core/widgets/brand_mark.dart';
 import '../../../core/widgets/common.dart';
 import '../../../infrastructure/database/app_database.dart'
@@ -79,12 +80,15 @@ class HomeScreen extends ConsumerWidget {
         : null;
 
     return Scaffold(
-      floatingActionButton: FloatingActionButton(
-        heroTag: 'home-fab',
-        onPressed: () => FileActions.showCreateSheet(context, ref),
-        tooltip: 'New',
-        child: const Icon(Icons.add_rounded),
-      ),
+      // On a computer New sits in the sidebar.
+      floatingActionButton: AppPlatform.isDesktop
+          ? null
+          : FloatingActionButton(
+              heroTag: 'home-fab',
+              onPressed: () => FileActions.showCreateSheet(context, ref),
+              tooltip: 'New',
+              child: const Icon(Icons.add_rounded),
+            ),
       body: RefreshIndicator(
         onRefresh: () => ref.read(driveSyncProvider.notifier).refresh(),
         child: CustomScrollView(

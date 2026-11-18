@@ -302,13 +302,31 @@ abstract final class AppTheme {
         ),
         textStyle: text.bodySmall?.copyWith(color: scheme.onInverseSurface),
       ),
+      // On a computer a page changes at once beside a sidebar that stays
+      // where it is, as desktop apps' pages do.
       pageTransitionsTheme: const PageTransitionsTheme(
         builders: {
           TargetPlatform.android: PredictiveBackPageTransitionsBuilder(),
           TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
-          TargetPlatform.macOS: CupertinoPageTransitionsBuilder(),
+          TargetPlatform.macOS: _InstantPageTransitionsBuilder(),
+          TargetPlatform.windows: _InstantPageTransitionsBuilder(),
+          TargetPlatform.linux: _InstantPageTransitionsBuilder(),
         },
       ),
     );
   }
+}
+
+/// No transition: the new page is simply there.
+class _InstantPageTransitionsBuilder extends PageTransitionsBuilder {
+  const _InstantPageTransitionsBuilder();
+
+  @override
+  Widget buildTransitions<T>(
+    PageRoute<T> route,
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) => child;
 }

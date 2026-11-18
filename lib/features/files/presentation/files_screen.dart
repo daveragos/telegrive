@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../app/theme/tokens.dart';
 import '../../../core/format/formatters.dart';
+import '../../../core/platform/app_platform.dart';
 import '../../../core/widgets/common.dart';
 import '../../../core/widgets/selection_bar.dart';
 import '../../../infrastructure/storage/preferences.dart';
@@ -371,7 +372,8 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
                     data.folders.every((f) => _folders.contains(f.id)),
               )
             : null,
-        floatingActionButton: _selecting
+        // On a computer New sits in the sidebar.
+        floatingActionButton: _selecting || AppPlatform.isDesktop
             ? null
             : FloatingActionButton(
                 heroTag: widget.private
@@ -430,7 +432,7 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
                 // Room for New to float over, or while selecting, when New
                 // is gone and the bar below takes its place, a margin.
                 SliverToBoxAdapter(
-                  child: SizedBox(height: _selecting ? Space.xxl : 112),
+                  child: SizedBox(height: _selecting || AppPlatform.isDesktop ? Space.xxl : 112),
                 ),
               ],
             ],

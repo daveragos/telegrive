@@ -19,6 +19,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:handy_tdlib/api.dart' as td;
 import 'package:telegrive/app/app_shell.dart';
+import 'package:telegrive/app/desktop_sidebar.dart';
+import 'package:telegrive/core/platform/app_platform.dart';
 import 'package:telegrive/app/theme/app_theme.dart';
 import 'package:telegrive/features/auth/presentation/phone_screen.dart';
 import 'package:telegrive/features/auth/presentation/welcome_screen.dart';
@@ -681,6 +683,9 @@ void main() {
 
   setUpAll(() async {
     await _loadFonts();
+    // Screens are drawn as on a phone, whatever computer draws them, unless
+    // a shot asks for the desktop app.
+    AppPlatform.debugDesktop = false;
     // The Backup screen shows the watched folders as it does on Android.
     // ignore: invalid_use_of_visible_for_testing_member
     PhoneFolders.supported = true;
@@ -928,11 +933,21 @@ void main() {
     List<WatchedFolderView>? watched,
     bool connecting = false,
     BackgroundHealth? background,
+    bool desktop = false,
   }) async {
     debugDisableShadows = false;
-    tester.view.physicalSize = const Size(1080, 2340);
-    tester.view.devicePixelRatio = 2.625;
+    if (desktop) {
+      // A 1440 by 900 window on a Retina Mac.
+      tester.view.physicalSize = const Size(2880, 1800);
+      tester.view.devicePixelRatio = 2;
+      AppPlatform.debugDesktop = true;
+      addTearDown(() => AppPlatform.debugDesktop = false);
+    } else {
+      tester.view.physicalSize = const Size(1080, 2340);
+      tester.view.devicePixelRatio = 2.625;
+    }
     addTearDown(tester.view.reset);
+    Widget framed(Widget page) => desktop ? DesktopFrame(child: page) : page;
 
     // ignore: invalid_use_of_visible_for_testing_member
     SharedPreferences.setMockInitialValues({
@@ -1027,7 +1042,7 @@ void main() {
         ),
         GoRoute(path: '/albums', builder: (_, _) => const AlbumsScreen()),
         GoRoute(path: '/transfers', builder: (_, _) => const TransfersScreen()),
-        GoRoute(path: '/settings', builder: (_, _) => const SettingsScreen()),
+        GoRoute(path: '/settings', builder: (_, _) => framed(const SettingsScreen())),
         GoRoute(path: '/private', builder: (_, _) => const PrivateScreen()),
         GoRoute(path: '/checkup', builder: (_, _) => const CheckupScreen()),
         GoRoute(
@@ -1340,6 +1355,24 @@ void main() {
     await prepareData(tester);
     await pumpApp(tester, location: '/home');
     await snap(tester, 'home_light');
+  });
+
+  testWidgets('desktop home', (tester) async {
+    await prepareData(tester);
+    await pumpApp(tester, location: '/home', desktop: true);
+    await snap(tester, 'desktop_home');
+  });
+
+  testWidgets('desktop files', (tester) async {
+    await prepareData(tester);
+    await pumpApp(tester, location: '/files', desktop: true);
+    await snap(tester, 'desktop_files');
+  });
+
+  testWidgets('desktop settings', (tester) async {
+    await prepareData(tester);
+    await pumpApp(tester, location: '/settings', desktop: true);
+    await snap(tester, 'desktop_settings');
   });
 
   testWidgets('home dark', (tester) async {

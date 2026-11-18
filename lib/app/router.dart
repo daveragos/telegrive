@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../core/files/file_kind.dart';
+import '../core/platform/app_platform.dart';
 import '../features/auth/presentation/code_screen.dart';
 import '../features/auth/presentation/password_screen.dart';
 import '../features/auth/presentation/phone_screen.dart';
@@ -37,6 +38,7 @@ import '../features/trash/presentation/trash_screen.dart';
 import '../features/viewer/presentation/image_viewer_screen.dart';
 import 'app_phase.dart';
 import 'app_shell.dart';
+import 'desktop_sidebar.dart';
 
 /// The navigator every phase's screen sits in. Sheets that must open in
 /// any phase, before sign-in included, open on it from outside the router.
@@ -116,66 +118,66 @@ final routerProvider = Provider<GoRouter>((ref) {
         parentNavigatorKey: rootNavigatorKey,
         builder: (_, state) {
           final kind = state.uri.queryParameters['kind'];
-          return SearchScreen(
+          return _framed(SearchScreen(
             initialKind: FileKind.values
                 .where((k) => k.name == kind)
                 .firstOrNull,
             media: kind == 'media',
             initialFolderId: state.uri.queryParameters['folder'],
-          );
+          ));
         },
       ),
       GoRoute(
         path: '/transfers',
         parentNavigatorKey: rootNavigatorKey,
-        builder: (_, _) => const TransfersScreen(),
+        builder: (_, _) => _framed(const TransfersScreen()),
       ),
       GoRoute(
         path: '/settings',
         parentNavigatorKey: rootNavigatorKey,
-        builder: (_, _) => const SettingsScreen(),
+        builder: (_, _) => _framed(const SettingsScreen()),
       ),
       GoRoute(
         path: '/private',
         parentNavigatorKey: rootNavigatorKey,
-        builder: (_, _) => const PrivateScreen(),
+        builder: (_, _) => _framed(const PrivateScreen()),
         routes: [
           GoRoute(
             path: ':folderId',
             parentNavigatorKey: rootNavigatorKey,
-            builder: (_, state) => PrivateGate(
+            builder: (_, state) => _framed(PrivateGate(
               child: FilesScreen(
                 folderId: state.pathParameters['folderId'],
                 private: true,
               ),
-            ),
+            )),
           ),
         ],
       ),
       GoRoute(
         path: '/checkup',
         parentNavigatorKey: rootNavigatorKey,
-        builder: (_, _) => const CheckupScreen(),
+        builder: (_, _) => _framed(const CheckupScreen()),
       ),
       GoRoute(
         path: '/changes',
         parentNavigatorKey: rootNavigatorKey,
-        builder: (_, _) => const WaitingChangesScreen(),
+        builder: (_, _) => _framed(const WaitingChangesScreen()),
       ),
       GoRoute(
         path: '/backup',
         parentNavigatorKey: rootNavigatorKey,
-        builder: (_, _) => const BackupScreen(),
+        builder: (_, _) => _framed(const BackupScreen()),
         routes: [
           GoRoute(
             path: 'not-backed-up',
             parentNavigatorKey: rootNavigatorKey,
-            builder: (_, _) => const NotBackedUpScreen(),
+            builder: (_, _) => _framed(const NotBackedUpScreen()),
           ),
           GoRoute(
             path: 'queue',
             parentNavigatorKey: rootNavigatorKey,
-            builder: (_, _) => const BackupQueueScreen(),
+            builder: (_, _) => _framed(const BackupQueueScreen()),
           ),
         ],
       ),
@@ -191,29 +193,27 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/takeout',
         parentNavigatorKey: rootNavigatorKey,
-        builder: (_, _) => const TakeoutScreen(),
+        builder: (_, _) => _framed(const TakeoutScreen()),
       ),
       GoRoute(
         path: '/free-up',
         parentNavigatorKey: rootNavigatorKey,
-        builder: (_, _) => const FreeUpPreviewScreen(),
+        builder: (_, _) => _framed(const FreeUpPreviewScreen()),
       ),
       GoRoute(
         path: '/albums',
         parentNavigatorKey: rootNavigatorKey,
-        builder: (_, _) => const AlbumsScreen(),
+        builder: (_, _) => _framed(const AlbumsScreen()),
         routes: [
           GoRoute(
             path: ':albumId',
             parentNavigatorKey: rootNavigatorKey,
-            builder: (_, state) =>
-                AlbumScreen(albumId: state.pathParameters['albumId']!),
+            builder: (_, state) => _framed(AlbumScreen(albumId: state.pathParameters['albumId']!)),
             routes: [
               GoRoute(
                 path: 'add',
                 parentNavigatorKey: rootNavigatorKey,
-                builder: (_, state) =>
-                    AddToAlbumScreen(albumId: state.pathParameters['albumId']!),
+                builder: (_, state) => _framed(AddToAlbumScreen(albumId: state.pathParameters['albumId']!)),
               ),
             ],
           ),
@@ -222,12 +222,12 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/import/:chatId',
         parentNavigatorKey: rootNavigatorKey,
-        builder: (_, state) => ImportScreen(
+        builder: (_, state) => _framed(ImportScreen(
           chatId: int.parse(state.pathParameters['chatId']!),
           title: state.uri.queryParameters['title'] ?? '',
           folderId: state.uri.queryParameters['folder'],
           photos: state.uri.queryParameters['photos'] == '1',
-        ),
+        )),
       ),
       GoRoute(
         path: '/play/:fileId',
@@ -246,36 +246,36 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/trash',
         parentNavigatorKey: rootNavigatorKey,
-        builder: (_, _) => const TrashScreen(),
+        builder: (_, _) => _framed(const TrashScreen()),
       ),
       GoRoute(
         path: '/offline',
         parentNavigatorKey: rootNavigatorKey,
-        builder: (_, _) => const OfflineScreen(),
+        builder: (_, _) => _framed(const OfflineScreen()),
       ),
       GoRoute(
         path: '/space',
         parentNavigatorKey: rootNavigatorKey,
-        builder: (_, state) => SpaceScreen(
+        builder: (_, state) => _framed(SpaceScreen(
           focusPhone: state.uri.queryParameters['focus'] == 'phone',
-        ),
+        )),
       ),
       GoRoute(
         path: '/starred',
         parentNavigatorKey: rootNavigatorKey,
-        builder: (_, _) => const FileListScreen.starred(),
+        builder: (_, _) => _framed(const FileListScreen.starred()),
       ),
       GoRoute(
         path: '/recent',
         parentNavigatorKey: rootNavigatorKey,
-        builder: (_, _) => const FileListScreen.recent(),
+        builder: (_, _) => _framed(const FileListScreen.recent()),
       ),
       GoRoute(
         path: '/category/:kind',
         parentNavigatorKey: rootNavigatorKey,
-        builder: (_, state) => FileListScreen.kind(
+        builder: (_, state) => _framed(FileListScreen.kind(
           FileKind.fromName(state.pathParameters['kind']),
-        ),
+        )),
       ),
       GoRoute(
         path: '/viewer/:fileId',
@@ -297,6 +297,9 @@ final routerProvider = Provider<GoRouter>((ref) {
   });
   return router;
 });
+
+/// A page with the sidebar beside it on a computer; as it is on a phone.
+Widget _framed(Widget page) => AppPlatform.isDesktop ? DesktopFrame(child: page) : page;
 
 /// Sign-in steps replace each other with a cross-fade rather than a push:
 /// they are states, not a stack to go back through.

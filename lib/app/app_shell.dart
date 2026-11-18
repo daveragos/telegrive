@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 import 'package:open_filex/open_filex.dart';
 
 import '../core/format/formatters.dart';
+import '../core/platform/app_platform.dart';
 import '../core/widgets/common.dart';
 import '../core/widgets/selection_bar.dart';
 import '../features/backup/data/backup_controller.dart';
@@ -31,13 +32,15 @@ import '../features/transfers/domain/transfer_wait.dart';
 import '../features/trash/data/pending_deletes.dart';
 import '../infrastructure/database/app_database.dart'
     show TransferKind, TransferOrigin, TransferStatus;
+import 'desktop_sidebar.dart';
 import 'launch_action.dart';
 import 'theme/tokens.dart';
 
 /// Three places to be: Home, Files, Photos. Transfers is not a place, it is
 /// something happening, so it shows as a line above the bar while it
 /// happens, and so does a big change to many items. Settings sits under the
-/// avatar on Home.
+/// avatar on Home. On a computer the three sit in [DesktopSidebar] with the
+/// pages a phone reaches from Home and Settings.
 ///
 /// The shell is also the first screen of an open drive, so it asks the
 /// one-time "back up your photos?" question and acts on a tapped
@@ -232,7 +235,11 @@ class _AppShellState extends ConsumerState<AppShell> {
     );
 
     final Widget scaffold;
-    if (wide) {
+    if (AppPlatform.isDesktop) {
+      // The sidebar switches tabs through the shell it is handed here.
+      DesktopNavigation.shell = shell;
+      scaffold = Scaffold(body: DesktopFrame(child: body));
+    } else if (wide) {
       scaffold = Scaffold(
         body: Row(
           children: [
