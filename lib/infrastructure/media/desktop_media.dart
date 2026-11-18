@@ -35,7 +35,34 @@ abstract final class DesktopMedia {
       final file = File(path);
       if (await file.length() > _largestPhoto) return null;
       final jpeg = await jpegOf(await file.readAsBytes(), side: thumbnailSide);
-      return jpeg == null ? null : await _write(out, jpeg);
+      if (jpeg != null) return await _write(out, jpeg);
+    } catch (e) {
+      debugPrint('[DesktopMedia] $path: $e');
+    }
+    // HEIC, AVIF and RAW photos Flutter's decoder can't read.
+    return systemJpeg(path, side: thumbnailSide, out: out);
+  }
+
+  /// A JPEG of the photo at [path], no side over [side], made by the
+  /// system's own image library and written to [out]: `sips` on a Mac,
+  /// which reads HEIC, AVIF and camera RAW. Null elsewhere, or for a file
+  /// that makes no picture.
+  static Future<String?> systemJpeg(String path, {required int side, required String out}) async {
+    if (!Platform.isMacOS) return null;
+    try {
+      await File(out).parent.create(recursive: true);
+      final made = await Process.run('sips', [
+        '-s', 'format', 'jpeg', //
+        '-s', 'formatOptions', '82',
+        '-Z', '$side',
+        path,
+        '--out', out,
+      ]);
+      if (made.exitCode != 0 || !await File(out).exists()) {
+        debugPrint('[DesktopMedia] sips $path: ${made.stderr}');
+        return null;
+      }
+      return out;
     } catch (e) {
       debugPrint('[DesktopMedia] $path: $e');
       return null;

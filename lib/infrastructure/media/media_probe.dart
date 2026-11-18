@@ -55,10 +55,11 @@ abstract final class MediaProbe {
   }
 
   /// Writes a JPEG of the photo at [path] to [out], no side over [side]
-  /// pixels, decoded by Android, which reads RAW files and HEIC and AVIF
-  /// photos the app's own decoder may not. Answers [out], or null when
-  /// Android can't make a picture of it either.
+  /// pixels, decoded by Android, or by a Mac's own ImageIO, which read RAW
+  /// files and HEIC and AVIF photos the app's own decoder may not. Answers
+  /// [out], or null when the system can't make a picture of it either.
   static Future<String?> picture(String path, {required int side, required String out}) async {
+    if (AppPlatform.isDesktop) return DesktopMedia.systemJpeg(path, side: side, out: out);
     if (!_asks) return null;
     try {
       return await _channel.invokeMethod<String>('picture', {'path': path, 'side': side, 'out': out});
