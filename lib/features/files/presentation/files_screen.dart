@@ -1,13 +1,16 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show RenderSliver;
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../app/theme/tokens.dart';
 import '../../../core/format/formatters.dart';
 import '../../../core/platform/app_platform.dart';
+import '../../../core/platform/desktop_input.dart';
 import '../../../core/widgets/common.dart';
 import '../../../core/widgets/selection_bar.dart';
 import '../../../infrastructure/storage/preferences.dart';
@@ -92,6 +95,92 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
     });
     _publish();
   }
+
+  /// What shows, top to bottom, as `f:` and `d:` and an id, for a run
+  /// picked with Shift.
+  List<String> _order = const [];
+
+  /// The row last clicked, where a Shift-click's run starts.
+  String? _anchor;
+
+  /// Selects everything from the last row clicked to [to], both included.
+  void _selectRun(String to) {
+    final from = _order.indexOf(_anchor!);
+    final end = _order.indexOf(to);
+    if (from < 0 || end < 0) return;
+    setState(() {
+      for (final key in _order.sublist(math.min(from, end), math.max(from, end) + 1)) {
+        (key.startsWith('d:') ? _folders : _files).add(key.substring(2));
+      }
+    });
+    _publish();
+  }
+
+  /// The keyboard on a computer: Cmd or Ctrl with A to select everything,
+  /// Escape to stop selecting, Delete (Cmd-Backspace on a Mac) to move
+  /// what is selected to the trash, F2 to rename it and Enter to open it,
+  /// Cmd-Up or Alt-Up for the folder above, Cmd or Ctrl with F to search,
+  /// with R (or F5) to read the channel again, and with Shift-N for a new
+  /// folder.
+  Widget _withKeys(
+    FolderContents? data,
+    ({List<DriveFile> files, List<DriveFolder> folders}) picked,
+    Widget child,
+  ) {
+    if (!AppPlatform.isDesktop) return child;
+    const command = DesktopInput.command;
+    final one = picked.files.length + picked.folders.length == 1;
+    void trash() {
+      if (picked.files.isEmpty && picked.folders.isEmpty) return;
+      unawaited(FileActions.delete(context, ref, files: picked.files, folders: picked.folders));
+    }
+
+    void rename() {
+      if (!one) return;
+      unawaited(
+        picked.files.isNotEmpty
+            ? FileActions.renameFile(context, ref, picked.files.single)
+            : FileActions.renameFolder(context, ref, picked.folders.single),
+      );
+    }
+
+    void open() {
+      if (!one) return;
+      final (file, folder) = (picked.files.firstOrNull, picked.folders.firstOrNull);
+      _clearSelection();
+      if (file != null) _openOrToggleFile(file);
+      if (folder != null) _openFolder(folder);
+    }
+
+    void refresh() => unawaited(ref.read(driveSyncProvider.notifier).refresh());
+    return CallbackShortcuts(
+      bindings: {
+        command(LogicalKeyboardKey.keyA): () {
+          if (data != null) _selectAll(data);
+        },
+        const SingleActivator(LogicalKeyboardKey.escape): () {
+          if (_selecting) _clearSelection();
+        },
+        for (final keys in DesktopInput.trash) keys: trash,
+        const SingleActivator(LogicalKeyboardKey.f2): rename,
+        const SingleActivator(LogicalKeyboardKey.enter): open,
+        DesktopInput.up: () => Navigator.maybePop(context),
+        command(LogicalKeyboardKey.keyF): _search,
+        command(LogicalKeyboardKey.keyR): refresh,
+        const SingleActivator(LogicalKeyboardKey.f5): refresh,
+        command(LogicalKeyboardKey.keyN, shift: true): () => unawaited(
+          FileActions.createFolder(context, ref, parentId: widget.folderId),
+        ),
+      },
+      child: Focus(autofocus: true, child: child),
+    );
+  }
+
+  void _search() => context.push(
+    widget.folderId == null
+        ? '/search'
+        : '/search?folder=${Uri.encodeQueryComponent(widget.folderId!)}',
+  );
 
   void _selectAll(FolderContents data) {
     setState(() {
@@ -284,7 +373,14 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
       );
     }
 
-    return PopScope(
+    _order = [
+      for (final file in forwarded) 'f:${file.id}',
+      if (shown != null) ...[
+        for (final folder in shown.folders) 'd:${folder.id}',
+        for (final file in shown.files) 'f:${file.id}',
+      ],
+    ];
+    return _withKeys(data, picked, PopScope(
       canPop: !_selecting,
       onPopInvokedWithResult: (didPop, _) {
         if (!didPop) _clearSelection();
@@ -309,11 +405,7 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
                 actions: [
                   if (!widget.private)
                     IconButton(
-                      onPressed: () => context.push(
-                        widget.folderId == null
-                            ? '/search'
-                            : '/search?folder=${Uri.encodeQueryComponent(widget.folderId!)}',
-                      ),
+                      onPressed: _search,
                       icon: const Icon(Icons.search_rounded),
                       tooltip: 'Search',
                     ),
@@ -439,7 +531,7 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
           ),
         ),
       ),
-    );
+    ));
   }
 
   /// The first label sits close under the summary line.
@@ -468,10 +560,23 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
     );
   }
 
-  void _onFolderTap(DriveFolder folder) =>
-      _selecting ? _toggleFolder(folder) : _openFolder(folder);
+  void _onFolderTap(DriveFolder folder) {
+    final key = 'd:${folder.id}';
+    if (DesktopInput.runClick && _anchor != null) return _selectRun(key);
+    _anchor = key;
+    if (DesktopInput.addingClick) return _toggleFolder(folder);
+    _selecting ? _toggleFolder(folder) : _openFolder(folder);
+  }
 
-  void _onFileTap(DriveFile file) => _selecting
+  void _onFileTap(DriveFile file) {
+    final key = 'f:${file.id}';
+    if (DesktopInput.runClick && _anchor != null) return _selectRun(key);
+    _anchor = key;
+    if (DesktopInput.addingClick) return _toggleFile(file);
+    _openOrToggleFile(file);
+  }
+
+  void _openOrToggleFile(DriveFile file) => _selecting
       ? _toggleFile(file)
       : FileActions.open(
           context,

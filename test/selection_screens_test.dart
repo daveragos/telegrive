@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:telegrive/app/theme/app_theme.dart';
 import 'package:telegrive/core/files/file_kind.dart';
+import 'package:telegrive/core/platform/app_platform.dart';
 import 'package:telegrive/core/widgets/selection_bar.dart';
 import 'package:telegrive/features/drive/data/drive_repository.dart';
 import 'package:telegrive/features/drive/data/edit_outbox.dart';
@@ -533,4 +535,35 @@ void main() {
     final row = tester.getRect(find.text('Move to Trash'));
     expect(row.bottom, lessThanOrEqualTo(560));
   });
+
+  testWidgets(
+    'on a computer Ctrl-click selects, Shift-click picks the run, Ctrl-A takes all and Escape stops',
+    (tester) async {
+      AppPlatform.debugDesktop = true;
+      addTearDown(() => AppPlatform.debugDesktop = false);
+      await pumpFiles(tester, '/files', [_file('a.pdf'), _file('b.pdf'), _file('c.pdf')]);
+
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await tester.tap(find.text('a.pdf'));
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await settle(tester);
+      expect(find.text('1 selected · 2.0 MB'), findsOneWidget);
+
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.tap(find.text('c.pdf'));
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+      await settle(tester);
+      expect(find.text('3 selected · 6.0 MB'), findsOneWidget);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await settle(tester);
+      expect(selecting(), isFalse);
+
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyA);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await settle(tester);
+      expect(find.textContaining('4 selected'), findsOneWidget);
+    },
+  );
 }

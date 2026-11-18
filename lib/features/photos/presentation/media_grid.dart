@@ -8,6 +8,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/theme/tokens.dart';
+import '../../../core/platform/app_platform.dart';
+import '../../../core/platform/desktop_input.dart';
 import '../../../core/widgets/file_visuals.dart';
 import '../../../infrastructure/storage/preferences.dart';
 import '../../drive/domain/drive_models.dart';
@@ -138,6 +140,46 @@ class MediaGrid extends ConsumerStatefulWidget {
 }
 
 class _MediaGridState extends ConsumerState<MediaGrid> {
+  /// On a computer, Cmd or Ctrl with A selects every photo shown, and
+  /// Escape stops selecting.
+  Widget _withKeys(Widget child) {
+    if (!AppPlatform.isDesktop || !widget.selectable) return child;
+    return CallbackShortcuts(
+      bindings: {
+        DesktopInput.command(LogicalKeyboardKey.keyA): () =>
+            widget.selection.replace({for (final file in widget.files) file.id}),
+        const SingleActivator(LogicalKeyboardKey.escape): () {
+          if (widget.selection.active) widget.selection.clear();
+        },
+      },
+      child: Focus(autofocus: true, child: child),
+    );
+  }
+
+  /// The photo last clicked, where a Shift-click's run starts.
+  String? _clicked;
+
+  /// Opens [file], or selects it while selecting. On a computer Cmd or
+  /// Ctrl adds it to the selection or takes it out, and Shift picks the
+  /// run from the photo last clicked.
+  void _tap(DriveFile file) {
+    if (widget.selectable && DesktopInput.runClick && _clicked != null) {
+      final ids = [for (final f in widget.files) f.id];
+      final from = ids.indexOf(_clicked!);
+      final to = ids.indexOf(file.id);
+      if (from >= 0 && to >= 0) {
+        widget.selection.replace({
+          ...widget.selection.ids,
+          ...ids.sublist(math.min(from, to), math.max(from, to) + 1),
+        });
+        return;
+      }
+    }
+    _clicked = file.id;
+    if (widget.selectable && DesktopInput.addingClick) return widget.selection.toggle(file.id);
+    _selecting ? widget.selection.toggle(file.id) : widget.onOpen(file);
+  }
+
   final _scroll = ScrollController();
 
   /// The months and each photo's place within its month, worked out again
@@ -425,9 +467,7 @@ class _MediaGridState extends ConsumerState<MediaGrid> {
                     side: tileSize,
                     selecting: _selecting,
                     selected: widget.selection.contains(file.id),
-                    onTap: () => _selecting
-                        ? widget.selection.toggle(file.id)
-                        : widget.onOpen(file),
+                    onTap: () => _tap(file),
                     onSecondaryTap: _selecting || widget.onMenu == null
                         ? null
                         : () => widget.onMenu!(file),
@@ -454,7 +494,7 @@ class _MediaGridState extends ConsumerState<MediaGrid> {
       return scroll;
     }
 
-    return Listener(
+    return _withKeys(Listener(
       onPointerDown: _touchDown,
       onPointerMove: _touchMove,
       onPointerUp: _touchUp,
@@ -484,7 +524,7 @@ class _MediaGridState extends ConsumerState<MediaGrid> {
           },
         ),
       ),
-    );
+    ));
   }
 }
 
