@@ -105,6 +105,8 @@
         url: DL + 'telegrive-' + FALLBACK_VERSION + '.ipa',
         size: 25026356
       },
+      // Until a release carries the Mac app, its button opens the releases.
+      dmg: { name: 'telegrive-macos.dmg', url: 'https://github.com/daveragos/telegrive/releases', size: 0 },
       sums: { name: 'SHA256SUMS.txt', url: DL + 'SHA256SUMS.txt', size: 0 }
     }
   };
@@ -113,7 +115,8 @@
     v7a: /armeabi-v7a\.apk$/i,
     x86: /x86_64\.apk$/i,
     ipa: /\.ipa$/i,
-    sums: /sha256sums/i
+    dmg: /macos\.dmg$/i,
+    sums: /^sha256sums\.txt$/i
   };
 
   function megabytes(bytes) { return Math.round(bytes / 1e6) + '\u00a0MB'; }

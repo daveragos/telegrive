@@ -43,6 +43,8 @@ your files stay in Telegram.
    **iPhone:** follow the
    [iPhone guide](https://daveragos.github.io/telegrive/iphone.html). You
    install Telegrive with a free helper app and your Apple Account.
+   **Mac:** follow the [Mac guide](https://daveragos.github.io/telegrive/mac.html)
+   to install it from its disk image.
    Telegrive isn't in Google Play or the App Store yet.
 2. Sign in with your Telegram phone number, or scan a QR code from
    Telegram on another device.

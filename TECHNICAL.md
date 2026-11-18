@@ -1186,6 +1186,7 @@ changes the site.
 | --- | --- |
 | `index.html` | What Telegrive is, the downloads, and questions |
 | `iphone.html` | Installing the IPA with Sideloadly, SideStore or AltStore, step by step |
+| `mac.html` | Installing the Mac app from its disk image, Open Anyway and the keychain included |
 | `privacy.html` | What the app and the site keep, and where files go |
 | `404.html` | For any missing address; its paths start from `/telegrive/` |
 

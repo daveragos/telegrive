@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Install Telegrive on a Mac · Telegrive</title>
+  <meta name="description" content="Telegrive runs on Macs with Apple silicon or Intel, macOS 12 or newer. This guide shows how to install it and open it the first time.">
+  <link rel="canonical" href="https://daveragos.github.io/telegrive/mac.html">
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="Telegrive">
+  <meta property="og:title" content="Install Telegrive on a Mac">
+  <meta property="og:description" content="Install Telegrive on a Mac and open it the first time.">
+  <meta property="og:url" content="https://daveragos.github.io/telegrive/mac.html">
+  <meta property="og:image" content="https://daveragos.github.io/telegrive/assets/og.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png">
+  <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+  <link rel="preload" href="assets/fonts/plex-sans-400.woff2" as="font" type="font/woff2" crossorigin>
+  <meta name="theme-color" content="#111317">
+  <link rel="stylesheet" href="styles.css">
+  <script>
+    // Theme and platform, set before the first paint.
+    (function () {
+      var d = document.documentElement, t = null;
+      try { t = localStorage.getItem('telegrive-theme'); } catch (e) {}
+      if (t !== 'light' && t !== 'dark') {
+        t = window.matchMedia && matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+      }
+      d.setAttribute('data-theme', t);
+      var ua = navigator.userAgent;
+      var ios = /iPhone|iPad|iPod/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+      d.setAttribute('data-platform', /Android/i.test(ua) ? 'android' : ios ? 'ios' : 'desktop');
+    })();
+  </script>
+  <script src="site.js" defer></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <header class="nav" data-nav>
+    <div class="container nav-inner">
+      <a class="brand" href="./" aria-label="Telegrive home">
+        <img src="assets/brand/mark-96.png" alt="" width="26" height="26">
+        <span>Telegrive</span>
+      </a>
+      <div class="nav-actions">
+        <button class="icon-btn theme-toggle" type="button" data-theme-cycle aria-label="Change theme">
+          <svg class="i t-light" aria-hidden="true"><use href="assets/icons.svg#i-sun"/></svg>
+          <svg class="i t-dark" aria-hidden="true"><use href="assets/icons.svg#i-moon"/></svg>
+        </button>
+        <a class="btn btn-primary btn-sm" data-dl="dmg" href="https://github.com/daveragos/telegrive/releases">Download</a>
+      </div>
+    </div>
+  </header>
+
+  <main id="main" class="container guide">
+    <a class="back" href="./"><svg class="i" aria-hidden="true"><use href="assets/icons.svg#i-arrow"/></svg>Telegrive home</a>
+    <h1>Install Telegrive on a Mac</h1>
+    <p class="summary">Telegrive for Mac is one app for Apple silicon and Intel Macs. It isn't in the App Store, and Apple hasn't checked it, so the first time you open it your Mac asks you to confirm in System Settings. It takes a couple of minutes.</p>
+
+    <h2>Before you start</h2>
+    <ul class="checklist">
+      <li><svg class="i" aria-hidden="true"><use href="assets/icons.svg#i-check"/></svg><p><b>A Mac with macOS 12 Monterey or newer.</b> To check, open the Apple menu and choose About This Mac.</p></li>
+      <li><svg class="i" aria-hidden="true"><use href="assets/icons.svg#i-check"/></svg><p><b>Telegram on your phone</b>, to sign in by scanning a QR code. You can also sign in with your phone number.</p></li>
+    </ul>
+
+    <section class="howto">
+      <h2>Install and open it</h2>
+      <ol>
+        <li>
+          <div class="step">
+            <p><b>Download Telegrive for Mac.</b> It's one file, ending in .dmg.</p>
+            <a class="btn btn-primary" data-dl="dmg" href="https://github.com/daveragos/telegrive/releases"><svg class="i" aria-hidden="true"><use href="assets/icons.svg#i-download"/></svg>Download Telegrive for Mac</a>
+            <p class="file-meta"><span data-size="dmg">80&nbsp;MB</span> · macOS 12 or newer · Apple silicon and Intel</p>
+          </div>
+        </li>
+        <li>
+          <div class="step"><p><b>Open the file and drag Telegrive onto Applications.</b> Then eject the Telegrive disk from Finder's sidebar; you won't need it again.</p></div>
+        </li>
+        <li>
+          <div class="step"><p><b>Open Telegrive from Applications.</b> Your Mac says it can't check Telegrive for harmful software. Click <b>Done</b>, not Move to Trash.</p></div>
+        </li>
+        <li>
+          <div class="step"><p><b>Allow it in System Settings.</b> Open <span class="path">System Settings<i>›</i>Privacy &amp; Security</span>, scroll down to Security, and click <b>Open Anyway</b> beside the line about Telegrive. Enter your Mac's password, then click Open Anyway once more. Your Mac remembers this for this version.</p></div>
+        </li>
+        <li>
+          <div class="step"><p><b>Let Telegrive use its key.</b> Telegrive keeps the key to what it stores on your Mac in your keychain. When your Mac asks whether Telegrive may use it, enter your Mac's password and click <b>Always Allow</b>.</p></div>
+        </li>
+        <li>
+          <div class="step"><p><b>Sign in with Telegram.</b> Telegrive shows a QR code. On your phone, open Telegram, go to <span class="path">Settings<i>›</i>Devices<i>›</i>Link Desktop Device</span>, and scan it. Your drive opens, the same one your phone has.</p></div>
+        </li>
+      </ol>
+    </section>
+
+    <div class="callout">
+      <svg class="i" aria-hidden="true"><use href="assets/icons.svg#i-laptop"/></svg>
+      <div>
+        <p><b>On a Mac, Telegrive does more.</b> Drop files and folders on its window to upload them. Keep folders in sync, so what you save into them goes to your drive. Show your drive in Finder, to open and save into it like a disk. And Telegrive stays in the menu bar when you close its window, finishing what it's sending.</p>
+      </div>
+    </div>
+
+    <h2 id="update">Updating Telegrive</h2>
+    <p>New versions are listed on the <a href="https://github.com/daveragos/telegrive/releases">Releases page</a>. Download the new file, drag Telegrive onto Applications again and choose Replace. Your Mac asks you to confirm the new version in Privacy &amp; Security, and asks about the keychain once more: click Always Allow. You stay signed in, and your drive stays as it is.</p>
+    <p class="sums">Want to check a download? Every release lists its files in <a data-dl="sums" href="https://github.com/daveragos/telegrive/releases/latest">SHA256SUMS.txt</a>.</p>
+
+    <h2 id="help">If something goes wrong</h2>
+    <div class="faq">
+      <details>
+        <summary>There's no Open Anyway button<svg class="i" aria-hidden="true"><use href="assets/icons.svg#i-expand"/></svg></summary>
+        <div class="answer"><p>It appears only after you've tried to open Telegrive, and for about an hour after. Open Telegrive from Applications again, click Done, and then look in Privacy &amp; Security.</p></div>
+      </details>
+      <details>
+        <summary>It says Telegrive is damaged<svg class="i" aria-hidden="true"><use href="assets/icons.svg#i-expand"/></svg></summary>
+        <div class="answer"><p>That's what macOS says when the download was changed on its way, or when it doesn't trust where it came from. Download it again from this page. If it still says so, open Terminal and run <code>xattr -dr com.apple.quarantine /Applications/Telegrive.app</code>, which tells your Mac you chose to open it.</p></div>
+      </details>
+      <details>
+        <summary>Why doesn't Apple check it?<svg class="i" aria-hidden="true"><use href="assets/icons.svg#i-expand"/></svg></summary>
+        <div class="answer"><p>Apple checks apps whose makers pay for a developer account. Telegrive is free and made by one person, and its code is <a href="https://github.com/daveragos/telegrive">on GitHub</a> for anyone to read and build. Every release lists a checksum for each file, so you can make sure yours is the one published.</p></div>
+      </details>
+      <details>
+        <summary>My Mac keeps asking about the keychain<svg class="i" aria-hidden="true"><use href="assets/icons.svg#i-expand"/></svg></summary>
+        <div class="answer"><p>Click Always Allow rather than Allow, and it stops asking until the next version. Each new version asks once, since your Mac sees it as a new app.</p></div>
+      </details>
+      <details>
+        <summary>Is there a Windows or Linux version?<svg class="i" aria-hidden="true"><use href="assets/icons.svg#i-expand"/></svg></summary>
+        <div class="answer"><p>Not yet. They're on the way, with what the Mac version does.</p></div>
+      </details>
+    </div>
+
+    <p class="still">Still stuck? <a href="https://github.com/daveragos/telegrive/issues">Report a problem</a> and say which macOS you have and what it showed.</p>
+  </main>
+
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-top">
+        <a class="brand" href="./" aria-label="Telegrive home">
+          <img src="assets/brand/mark-96.png" alt="" width="26" height="26">
+          <span>Telegrive</span>
+        </a>
+        <nav class="footer-links" aria-label="Footer">
+          <a href="./#install">Download for Android</a>
+          <a href="iphone.html">Install on iPhone</a>
+          <a href="mac.html">Install on Mac</a>
+          <a href="https://jami.bio/daveragoose">Send a tip</a>
+          <a href="privacy.html">Privacy Policy</a>
+          <a href="https://github.com/daveragos/telegrive">Source code</a>
+          <a href="https://github.com/daveragos/telegrive/releases">Releases</a>
+          <a href="https://github.com/daveragos/telegrive/issues">Report an issue</a>
+        </nav>
+      </div>
+      <p class="fine">Telegrive is an independent app. It is not made by, affiliated with, or endorsed by Telegram. © <span data-year>2026</span> Dawit Beyene. Telegrive is free software under the GNU General Public License, version 3.</p>
+    </div>
+  </footer>
+</body>
+</html>
