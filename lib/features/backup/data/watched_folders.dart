@@ -322,7 +322,7 @@ class RuleStatus {
 
 @immutable
 class WatchState {
-  const WatchState({this.working = false, this.rules = const {}});
+  const WatchState({this.working = false, this.rules = const {}, this.paused = false});
 
   /// A check is sending files, the moments between two of them included,
   /// which is what keeps the transfer service up.
@@ -331,8 +331,15 @@ class WatchState {
   /// Each watched folder's status, by rule id.
   final Map<String, RuleStatus> rules;
 
-  WatchState copyWith({bool? working, Map<String, RuleStatus>? rules}) =>
-      WatchState(working: working ?? this.working, rules: rules ?? this.rules);
+  /// Folder sync is paused: nothing is checked, and what checks queued
+  /// waits paused in Transfers.
+  final bool paused;
+
+  WatchState copyWith({bool? working, Map<String, RuleStatus>? rules, bool? paused}) => WatchState(
+    working: working ?? this.working,
+    rules: rules ?? this.rules,
+    paused: paused ?? this.paused,
+  );
 }
 
 /// Uploads the new files of folders on this phone the person picked, the
@@ -434,7 +441,7 @@ class WatchedFoldersController extends Notifier<WatchState> {
       _rescan?.cancel();
       _unwatch();
     });
-    return const WatchState();
+    return WatchState(paused: _prefs.foldersPaused);
   }
 
   /// Starts watching [folder], sending what [filter] picks out of it, in
@@ -607,7 +614,7 @@ class WatchedFoldersController extends Notifier<WatchState> {
   }
 
   Future<void> run() async {
-    if (!PhoneFolders.supported) return;
+    if (!PhoneFolders.supported || state.paused) return;
     if (_running) {
       _rerun = true;
       return;
@@ -733,6 +740,40 @@ class WatchedFoldersController extends Notifier<WatchState> {
     );
   }
 
+  /// Pauses folder sync: the check under way stops after the files it is
+  /// sending, what checks queued is paused in Transfers, and nothing is
+  /// checked until [resume].
+  Future<void> pause() async {
+    if (state.paused) return;
+    state = state.copyWith(paused: true);
+    _stopRequested = true;
+    await _prefs.setFoldersPaused(true);
+    final ids = await _uploadsOfFolders();
+    await _queue.pauseAll((row) => ids.contains(row.id));
+  }
+
+  /// Takes folder sync up again where [pause] left it.
+  Future<void> resume() async {
+    if (!state.paused) return;
+    state = state.copyWith(paused: false);
+    await _prefs.setFoldersPaused(false);
+    final ids = await _uploadsOfFolders();
+    await _queue.resumeAll((row) => ids.contains(row.id));
+    schedule(immediate: true);
+  }
+
+  /// The uploads checks queued that may not have landed yet: those queued
+  /// while the app has run, and those the ledgers still wait on.
+  Future<Set<String>> _uploadsOfFolders() async {
+    final ids = {..._queued};
+    for (final rule in await _db.watchedFolderList()) {
+      for (final entry in (await _db.watchedLedger(rule.id)).values) {
+        if (entry.state == WatchedFileState.pending && entry.transferId != null) ids.add(entry.transferId!);
+      }
+    }
+    return ids;
+  }
+
   /// 'Retry' on a folder with files that couldn't upload: they get their
   /// tries back, those given up on included, and the folder is checked now.
   Future<void> retryFailed(String id) async {
@@ -832,7 +873,7 @@ class WatchedFoldersController extends Notifier<WatchState> {
     final queue = files.iterator;
     var waiting = false;
     var full = false;
-    bool stopped() => _stopRequested || _dropped.contains(rule.id) || waiting || full;
+    bool stopped() => _stopRequested || state.paused || _dropped.contains(rule.id) || waiting || full;
 
     Future<void> worker() async {
       while (!stopped() && queue.moveNext()) {
@@ -858,7 +899,11 @@ class WatchedFoldersController extends Notifier<WatchState> {
     }
 
     await Future.wait([for (var i = 0; i < _parallel; i++) worker()]);
-    if (waiting) return waitingFor(math.max(0, files.length - status.done));
+    // Held for Wi-Fi, unless it was a pause that held it, as is all a
+    // computer, never on mobile data, can be held by.
+    if (waiting && !state.paused && ref.read(networkStatusProvider).metered) {
+      return waitingFor(math.max(0, files.length - status.done));
+    }
     return RuleStatus(truncated: truncated);
   }
 
@@ -901,7 +946,9 @@ class WatchedFoldersController extends Notifier<WatchState> {
     ]);
     _following.add(id);
     try {
-      final row = await untilEndedOrHeld(ref, id);
+      // On a computer an upload paused in Transfers, or by pausing folder
+      // sync, lets the check go on to the next file.
+      final row = await untilEndedOrHeld(ref, id, paused: AppPlatform.isDesktop);
       if (row == null) return false;
       switch (row.status) {
         case TransferStatus.completed:

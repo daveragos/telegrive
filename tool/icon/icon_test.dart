@@ -1,6 +1,6 @@
 // Renders every picture of the mark from source/telegrive.png: the app's
-// own copy of it, the launcher icons, the notification icon and the channel
-// photo:
+// own copy of it, the launcher icons, the notification icon, the menu bar
+// and tray icons, and the channel photo:
 //
 //   flutter test tool/icon/icon_test.dart --update-goldens
 //   dart run flutter_launcher_icons
@@ -10,7 +10,9 @@
 // icon.png is the full-bleed square (iOS, legacy Android); foreground.png is
 // the plane alone for Android's adaptive icon, and doubles as the themed
 // (monochrome) icon. desktop_icon.png is the mark on a rounded tile for
-// macOS, Windows and Linux.
+// macOS, Windows and Linux. tray_template.png is the mark in black for a
+// Mac's menu bar, which tints it to suit; install.sh makes the Windows and
+// Linux tray icons from mark.png.
 
 import 'dart:io';
 import 'dart:ui' as ui;
@@ -127,6 +129,12 @@ void main() {
     // Status-bar icons are white silhouettes; the gaps between the facets
     // stay open.
     await renderMark(tester, 'notification', scale: 0.86, silhouette: Colors.white);
+  });
+
+  testWidgets('menu bar icon', (tester) async {
+    // A template image: black where the mark is, which macOS draws white on
+    // a dark menu bar. The gaps between the facets stay open.
+    await renderMark(tester, 'tray_template', scale: 0.92, silhouette: Colors.black, size: 64);
   });
 
   testWidgets('channel photo', (tester) async {

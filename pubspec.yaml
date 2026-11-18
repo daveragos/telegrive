@@ -42,6 +42,7 @@ dependencies:
   screen_retriever: ^0.2.0
   share_plus: ^13.3.0
   shared_preferences: ^2.5.5
+  tray_manager: ^0.5.0
   url_launcher: ^6.3.2
   uuid: ^4.6.0
   video_player: ^2.14.0
@@ -71,6 +72,11 @@ flutter:
     - assets/brand/channel_photo.jpg
     # The mark, as BrandMark shows it.
     - assets/brand/mark.png
+    # The mark in a Mac's menu bar, Windows' notification area and a Linux
+    # tray (tool/icon/install.sh).
+    - assets/brand/tray_template.png
+    - assets/brand/tray.ico
+    - assets/brand/tray.png
     # The app's own license and those of what it carries beyond Dart
     # packages, for Settings › About › Open-source licenses (see
     # lib/app/licenses.dart).

@@ -534,11 +534,38 @@ class _FolderSync extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final paused = ref.watch(watchedFoldersProvider.select((s) => s.paused));
+    final folders = ref.read(watchedFoldersProvider.notifier);
     return Scaffold(
-      appBar: AppBar(title: const Text('Folder sync')),
+      appBar: AppBar(
+        title: const Text('Folder sync'),
+        actions: [
+          if (!paused)
+            IconButton(
+              onPressed: folders.pause,
+              icon: const Icon(Icons.pause_rounded),
+              tooltip: 'Pause folder sync',
+            ),
+          const SizedBox(width: Space.s),
+        ],
+      ),
       body: ListView(
         padding: readableListPadding(context, bottom: Space.x4),
         children: [
+          if (paused)
+            Padding(
+              padding: const EdgeInsets.only(top: Space.s),
+              child: ListGroup(
+                children: [
+                  StatusLine(
+                    icon: Icons.pause_circle_outline_rounded,
+                    text: 'Folder sync is paused',
+                    detail: 'Nothing new goes up, and what was going waits in Transfers.',
+                    trailing: TextButton(onPressed: folders.resume, child: const Text('Resume')),
+                  ),
+                ],
+              ),
+            ),
           const _WatchedFolders(),
           Padding(
             padding: const EdgeInsets.fromLTRB(Space.gutter, Space.xxl, Space.gutter, 0),

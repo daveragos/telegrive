@@ -597,6 +597,18 @@ value goes back onto the line exactly as it came.
   computer is deleted from the drive. A Mac's apps and libraries, the
   Photos library in Pictures say, are never gone into. What folder sync
   sends brings no notification.
+- **Running in the background** on a computer: while Keep running when
+  the window closes is on, as it is to begin with, Telegrive sits in a
+  Mac's menu bar, Windows' notification area or a Linux tray, and
+  closing the window hides it, out of the Dock on a Mac, while folders
+  sync and transfers finish. The icon's menu opens the window, pauses or
+  resumes folder sync, and quits; pausing also pauses what folder sync
+  had queued in Transfers. Opening Telegrive again brings the hidden
+  window back: a Mac sends the app the reopen, and on Windows and Linux
+  the second copy finds the first through a loopback port written
+  beside the instance lock, asks it to show itself and quits. With the
+  setting off, or on a Linux desktop without a tray, closing the window
+  quits. Quitting either way closes TDLib first.
 - **Free up space** deletes the phone's copies of photos and videos that
   are safely in the drive, optionally keeping the last 30 or 90 days. A
   photo with only a small copy in the drive is never among them.
@@ -995,7 +1007,8 @@ tool/build_tdlib_linux.sh x64        # or arm64
 It writes `linux/tdlib/linux-<arch>/libtdjson.so`, which git ignores, with
 OpenSSL and the C++ runtime linked in; the Linux build installs it into
 the bundle's `lib` and stops if it is missing. Building the app needs
-libsecret's headers besides Flutter's own (`libsecret-1-dev` on Debian and
+libsecret's and AppIndicator's headers besides Flutter's own
+(`libsecret-1-dev` and `libayatana-appindicator3-dev` on Debian and
 Ubuntu), and running it a Secret Service keyring, GNOME Keyring or
 KWallet, for the database key.
 

@@ -443,6 +443,21 @@ class SettingsScreen extends ConsumerWidget {
                   ),
                   onTap: () => _chooseDownloadFolder(ref),
                 ),
+              if (AppPlatform.isDesktop)
+                SwitchListTile(
+                  title: const Text('Keep running when the window closes'),
+                  subtitle: Text(
+                    prefs.keepRunning
+                        ? 'In the ${AppPlatform.tray}, syncing folders and finishing transfers, '
+                              'until you quit it there.'
+                        : 'Closing the window quits Telegrive.',
+                  ),
+                  value: prefs.keepRunning,
+                  onChanged: (on) async {
+                    await prefs.setKeepRunning(on);
+                    ref.invalidate(preferencesProvider);
+                  },
+                ),
               if (pickerSupported)
                 SwitchListTile(
                   title: const Text('Show the drive in other apps'),

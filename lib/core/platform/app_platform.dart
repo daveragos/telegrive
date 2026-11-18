@@ -42,6 +42,16 @@ abstract final class AppPlatform {
   /// there is none.
   static bool get canShareFiles => !isDesktop || debugDesktop != null || !Platform.isLinux;
 
+  /// Where an app that keeps running without a window shows: a Mac's menu
+  /// bar, Windows' notification area, or a Linux desktop's tray.
+  static String get tray {
+    if (debugDesktop == null && !kIsWeb) {
+      if (Platform.isMacOS) return 'menu bar';
+      if (Platform.isWindows) return 'notification area';
+    }
+    return 'tray';
+  }
+
   /// The file manager's name, for "Show in Finder" and the like.
   static String get fileManager {
     if (debugDesktop == null && !kIsWeb) {

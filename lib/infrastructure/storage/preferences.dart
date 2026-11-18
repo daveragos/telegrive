@@ -51,6 +51,16 @@ class Preferences {
   Future<void> setDownloadFolder(String? path) =>
       path == null ? _prefs.remove('download_folder') : _prefs.setString('download_folder', path);
 
+  /// Whether closing the window on a computer leaves Telegrive running in
+  /// the menu bar or tray. On until switched off.
+  bool get keepRunning => _prefs.getBool('keep_running') ?? true;
+  Future<void> setKeepRunning(bool on) => _prefs.setBool('keep_running', on);
+
+  /// Whether folder sync is paused, from the tray or its screen, until it
+  /// is resumed there.
+  bool get foldersPaused => _prefs.getBool('folders_paused') ?? false;
+  Future<void> setFoldersPaused(bool paused) => _prefs.setBool('folders_paused', paused);
+
   bool get appLock => _prefs.getBool('app_lock') ?? false;
   Future<void> setAppLock(bool on) => _prefs.setBool('app_lock', on);
 

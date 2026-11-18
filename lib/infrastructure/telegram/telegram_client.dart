@@ -176,11 +176,13 @@ class TelegramClient {
   static const Duration _handOverTimeout = Duration(seconds: 20);
   static const Duration _handOverPoll = Duration(milliseconds: 250);
 
+  /// Where TDLib keeps its database, and a computer its [InstanceLock].
+  static Future<Directory> rootDirectory() async =>
+      Directory('${(await getApplicationSupportDirectory()).path}/tdlib');
+
   Future<void> _start() async {
     try {
-      final root = _root = Directory(
-        '${(await getApplicationSupportDirectory()).path}/tdlib',
-      );
+      final root = _root = await rootDirectory();
       if (AppPlatform.isDesktop) {
         // No job shares the process on a computer; another copy of the
         // app is the one thing to keep away from the database.

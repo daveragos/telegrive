@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -8,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:video_player_media_kit/video_player_media_kit.dart';
 
 import 'app/app.dart';
+import 'app/desktop_tray.dart';
 import 'app/desktop_window.dart';
 import 'app/launch_action.dart';
 import 'app/licenses.dart';
@@ -17,6 +19,7 @@ import 'infrastructure/notifications/app_notifications.dart';
 import 'infrastructure/storage/device_profile.dart';
 import 'infrastructure/storage/device_storage.dart';
 import 'infrastructure/storage/preferences.dart';
+import 'infrastructure/telegram/instance_lock.dart';
 import 'infrastructure/telegram/telegram_client.dart';
 
 Future<void> main() async {
@@ -29,6 +32,15 @@ Future<void> main() async {
   // Windows and Linux have.
   VideoPlayerMediaKit.ensureInitialized(macOS: true, windows: true, linux: true);
   registerBundledLicenses();
+
+  if (AppPlatform.isDesktop) {
+    // Opening Telegrive again while it runs, hidden in the tray say, brings
+    // the window of the copy already open back, and this one goes before
+    // showing a window of its own.
+    final root = await TelegramClient.rootDirectory();
+    if (!await InstanceLock.tryAcquire(root) && await InstanceLock.wakeHolder(root)) exit(0);
+    InstanceLock.onWake = () => unawaited(DesktopTray.show());
+  }
 
   final (prefs, profile) = await (SharedPreferences.getInstance(), DeviceProfile.read()).wait;
   // On a computer, the window opens at its size and place from last time.

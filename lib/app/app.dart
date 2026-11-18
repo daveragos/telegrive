@@ -33,6 +33,7 @@ import '../infrastructure/storage/device_profile.dart';
 import '../infrastructure/telegram/telegram_client.dart';
 import 'app_phase.dart';
 import 'app_shell.dart';
+import 'desktop_tray.dart';
 import 'router.dart';
 import 'theme/app_theme.dart';
 import '../features/lock/presentation/lock_gate.dart';
@@ -162,6 +163,9 @@ class _TelegriveAppState extends ConsumerState<TelegriveApp>
     ref.watch(transferQueueProvider.select((s) => s.activeCount));
     ref.watch(transferKeepAliveProvider);
     ref.watch(desktopTransferNoticesProvider);
+    // On a computer, the icon in the menu bar or tray, and what closing the
+    // window does.
+    ref.watch(desktopTrayProvider);
     // Opens a drive this phone knows behind Home, as soon as Telegram is
     // signed in.
     ref.watch(driveOpenerProvider);
