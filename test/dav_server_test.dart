@@ -127,7 +127,7 @@ void main() {
     final answer = await call('PROPFIND', path, headers: {'Depth': depth});
     expect(answer.status, 207, reason: answer.body);
     return [
-      for (final name in XmlDocument.parse(answer.body).findAllElements('displayname', namespace: 'DAV:'))
+      for (final name in XmlDocument.parse(answer.body).findAllElements('displayname', namespaceUri: 'DAV:'))
         name.innerText,
     ];
   }
@@ -238,7 +238,7 @@ void main() {
     );
     expect(answer.status, 207);
     final doc = XmlDocument.parse(answer.body);
-    expect(doc.findAllElements('Win32LastModifiedTime', namespace: 'urn:schemas-microsoft-com:'), hasLength(1));
+    expect(doc.findAllElements('Win32LastModifiedTime', namespaceUri: 'urn:schemas-microsoft-com:'), hasLength(1));
   });
 
   test('a move onto a file that is there sends that one to Trash, unless told not to', () async {
