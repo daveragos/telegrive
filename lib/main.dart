@@ -101,10 +101,11 @@ void _request(ProviderContainer container, LaunchRequest? request) {
 Future<void> _initBackground(ProviderContainer container) async {
   await BackupWorker.initialize();
   await AppNotifications.initialize(
-    onResponse: (response) => _request(
-      container,
-      LaunchRequest.fromNotification(response.payload, response.actionId),
-    ),
+    onResponse: (response) {
+      // A computer's window may be hidden in the menu bar or tray.
+      if (AppPlatform.isDesktop) unawaited(DesktopTray.show());
+      _request(container, LaunchRequest.fromNotification(response.payload, response.actionId));
+    },
   );
   final launch = await AppNotifications.launchResponse();
   if (launch != null) {

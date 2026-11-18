@@ -56,6 +56,11 @@ class Preferences {
   bool get keepRunning => _prefs.getBool('keep_running') ?? true;
   Future<void> setKeepRunning(bool on) => _prefs.setBool('keep_running', on);
 
+  /// Whether the person has been asked, on first closing the window,
+  /// whether Telegrive keeps running.
+  bool get closeAsked => _prefs.getBool('close_asked') ?? false;
+  Future<void> setCloseAsked() => _prefs.setBool('close_asked', true);
+
   /// Whether a computer stays awake while files go up or come down. On
   /// until switched off.
   bool get keepAwake => _prefs.getBool('keep_awake') ?? true;

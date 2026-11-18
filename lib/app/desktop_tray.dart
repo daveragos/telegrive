@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:ui' show AppExitType;
 
-import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tray_manager/tray_manager.dart';
@@ -11,6 +11,7 @@ import 'package:window_manager/window_manager.dart';
 import '../core/platform/app_platform.dart';
 import '../features/backup/data/watched_folders.dart';
 import '../infrastructure/storage/preferences.dart';
+import 'router.dart';
 
 /// Telegrive in a Mac's menu bar, Windows' notification area or a Linux
 /// tray, while Keep running in the background is on. Closing the window
@@ -108,7 +109,45 @@ class DesktopTray with TrayListener, WindowListener {
   }
 
   @override
-  void onWindowClose() => unawaited(keepRunning && _iconUp ? _hide() : quit());
+  void onWindowClose() => unawaited(_closed());
+
+  /// Hides the window, or quits. The first time, the person is asked which
+  /// they want, since a window that closes without the app quitting
+  /// surprises; their answer is kept, and Settings changes it.
+  Future<void> _closed() async {
+    final prefs = _ref.read(preferencesProvider);
+    if (keepRunning && _iconUp && !prefs.closeAsked) {
+      final keep = await _askOnFirstClose();
+      if (keep == null) return;
+      await prefs.setCloseAsked();
+      if (!keep) {
+        await prefs.setKeepRunning(false);
+        return quit();
+      }
+    }
+    await (keepRunning && _iconUp ? _hide() : quit());
+  }
+
+  /// Keep running, quit, or null when the question is dismissed and the
+  /// window stays.
+  Future<bool?> _askOnFirstClose() async {
+    final context = rootNavigatorKey.currentContext;
+    if (context == null || !context.mounted) return true;
+    return showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Keep Telegrive running?'),
+        content: Text(
+          'Telegrive can stay in the ${AppPlatform.tray} with its window closed, syncing your '
+          'folders and finishing transfers. You can change this in Settings.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Quit')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Keep running')),
+        ],
+      ),
+    );
+  }
 
   @override
   void onTrayIconMouseDown() {
