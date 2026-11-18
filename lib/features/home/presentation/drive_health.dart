@@ -318,16 +318,19 @@ DriveHealth describeDriveHealth({
       topic: HealthTopic.sync,
     );
   }
-  if (backup.phase == BackupPhase.off) return _off;
+  // A computer has no photos of its own to back up: its drive is simply
+  // in sync.
+  final desktop = AppPlatform.isDesktop;
+  if (backup.phase == BackupPhase.off && !desktop) return _off;
 
   final checked = _latest([sync.lastSynced, backup.lastCompleted, lastFullSync]);
   return DriveHealth(
     icon: Icons.check_circle_outline_rounded,
     tone: HealthTone.good,
-    text: 'Backed up and in sync',
+    text: desktop ? 'In sync' : 'Backed up and in sync',
     detail: checked == null ? null : 'checked ${Formatters.date(checked, now: at)}',
-    target: HealthTarget.backup,
-    topic: HealthTopic.backup,
+    target: desktop ? HealthTarget.refresh : HealthTarget.backup,
+    topic: desktop ? HealthTopic.sync : HealthTopic.backup,
   );
 }
 
@@ -398,7 +401,7 @@ DriveHealth? secondaryHealth(
     ?waitingChanges,
     if (filed != null && filed.count > 0) _filed(filed),
     if (backgroundBlocked) _backgroundBlocked,
-    if (backup.phase == BackupPhase.off) _off,
+    if (backup.phase == BackupPhase.off && !AppPlatform.isDesktop) _off,
     if (lowOnSpace && freeableBytes > freeUpWorthwhile) _freeUp(freeableBytes),
   ];
   final moving = top.tone == HealthTone.busy && top.topic == HealthTopic.transfers;

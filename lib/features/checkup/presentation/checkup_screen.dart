@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../../app/theme/tokens.dart';
 import '../../../core/format/formatters.dart';
+import '../../../core/platform/app_platform.dart';
 import '../../../core/widgets/adaptive_sheet.dart';
 import '../../../core/widgets/common.dart';
 import '../../../core/widgets/readable_width.dart';
@@ -280,6 +281,8 @@ class CheckupScreen extends ConsumerWidget {
 
       case BackupFinding():
         final backup = ref.read(backupControllerProvider.notifier);
+        // A computer has no photos of its own to back up.
+        if (!finding.enabled && AppPlatform.isDesktop) return const [];
         if (!finding.enabled) {
           return [
             row(
