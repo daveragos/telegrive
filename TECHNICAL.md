@@ -471,7 +471,10 @@ value goes back onto the line exactly as it came.
 - A photo or video that goes up without a preview, one picked in Files
   say, gets one made from the file on Android before its first part, as
   backup's do: Telegram makes none for a video sent as a file, nor for a
-  HEIC photo.
+  HEIC photo. A computer makes it too: a photo is decoded by Flutter, a
+  video's frame a tenth of the way in is taken by mpv, which decodes it
+  without drawing it anywhere, and both go up as 320-pixel JPEGs, with
+  the photo's date from its EXIF and the video's length.
 - RAW photos (DNG, CR2, CR3, NEF, NRW, ARW, ORF, RW2, RAF, SRW, PEF) count
   as photos, under the types Android's media store gives them, so they
   get a preview, show in Photos and open in the photo viewer. Android
@@ -999,6 +1002,8 @@ Tests and generated code:
 
 ```bash
 flutter test                         # unit, database and widget tests
+flutter test integration_test -d macos --dart-define=SAMPLE_VIDEO=/tmp/sample.mp4 \
+  --dart-define=SAMPLE_UHD=/tmp/uhd.mkv   # inside the desktop app (see the file)
 dart run build_runner build          # after changing the Drift schema
 flutter test tool/screenshots/screens_test.dart --update-goldens
 flutter test tool/icon/icon_test.dart --update-goldens && dart run flutter_launcher_icons
