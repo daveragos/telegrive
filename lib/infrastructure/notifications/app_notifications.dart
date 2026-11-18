@@ -8,7 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../storage/preferences.dart';
 
-/// The one way into the phone's notifications. Every notification Telegrive
+/// The one way into the device's notifications. Every notification Telegrive
 /// posts goes through the single plugin instance here, so a tap or a button
 /// on any of them reaches the same handler, and the channel and notification
 /// ids sit side by side, where two can't end up sharing a number.
@@ -39,6 +39,14 @@ abstract final class AppNotifications {
 
   static bool _initialized = false;
 
+  /// iOS and macOS ask for permission when there is first something to
+  /// say, not when the app opens.
+  static const DarwinInitializationSettings _darwin = DarwinInitializationSettings(
+    requestAlertPermission: false,
+    requestBadgePermission: false,
+    requestSoundPermission: false,
+  );
+
   /// Safe to call from any isolate, including the background worker. Taps
   /// on a notification or one of its buttons go to [onResponse]; swiping
   /// the backup reminder away goes to [notificationBackgroundHandler], which
@@ -51,10 +59,13 @@ abstract final class AppNotifications {
       await _plugin.initialize(
         settings: const InitializationSettings(
           android: AndroidInitializationSettings(icon),
-          iOS: DarwinInitializationSettings(
-            requestAlertPermission: false,
-            requestBadgePermission: false,
-            requestSoundPermission: false,
+          iOS: _darwin,
+          macOS: _darwin,
+          linux: LinuxInitializationSettings(defaultActionName: 'Open Telegrive'),
+          windows: WindowsInitializationSettings(
+            appName: 'Telegrive',
+            appUserModelId: 'Dawit.Telegrive',
+            guid: 'b3c1f0a4-6a8e-4f2e-9d3b-7e5a2c41d9f6',
           ),
         ),
         onDidReceiveNotificationResponse: onResponse,

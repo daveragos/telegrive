@@ -9,7 +9,9 @@ import 'package:handy_tdlib/handy_tdlib.dart' show TdPlugin;
 import 'package:path_provider/path_provider.dart';
 
 import '../../core/config/app_config.dart';
+import '../../core/platform/app_platform.dart';
 import 'device_info.dart';
+import 'instance_lock.dart';
 import 'secure_store.dart';
 import 'td_library.dart';
 import 'td_ownership.dart';
@@ -179,7 +181,13 @@ class TelegramClient {
       final root = _root = Directory(
         '${(await getApplicationSupportDirectory()).path}/tdlib',
       );
-      await _own(_ownership = TdOwnership(root));
+      if (AppPlatform.isDesktop) {
+        // No job shares the process on a computer; another copy of the
+        // app is the one thing to keep away from the database.
+        if (!await InstanceLock.tryAcquire(root)) throw const AlreadyOpen();
+      } else {
+        await _own(_ownership = TdOwnership(root));
+      }
       // A client this process opened and never closed: the engine that
       // opened it went away and this one took its place. The app takes it
       // over, rather than open the database a second time; the job can't
@@ -207,7 +215,7 @@ class TelegramClient {
     } catch (e) {
       _starting = null;
       await _letGo();
-      fatalError.value = 'Could not start Telegram: $e';
+      fatalError.value = e is AlreadyOpen ? e.message : 'Could not start Telegram: $e';
       rethrow;
     }
   }
@@ -297,7 +305,7 @@ class TelegramClient {
     _firstState?.cancel();
     _firstState = Timer(_firstStateTimeout, () {
       if (_disposed || _authState != null) return;
-      fatalError.value ??= 'Telegram didn\'t start. Try again, or restart the phone if it keeps happening.';
+      fatalError.value ??= 'Telegram didn\'t start. Try again, or restart the ${AppPlatform.device} if it keeps happening.';
     });
   }
 
@@ -459,7 +467,10 @@ class TelegramClient {
   Future<void> _configure() async {
     final root = await getApplicationSupportDirectory();
     final databaseDir = Directory('${root.path}/tdlib/db');
-    final filesDir = Directory('${root.path}/tdlib/files');
+    // Files TDLib downloads are a cache, which Windows keeps out of the
+    // roaming profile only in the local cache folder.
+    final filesRoot = AppPlatform.isDesktop ? await getApplicationCacheDirectory() : root;
+    final filesDir = Directory('${filesRoot.path}/tdlib/files');
     await databaseDir.create(recursive: true);
     await filesDir.create(recursive: true);
 
@@ -491,7 +502,7 @@ class TelegramClient {
       useSecretChats: false,
       apiId: AppConfig.telegramApiId,
       apiHash: AppConfig.telegramApiHash,
-      systemLanguageCode: Platform.localeName.split('_').first,
+      systemLanguageCode: Platform.localeName.split(RegExp('[_.-]')).first,
       deviceModel: device.model,
       systemVersion: device.system,
       applicationVersion: version,

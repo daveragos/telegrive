@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' show AppExitResponse;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
@@ -6,6 +7,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/config/app_config.dart';
+import '../core/platform/app_platform.dart';
 import '../features/backup/data/background_health.dart';
 import '../features/backup/data/backup_controller.dart';
 import '../features/backup/data/watched_folders.dart';
@@ -99,6 +101,26 @@ class _TelegriveAppState extends ConsumerState<TelegriveApp>
       }
       unawaited(ref.read(transferQueueProvider.notifier).recheckRoom());
     }
+  }
+
+  /// How long quitting waits for deletes to go out and TDLib to close.
+  static const Duration _quitWithin = Duration(seconds: 12);
+
+  /// Quitting on a computer is for good, unlike a phone's app going to the
+  /// background: deletes waiting out their Undo go now, and TDLib gets to
+  /// flush and close, so the next start finds its database clean.
+  @override
+  Future<AppExitResponse> didRequestAppExit() async {
+    if (AppPlatform.isDesktop) {
+      final client = ref.read(telegramClientProvider);
+      await ref
+          .read(pendingDeletesProvider.notifier)
+          .appPaused()
+          .then((_) => client.shutDown())
+          .timeout(_quitWithin, onTimeout: () {})
+          .catchError((Object e) => debugPrint('[App] Quitting: $e'));
+    }
+    return AppExitResponse.exit;
   }
 
   /// Offers a proxy link tapped in another app in the proxy sheet, once
