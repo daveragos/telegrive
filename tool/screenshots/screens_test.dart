@@ -687,6 +687,7 @@ void main() {
     await _loadFonts();
     // Screens are drawn as on a phone, whatever computer draws them, unless
     // a shot asks for the desktop app.
+    // ignore: invalid_use_of_visible_for_testing_member
     AppPlatform.debugDesktop = false;
     // The Backup screen shows the watched folders as it does on Android.
     // ignore: invalid_use_of_visible_for_testing_member
@@ -942,7 +943,9 @@ void main() {
       // A 1440 by 900 window on a Retina Mac.
       tester.view.physicalSize = const Size(2880, 1800);
       tester.view.devicePixelRatio = 2;
+      // ignore: invalid_use_of_visible_for_testing_member
       AppPlatform.debugDesktop = true;
+      // ignore: invalid_use_of_visible_for_testing_member
       addTearDown(() => AppPlatform.debugDesktop = false);
     } else {
       tester.view.physicalSize = const Size(1080, 2340);

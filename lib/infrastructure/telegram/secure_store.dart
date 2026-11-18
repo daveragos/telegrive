@@ -54,9 +54,13 @@ class SecureStore {
   /// Changing this orphans every existing TDLib database, so it is fixed.
   static const String _databaseKey = 'tdlib_database_key';
 
-  /// How long the keystore gets to answer. A read or write takes it a moment
-  /// at most; one that takes longer never answers.
-  static const Duration timeout = Duration(seconds: 15);
+  /// How long the keystore gets to answer. On a phone a read or write takes
+  /// it a moment at most, and one that takes longer never answers. On a
+  /// computer the system may ask the person first: a Mac asks whether an
+  /// app whose signature has changed, as an unsigned build's does with each
+  /// update, may read what it kept, and that waits for them.
+  static Duration get timeout =>
+      AppPlatform.isDesktop ? const Duration(minutes: 3) : const Duration(seconds: 15);
 
   Future<String?> readDatabaseKey() => _read(_databaseKey);
 
