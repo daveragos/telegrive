@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:video_player_media_kit/video_player_media_kit.dart';
 
 import 'app/app.dart';
 import 'app/desktop_window.dart';
@@ -23,6 +24,10 @@ Future<void> main() async {
   // Phones draw behind the status and navigation bars; computers have
   // neither, and their engines don't take the call.
   if (AppPlatform.isMobile) await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+  // A computer plays video and audio through mpv, which plays what the
+  // phones' players don't (mkv, HEVC and the like), and is the only player
+  // Windows and Linux have.
+  VideoPlayerMediaKit.ensureInitialized(macOS: true, windows: true, linux: true);
   registerBundledLicenses();
 
   final (prefs, profile) = await (SharedPreferences.getInstance(), DeviceProfile.read()).wait;

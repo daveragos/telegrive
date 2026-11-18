@@ -452,16 +452,22 @@ value goes back onto the line exactly as it came.
   access is kept. Hidden files and folders and empty files stay behind.
   Into a new folder nothing is asked; into one of the same name already
   there, a name its folder has asks Replace, Keep both or Skip.
-- **Play in another app**, in a video or audio file's menu on Android,
-  hands the file to another player without downloading it first. The
-  player reads a listener of its own on the loopback address, with its own
-  port and token, that serves that one file; the token that opens every
+- **Play in another app**, in a video or audio file's menu on Android and
+  on a computer, hands the file to another player without downloading it
+  first: one Android offers, or on a computer the first installed of IINA
+  (on a Mac), VLC, mpv and Celluloid (on Linux). The player reads a
+  listener of its own on the loopback address, with its own port and
+  token, that serves that one file; the token that opens every
   file never leaves the app. It is fetched as it is read, as for the app's
   own player, and the transfers' service keeps the app running meanwhile,
   with Stop streaming in its notification. The stream ends after 5 minutes
   with no reader, or 30 with a reader connected that takes nothing, which
   is a player left paused. A file already on the phone opens from there.
   A player that refuses plain HTTP can't use it; most video players don't.
+- **Video on a computer** plays through mpv, by way of `media_kit`, which
+  takes the place of the phones' players behind `video_player` on macOS,
+  Windows and Linux. It plays what they don't, MKV and HEVC among them.
+  Phones keep their own players, so the APK carries no mpv.
 - A photo or video that goes up without a preview, one picked in Files
   say, gets one made from the file on Android before its first part, as
   backup's do: Telegram makes none for a video sent as a file, nor for a
@@ -803,7 +809,7 @@ previews are in the channel, so every phone shows them.
 - Split files appear in Telegram as numbered parts, and only Telegrive
   joins them back.
 - A video the phone's player can't decode, such as some MKV files, keeps
-  its poster and offers Open with another app.
+  its poster and offers Open with another app. A computer plays them.
 - A group in slow mode takes one message at a time, so sending files there
   delivers the first only, and says so.
 - When Telegram asks for a pause longer than five minutes, Telegrive lets
