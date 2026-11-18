@@ -93,6 +93,7 @@ class MediaGrid extends ConsumerStatefulWidget {
     required this.files,
     required this.selection,
     required this.onOpen,
+    this.onMenu,
     this.header = const [],
     this.footer = const [],
     this.onRefresh,
@@ -106,6 +107,10 @@ class MediaGrid extends ConsumerStatefulWidget {
   final List<DriveFile> files;
   final MediaSelection selection;
   final void Function(DriveFile file) onOpen;
+
+  /// A right-click on a photo while not selecting: its menu, where the
+  /// pointer is.
+  final void Function(DriveFile file)? onMenu;
 
   /// Slivers above the grid.
   final List<Widget> header;
@@ -423,6 +428,9 @@ class _MediaGridState extends ConsumerState<MediaGrid> {
                     onTap: () => _selecting
                         ? widget.selection.toggle(file.id)
                         : widget.onOpen(file),
+                    onSecondaryTap: _selecting || widget.onMenu == null
+                        ? null
+                        : () => widget.onMenu!(file),
                   ),
                 );
               },
@@ -767,6 +775,7 @@ class _MediaTile extends StatelessWidget {
     required this.selecting,
     required this.selected,
     required this.onTap,
+    this.onSecondaryTap,
   });
 
   final DriveFile file;
@@ -777,6 +786,7 @@ class _MediaTile extends StatelessWidget {
   final bool selecting;
   final bool selected;
   final VoidCallback onTap;
+  final VoidCallback? onSecondaryTap;
 
   @override
   Widget build(BuildContext context) {
@@ -784,6 +794,7 @@ class _MediaTile extends StatelessWidget {
     const shadow = [Shadow(blurRadius: 4, color: Colors.black54)];
     return GestureDetector(
       onTap: onTap,
+      onSecondaryTap: onSecondaryTap,
       child: ColoredBox(
         color: selected ? colors.accentSoft : Colors.transparent,
         child: Stack(

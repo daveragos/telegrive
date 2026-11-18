@@ -212,6 +212,8 @@ class _Row extends StatelessWidget {
         child: InkWell(
           onTap: onTap,
           onLongPress: onLongPress,
+          // A right-click opens what ⋮ does, where the pointer is.
+          onSecondaryTap: onMore,
           child: Padding(
             padding: EdgeInsets.fromLTRB(
               Space.gutter,
@@ -398,6 +400,8 @@ class FileGridCard extends ConsumerWidget {
       child: InkWell(
         onTap: onTap,
         onLongPress: onLongPress,
+        // A right-click opens what ⋮ does, where the pointer is.
+        onSecondaryTap: selecting ? null : onMore,
         borderRadius: BorderRadius.circular(Radii.control),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -532,6 +536,8 @@ class FolderGridCard extends ConsumerWidget {
       child: InkWell(
         onTap: onTap,
         onLongPress: onLongPress,
+        // A right-click opens what ⋮ does, where the pointer is.
+        onSecondaryTap: selecting ? null : onMore,
         customBorder: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(Radii.control),
         ),

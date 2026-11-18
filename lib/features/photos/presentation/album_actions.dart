@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../app/theme/tokens.dart';
 import '../../../core/format/formatters.dart';
+import '../../../core/widgets/adaptive_sheet.dart';
 import '../../../core/widgets/common.dart';
 import '../../../core/widgets/file_visuals.dart';
 import '../../drive/data/drive_repository.dart';
@@ -24,7 +25,8 @@ abstract final class AlbumActions {
     List<DriveFile> files,
   ) async {
     if (files.isEmpty) return false;
-    final choice = await showModalBottomSheet<String>(
+    final choice = await showAdaptiveSheet<String>(
+      kind: SheetKind.dialog,
       context: context,
       useRootNavigator: true,
       isScrollControlled: true,

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/theme/tokens.dart';
 import '../../../core/format/formatters.dart';
+import '../../../core/widgets/adaptive_sheet.dart';
 import '../../../core/widgets/common.dart';
 import '../../drive/data/drive_repository.dart';
 import '../../drive/domain/drive_models.dart';
@@ -110,7 +111,7 @@ class TrashScreen extends ConsumerWidget {
     List<DriveFolder> folders = const [],
   }) {
     final name = files.isNotEmpty ? files.first.name : folders.first.name;
-    return showModalBottomSheet<void>(
+    return showAdaptiveSheet<void>(
       context: context,
       useRootNavigator: true,
       builder: (sheetContext) {

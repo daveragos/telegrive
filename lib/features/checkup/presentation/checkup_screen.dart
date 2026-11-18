@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../../app/theme/tokens.dart';
 import '../../../core/format/formatters.dart';
+import '../../../core/widgets/adaptive_sheet.dart';
 import '../../../core/widgets/common.dart';
 import '../../backup/data/backup_controller.dart';
 import '../../drive/data/drive_session.dart';
@@ -476,7 +477,8 @@ class CheckupScreen extends ConsumerWidget {
 /// Picks after how long without activity Telegram deletes the account, and
 /// applies the choice at once.
 Future<void> showAccountTtlSheet(BuildContext context, WidgetRef ref, int currentDays) {
-  return showModalBottomSheet<void>(
+  return showAdaptiveSheet<void>(
+    kind: SheetKind.dialog,
     context: context,
     useRootNavigator: true,
     builder: (sheet) => SafeArea(

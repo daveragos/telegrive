@@ -7,6 +7,7 @@ import 'package:handy_tdlib/api.dart' as td;
 
 import '../../../app/theme/tokens.dart';
 import '../../../core/format/formatters.dart';
+import '../../../core/widgets/adaptive_sheet.dart';
 import '../../../core/widgets/common.dart';
 import '../../../infrastructure/telegram/telegram_client.dart';
 import '../../../infrastructure/telegram/telegram_exception.dart';
@@ -22,7 +23,8 @@ import '../domain/proxy_link.dart';
 /// it first asks whether to connect through it; nothing connects without
 /// that tap.
 Future<void> showProxySheet(BuildContext context, {ProxyLink? prefill}) =>
-    showModalBottomSheet<void>(
+    showAdaptiveSheet<void>(
+      kind: SheetKind.dialog,
       context: context,
       useRootNavigator: true,
       isScrollControlled: true,

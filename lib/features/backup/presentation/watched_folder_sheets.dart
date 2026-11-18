@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/theme/tokens.dart';
 import '../../../core/format/formatters.dart';
+import '../../../core/widgets/adaptive_sheet.dart';
 import '../../../core/widgets/common.dart';
 import '../../../infrastructure/database/app_database.dart';
 import '../../drive/data/drive_repository.dart';
@@ -50,7 +51,8 @@ Future<void> showAddWatchedFolder(BuildContext context, WidgetRef ref) async {
     showSnack(context, '${picked.name} is already on the list.');
     return;
   }
-  final choice = await showModalBottomSheet<_Choice>(
+  final choice = await showAdaptiveSheet<_Choice>(
+    kind: SheetKind.dialog,
     context: context,
     useRootNavigator: true,
     isScrollControlled: true,
@@ -111,7 +113,8 @@ Future<void> showWatchedFolderSheet(
   WatchedFolderView view,
 ) async {
   final controller = ref.read(watchedFoldersProvider.notifier);
-  final choice = await showModalBottomSheet<_Choice>(
+  final choice = await showAdaptiveSheet<_Choice>(
+    kind: SheetKind.dialog,
     context: context,
     useRootNavigator: true,
     isScrollControlled: true,

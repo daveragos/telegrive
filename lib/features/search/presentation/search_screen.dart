@@ -269,6 +269,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                           selection: _selection,
                           selectable: false,
                           onOpen: (file) => context.push('/viewer/${file.id}'),
+                          onMenu: (file) => FileActions.showFileSheet(context, ref, file),
                           header: [
                             SliverToBoxAdapter(
                               child: SectionHeader(

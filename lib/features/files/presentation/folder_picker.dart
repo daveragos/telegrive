@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/widgets/adaptive_sheet.dart';
 import '../../../core/widgets/common.dart';
 import '../../../core/widgets/file_visuals.dart';
 import '../../drive/data/drive_repository.dart';
@@ -25,7 +26,8 @@ Future<FolderChoice?> showFolderPicker(
   Set<String> excluded = const {},
   String? startIn,
 }) {
-  return showModalBottomSheet<FolderChoice>(
+  return showAdaptiveSheet<FolderChoice>(
+    kind: SheetKind.dialog,
     context: context,
     isScrollControlled: true,
     useSafeArea: true,

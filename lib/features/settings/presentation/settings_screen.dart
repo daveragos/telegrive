@@ -7,6 +7,7 @@ import '../../../app/theme/tokens.dart';
 import '../../../core/config/app_config.dart';
 import '../../../core/format/formatters.dart';
 import '../../../core/platform/app_platform.dart';
+import '../../../core/widgets/adaptive_sheet.dart';
 import '../../../core/widgets/brand_mark.dart';
 import '../../../core/widgets/common.dart';
 import '../../../infrastructure/notifications/app_notifications.dart';
@@ -573,7 +574,8 @@ class SettingsScreen extends ConsumerWidget {
   }
 
   void _showHowItWorks(BuildContext context) {
-    showModalBottomSheet<void>(
+    showAdaptiveSheet<void>(
+      kind: SheetKind.dialog,
       context: context,
       isScrollControlled: true,
       useRootNavigator: true,

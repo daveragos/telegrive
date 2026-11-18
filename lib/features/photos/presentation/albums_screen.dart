@@ -249,6 +249,7 @@ class _AlbumScreenState extends ConsumerState<AlbumScreen> {
                   files: files,
                   selection: _selection,
                   onOpen: (file) => context.push('/viewer/${file.id}?from=$source'),
+                  onMenu: (file) => FileActions.showFileSheet(context, ref, file),
                   empty: EmptyState(
                     title: 'Nothing here yet',
                     message: switch (id) {

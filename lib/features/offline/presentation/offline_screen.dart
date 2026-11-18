@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../app/theme/tokens.dart';
 import '../../../core/format/formatters.dart';
 import '../../../core/platform/app_platform.dart';
+import '../../../core/widgets/adaptive_sheet.dart';
 import '../../../core/widgets/common.dart';
 import '../../../infrastructure/database/app_database.dart' show SaveTarget, TransferRow;
 import '../../files/presentation/file_actions.dart';
@@ -293,7 +294,7 @@ class _PinRow extends ConsumerWidget {
     // The row goes once it is no longer kept, so what that says comes
     // through the root navigator, which lasts.
     final lasting = Navigator.of(context, rootNavigator: true).context;
-    return showModalBottomSheet<void>(
+    return showAdaptiveSheet<void>(
       context: context,
       useRootNavigator: true,
       builder: (sheetContext) {

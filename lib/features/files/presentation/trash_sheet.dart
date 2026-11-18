@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../app/theme/tokens.dart';
 import '../../../core/format/formatters.dart';
 import '../../../core/platform/app_platform.dart';
+import '../../../core/widgets/adaptive_sheet.dart';
 
 /// Asks before moving [count] files to the trash when [onPhone] of them are
 /// photos or videos this phone still has, and whether the phone's copies
@@ -16,7 +17,8 @@ Future<bool?> showTrashSheet(
   required int count,
   required int onPhone,
   required bool initialAlsoPhone,
-}) => showModalBottomSheet<bool>(
+}) => showAdaptiveSheet<bool>(
+  kind: SheetKind.dialog,
   context: context,
   useRootNavigator: true,
   builder: (_) => TrashSheet(

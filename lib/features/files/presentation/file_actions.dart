@@ -16,6 +16,7 @@ import '../../../app/theme/tokens.dart';
 import '../../../core/files/file_kind.dart';
 import '../../../core/format/formatters.dart';
 import '../../../core/platform/app_platform.dart';
+import '../../../core/widgets/adaptive_sheet.dart';
 import '../../../core/widgets/common.dart';
 import '../../../core/widgets/file_visuals.dart';
 import '../../../infrastructure/database/app_database.dart'
@@ -266,7 +267,8 @@ abstract final class FileActions {
       return false;
     }
 
-    final choice = await showModalBottomSheet<_SaveChoice>(
+    final choice = await showAdaptiveSheet<_SaveChoice>(
+      kind: SheetKind.dialog,
       context: context,
       useRootNavigator: true,
       isScrollControlled: true,
@@ -388,7 +390,8 @@ abstract final class FileActions {
           freeBytes: free,
           android: Platform.isAndroid,
         );
-        final kept = await showModalBottomSheet<bool>(
+        final kept = await showAdaptiveSheet<bool>(
+          kind: SheetKind.dialog,
           context: context,
           useRootNavigator: true,
           isScrollControlled: true,
@@ -1053,7 +1056,7 @@ abstract final class FileActions {
     WidgetRef ref, {
     String? folderId,
   }) {
-    return showModalBottomSheet<void>(
+    return showAdaptiveSheet<void>(
       context: context,
       useRootNavigator: true,
       // The sheet takes the height of its rows, and scrolls them on a
@@ -1848,7 +1851,7 @@ abstract final class FileActions {
     bool fromViewer = false,
     VoidCallback? onLeaving,
   }) {
-    return showModalBottomSheet<void>(
+    return showAdaptiveSheet<void>(
       context: context,
       useRootNavigator: true,
       isScrollControlled: true,
@@ -1979,7 +1982,7 @@ abstract final class FileActions {
     WidgetRef ref,
     DriveFolder folder,
   ) {
-    return showModalBottomSheet<void>(
+    return showAdaptiveSheet<void>(
       context: context,
       useRootNavigator: true,
       isScrollControlled: true,
@@ -2116,7 +2119,8 @@ abstract final class FileActions {
       repository.previousVersionOf(file.id),
     ).wait;
     if (!context.mounted) return;
-    await showModalBottomSheet<void>(
+    await showAdaptiveSheet<void>(
+      kind: SheetKind.dialog,
       context: context,
       useRootNavigator: true,
       builder: (sheetContext) {
@@ -2942,7 +2946,8 @@ Future<(ClashChoice, bool applyToAll)?> showClashSheet(
   required String keepBothName,
   required int clashesLeft,
   DriveFile? moving,
-}) => showModalBottomSheet<(ClashChoice, bool)>(
+}) => showAdaptiveSheet<(ClashChoice, bool)>(
+  kind: SheetKind.dialog,
   context: context,
   useRootNavigator: true,
   // The sheet takes the height of its rows, and scrolls them on a short

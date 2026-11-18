@@ -167,6 +167,7 @@ class _PhotosScreenState extends ConsumerState<PhotosScreen> {
                   files: files,
                   selection: _selection,
                   onOpen: (file) => context.push('/viewer/${file.id}?from=photos'),
+                  onMenu: (file) => FileActions.showFileSheet(context, ref, file),
                   onRefresh: () async {
                     await ref.read(driveSyncProvider.notifier).refresh();
                     ref.read(backupControllerProvider.notifier).schedule(immediate: true);

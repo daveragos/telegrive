@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/theme/tokens.dart';
+import '../../../core/widgets/adaptive_sheet.dart';
 import '../../../core/widgets/common.dart';
 import '../../drive/data/previews.dart';
 import '../data/telegram_chats.dart';
@@ -23,7 +24,8 @@ Future<ChatPick?> showChatPicker(
   String? messageInitial,
   bool withMessage = true,
 }) {
-  return showModalBottomSheet<ChatPick>(
+  return showAdaptiveSheet<ChatPick>(
+    kind: SheetKind.dialog,
     context: context,
     useRootNavigator: true,
     isScrollControlled: true,
@@ -46,7 +48,8 @@ Future<ChatPick?> showChatPicker(
 /// that protects its content is shown but can't be picked. Pops with the
 /// chat, or null.
 Future<TelegramChat?> showImportChatPicker(BuildContext context) {
-  return showModalBottomSheet<TelegramChat>(
+  return showAdaptiveSheet<TelegramChat>(
+    kind: SheetKind.dialog,
     context: context,
     useRootNavigator: true,
     isScrollControlled: true,

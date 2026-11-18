@@ -11,6 +11,7 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
+import 'package:flutter/gestures.dart' show kSecondaryButton;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show FontLoader, MethodChannel;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -21,6 +22,7 @@ import 'package:handy_tdlib/api.dart' as td;
 import 'package:telegrive/app/app_shell.dart';
 import 'package:telegrive/app/desktop_sidebar.dart';
 import 'package:telegrive/core/platform/app_platform.dart';
+import 'package:telegrive/core/widgets/adaptive_sheet.dart';
 import 'package:telegrive/app/theme/app_theme.dart';
 import 'package:telegrive/features/auth/presentation/phone_screen.dart';
 import 'package:telegrive/features/auth/presentation/welcome_screen.dart';
@@ -1292,6 +1294,7 @@ void main() {
           darkTheme: AppTheme.dark(),
           themeMode: themeMode,
           routerConfig: router,
+          builder: (context, child) => PointerPlaceRecorder(child: child!),
         ),
       ),
     );
@@ -1373,6 +1376,26 @@ void main() {
     await prepareData(tester);
     await pumpApp(tester, location: '/settings', desktop: true);
     await snap(tester, 'desktop_settings');
+  });
+
+  testWidgets('desktop file menu', (tester) async {
+    await prepareData(tester);
+    await pumpApp(tester, location: '/files', desktop: true);
+    await tester.tap(find.text('Budget 2026.xlsx'), buttons: kSecondaryButton);
+    for (var i = 0; i < 6; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    await snap(tester, 'desktop_file_menu');
+  });
+
+  testWidgets('desktop new menu', (tester) async {
+    await prepareData(tester);
+    await pumpApp(tester, location: '/files', desktop: true);
+    await tester.tap(find.text('New'));
+    for (var i = 0; i < 6; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    await snap(tester, 'desktop_new_menu');
   });
 
   testWidgets('home dark', (tester) async {
