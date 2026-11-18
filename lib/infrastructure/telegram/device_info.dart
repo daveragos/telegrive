@@ -5,9 +5,11 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/config/app_config.dart';
+import '../../core/platform/app_platform.dart';
 
-/// What this phone is, for Telegram's Devices list: the model as Android
-/// names it and the Android version.
+/// What this device is, for Telegram's Devices list: the model as Android
+/// names it and the Android version, or the kind of computer and its
+/// system's name and version.
 abstract final class DeviceInfo {
   static const _channel = MethodChannel('telegrive/device');
 
@@ -22,6 +24,7 @@ abstract final class DeviceInfo {
   /// session after the app and the operating system, so the entry is still
   /// telling.
   static Future<({String model, String system})> read() async {
+    if (AppPlatform.isDesktop) return _computer();
     try {
       final info = await _channel.invokeMapMethod<String, Object?>('deviceInfo');
       final model = info?['model'] as String?;
@@ -36,6 +39,74 @@ abstract final class DeviceInfo {
       // Not on Android, in a test, or on the background job's engine.
     }
     return await _kept() ?? (model: AppConfig.appName, system: Platform.operatingSystemVersion);
+  }
+
+  /// The kind of computer, and the system as people know it: "MacBook Pro"
+  /// and "macOS 15.2", "Windows PC" and "Windows 11 Pro", "Linux PC" and
+  /// "Ubuntu 24.04 LTS". Anything unreadable falls back to the app's name
+  /// and the version string Dart has.
+  static Future<({String model, String system})> _computer() async {
+    String? model;
+    String? system;
+    try {
+      if (Platform.isMacOS) {
+        model = macModel(await _output('sysctl', ['-n', 'hw.model']));
+        final version = await _output('sw_vers', ['-productVersion']);
+        if (version != null) system = 'macOS $version';
+      } else if (Platform.isWindows) {
+        model = 'Windows PC';
+        system = windowsName(Platform.operatingSystemVersion);
+      } else if (Platform.isLinux) {
+        model = 'Linux PC';
+        system = linuxName(await File('/etc/os-release').readAsString());
+      }
+    } catch (e) {
+      debugPrint('[DeviceInfo] $e');
+    }
+    return (
+      model: model ?? AppConfig.appName,
+      system: system ?? Platform.operatingSystemVersion,
+    );
+  }
+
+  static Future<String?> _output(String command, List<String> args) async {
+    final result = await Process.run(command, args);
+    final out = (result.stdout as String).trim();
+    return result.exitCode == 0 && out.isNotEmpty ? out : null;
+  }
+
+  /// The family a Mac's model identifier belongs to, as Apple names it:
+  /// `MacBookPro18,3` is a MacBook Pro. Apple silicon models from 2023 on
+  /// say only `Mac15,3`, which is a Mac.
+  @visibleForTesting
+  static String? macModel(String? identifier) {
+    if (identifier == null) return null;
+    const families = {
+      'MacBookPro': 'MacBook Pro',
+      'MacBookAir': 'MacBook Air',
+      'MacBook': 'MacBook',
+      'Macmini': 'Mac mini',
+      'MacPro': 'Mac Pro',
+      'iMacPro': 'iMac Pro',
+      'iMac': 'iMac',
+      'Mac': 'Mac',
+    };
+    final family = RegExp(r'^[A-Za-z]+').stringMatch(identifier);
+    return families[family] ?? 'Mac';
+  }
+
+  /// Windows' name without the build: `"Windows 11 Pro" 10.0 (Build
+  /// 26100)` is Windows 11 Pro.
+  @visibleForTesting
+  static String? windowsName(String version) =>
+      RegExp('"([^"]+)"').firstMatch(version)?.group(1);
+
+  /// PRETTY_NAME from os-release, as `Ubuntu 24.04 LTS`.
+  @visibleForTesting
+  static String? linuxName(String osRelease) {
+    final line = RegExp(r'^PRETTY_NAME=(.*)$', multiLine: true).firstMatch(osRelease)?.group(1);
+    final name = line?.trim().replaceAll(RegExp(r'''^["']|["']$'''), '');
+    return name == null || name.isEmpty ? null : name;
   }
 
   static Future<void> _keep(String model, String system) async {
