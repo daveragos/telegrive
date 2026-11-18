@@ -32,11 +32,13 @@ dependencies:
   pdfrx: ^2.6.5
   photo_manager: ^3.12.0
   qr_flutter: ^4.1.0
+  screen_retriever: ^0.2.0
   share_plus: ^13.3.0
   shared_preferences: ^2.5.5
   url_launcher: ^6.3.2
   uuid: ^4.6.0
   video_player: ^2.14.0
+  window_manager: ^0.5.1
   workmanager: ^0.10.10
 
 dev_dependencies:

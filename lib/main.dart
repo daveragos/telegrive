@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app/app.dart';
+import 'app/desktop_window.dart';
 import 'app/launch_action.dart';
 import 'app/licenses.dart';
 import 'core/platform/app_platform.dart';
@@ -24,6 +25,8 @@ Future<void> main() async {
   registerBundledLicenses();
 
   final (prefs, profile) = await (SharedPreferences.getInstance(), DeviceProfile.read()).wait;
+  // On a computer, the window opens at its size and place from last time.
+  await DesktopWindow.open(prefs);
   final container = ProviderContainer(
     overrides: [
       sharedPreferencesProvider.overrideWithValue(prefs),
