@@ -2,7 +2,8 @@
 
 ## Product
 
-**Register:** product, operate. A phone utility, Android first.
+**Register:** product, operate. A phone utility, Android first, with a
+desktop app for macOS, Windows and Linux on the same screens.
 
 **Users:** people who keep their files and camera roll in their own
 Telegram. Visits are short: find a file, check that backup is working,
@@ -107,6 +108,28 @@ Three places: **Home**, **Files**, **Photos**. Transfers is something
 happening, not a place, so it shows as a status line above the bar (and in
 Home's Activity group) while it runs; its full list is one tap away.
 Settings lives under the avatar on Home.
+
+## Desktop
+
+The same screens, made for a pointer and a keyboard rather than a second
+design.
+
+- **Sidebar.** New, Search, the three places, then Starred, Recent,
+  Albums, Available offline and Trash, and Transfers and Settings at the
+  foot. It sits beside every page but the viewer, the player and
+  document previews, which take the window; pages change at once beside
+  it, without a transition.
+- **Menus where you click.** A right-click, or ⋮, opens the sheet a phone
+  would show as a menu at the pointer. Pickers and choices open as a
+  dialog in the middle. Nothing rises from the foot of the window.
+- **Files is a table.** One line a row under Name, Kind, Size and
+  Modified, which sort it; the slot is 32px. Pages of settings and
+  explanations keep to 760 in the middle.
+- **Selection** is Cmd or Ctrl to add, Shift for a run, and the keys a
+  file manager has: Delete, F2, Enter, Escape, Cmd or Ctrl with A.
+- **Density** is compact, and the phone's own screens stay standard.
+- **Words** say "this computer" where a phone says "this phone", and
+  what only a phone has, the camera roll and mobile data, isn't shown.
 
 ## Patterns
 

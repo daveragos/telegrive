@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../app/theme/tokens.dart';
 import '../../../app/theme/file_style.dart';
 import '../../../core/files/file_kind.dart';
+import '../../../core/platform/app_platform.dart';
 import '../../../core/widgets/brand_mark.dart';
 import '../../../core/widgets/file_visuals.dart';
 import '../../../infrastructure/storage/preferences.dart';
@@ -15,6 +16,21 @@ import '../data/auth_controller.dart';
 /// the way.
 class WelcomeScreen extends ConsumerWidget {
   const WelcomeScreen({super.key});
+
+  /// A computer signs in with a code scanned by a phone that has Telegram,
+  /// as Telegram Desktop does, so it asks for one first; the phone number
+  /// is a click away, and is where it lands if the code can't be had.
+  static Future<void> _signIn(WidgetRef ref) async {
+    final auth = ref.read(authControllerProvider.notifier);
+    if (AppPlatform.isDesktop) {
+      try {
+        await auth.requestQrCode();
+      } catch (e) {
+        debugPrint('[Welcome] No QR code: $e');
+      }
+    }
+    auth.startSignIn();
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -71,9 +87,7 @@ class WelcomeScreen extends ConsumerWidget {
                   SizedBox(
                     width: double.infinity,
                     child: FilledButton(
-                      onPressed: () => ref
-                          .read(authControllerProvider.notifier)
-                          .startSignIn(),
+                      onPressed: () => _signIn(ref),
                       child: const Text('Sign in with Telegram'),
                     ),
                   ),
