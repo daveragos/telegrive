@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/material.dart';
 
 /// Lets a full-screen page be flicked down to close it or up for its
@@ -122,6 +123,13 @@ class _VerticalSwipeState extends State<VerticalSwipe> with SingleTickerProvider
     final fade = (_dy.abs() / VerticalSwipe.fadeDistance * 0.6).clamp(0.0, 0.6);
     return GestureDetector(
       behavior: HitTestBehavior.translucent,
+      // A finger or a pen; a mouse dragging on a computer means nothing
+      // here, and Escape closes the page there.
+      supportedDevices: const {
+        PointerDeviceKind.touch,
+        PointerDeviceKind.stylus,
+        PointerDeviceKind.invertedStylus,
+      },
       onVerticalDragStart: armed ? _start : null,
       onVerticalDragUpdate: armed ? _update : null,
       onVerticalDragEnd: armed ? _end : null,

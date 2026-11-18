@@ -1378,6 +1378,12 @@ void main() {
     await snap(tester, 'desktop_settings');
   });
 
+  testWidgets('desktop photos', (tester) async {
+    await prepareData(tester);
+    await pumpApp(tester, location: '/photos', desktop: true);
+    await snap(tester, 'desktop_photos');
+  });
+
   testWidgets('desktop file menu', (tester) async {
     await prepareData(tester);
     await pumpApp(tester, location: '/files', desktop: true);

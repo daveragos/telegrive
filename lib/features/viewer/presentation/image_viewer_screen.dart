@@ -12,6 +12,7 @@ import '../../../app/theme/tokens.dart';
 import '../../../core/files/file_kind.dart';
 import '../../../core/format/formatters.dart';
 import '../../../core/platform/app_platform.dart';
+import '../../../core/platform/desktop_input.dart';
 import '../../backup/data/backup_controller.dart';
 import '../../backup/data/local_media.dart';
 import '../../drive/data/drive_repository.dart';
@@ -158,85 +159,154 @@ class _ImageViewerScreenState extends ConsumerState<ImageViewerScreen> {
       });
     }
 
-    return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle.light,
-      child: Scaffold(
-        backgroundColor: Colors.black,
-        extendBodyBehindAppBar: true,
-        appBar: current == null
-            ? AppBar(
-                backgroundColor: Colors.transparent,
-                foregroundColor: Colors.white,
-              )
-            : PreferredSize(
-                preferredSize: const Size.fromHeight(kToolbarHeight),
-                child: AnimatedOpacity(
-                  opacity: _chrome && !_dragging ? 1 : 0,
-                  duration: const Duration(milliseconds: 180),
-                  child: IgnorePointer(
-                    ignoring: !_chrome || _dragging,
-                    child: _ViewerBar(
-                      file: current,
-                      position: widget.source == null
-                          ? null
-                          : (index: index, count: files.length),
-                      onTrash: () => _trash(current, last: files.length <= 1),
+    void step(int by) {
+      final to = index + by;
+      if (pages == null || !pages.hasClients || to < 0 || to >= files.length) return;
+      pages.animateToPage(to, duration: const Duration(milliseconds: 220), curve: Curves.easeOut);
+    }
+
+    return _withKeys(
+      onStep: step,
+      onTrash: current == null ? null : () => _trash(current, last: files.length <= 1),
+      child: AnnotatedRegion<SystemUiOverlayStyle>(
+        value: SystemUiOverlayStyle.light,
+        child: Scaffold(
+          backgroundColor: Colors.black,
+          extendBodyBehindAppBar: true,
+          appBar: current == null
+              ? AppBar(
+                  backgroundColor: Colors.transparent,
+                  foregroundColor: Colors.white,
+                )
+              : PreferredSize(
+                  preferredSize: const Size.fromHeight(kToolbarHeight),
+                  child: AnimatedOpacity(
+                    opacity: _chrome && !_dragging ? 1 : 0,
+                    duration: const Duration(milliseconds: 180),
+                    child: IgnorePointer(
+                      ignoring: !_chrome || _dragging,
+                      child: _ViewerBar(
+                        file: current,
+                        position: widget.source == null
+                            ? null
+                            : (index: index, count: files.length),
+                        onTrash: () => _trash(current, last: files.length <= 1),
+                      ),
                     ),
                   ),
                 ),
-              ),
-        body: files.isEmpty || _pages == null
-            ? const Center(
-                child: CircularProgressIndicator(color: Colors.white),
-              )
-            : PageView.builder(
-                controller: _pages,
-                physics: _zoomed
-                    ? const NeverScrollableScrollPhysics()
-                    : const PageScrollPhysics(),
-                itemCount: files.length,
-                onPageChanged: (i) => setState(() {
-                  _currentId = files[i].id;
-                  _zoomed = false;
-                }),
-                itemBuilder: (context, i) {
-                  final file = files[i];
-                  final previewable =
-                      file.kind == FileKind.image && !file.isSplit;
-                  if (file.kind == FileKind.video) {
-                    return _VideoPage(
-                      key: ValueKey(file.id),
-                      file: file,
-                      isCurrent: i == index,
-                      chrome: _chrome && !_dragging,
-                      onTap: _toggleChrome,
-                      onChrome: (visible) {
-                        if (visible != _chrome) _toggleChrome();
-                      },
-                      onDragging: _setDragging,
-                    );
-                  }
-                  return previewable
-                      ? _ImagePage(
-                          key: ValueKey(file.id),
-                          file: file,
-                          onTap: _toggleChrome,
-                          onZoomChanged: (zoomed) {
-                            if (zoomed != _zoomed) {
-                              setState(() => _zoomed = zoomed);
-                            }
-                          },
-                          onDragging: _setDragging,
-                        )
-                      : _PosterPage(
-                          key: ValueKey(file.id),
-                          file: file,
-                          onTap: _toggleChrome,
-                          onDragging: _setDragging,
-                        );
-                },
-              ),
+          body: files.isEmpty || _pages == null
+              ? const Center(
+                  child: CircularProgressIndicator(color: Colors.white),
+                )
+              : PageView.builder(
+                  controller: _pages,
+                  physics: _zoomed
+                      ? const NeverScrollableScrollPhysics()
+                      : const PageScrollPhysics(),
+                  itemCount: files.length,
+                  onPageChanged: (i) => setState(() {
+                    _currentId = files[i].id;
+                    _zoomed = false;
+                  }),
+                  itemBuilder: (context, i) {
+                    final file = files[i];
+                    final previewable =
+                        file.kind == FileKind.image && !file.isSplit;
+                    if (file.kind == FileKind.video) {
+                      return _VideoPage(
+                        key: ValueKey(file.id),
+                        file: file,
+                        isCurrent: i == index,
+                        chrome: _chrome && !_dragging,
+                        onTap: _toggleChrome,
+                        onChrome: (visible) {
+                          if (visible != _chrome) _toggleChrome();
+                        },
+                        onDragging: _setDragging,
+                      );
+                    }
+                    return previewable
+                        ? _ImagePage(
+                            key: ValueKey(file.id),
+                            file: file,
+                            onTap: _toggleChrome,
+                            onZoomChanged: (zoomed) {
+                              if (zoomed != _zoomed) {
+                                setState(() => _zoomed = zoomed);
+                              }
+                            },
+                            onDragging: _setDragging,
+                          )
+                        : _PosterPage(
+                            key: ValueKey(file.id),
+                            file: file,
+                            onTap: _toggleChrome,
+                            onDragging: _setDragging,
+                          );
+                  },
+                ),
+          // A mouse can't swipe, so a computer has arrows at the sides.
+          floatingActionButton: !AppPlatform.isDesktop || files.length < 2 || !_chrome
+              ? null
+              : _StepArrows(
+                  onBack: index > 0 ? () => step(-1) : null,
+                  onNext: index < files.length - 1 ? () => step(1) : null,
+                ),
+          floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
+        ),
       ),
+    );
+  }
+
+  /// On a computer: Left and Right go through the photos, Escape closes,
+  /// and Delete (Cmd-Backspace on a Mac) moves the one shown to the trash.
+  Widget _withKeys({
+    required void Function(int by) onStep,
+    required VoidCallback? onTrash,
+    required Widget child,
+  }) {
+    if (!AppPlatform.isDesktop) return child;
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.arrowLeft): () => onStep(-1),
+        const SingleActivator(LogicalKeyboardKey.arrowRight): () => onStep(1),
+        const SingleActivator(LogicalKeyboardKey.escape): () => Navigator.of(context).maybePop(),
+        if (onTrash != null)
+          for (final keys in DesktopInput.trash) keys: onTrash,
+      },
+      child: Focus(autofocus: true, child: child),
+    );
+  }
+}
+
+/// The previous and next arrows along the foot of the viewer on a computer.
+class _StepArrows extends StatelessWidget {
+  const _StepArrows({required this.onBack, required this.onNext});
+
+  final VoidCallback? onBack;
+  final VoidCallback? onNext;
+
+  @override
+  Widget build(BuildContext context) {
+    Widget arrow(IconData icon, String tooltip, VoidCallback? onPressed) => IconButton.filledTonal(
+      onPressed: onPressed,
+      tooltip: tooltip,
+      style: IconButton.styleFrom(
+        backgroundColor: Colors.black54,
+        foregroundColor: Colors.white,
+        disabledBackgroundColor: Colors.black26,
+        disabledForegroundColor: Colors.white38,
+      ),
+      icon: Icon(icon),
+    );
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        arrow(Icons.chevron_left_rounded, 'Previous', onBack),
+        const SizedBox(width: Space.m),
+        arrow(Icons.chevron_right_rounded, 'Next', onNext),
+      ],
     );
   }
 }

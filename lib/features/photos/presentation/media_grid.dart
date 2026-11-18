@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart' show setEquals;
+import 'package:flutter/gestures.dart' show GestureBinding, PointerScrollEvent, PointerSignalEvent;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -63,9 +64,20 @@ class MediaSelection extends ChangeNotifier {
 }
 
 /// Columns across the photo grid, one of a few steps; pinching moves
-/// between them and the choice is remembered.
+/// between them and the choice is remembered. On a computer the step is a
+/// tile size instead, and the columns are as many as the window fits.
 class PhotoColumns extends Notifier<int> {
   static const steps = [2, 3, 4, 5, 7];
+
+  /// How wide a tile is at each step, on a computer.
+  static const _desktopTiles = {2: 340.0, 3: 260.0, 4: 200.0, 5: 160.0, 7: 120.0};
+
+  /// The columns [step] gives across [width]: the step itself on a phone,
+  /// and on a computer as many of its tiles as fit, two at least.
+  static int across(int step, double width) {
+    if (!AppPlatform.isDesktop) return step;
+    return math.max(2, (width / (_desktopTiles[step] ?? 200)).round());
+  }
 
   @override
   int build() {
@@ -362,6 +374,17 @@ class _MediaGridState extends ConsumerState<MediaGrid> {
     return (points[0] - points[1]).distance;
   }
 
+  /// Ctrl or Cmd with the scroll wheel makes the tiles bigger or smaller
+  /// on a computer, where a mouse can't pinch.
+  void _zoomWithWheel(PointerSignalEvent event) {
+    if (event is! PointerScrollEvent || !DesktopInput.zoomScroll) return;
+    final dy = event.scrollDelta.dy;
+    if (dy == 0) return;
+    GestureBinding.instance.pointerSignalResolver.register(event, (_) {
+      ref.read(photoColumnsProvider.notifier).step(dy > 0 ? 1 : -1);
+    });
+  }
+
   void _touchDown(PointerDownEvent event) {
     _touches[event.pointer] = event.position;
     if (_touches.length == 2) setState(() => _pinchFrom = _spread());
@@ -420,8 +443,8 @@ class _MediaGridState extends ConsumerState<MediaGrid> {
       WidgetsBinding.instance.addPostFrameCallback((_) => _checkNearEnd());
     }
 
-    /// The scrolling grid, its tiles [tileSize] across.
-    Widget scrollView(double tileSize) {
+    /// The scrolling grid, [columns] across with tiles [tileSize] wide.
+    Widget scrollView(int columns, double tileSize) {
       final slivers = <Widget>[...widget.header];
       if (widget.files.isEmpty && widget.empty != null) {
         slivers.add(SliverFillRemaining(hasScrollBody: false, child: widget.empty));
@@ -495,6 +518,7 @@ class _MediaGridState extends ConsumerState<MediaGrid> {
     }
 
     return _withKeys(Listener(
+      onPointerSignal: _zoomWithWheel,
       onPointerDown: _touchDown,
       onPointerMove: _touchMove,
       onPointerUp: _touchUp,
@@ -506,8 +530,9 @@ class _MediaGridState extends ConsumerState<MediaGrid> {
         onLongPressCancel: _dragEnd,
         child: LayoutBuilder(
           builder: (context, constraints) {
+            final across = PhotoColumns.across(columns, constraints.maxWidth);
             final layout = GridLayout(
-              columns: columns,
+              columns: across,
               width: constraints.maxWidth,
               headerHeight: headerHeight,
               leading: _leading,
@@ -515,9 +540,12 @@ class _MediaGridState extends ConsumerState<MediaGrid> {
             );
             return Stack(
               children: [
-                scrollView(layout.tileSize),
-                // Worth a handle only when the grid runs past two screens.
-                if (sections.isNotEmpty && layout.total > constraints.maxHeight * 2)
+                scrollView(across, layout.tileSize),
+                // Worth a handle only when the grid runs past two screens,
+                // and only by touch: a computer has its scrollbar.
+                if (!AppPlatform.isDesktop &&
+                    sections.isNotEmpty &&
+                    layout.total > constraints.maxHeight * 2)
                   _DateScrubber(controller: _scroll, layout: layout, height: constraints.maxHeight),
               ],
             );

@@ -91,6 +91,13 @@ class _PhotosScreenState extends ConsumerState<PhotosScreen> {
                   toolbarHeight: 64,
                   title: Text('Photos', style: context.text.headlineSmall),
                   actions: [
+                    // Pull-to-refresh needs a finger; a computer has a button.
+                    if (AppPlatform.isDesktop)
+                      IconButton(
+                        onPressed: () => ref.read(driveSyncProvider.notifier).refresh(),
+                        icon: const Icon(Icons.refresh_rounded),
+                        tooltip: 'Refresh',
+                      ),
                     IconButton(
                       onPressed: () => context.push('/search?kind=media'),
                       tooltip: 'Search photos and videos',

@@ -21,6 +21,10 @@ abstract final class DesktopInput {
   /// clicked, as Shift does.
   static bool get runClick => AppPlatform.isDesktop && HardwareKeyboard.instance.isShiftPressed;
 
+  /// Whether a scroll under way zooms instead, with Cmd held on a Mac or
+  /// Ctrl elsewhere.
+  static bool get zoomScroll => addingClick;
+
   /// [key] with Cmd on a Mac, Ctrl elsewhere.
   static SingleActivator command(LogicalKeyboardKey key, {bool shift = false}) =>
       SingleActivator(key, meta: _mac, control: !_mac, shift: shift);

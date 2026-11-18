@@ -403,6 +403,13 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
                       : null,
                 ),
                 actions: [
+                  // Pull-to-refresh needs a finger; a computer has a button.
+                  if (AppPlatform.isDesktop)
+                    IconButton(
+                      onPressed: () => ref.read(driveSyncProvider.notifier).refresh(),
+                      icon: const Icon(Icons.refresh_rounded),
+                      tooltip: 'Refresh',
+                    ),
                   if (!widget.private)
                     IconButton(
                       onPressed: _search,

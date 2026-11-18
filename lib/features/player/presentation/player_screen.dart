@@ -6,10 +6,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:video_player/video_player.dart';
+import 'package:window_manager/window_manager.dart';
 
 import '../../../app/theme/tokens.dart';
 import '../../../core/files/file_kind.dart';
 import '../../../core/format/formatters.dart';
+import '../../../core/platform/app_platform.dart';
 import '../../../core/widgets/file_visuals.dart';
 import '../../../infrastructure/database/app_database.dart';
 import '../../../infrastructure/storage/preferences.dart';
@@ -444,7 +446,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       );
     }
 
-    return AnnotatedRegion<SystemUiOverlayStyle>(
+    return _withKeys(AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.light,
       child: Scaffold(
         backgroundColor: Colors.black,
@@ -497,6 +499,34 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           ),
         ),
       ),
+    ));
+  }
+
+  /// On a computer: Space plays and pauses, Left and Right skip back and
+  /// forward, F fills the screen with the window and Escape leaves full
+  /// screen, or the player.
+  Widget _withKeys(Widget child) {
+    if (!AppPlatform.isDesktop) return child;
+    Future<void> fullScreen(bool? on) async {
+      final now = await windowManager.isFullScreen();
+      await windowManager.setFullScreen(on ?? !now);
+    }
+
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.space): () => unawaited(_togglePlay()),
+        const SingleActivator(LogicalKeyboardKey.arrowLeft): () => unawaited(_skip(false)),
+        const SingleActivator(LogicalKeyboardKey.arrowRight): () => unawaited(_skip(true)),
+        const SingleActivator(LogicalKeyboardKey.keyF): () => unawaited(fullScreen(null)),
+        const SingleActivator(LogicalKeyboardKey.escape): () async {
+          if (await windowManager.isFullScreen()) {
+            await fullScreen(false);
+          } else if (mounted) {
+            await Navigator.of(context).maybePop();
+          }
+        },
+      },
+      child: Focus(autofocus: true, child: child),
     );
   }
 }
