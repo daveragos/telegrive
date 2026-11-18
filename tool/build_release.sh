@@ -1,15 +1,18 @@
 #!/usr/bin/env bash
 #
 # Builds every file a release carries into build/release: an APK for each
-# ABI, the app bundle, the unsigned IPA and SHA256SUMS.txt, ready to attach
-# to a GitHub release. Runs on a Mac, which the IPA needs.
+# ABI, the app bundle, the unsigned IPA, the Mac disk image and
+# SHA256SUMS.txt, ready to attach to a GitHub release. Runs on a Mac, which
+# the IPA and the disk image need. Windows and Linux builds are made on
+# those systems (tool/build_windows.ps1, tool/build_linux.sh) and added to
+# the release with their own checksums.
 #
-# It needs TDLib for both platforms (tool/build_tdlib_android.sh and
-# tool/build_tdlib_ios.sh), the Telegram API credentials, and the upload key
-# that android/key.properties names. Without that key Gradle signs with the
-# debug key, and Android won't install such a build over the app people
-# have, so the script stops. Extra arguments go to every flutter build, for
-# example --dart-define-from-file=telegram_api.json.
+# It needs TDLib for each platform (tool/build_tdlib_android.sh,
+# tool/build_tdlib_ios.sh and tool/build_tdlib_macos.sh), the Telegram API
+# credentials, and the upload key that android/key.properties names. Without
+# that key Gradle signs with the debug key, and Android won't install such a
+# build over the app people have, so the script stops. Extra arguments go to
+# every flutter build, for example --dart-define-from-file=telegram_api.json.
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
@@ -23,6 +26,7 @@ fail() {
 abis=(arm64-v8a armeabi-v7a x86_64)
 
 [ -f android/key.properties ] || fail "android/key.properties is missing; release builds need the upload key"
+[ -d macos/Frameworks/tdjson.xcframework ] || fail "TDLib for macOS is missing; run tool/build_tdlib_macos.sh first"
 for abi in "${abis[@]}"; do
   [ -f "android/app/src/main/jniLibs/$abi/libtdjson.so" ] ||
     fail "TDLib for $abi is missing; run tool/build_tdlib_android.sh first"
@@ -78,6 +82,9 @@ ipa="build/ios/ipa/telegrive-$version.ipa"
 unzip -l "$ipa" | grep 'Payload/Runner.app/Frameworks/tdjson.framework/tdjson$' > /dev/null ||
   fail "$ipa doesn't carry TDLib"
 cp "$ipa" "$out/"
+
+tool/build_dmg.sh "$@"
+cp "build/macos/dmg/telegrive-$version-macos.dmg" "$out/"
 
 cd "$out"
 shasum -a 256 -- * > SHA256SUMS.txt

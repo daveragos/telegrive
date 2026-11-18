@@ -1044,7 +1044,10 @@ Runner links and embeds it as on iOS, and `openTdLibrary()` opens it from
 the app's `Contents/Frameworks`. Then `flutter run -d macos`. The Mac app
 runs without the App Sandbox, as an app from outside the App Store may, so
 watched folders and queued uploads stay readable after a restart; its
-database key goes in the login keychain.
+database key goes in the login keychain. On every computer the app keeps
+its own copies in a scratch folder in its cache, never in the temporary
+folder other apps share, and a lock file keeps a second copy of the app
+away from TDLib's database.
 
 On Linux, TDLib is built inside an Ubuntu 22.04 container, so the library
 runs on any Linux with glibc 2.35 or newer whatever machine built it. It
@@ -1130,20 +1133,25 @@ release build is signed with the debug key, so `flutter run --release`
 works on any checkout, but Android won't install that build over one
 signed with the upload key, or the other way round.
 
-Releases are built on a Mac, which the IPA needs, and attached to a
-GitHub release by hand. To release:
+Releases are built on a Mac, which the IPA and the Mac's disk image need,
+and attached to a GitHub release by hand. To release:
 
 1. Raise `version` in pubspec.yaml, build number included.
 2. Write what's new for people in `.github/release-notes/<version>.md`.
 3. Run `dart run tool/guide_figures.dart`, which draws the IPA's name into
    the iPhone guide's pictures.
 4. Build every file into `build/release` with `tool/build_release.sh`.
-   It builds an APK for each ABI, the app bundle and the unsigned IPA,
-   stops if an Android file is signed with the debug key or the IPA lacks
-   TDLib, and writes `SHA256SUMS.txt`.
-5. In `docs/site.js`, set `FALLBACK_VERSION` and the APK and IPA sizes
-   from `build/release`, which the website shows when GitHub can't be
-   asked.
+   It builds an APK for each ABI, the app bundle, the unsigned IPA and
+   the Mac's disk image, stops if an Android file is signed with the
+   debug key or the IPA lacks TDLib, and writes `SHA256SUMS.txt`. The disk
+   image comes from `tool/build_dmg.sh`: one app for Apple silicon and
+   Intel, which stops if any binary in it lacks either, signed ad hoc as
+   Flutter signs a build with no Apple team and not notarized, beside a
+   link to Applications.
+5. In `docs/site.js`, set `FALLBACK_VERSION` and the APK, IPA and disk
+   image sizes from `build/release`, which the website shows when GitHub
+   can't be asked; until a release carries the disk image, the Mac
+   guide's download opens the releases.
 6. Commit and push, then draft the release with its notes, attach the
    files in `build/release`, and publish it, which makes the tag:
 
@@ -1152,6 +1160,20 @@ gh release create v1.0.0 --draft --target main --title "Telegrive 1.0.0" \
   --notes-file .github/release-notes/1.0.0.md
 gh release upload v1.0.0 build/release/*
 ```
+
+Windows and Linux are built on those systems, and their files and
+`SHA256SUMS-<system>-<arch>.txt` attached to the same release. Neither
+script has been run yet:
+
+- `tool/build_windows.ps1`, on Windows with Visual Studio 2022 and Inno
+  Setup 6, makes the app's folder as a zip and an installer
+  (`windows/installer/telegrive.iss`) that installs for the person
+  running it, asks for no administrator, and on uninstalling takes away
+  the entry Open at login wrote.
+- `tool/build_linux.sh x64|arm64`, with Docker, builds in an Ubuntu 22.04
+  container on a copy of the repository and makes the app's folder as a
+  tar.gz, which needs GTK 3, libsecret, AppIndicator and libmpv from the
+  system, and an AppImage that carries them, gathered by linuxdeploy.
 
 ## Website
 
@@ -1210,9 +1232,9 @@ app, and every feature is there for everyone.
 | --- | --- |
 | Android (arm64, armv7, x86, x86_64) | Supported |
 | iOS (arm64, and the Apple silicon simulator) | Released as an unsigned IPA to sideload, with TDLib built by `tool/build_tdlib_ios.sh`. Photo backup runs while the app is open; the features below that need Android are off. |
-| macOS (Apple silicon and Intel, macOS 12 or later) | In development, with TDLib built by `tool/build_tdlib_macos.sh`. |
-| Windows (x64) | In development, with TDLib built by `tool/build_tdlib_windows.ps1` on Windows. |
-| Linux (x64, arm64) | In development, with TDLib built by `tool/build_tdlib_linux.sh`. |
+| macOS (Apple silicon and Intel, macOS 12 or later) | A disk image built by `tool/build_dmg.sh`, signed ad hoc and not notarized, with TDLib built by `tool/build_tdlib_macos.sh`. |
+| Windows (x64, arm64) | Built by `tool/build_windows.ps1` on Windows, not released yet, with TDLib built by `tool/build_tdlib_windows.ps1`. |
+| Linux (x64, arm64) | Built by `tool/build_linux.sh`, not released yet, with TDLib built by `tool/build_tdlib_linux.sh`. |
 
 - **Newer TDLib.** The app builds TDLib itself, aligned for 16 KB pages, but
   stays on 1.8.36, the version `handy_tdlib`'s Dart API was generated from.
@@ -1220,11 +1242,8 @@ app, and every feature is there for everyone.
 - **iOS**: backup in the background, a share extension, and the features
   that use Android's own channels: watched folders, the Google Photos
   import, the drive in the system file picker, and the scanner and camera.
-- **Desktop** (#12): the drive client for mouse and keyboard, with drag
-  and drop, folder sync from the computer to the drive, and the drive in
-  Finder, File Explorer or the Linux file manager over WebDAV. On a
-  computer the app keeps its own copies in a scratch folder in its cache,
-  never in the temporary folder other apps share, and a lock file keeps a
-  second copy of the app away from TDLib's database.
+- **Desktop** (#12): releases for Windows and Linux, and the Mac app
+  signed with a Developer ID and notarized, so it opens without Open
+  Anyway and its keychain access lasts from one version to the next.
 - **End-to-end encryption** of file contents and details, with a recovery
   passphrase.
