@@ -68,6 +68,12 @@ abstract final class MediaProbe {
     }
   }
 
+  /// A JPEG of the first page of the PDF at [path], as [thumbnail] makes
+  /// for a photo, answering [out]; null for one that won't open, and
+  /// anywhere but a computer, where uploads make no page previews.
+  static Future<String?> pdfThumbnail(String path, {required String out}) async =>
+      AppPlatform.isDesktop ? DesktopMedia.pdfThumbnail(path, out: out) : null;
+
   /// When the photo or [video] at [path] was taken, from the date its
   /// camera wrote into it, or null when it holds none.
   static Future<DateTime?> takenAt(String path, {required bool video}) async {

@@ -6,12 +6,13 @@ import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
 import 'package:image/image.dart' as img;
 import 'package:media_kit/media_kit.dart';
+import 'package:pdfrx/pdfrx.dart';
 
-/// What a photo or video on a computer says about itself, read by the app:
-/// photos by Flutter's own decoder and their EXIF, videos by mpv. It stands
-/// in for what Android reads for [MediaProbe] on a phone, so a file
-/// uploaded from a computer goes up with a preview, a length and the date
-/// it was taken, as one from a phone does.
+/// What a photo, video or PDF on a computer says about itself, read by the
+/// app: photos by Flutter's own decoder and their EXIF, videos by mpv, PDFs
+/// by pdfium. It stands in for what Android reads for [MediaProbe] on a
+/// phone, so a file uploaded from a computer goes up with a preview, a
+/// length and the date it was taken, as one from a phone does.
 abstract final class DesktopMedia {
   /// Telegram's largest side for a document's thumbnail.
   static const int thumbnailSide = 320;
@@ -35,6 +36,44 @@ abstract final class DesktopMedia {
       if (await file.length() > _largestPhoto) return null;
       final jpeg = await jpegOf(await file.readAsBytes(), side: thumbnailSide);
       return jpeg == null ? null : await _write(out, jpeg);
+    } catch (e) {
+      debugPrint('[DesktopMedia] $path: $e');
+      return null;
+    }
+  }
+
+  /// A JPEG of the first page of the PDF at [path], drawn by pdfium no side
+  /// over [thumbnailSide] on white, written to [out]; null for a PDF that
+  /// won't open, one with a password say.
+  static Future<String?> pdfThumbnail(String path, {required String out}) async {
+    try {
+      await pdfrxFlutterInitialize();
+      final document = await PdfDocument.openFile(path);
+      try {
+        if (document.pages.isEmpty) return null;
+        final page = document.pages.first;
+        final scale = thumbnailSide / math.max(page.width, page.height);
+        final drawn = await page.render(
+          fullWidth: math.max(1, (page.width * scale).roundToDouble()),
+          fullHeight: math.max(1, (page.height * scale).roundToDouble()),
+        );
+        if (drawn == null) return null;
+        try {
+          final image = img.Image.fromBytes(
+            width: drawn.width,
+            height: drawn.height,
+            bytes: drawn.pixels.buffer,
+            bytesOffset: drawn.pixels.offsetInBytes,
+            numChannels: 4,
+            order: img.ChannelOrder.bgra,
+          );
+          return await _write(out, img.encodeJpg(image.convert(numChannels: 3), quality: 82));
+        } finally {
+          drawn.dispose();
+        }
+      } finally {
+        await document.dispose();
+      }
     } catch (e) {
       debugPrint('[DesktopMedia] $path: $e');
       return null;

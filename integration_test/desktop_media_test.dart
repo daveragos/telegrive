@@ -7,6 +7,7 @@
 //   flutter test integration_test/desktop_media_test.dart -d macos \
 //     --dart-define=SAMPLE_VIDEO=/tmp/sample.mp4 --dart-define=SAMPLE_UHD=/tmp/uhd.mkv
 
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -46,6 +47,28 @@ void main() {
     });
   });
 
+  testWidgets('a PDF gets its first page as a small JPEG preview', (tester) async {
+    await tester.runAsync(() async {
+      final path = p.join(dir.path, 'letter.pdf');
+      await File(path).writeAsBytes(_letterWithRedBox());
+
+      final out = await DesktopMedia.pdfThumbnail(path, out: p.join(dir.path, 'page.jpg'));
+      expect(out, isNotNull);
+      final page = img.decodeJpg(await File(out!).readAsBytes())!;
+      expect(page.width, 247);
+      expect(page.height, 320);
+      expect(page.getPixel(2, 2).r, greaterThan(240));
+      expect(page.getPixel(2, 2).g, greaterThan(240));
+      final middle = page.getPixel(123, 160);
+      expect(middle.r, greaterThan(200));
+      expect(middle.g, lessThan(60));
+
+      final notPdf = p.join(dir.path, 'not.pdf');
+      await File(notPdf).writeAsString('not a PDF');
+      expect(await DesktopMedia.pdfThumbnail(notPdf, out: p.join(dir.path, 'none.jpg')), isNull);
+    });
+  });
+
   testWidgets('a video says how long it runs and gives a frame', (tester) async {
     await tester.runAsync(() async {
       final probed = await DesktopMedia.probe(_sampleVideo, frameOut: p.join(dir.path, 'frame.jpg'));
@@ -68,4 +91,28 @@ void main() {
       expect({for (final px in frame) px.luminance}.length, greaterThan(100));
     });
   }, skip: _sampleUhd.isEmpty);
+}
+
+/// A Letter-sized page, white, with a red box over its middle.
+List<int> _letterWithRedBox() {
+  const content = '1 0 0 rg 100 100 412 592 re f';
+  const objects = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R >>',
+    '<< /Length 29 >>\nstream\n$content\nendstream',
+  ];
+  final pdf = StringBuffer('%PDF-1.4\n');
+  final offsets = <int>[];
+  for (final (i, object) in objects.indexed) {
+    offsets.add(pdf.length);
+    pdf.write('${i + 1} 0 obj\n$object\nendobj\n');
+  }
+  final xref = pdf.length;
+  pdf.write('xref\n0 ${objects.length + 1}\n0000000000 65535 f \n');
+  for (final offset in offsets) {
+    pdf.write('${offset.toString().padLeft(10, '0')} 00000 n \n');
+  }
+  pdf.write('trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n$xref\n%%EOF\n');
+  return ascii.encode(pdf.toString());
 }

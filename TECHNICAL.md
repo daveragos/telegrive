@@ -471,10 +471,11 @@ value goes back onto the line exactly as it came.
 - A photo or video that goes up without a preview, one picked in Files
   say, gets one made from the file on Android before its first part, as
   backup's do: Telegram makes none for a video sent as a file, nor for a
-  HEIC photo. A computer makes it too: a photo is decoded by Flutter, a
-  video's frame a tenth of the way in is taken by mpv, which decodes it
-  without drawing it anywhere, and both go up as 320-pixel JPEGs, with
-  the photo's date from its EXIF and the video's length.
+  HEIC photo. A computer makes it too, and one for a PDF: a photo is
+  decoded by Flutter, a video's frame a tenth of the way in is taken by
+  mpv, which decodes it without drawing it anywhere, and a PDF's first
+  page is drawn by pdfium. Each goes up as a 320-pixel JPEG, with the
+  photo's date from its EXIF and the video's length.
 - RAW photos (DNG, CR2, CR3, NEF, NRW, ARW, ORF, RW2, RAF, SRW, PEF) count
   as photos, under the types Android's media store gives them, so they
   get a preview, show in Photos and open in the photo viewer. Android
