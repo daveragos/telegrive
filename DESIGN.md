@@ -107,7 +107,9 @@ animates its value. No bounce, no pulsing, nothing moves on its own.
 Three places: **Home**, **Files**, **Photos**. Transfers is something
 happening, not a place, so it shows as a status line above the bar (and in
 Home's Activity group) while it runs; its full list is one tap away.
-Settings lives under the avatar on Home.
+Settings lives under the avatar on Home. On a computer the sidebar has
+Transfers and Settings, so Home has neither, and is titled Home as Files
+is Files.
 
 ## Desktop
 

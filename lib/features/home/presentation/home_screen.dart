@@ -236,39 +236,50 @@ class _Header extends ConsumerWidget {
       padding: const EdgeInsets.fromLTRB(Space.gutter, Space.m, Space.m, 0),
       child: Column(
         children: [
-          Row(
-            children: [
-              const BrandMark(size: 28),
-              const SizedBox(width: Space.m),
-              Expanded(
-                child: Text('Telegrive', style: context.text.titleLarge),
+          // A computer's sidebar has the app's name, Transfers and Settings,
+          // so the page is named for itself, as Files is.
+          if (AppPlatform.isDesktop)
+            Padding(
+              padding: const EdgeInsets.only(top: Space.s, bottom: Space.xs),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text('Home', style: context.text.headlineSmall),
               ),
-              IconButton(
-                onPressed: () => context.push('/transfers'),
-                icon: const Icon(Icons.swap_vert_rounded),
-                tooltip: 'Transfers',
-              ),
-              const SizedBox(width: Space.xs),
-              Tooltip(
-                message: 'Settings',
-                child: InkResponse(
-                  onTap: () => context.push('/settings'),
-                  radius: 24,
-                  child: CircleAvatar(
-                    radius: 17,
-                    backgroundColor: colors.surface2,
-                    child: Text(
-                      session?.initials ?? '?',
-                      style: context.text.labelMedium?.copyWith(
-                        color: colors.text,
+            )
+          else
+            Row(
+              children: [
+                const BrandMark(size: 28),
+                const SizedBox(width: Space.m),
+                Expanded(
+                  child: Text('Telegrive', style: context.text.titleLarge),
+                ),
+                IconButton(
+                  onPressed: () => context.push('/transfers'),
+                  icon: const Icon(Icons.swap_vert_rounded),
+                  tooltip: 'Transfers',
+                ),
+                const SizedBox(width: Space.xs),
+                Tooltip(
+                  message: 'Settings',
+                  child: InkResponse(
+                    onTap: () => context.push('/settings'),
+                    radius: 24,
+                    child: CircleAvatar(
+                      radius: 17,
+                      backgroundColor: colors.surface2,
+                      child: Text(
+                        session?.initials ?? '?',
+                        style: context.text.labelMedium?.copyWith(
+                          color: colors.text,
+                        ),
                       ),
                     ),
                   ),
                 ),
-              ),
-              const SizedBox(width: Space.s),
-            ],
-          ),
+                const SizedBox(width: Space.s),
+              ],
+            ),
           const SizedBox(height: Space.l),
           Padding(
             padding: const EdgeInsets.only(right: Space.s),
