@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:telegrive/core/files/file_kind.dart';
+import 'package:telegrive/core/platform/app_platform.dart';
 import 'package:telegrive/features/drive/domain/drive_models.dart';
 import 'package:telegrive/features/photos/presentation/media_grid.dart';
 import 'package:telegrive/features/photos/presentation/media_grid_layout.dart';
@@ -83,4 +84,24 @@ void main() {
     selection.replace(toggleMonth(selection.ids, september));
     expect(selection.ids, {'a'});
   });
+
+  test('on a computer one photo picked is highlighted, and a second starts selecting', () {
+    AppPlatform.debugDesktop = true;
+    addTearDown(() => AppPlatform.debugDesktop = false);
+
+    selection.replace({'a'});
+    expect(selection.active, isFalse);
+    expect(selection.contains('a'), isTrue);
+
+    selection.toggle('b');
+    expect(selection.active, isTrue);
+
+    selection.replace({'b'});
+    expect(selection.active, isFalse);
+
+    // Escape lets go of a highlighted photo too.
+    selection.clear();
+    expect(selection.ids, isEmpty);
+  });
 }
+

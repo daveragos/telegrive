@@ -57,8 +57,15 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
   /// anything is.
   bool _selectMode = false;
 
+  /// Whether the screen is selecting: its bar shows the count and the
+  /// actions, and each row a check. On a computer one item picked with a
+  /// plain click is only highlighted, as in Finder, and selecting starts
+  /// with a second, or with Select.
   bool get _selecting =>
-      _selectMode || _files.isNotEmpty || _folders.isNotEmpty;
+      _selectMode || _files.length + _folders.length > (AppPlatform.isDesktop ? 1 : 0);
+
+  /// Whether anything is picked, highlighted or selected.
+  bool get _picking => _files.isNotEmpty || _folders.isNotEmpty;
 
   /// Tells the shell whether this folder is selecting, so its bar makes way
   /// for the selection's. Kept from the start, for when the screen goes.
@@ -176,7 +183,7 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
           if (data != null) _selectAll(data);
         },
         const SingleActivator(LogicalKeyboardKey.escape): () {
-          if (_selecting) _clearSelection();
+          if (_selecting || _picking) _clearSelection();
         },
         for (final keys in DesktopInput.trash) keys: trash,
         const SingleActivator(LogicalKeyboardKey.f2): rename,

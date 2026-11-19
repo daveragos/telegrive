@@ -24,7 +24,12 @@ class MediaSelection extends ChangeNotifier {
   bool _forced = false;
 
   Set<String> get ids => Set.unmodifiable(_ids);
-  bool get active => _forced || _ids.isNotEmpty;
+
+  /// Whether the screen is selecting, with the count and the actions in its
+  /// bar. On a computer one photo picked with a plain click is only
+  /// highlighted, as in Finder, and selecting starts with a second, or with
+  /// Select photos.
+  bool get active => _forced || _ids.length > (AppPlatform.isDesktop ? 1 : 0);
   int get length => _ids.length;
   bool contains(String id) => _ids.contains(id);
 
@@ -47,7 +52,7 @@ class MediaSelection extends ChangeNotifier {
   }
 
   void clear() {
-    if (!active) return;
+    if (!active && _ids.isEmpty) return;
     _forced = false;
     _ids = {};
     notifyListeners();
@@ -159,9 +164,8 @@ class _MediaGridState extends ConsumerState<MediaGrid> {
     return CallbackShortcuts(
       bindings: {
         DesktopInput.command(LogicalKeyboardKey.keyA): _selectAll,
-        const SingleActivator(LogicalKeyboardKey.escape): () {
-          if (widget.selection.active) widget.selection.clear();
-        },
+        const SingleActivator(LogicalKeyboardKey.escape): widget.selection.clear,
+        const SingleActivator(LogicalKeyboardKey.enter): _openPicked,
       },
       // Select All from the Mac's menu bar, which takes the keys first.
       child: Actions(
@@ -172,6 +176,15 @@ class _MediaGridState extends ConsumerState<MediaGrid> {
   }
 
   void _selectAll() => widget.selection.replace({for (final file in widget.files) file.id});
+
+  /// Opens the one photo picked, as Enter does on a computer.
+  void _openPicked() {
+    if (widget.selection.length != 1) return;
+    final file = widget.files.where((f) => widget.selection.contains(f.id)).firstOrNull;
+    if (file == null) return;
+    widget.selection.clear();
+    widget.onOpen(file);
+  }
 
   /// The photo last clicked, where a Shift-click's run starts.
   String? _clicked;

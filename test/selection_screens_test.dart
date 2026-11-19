@@ -13,6 +13,7 @@ import 'package:telegrive/features/drive/data/edit_outbox.dart';
 import 'package:telegrive/features/drive/domain/drive_models.dart';
 import 'package:telegrive/features/files/presentation/file_list_screen.dart';
 import 'package:telegrive/features/files/presentation/file_location.dart';
+import 'package:telegrive/features/files/presentation/file_tiles.dart';
 import 'package:telegrive/features/files/presentation/files_screen.dart';
 import 'package:telegrive/features/offline/data/offline_sync.dart';
 import 'package:telegrive/infrastructure/database/app_database.dart'
@@ -547,7 +548,8 @@ void main() {
       await tester.tap(find.text('a.pdf'));
       await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
       await settle(tester);
-      expect(find.text('1 selected · 2.0 MB'), findsOneWidget);
+      // One item is only highlighted; selecting starts with a second.
+      expect(find.byType(SelectionActionBar), findsNothing);
 
       await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
       await tester.tap(find.text('c.pdf'));
@@ -564,6 +566,44 @@ void main() {
       await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
       await settle(tester);
       expect(find.textContaining('4 selected'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'on a computer a click highlights one file without selecting, and a second item starts selecting',
+    (tester) async {
+      AppPlatform.debugDesktop = true;
+      addTearDown(() => AppPlatform.debugDesktop = false);
+      await pumpFiles(tester, '/files', [_file('a.pdf'), _file('b.pdf')]);
+
+      await tester.tap(find.text('a.pdf'));
+      await settle(tester);
+      expect(find.byType(SelectionActionBar), findsNothing);
+      expect(selecting(), isFalse);
+      expect(
+        find.descendant(of: find.byType(AppBar), matching: find.text('Files')),
+        findsOneWidget,
+        reason: 'the bar stays as it was',
+      );
+      expect(
+        find.descendant(of: find.byType(FileListTile), matching: find.byIcon(Icons.check_rounded)),
+        findsNothing,
+        reason: 'no check on a highlighted row',
+      );
+
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await tester.tap(find.text('b.pdf'));
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await settle(tester);
+      expect(find.text('2 selected · 4.0 MB'), findsOneWidget);
+      expect(selecting(), isTrue);
+
+      // A plain click picks one again, which only highlights it.
+      await tester.pump(const Duration(seconds: 1));
+      await tester.tap(find.text('b.pdf'));
+      await settle(tester);
+      expect(find.byType(SelectionActionBar), findsNothing);
+      expect(selecting(), isFalse);
     },
   );
 }

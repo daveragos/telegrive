@@ -91,8 +91,10 @@ class FileListTile extends ConsumerWidget {
       highlighted: highlighted,
       onTap: onTap,
       onLongPress: onLongPress,
+      // A computer's single click highlights the row alone; the check is
+      // for selecting.
       slot: _Selectable(
-        selected: selected,
+        selected: selected && selecting,
         size: columns ? FileColumns.slot : 44,
         child: FileThumbnail(file: file, size: columns ? FileColumns.slot : 44),
       ),
@@ -165,7 +167,7 @@ class FolderListTile extends ConsumerWidget {
       offline: offline,
       pending: pending,
       slot: _Selectable(
-        selected: selected,
+        selected: selected && selecting,
         size: columns ? FileColumns.slot : 44,
         child: FolderIconTile(size: columns ? FileColumns.slot : 44),
       ),
@@ -519,7 +521,7 @@ class FileGridCard extends ConsumerWidget {
                         border: Border.all(color: colors.accent, width: 3),
                       ),
                     ),
-                  if (selected)
+                  if (selected && selecting)
                     Positioned(
                       top: 8,
                       left: 8,
@@ -643,7 +645,7 @@ class FolderGridCard extends ConsumerWidget {
           child: Row(
             children: [
               Icon(
-                selected ? Icons.check_circle_rounded : Icons.folder_outlined,
+                selected && selecting ? Icons.check_circle_rounded : Icons.folder_outlined,
                 color: selected ? colors.accent : colors.text2,
                 size: 22,
               ),

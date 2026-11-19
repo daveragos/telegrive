@@ -125,8 +125,13 @@ design.
 - **Files is a table.** One line a row under Name, Kind, Size and
   Modified, which sort it; the slot is 32px. Pages of settings and
   explanations keep to 760 in the middle.
-- **Selection** is Cmd or Ctrl to add, Shift for a run, and the keys a
-  file manager has: Delete, F2, Enter, Escape, Cmd or Ctrl with A.
+- **Selection.** A click highlights one item, as in Finder, and leaves
+  the page as it was: its bar, its menus and a right-click all stay.
+  A double-click or Enter opens it. Selecting, with the count and the
+  actions in the bar and a check on each row, starts with a second item:
+  Cmd or Ctrl to add, Shift for a run, or Select. The keys a file
+  manager has work on what is highlighted or selected: Delete, F2,
+  Enter, Escape, Cmd or Ctrl with A.
 - **A Mac's menu bar** has Telegrive, File, Edit, View, Go, Window and
   Help, with the keys a Mac app has: Cmd-, for Settings, Cmd-1 to 3 for
   the places, Cmd-[ to go back, Cmd-F to search where you are, Cmd-Z to
