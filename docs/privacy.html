@@ -23,6 +23,9 @@
       var ua = navigator.userAgent;
       var ios = /iPhone|iPad|iPod/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
       d.setAttribute('data-platform', /Android/i.test(ua) ? 'android' : ios ? 'ios' : 'desktop');
+      // Which computer: a Mac gets its own download, Windows and Linux a word on when.
+      d.setAttribute('data-os', ios || /Android|CrOS/i.test(ua) ? '' : /Mac OS X|Macintosh/i.test(ua) ? 'mac'
+        : /Windows/i.test(ua) ? 'windows' : /Linux|X11/i.test(ua) ? 'linux' : '');
     })();
   </script>
   <script src="site.js" defer></script>

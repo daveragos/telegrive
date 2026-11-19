@@ -4,14 +4,14 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Telegrive · Your files, kept in your own Telegram</title>
-  <meta name="description" content="Telegrive is a free, open-source app for Android and iPhone that turns your Telegram account into a drive with no storage limit, with full-quality photo backup, folders and search. No ads, no tracking, no Telegrive servers.">
+  <meta name="description" content="Telegrive is a free, open-source app for Android, iPhone and Mac that turns your Telegram account into a drive with no storage limit, with full-quality photo backup, folders and search. No ads, no tracking, no Telegrive servers.">
   <link rel="canonical" href="https://daveragos.github.io/telegrive/">
   <meta name="theme-color" content="#111317">
 
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Telegrive">
   <meta property="og:title" content="Telegrive: your files, kept in your own Telegram">
-  <meta property="og:description" content="A drive with no storage limit and full-quality photo backup, inside your own Telegram account. Free and open source, for Android and iPhone.">
+  <meta property="og:description" content="A drive with no storage limit and full-quality photo backup, inside your own Telegram account. Free and open source, for Android, iPhone and Mac.">
   <meta property="og:url" content="https://daveragos.github.io/telegrive/">
   <meta property="og:image" content="https://daveragos.github.io/telegrive/assets/og.png">
   <meta property="og:image:width" content="1200">
@@ -19,7 +19,7 @@
   <meta property="og:image:alt" content="Telegrive: your files, kept in your own Telegram. A phone showing the Telegrive Home screen.">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="Telegrive: your files, kept in your own Telegram">
-  <meta name="twitter:description" content="A drive with no storage limit and full-quality photo backup, inside your own Telegram account. Free and open source, for Android and iPhone.">
+  <meta name="twitter:description" content="A drive with no storage limit and full-quality photo backup, inside your own Telegram account. Free and open source, for Android, iPhone and Mac.">
   <meta name="twitter:image" content="https://daveragos.github.io/telegrive/assets/og.png">
 
   <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png">
@@ -41,6 +41,9 @@
       var ua = navigator.userAgent;
       var ios = /iPhone|iPad|iPod/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
       d.setAttribute('data-platform', /Android/i.test(ua) ? 'android' : ios ? 'ios' : 'desktop');
+      // Which computer: a Mac gets its own download, Windows and Linux a word on when.
+      d.setAttribute('data-os', ios || /Android|CrOS/i.test(ua) ? '' : /Mac OS X|Macintosh/i.test(ua) ? 'mac'
+        : /Windows/i.test(ua) ? 'windows' : /Linux|X11/i.test(ua) ? 'linux' : '');
     })();
   </script>
 
@@ -49,9 +52,9 @@
     "@context": "https://schema.org",
     "@type": "SoftwareApplication",
     "name": "Telegrive",
-    "description": "An app for Android and iPhone that turns your Telegram account into a drive, with photo backup, folders and search.",
+    "description": "An app for Android, iPhone and Mac that turns your Telegram account into a drive, with photo backup, folders and search.",
     "applicationCategory": "UtilitiesApplication",
-    "operatingSystem": "Android 7.0 or newer, iOS 15 or newer",
+    "operatingSystem": "Android 7.0 or newer, iOS 15 or newer, macOS 12 or newer",
     "url": "https://daveragos.github.io/telegrive/",
     "downloadUrl": "https://github.com/daveragos/telegrive/releases/latest",
     "screenshot": "https://daveragos.github.io/telegrive/assets/shots/home-all-good.webp",
@@ -85,7 +88,7 @@
           <svg class="i t-light" aria-hidden="true"><use href="assets/icons.svg#i-sun"/></svg>
           <svg class="i t-dark" aria-hidden="true"><use href="assets/icons.svg#i-moon"/></svg>
         </button>
-        <a class="btn btn-primary btn-sm" data-download data-dl="arm64" href="https://github.com/daveragos/telegrive/releases/download/v1.0.0/telegrive-1.0.0-arm64-v8a.apk">Download</a>
+        <a class="btn btn-primary btn-sm" data-download data-dl="arm64" href="https://github.com/daveragos/telegrive/releases/download/v1.1.0/telegrive-1.1.0-arm64-v8a.apk">Download</a>
       </div>
     </div>
   </header>
@@ -98,7 +101,7 @@
           <h1>Your files, kept in your own Telegram.</h1>
           <p class="lead">Telegrive turns the Telegram account you already have into a drive with no storage limit. Folders, search and full-quality photo backup, in a private channel only you can see.</p>
           <div class="cta-row">
-            <a class="btn btn-primary btn-lg cta-android" data-download data-dl="arm64" href="https://github.com/daveragos/telegrive/releases/download/v1.0.0/telegrive-1.0.0-arm64-v8a.apk">
+            <a class="btn btn-primary btn-lg cta-android" data-download data-dl="arm64" href="https://github.com/daveragos/telegrive/releases/download/v1.1.0/telegrive-1.1.0-arm64-v8a.apk">
               <svg class="i" aria-hidden="true"><use href="assets/icons.svg#i-download"/></svg>
               Download for Android
             </a>
@@ -106,15 +109,27 @@
               <svg class="i" aria-hidden="true"><use href="assets/icons.svg#i-phone"/></svg>
               Install on iPhone
             </a>
+            <a class="btn btn-primary btn-lg cta-mac" data-dl="dmg" href="https://github.com/daveragos/telegrive/releases/download/v1.1.0/telegrive-1.1.0-macos.dmg">
+              <svg class="i" aria-hidden="true"><use href="assets/icons.svg#i-download"/></svg>
+              Download for Mac
+            </a>
+            <a class="btn btn-ghost btn-lg cta-mac" href="mac.html">
+              <svg class="i" aria-hidden="true"><use href="assets/icons.svg#i-laptop"/></svg>
+              How to install it
+            </a>
           </div>
-          <p class="cta-meta">Free and open source · Android&nbsp;7.0 or&nbsp;newer · iOS&nbsp;15 or&nbsp;newer · <a data-release-link href="https://github.com/daveragos/telegrive/releases/tag/v1.0.0">Version <span data-version>1.0.0</span></a></p>
+          <p class="cta-meta">Free and open source · Android&nbsp;7.0 or&nbsp;newer · iOS&nbsp;15 or&nbsp;newer · macOS&nbsp;12 or&nbsp;newer · <a data-release-link href="https://github.com/daveragos/telegrive/releases/tag/v1.1.0">Version <span data-version>1.1.0</span></a></p>
           <p class="platform-note">
             <svg class="i" aria-hidden="true"><use href="assets/icons.svg#i-phone"/></svg>
             <span>On an iPhone? Telegrive isn't in the App Store, but you can still install it. <a href="iphone.html">Here's how</a>.</span>
           </p>
+          <p class="desktop-note">
+            <svg class="i" aria-hidden="true"><use href="assets/icons.svg#i-laptop"/></svg>
+            <span>Telegrive for Windows and Linux is on its way. Until then, it runs on Android, iPhone and <a href="mac.html">Mac</a>.</span>
+          </p>
           <div class="qr-card">
             <div class="qr" data-qr role="img" aria-label="QR code that opens this page"></div>
-            <p><strong>On a computer?</strong><br>Scan with your phone<br>to get Telegrive there.</p>
+            <p><strong>For your phone</strong><br>Scan this with it<br>to get Telegrive there.</p>
           </div>
         </div>
 
@@ -132,6 +147,10 @@
               </div>
               <img class="shot" src="assets/shots/home-all-good.webp" width="540" height="1170" alt="Telegrive's Home screen: backed up and in sync, with 6.5 GB stored in 8 files, listed by kind as videos, archives, apps, images, audio and documents.">
             </div>
+          </div>
+          <div class="mac-window">
+            <div class="mac-bar" aria-hidden="true"><i></i><i></i><i></i></div>
+            <img class="shot" src="assets/shots/desktop-files.webp" width="1200" height="750" loading="lazy" alt="Telegrive on a Mac: Files as a table of folders, photos, documents, music and videos beside the sidebar, with two uploads and a download under way.">
           </div>
         </figure>
       </div>
@@ -251,6 +270,23 @@
               <div class="mini-row"><svg class="i ok"><use href="assets/icons.svg#i-check-circle"/></svg><div class="grow"><b>Every backed-up photo is still there</b><span>Matched after the last full read</span></div></div>
             </div>
           </article>
+
+          <article class="card feature b-half reveal">
+            <h3>On your Mac too</h3>
+            <p>Your drive as a disk in Finder, folders on your Mac that go up by themselves, and files dragged onto the window. It keeps running in the menu bar while files transfer.</p>
+            <div class="feature-visual compose-tools" aria-hidden="true">
+              <span>Drive in Finder</span><span>Folder sync</span><span>Drag and drop</span><span>Menu bar</span><span>Touch ID</span><span>Keyboard shortcuts</span>
+            </div>
+          </article>
+
+          <article class="card feature b-half reveal">
+            <h3>Private folders</h3>
+            <p>Keep a folder out of Photos, or put it in Private, where it opens only with your fingerprint, face or Touch ID. Every device you sign in to follows.</p>
+            <div class="feature-visual mini-list" aria-hidden="true">
+              <div class="mini-row"><svg class="i ok"><use href="assets/icons.svg#i-lock"/></svg><div class="grow"><b>Private</b><span>2 folders · opens with your fingerprint</span></div></div>
+              <div class="mini-row"><svg class="i ok" style="color:var(--muted)"><use href="assets/icons.svg#i-hidden"/></svg><div class="grow"><b>Scans</b><span>Hidden from Photos, still in Files</span></div></div>
+            </div>
+          </article>
         </div>
       </div>
     </section>
@@ -283,8 +319,8 @@
             <p>No backend and no middleman. Your sign-in and your files go from your phone to Telegram, and nowhere else.</p>
           </div>
           <div class="point reveal">
-            <h3><svg class="i" aria-hidden="true"><use href="assets/icons.svg#i-lock"/></svg>Stays on your phone</h3>
-            <p>What Telegrive keeps is on your phone, encrypted with a key from its keystore, behind your fingerprint or face if you like. Signing out clears it.</p>
+            <h3><svg class="i" aria-hidden="true"><use href="assets/icons.svg#i-lock"/></svg>Stays on your device</h3>
+            <p>What Telegrive keeps is on your phone or Mac, encrypted with a key from its keystore or keychain, behind your fingerprint, face or Touch ID if you like. Signing out clears it.</p>
           </div>
           <div class="point reveal">
             <h3><svg class="i" aria-hidden="true"><use href="assets/icons.svg#i-shield"/></svg>No ads, no tracking</h3>
@@ -322,7 +358,7 @@
       <div class="container">
         <div class="section-head reveal">
           <h2 class="h2">Up and running in a minute.</h2>
-          <p class="lead">Telegrive installs straight from this page rather than from an app store. It takes about a minute, and you only do it once.</p>
+          <p class="lead">Telegrive installs straight from this page rather than from an app store. It takes about a minute, and you only do it once. These steps are for Android; the <a href="iphone.html">iPhone guide</a> and the <a href="mac.html">Mac guide</a> cover the others.</p>
         </div>
 
         <ol class="steps">
@@ -330,23 +366,23 @@
             <div class="step-visual" aria-hidden="true">
               <div class="file-chip">
                 <img src="assets/brand/app-icon.png" alt="">
-                <div><b data-filename="arm64">telegrive-1.0.0-arm64-v8a.apk</b><span data-size="arm64">59 MB</span><div class="progress"><i></i></div></div>
+                <div><b data-filename="arm64">telegrive-1.1.0-arm64-v8a.apk</b><span data-size="arm64">59 MB</span><div class="progress"><i></i></div></div>
                 <svg class="i done"><use href="assets/icons.svg#i-check-circle"/></svg>
               </div>
             </div>
             <h3><span class="step-num">1</span>Download Telegrive</h3>
             <p>Tap the button on your Android phone. It's one file, and the right one for almost every phone from the last several years.</p>
-            <a class="btn btn-primary" data-download data-dl="arm64" href="https://github.com/daveragos/telegrive/releases/download/v1.0.0/telegrive-1.0.0-arm64-v8a.apk">
+            <a class="btn btn-primary" data-download data-dl="arm64" href="https://github.com/daveragos/telegrive/releases/download/v1.1.0/telegrive-1.1.0-arm64-v8a.apk">
               <svg class="i" aria-hidden="true"><use href="assets/icons.svg#i-download"/></svg>
               Download for Android
             </a>
             <details class="variants">
               <summary>Other versions <svg class="i" aria-hidden="true"><use href="assets/icons.svg#i-expand"/></svg></summary>
               <ul>
-                <li><a data-download data-dl="v7a" href="https://github.com/daveragos/telegrive/releases/download/v1.0.0/telegrive-1.0.0-armeabi-v7a.apk">32-bit (armeabi-v7a)</a>, <span data-size="v7a">48 MB</span>. For older phones.</li>
-                <li><a data-download data-dl="x86" href="https://github.com/daveragos/telegrive/releases/download/v1.0.0/telegrive-1.0.0-x86_64.apk">x86_64</a>, <span data-size="x86">62 MB</span>. For emulators, some tablets and Chromebooks.</li>
-                <li><a data-dl="sums" href="https://github.com/daveragos/telegrive/releases/download/v1.0.0/SHA256SUMS.txt">SHA256SUMS.txt</a>, to check a download.</li>
-                <li><a data-release-link href="https://github.com/daveragos/telegrive/releases/tag/v1.0.0">Release notes</a> and <a href="https://github.com/daveragos/telegrive/releases">earlier versions</a>.</li>
+                <li><a data-download data-dl="v7a" href="https://github.com/daveragos/telegrive/releases/download/v1.1.0/telegrive-1.1.0-armeabi-v7a.apk">32-bit (armeabi-v7a)</a>, <span data-size="v7a">48 MB</span>. For older phones.</li>
+                <li><a data-download data-dl="x86" href="https://github.com/daveragos/telegrive/releases/download/v1.1.0/telegrive-1.1.0-x86_64.apk">x86_64</a>, <span data-size="x86">62 MB</span>. For emulators, some tablets and Chromebooks.</li>
+                <li><a data-dl="sums" href="https://github.com/daveragos/telegrive/releases/download/v1.1.0/SHA256SUMS.txt">SHA256SUMS.txt</a>, to check a download.</li>
+                <li><a data-release-link href="https://github.com/daveragos/telegrive/releases/tag/v1.1.0">Release notes</a> and <a href="https://github.com/daveragos/telegrive/releases">earlier versions</a>.</li>
               </ul>
             </details>
           </li>
@@ -418,11 +454,15 @@
           </details>
           <details>
             <summary>Why does my phone warn me about the download?<svg class="i" aria-hidden="true"><use href="assets/icons.svg#i-expand"/></svg></summary>
-            <div class="answer"><p>Android shows the same warning for every app installed from outside an app store. It's expected, and you only see it the first time.</p><p>Every Telegrive release is built from the public source code and published with <a data-dl="sums" href="https://github.com/daveragos/telegrive/releases/download/v1.0.0/SHA256SUMS.txt">checksums</a>, so you can confirm the file you downloaded is the one that was released.</p></div>
+            <div class="answer"><p>Android shows the same warning for every app installed from outside an app store. It's expected, and you only see it the first time.</p><p>Every Telegrive release is built from the public source code and published with <a data-dl="sums" href="https://github.com/daveragos/telegrive/releases/download/v1.1.0/SHA256SUMS.txt">checksums</a>, so you can confirm the file you downloaded is the one that was released.</p></div>
           </details>
           <details>
             <summary>Is there an iPhone version?<svg class="i" aria-hidden="true"><use href="assets/icons.svg#i-expand"/></svg></summary>
             <div class="answer"><p>Yes, for iOS 15 or newer, though not in the App Store. You install it with a free helper app such as Sideloadly, and refresh it once a week. Photo backup runs while the app is open there, and the Google Photos import and sharing in from other apps aren't on iPhone yet. The <a href="iphone.html">iPhone guide</a> walks you through it.</p></div>
+          </details>
+          <details>
+            <summary>Is there a version for Mac, Windows or Linux?<svg class="i" aria-hidden="true"><use href="assets/icons.svg#i-expand"/></svg></summary>
+            <div class="answer"><p>Yes for Mac, with macOS 12 or newer on Apple silicon or Intel. It isn't in the Mac App Store, so the first time you open it your Mac asks first; the <a href="mac.html">Mac guide</a> shows what to click. It signs in with a QR code from Telegram on your phone, shows your drive in Finder, and syncs folders from your Mac.</p><p>Windows and Linux versions are on their way.</p></div>
           </details>
           <details>
             <summary>Which file should I download?<svg class="i" aria-hidden="true"><use href="assets/icons.svg#i-expand"/></svg></summary>
@@ -470,11 +510,19 @@
       <div class="container reveal">
         <img class="mark" src="assets/brand/app-icon.png" alt="" width="96" height="96" loading="lazy">
         <h2 class="h2">Your files, in your own Telegram.</h2>
-        <p class="lead">Free for Android and iPhone. Takes a minute to set up, and your drive is ready.</p>
+        <p class="lead">Free for Android, iPhone and Mac. Takes a minute to set up, and your drive is ready.</p>
         <div class="cta-row">
-          <a class="btn btn-primary btn-lg" data-download data-dl="arm64" href="https://github.com/daveragos/telegrive/releases/download/v1.0.0/telegrive-1.0.0-arm64-v8a.apk">
+          <a class="btn btn-primary btn-lg cta-android" data-download data-dl="arm64" href="https://github.com/daveragos/telegrive/releases/download/v1.1.0/telegrive-1.1.0-arm64-v8a.apk">
             <svg class="i" aria-hidden="true"><use href="assets/icons.svg#i-download"/></svg>
             Download for Android
+          </a>
+          <a class="btn btn-ghost btn-lg cta-iphone" href="iphone.html">
+            <svg class="i" aria-hidden="true"><use href="assets/icons.svg#i-phone"/></svg>
+            Install on iPhone
+          </a>
+          <a class="btn btn-primary btn-lg cta-mac" data-dl="dmg" href="https://github.com/daveragos/telegrive/releases/download/v1.1.0/telegrive-1.1.0-macos.dmg">
+            <svg class="i" aria-hidden="true"><use href="assets/icons.svg#i-download"/></svg>
+            Download for Mac
           </a>
         </div>
       </div>
@@ -508,7 +556,7 @@
     <div class="sheet-head">
       <div>
         <h2 id="sheet-title" data-sheet-title>Your download has started</h2>
-        <p class="sheet-file"><span data-sheet-file>telegrive-1.0.0-arm64-v8a.apk</span> · <span data-sheet-size>59 MB</span></p>
+        <p class="sheet-file"><span data-sheet-file>telegrive-1.1.0-arm64-v8a.apk</span> · <span data-sheet-size>59 MB</span></p>
       </div>
       <button class="icon-btn" type="button" data-close aria-label="Close"><svg class="i" aria-hidden="true"><use href="assets/icons.svg#i-close"/></svg></button>
     </div>
@@ -526,7 +574,7 @@
       <li><p><b>Open Telegrive</b> <span>and sign in with your Telegram phone number. It sets up your channel and offers to back up your photos.</span></p></li>
     </ol>
     <button class="btn btn-primary btn-lg" type="button" data-close>Got it</button>
-    <a class="again" data-sheet-again href="https://github.com/daveragos/telegrive/releases/download/v1.0.0/telegrive-1.0.0-arm64-v8a.apk">Download didn't start? Try again</a>
+    <a class="again" data-sheet-again href="https://github.com/daveragos/telegrive/releases/download/v1.1.0/telegrive-1.1.0-arm64-v8a.apk">Download didn't start? Try again</a>
   </dialog>
 </body>
 </html>

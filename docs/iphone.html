@@ -29,6 +29,9 @@
       var ua = navigator.userAgent;
       var ios = /iPhone|iPad|iPod/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
       d.setAttribute('data-platform', /Android/i.test(ua) ? 'android' : ios ? 'ios' : 'desktop');
+      // Which computer: a Mac gets its own download, Windows and Linux a word on when.
+      d.setAttribute('data-os', ios || /Android|CrOS/i.test(ua) ? '' : /Mac OS X|Macintosh/i.test(ua) ? 'mac'
+        : /Windows/i.test(ua) ? 'windows' : /Linux|X11/i.test(ua) ? 'linux' : '');
     })();
   </script>
   <script src="site.js" defer></script>
@@ -116,7 +119,7 @@
         <li>
           <div class="step">
             <p><b>Download Telegrive</b> to the computer. It's one file, ending in .ipa.</p>
-            <a class="btn btn-primary" data-dl="ipa" href="https://github.com/daveragos/telegrive/releases/download/v1.0.0/telegrive-1.0.0.ipa"><svg class="i" aria-hidden="true"><use href="assets/icons.svg#i-download"/></svg>Download Telegrive for iPhone</a>
+            <a class="btn btn-primary" data-dl="ipa" href="https://github.com/daveragos/telegrive/releases/download/v1.1.0/telegrive-1.1.0.ipa"><svg class="i" aria-hidden="true"><use href="assets/icons.svg#i-download"/></svg>Download Telegrive for iPhone</a>
             <p class="file-meta"><span data-size="ipa">25&nbsp;MB</span> · iOS 15 or newer</p>
           </div>
           <figure class="step-shot"><a href="assets/guide/download-ipa.svg" data-zoom><img src="assets/guide/download-ipa.svg" width="360" height="150" loading="lazy" alt="The browser’s downloads list showing the Telegrive file, finished."></a></figure>
@@ -214,7 +217,7 @@
         <li>
           <div class="step">
             <p><b>Download Telegrive in Safari.</b> If you opened this page from Telegram or another app, open it in Safari first. When Safari asks, tap Download. The file goes to Downloads in the Files app.</p>
-            <a class="btn btn-primary" data-dl="ipa" href="https://github.com/daveragos/telegrive/releases/download/v1.0.0/telegrive-1.0.0.ipa"><svg class="i" aria-hidden="true"><use href="assets/icons.svg#i-download"/></svg>Download Telegrive for iPhone</a>
+            <a class="btn btn-primary" data-dl="ipa" href="https://github.com/daveragos/telegrive/releases/download/v1.1.0/telegrive-1.1.0.ipa"><svg class="i" aria-hidden="true"><use href="assets/icons.svg#i-download"/></svg>Download Telegrive for iPhone</a>
             <p class="file-meta"><span data-size="ipa">25&nbsp;MB</span> · iOS 15 or newer</p>
           </div>
           <figure class="step-shot"><a href="assets/guide/safari-download.svg" data-zoom><img src="assets/guide/safari-download.svg" width="320" height="300" loading="lazy" alt="Safari asks whether to download the Telegrive file."></a></figure>
@@ -276,7 +279,7 @@
         <li>
           <div class="step">
             <p><b>Download Telegrive in Safari.</b> If you opened this page from Telegram or another app, open it in Safari first. When Safari asks, tap Download. The file goes to Downloads in the Files app.</p>
-            <a class="btn btn-primary" data-dl="ipa" href="https://github.com/daveragos/telegrive/releases/download/v1.0.0/telegrive-1.0.0.ipa"><svg class="i" aria-hidden="true"><use href="assets/icons.svg#i-download"/></svg>Download Telegrive for iPhone</a>
+            <a class="btn btn-primary" data-dl="ipa" href="https://github.com/daveragos/telegrive/releases/download/v1.1.0/telegrive-1.1.0.ipa"><svg class="i" aria-hidden="true"><use href="assets/icons.svg#i-download"/></svg>Download Telegrive for iPhone</a>
             <p class="file-meta"><span data-size="ipa">25&nbsp;MB</span> · iOS 15 or newer</p>
           </div>
           <figure class="step-shot"><a href="assets/guide/safari-download.svg" data-zoom><img src="assets/guide/safari-download.svg" width="320" height="300" loading="lazy" alt="Safari asks whether to download the Telegrive file."></a></figure>

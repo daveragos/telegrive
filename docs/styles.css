@@ -328,7 +328,8 @@ h1, h2, h3 { margin: 0; }
 .cta-meta { margin-top: 16px; color: var(--muted); font-size: 14px; line-height: 1.6; }
 .cta-meta a { white-space: nowrap; }
 
-.platform-note {
+.platform-note,
+.desktop-note {
   display: none;
   align-items: flex-start;
   gap: 10px;
@@ -337,14 +338,24 @@ h1, h2, h3 { margin: 0; }
   color: var(--muted);
   font-size: 15px;
 }
-.platform-note .i { width: 20px; height: 20px; color: var(--accent); }
+.platform-note .i,
+.desktop-note .i { width: 20px; height: 20px; color: var(--accent); }
 :root[data-platform="ios"] .platform-note { display: flex; }
+:root[data-os="windows"] .desktop-note,
+:root[data-os="linux"] .desktop-note { display: flex; }
 
 /* On an iPhone the iPhone guide leads, and the APK steps back. */
-:root[data-platform="ios"] .hero .cta-iphone { order: -1; border-color: transparent; background: var(--accent); color: var(--on-accent); }
-:root[data-platform="ios"] .hero .cta-iphone:hover { background: var(--accent-hover); }
-:root[data-platform="ios"] .hero .cta-android { border-color: var(--border); background: transparent; color: var(--text); }
-:root[data-platform="ios"] .hero .cta-android:hover { background: var(--surface); }
+:root[data-platform="ios"] .cta-row .cta-iphone { order: -1; border-color: transparent; background: var(--accent); color: var(--on-accent); }
+:root[data-platform="ios"] .cta-row .cta-iphone:hover { background: var(--accent-hover); }
+:root[data-platform="ios"] .cta-row .cta-android { border-color: var(--border); background: transparent; color: var(--text); }
+:root[data-platform="ios"] .cta-row .cta-android:hover { background: var(--surface); }
+
+/* On a Mac the disk image and its guide take the phones' place; the QR
+   code beside them gets Telegrive onto a phone. */
+.cta-row .cta-mac { display: none; }
+:root[data-os="mac"] .cta-row .cta-mac { display: inline-flex; }
+:root[data-os="mac"] .cta-row .cta-android,
+:root[data-os="mac"] .cta-row .cta-iphone { display: none; }
 
 .qr-card {
   display: none;
@@ -414,6 +425,38 @@ h1, h2, h3 { margin: 0; }
 .sb-icons svg { width: auto; height: 10px; fill: currentColor; }
 .shot { width: 100%; height: auto; }
 @media (min-width: 1200px) { .phone { width: 340px; } }
+
+/* On an iPhone the frame has the Dynamic Island rather than a camera hole. */
+:root[data-platform="ios"] .shot-status { height: 38px; }
+:root[data-platform="ios"] .shot-status .camera { top: 8px; width: 82px; height: 24px; margin-left: -41px; border-radius: 12px; }
+
+/* On a Mac the desktop app, in a window, takes the phone's place. */
+.mac-window {
+  display: none;
+  width: 100%;
+  max-width: 640px;
+  overflow: hidden;
+  border-radius: 12px;
+  background: #f6f7f9;
+  box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.3), 0 28px 64px -24px rgba(0, 0, 0, 0.5);
+}
+.mac-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+  padding: 0 12px;
+  background: #e9eaee;
+  border-bottom: 0.5px solid rgba(0, 0, 0, 0.12);
+}
+.mac-bar i { width: 12px; height: 12px; border-radius: 50%; background: #ff5f57; }
+.mac-bar i:nth-child(2) { background: #febc2e; }
+.mac-bar i:nth-child(3) { background: #28c840; }
+:root[data-os="mac"] .hero-visual .phone { display: none; }
+:root[data-os="mac"] .hero-visual .mac-window { display: block; }
+@media (min-width: 980px) {
+  :root[data-os="mac"] .hero-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr); gap: 48px; }
+}
 
 /* Trust strip */
 .trust { border-block: 0.5px solid var(--border); }

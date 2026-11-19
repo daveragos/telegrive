@@ -29,6 +29,9 @@
       var ua = navigator.userAgent;
       var ios = /iPhone|iPad|iPod/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
       d.setAttribute('data-platform', /Android/i.test(ua) ? 'android' : ios ? 'ios' : 'desktop');
+      // Which computer: a Mac gets its own download, Windows and Linux a word on when.
+      d.setAttribute('data-os', ios || /Android|CrOS/i.test(ua) ? '' : /Mac OS X|Macintosh/i.test(ua) ? 'mac'
+        : /Windows/i.test(ua) ? 'windows' : /Linux|X11/i.test(ua) ? 'linux' : '');
     })();
   </script>
   <script src="site.js" defer></script>
@@ -47,7 +50,7 @@
           <svg class="i t-light" aria-hidden="true"><use href="assets/icons.svg#i-sun"/></svg>
           <svg class="i t-dark" aria-hidden="true"><use href="assets/icons.svg#i-moon"/></svg>
         </button>
-        <a class="btn btn-primary btn-sm" data-dl="dmg" href="https://github.com/daveragos/telegrive/releases">Download</a>
+        <a class="btn btn-primary btn-sm" data-dl="dmg" href="https://github.com/daveragos/telegrive/releases/download/v1.1.0/telegrive-1.1.0-macos.dmg">Download</a>
       </div>
     </div>
   </header>
@@ -69,7 +72,7 @@
         <li>
           <div class="step">
             <p><b>Download Telegrive for Mac.</b> It's one file, ending in .dmg.</p>
-            <a class="btn btn-primary" data-dl="dmg" href="https://github.com/daveragos/telegrive/releases"><svg class="i" aria-hidden="true"><use href="assets/icons.svg#i-download"/></svg>Download Telegrive for Mac</a>
+            <a class="btn btn-primary" data-dl="dmg" href="https://github.com/daveragos/telegrive/releases/download/v1.1.0/telegrive-1.1.0-macos.dmg"><svg class="i" aria-hidden="true"><use href="assets/icons.svg#i-download"/></svg>Download Telegrive for Mac</a>
             <p class="file-meta"><span data-size="dmg">80&nbsp;MB</span> · macOS 12 or newer · Apple silicon and Intel</p>
           </div>
         </li>
@@ -80,7 +83,7 @@
           <div class="step"><p><b>Open Telegrive from Applications.</b> Your Mac says it can't check Telegrive for harmful software. Click <b>Done</b>, not Move to Trash.</p></div>
         </li>
         <li>
-          <div class="step"><p><b>Allow it in System Settings.</b> Open <span class="path">System Settings<i>›</i>Privacy &amp; Security</span>, scroll down to Security, and click <b>Open Anyway</b> beside the line about Telegrive. Enter your Mac's password, then click Open Anyway once more. Your Mac remembers this for this version.</p></div>
+          <div class="step"><p><b>Allow it in System Settings.</b> Open <span class="path">System Settings<i>›</i>Privacy &amp; Security</span>, scroll down to Security, and click <b>Open Anyway</b> beside the line about Telegrive. Enter your Mac's password, then click Open Anyway once more. Your Mac remembers this for this version.</p><p>If you use Terminal, this does the same in one go: <code>xattr -dr com.apple.quarantine /Applications/Telegrive.app</code></p></div>
         </li>
         <li>
           <div class="step"><p><b>Let Telegrive use its key.</b> Telegrive keeps the key to what it stores on your Mac in your keychain. When your Mac asks whether Telegrive may use it, enter your Mac's password and click <b>Always Allow</b>.</p></div>

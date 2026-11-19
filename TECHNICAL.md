@@ -1211,10 +1211,17 @@ changes the site.
   ```
 
 - **Downloads.** `site.js` asks GitHub for the latest release and points
-  every download at its files, matched by name. The page shows the right
-  download for the phone it is opened on, and a QR code on a computer.
+  every download at its files, matched by name. A script in each page's
+  head sets `data-platform` (android, ios or desktop) and, on a computer,
+  `data-os` (mac, windows or linux) before the first paint, and the page
+  leads with that device's download and screenshot: the APK and an
+  Android phone, the iPhone guide and an iPhone, or on a Mac the disk
+  image and the desktop app in a Mac window, with a QR code for the
+  phone. Windows and Linux get the phones' downloads and a line saying
+  their own are on the way. The header's Download follows the same rule.
 - **Screenshots** are the app's own, from the screenshot harness, as WebP
-  at half size; the Files card has a dark one for the Dark theme:
+  at half size; the Files card has a dark one for the Dark theme, and the
+  Mac's hero is the desktop Files table:
 
   ```bash
   cwebp -q 82 -resize 540 0 tool/screenshots/out/files_list_dark.png -o docs/assets/shots/files-list-dark.webp

@@ -5,6 +5,7 @@
 
   var root = document.documentElement;
   var platform = root.getAttribute('data-platform') || 'desktop';
+  var os = root.getAttribute('data-os') || '';
   var $ = function (sel, ctx) { return (ctx || document).querySelector(sel); };
   var $$ = function (sel, ctx) { return Array.prototype.slice.call((ctx || document).querySelectorAll(sel)); };
 
@@ -105,8 +106,11 @@
         url: DL + 'telegrive-' + FALLBACK_VERSION + '.ipa',
         size: 25026356
       },
-      // Until a release carries the Mac app, its button opens the releases.
-      dmg: { name: 'telegrive-macos.dmg', url: 'https://github.com/daveragos/telegrive/releases', size: 0 },
+      dmg: {
+        name: 'telegrive-' + FALLBACK_VERSION + '-macos.dmg',
+        url: DL + 'telegrive-' + FALLBACK_VERSION + '-macos.dmg',
+        size: 0
+      },
       sums: { name: 'SHA256SUMS.txt', url: DL + 'SHA256SUMS.txt', size: 0 }
     }
   };
@@ -159,6 +163,18 @@
     });
     release = found;
     applyRelease();
+  }
+
+  // The header's Download fits the device: a Mac gets the disk image, and an
+  // iPhone the guide, since nothing downloads there.
+  var headerDownload = $('.nav-actions .btn-primary');
+  if (headerDownload && os === 'mac') {
+    headerDownload.removeAttribute('data-download');
+    headerDownload.setAttribute('data-dl', 'dmg');
+  } else if (headerDownload && platform === 'ios') {
+    headerDownload.removeAttribute('data-download');
+    headerDownload.removeAttribute('data-dl');
+    headerDownload.href = 'iphone.html';
   }
 
   applyRelease();
@@ -271,7 +287,7 @@
 
   // ── Sharing ────────────────────────────────────────────────────────────
 
-  var SHARE_TEXT = 'Telegrive turns your Telegram account into a drive, with photo backup. Free for Android and iPhone:';
+  var SHARE_TEXT = 'Telegrive turns your Telegram account into a drive, with photo backup. Free for Android, iPhone and Mac:';
 
   $$('[data-share-x]').forEach(function (a) {
     a.href = 'https://x.com/intent/post?text=' + encodeURIComponent(SHARE_TEXT) +
