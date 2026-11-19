@@ -2936,11 +2936,14 @@ class _SheetAction extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    // On a computer the menu around it sets the rows' height, as close as
+    // a computer's menus have them, and the type a size down to match.
+    final desktop = AppPlatform.isDesktop;
     return ListTile(
       leading: Icon(icon, color: destructive ? colors.danger : colors.text2),
       title: Text(
         label,
-        style: context.text.bodyLarge?.copyWith(
+        style: (desktop ? context.text.bodyMedium : context.text.bodyLarge)?.copyWith(
           color: destructive ? colors.danger : colors.text,
         ),
       ),
@@ -2952,7 +2955,7 @@ class _SheetAction extends StatelessWidget {
                 fontFeatures: tabularFigures,
               ),
             ),
-      minVerticalPadding: 14,
+      minVerticalPadding: desktop ? null : 14,
       onTap: onTap,
     );
   }
