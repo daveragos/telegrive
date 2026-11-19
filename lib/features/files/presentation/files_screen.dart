@@ -44,6 +44,11 @@ class FilesScreen extends ConsumerStatefulWidget {
   /// row is brought into view and tinted for a moment.
   final String? highlight;
 
+  /// How long a pointed-out row stays tinted before it fades: long enough
+  /// to be seen once a long folder has brought it into view.
+  @visibleForTesting
+  static const highlightFor = Duration(seconds: 3);
+
   @override
   ConsumerState<FilesScreen> createState() => _FilesScreenState();
 }
@@ -233,9 +238,6 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
     _publish();
   }
 
-  /// How long a pointed-out row stays tinted before it fades.
-  static const _highlightFor = Duration(milliseconds: 1500);
-
   /// How far down the screen a pointed-out row is brought, when it has to
   /// be brought at all.
   static const _highlightAt = 1 / 3;
@@ -293,24 +295,27 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
 
   /// Brings the pointed-out row into view and tints it. The tint goes on
   /// once the folder has been read rather than when the screen opens, so a
-  /// slow first read doesn't use up its moment. A file that isn't here,
-  /// among [data]'s files or the [forwarded] ones above them, leaves the
-  /// folder as it is, with nothing tinted.
-  void _showHighlight(FolderContents data, List<DriveFile> forwarded, ViewMode mode) {
+  /// slow first read doesn't use up its moment. On a computer the file is
+  /// highlighted besides, as Show in Finder leaves it, until the next click.
+  /// A file that isn't here, among [data]'s files or the [forwarded] ones
+  /// above them, leaves the folder as it is, with nothing tinted.
+  void _showHighlight(FolderContents data, List<DriveFile> forwarded) {
     if (!mounted) return;
-    final index = data.files.indexWhere((f) => f.id == _highlightId);
-    if (index < 0 && !forwarded.any((f) => f.id == _highlightId)) return;
+    final id = _highlightId;
+    final index = data.files.indexWhere((f) => f.id == id);
+    if (id == null || (index < 0 && !forwarded.any((f) => f.id == id))) return;
     setState(() => _tinted = true);
+    if (AppPlatform.isDesktop) _selectOnly(file: id);
     _highlightTimer?.cancel();
-    _highlightTimer = Timer(_highlightFor, () {
+    _highlightTimer = Timer(FilesScreen.highlightFor, () {
       if (mounted) setState(() => _tinted = false);
     });
-    // Rows are built only near the screen, so in a long list the row may
-    // not exist yet: jump to about where it is, then ease it into place
-    // once it has been built. A row under Forwarded sits at the top, so it
-    // is there already.
-    final offset = mode == ViewMode.list && index >= 0 && _highlightKey.currentContext == null
-        ? _listOffsetOf(index, data.files.length)
+    // Rows and cards are built only near the screen, so in a long folder
+    // the file's may not exist yet: jump to about where it is, then ease it
+    // into place once it has been built. A row under Forwarded sits at the
+    // top, so it is there already.
+    final offset = index >= 0 && _highlightKey.currentContext == null
+        ? _offsetOf(index, data.files.length)
         : null;
     if (offset == null || !_scroll.hasClients) {
       _easeToHighlight();
@@ -326,14 +331,15 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _easeToHighlight());
   }
 
-  /// Where the row of the file at [index] starts in list view. The files'
-  /// list knows where it begins and, from the rows it has built, how tall
-  /// a row is, so this holds at any text size.
-  double? _listOffsetOf(int index, int count) {
+  /// About where the file at [index] of [count] starts, in the list or the
+  /// grid: as far into the files' sliver as it is down their order. The
+  /// sliver knows where it begins and how long it is, from the rows it has
+  /// built, so this holds at any text size; in a grid it lands within a row
+  /// of the card, which easing then brings in.
+  double? _offsetOf(int index, int count) {
     final sliver = _filesListKey.currentContext?.findRenderObject();
-    if (sliver is! RenderSliver || sliver.geometry == null) return null;
-    final row = sliver.geometry!.scrollExtent / count;
-    return sliver.constraints.precedingScrollExtent + index * row;
+    if (sliver is! RenderSliver || sliver.geometry == null || count == 0) return null;
+    return sliver.constraints.precedingScrollExtent + sliver.geometry!.scrollExtent * index / count;
   }
 
   /// Eases the pointed-out row onto the screen. A row already wholly on
@@ -410,9 +416,8 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
           );
     if (shown != null && _highlightId != null && !_scrolledToHighlight) {
       _scrolledToHighlight = true;
-      final mode = prefs.viewMode;
       WidgetsBinding.instance.addPostFrameCallback(
-        (_) => _showHighlight(shown, forwarded, mode),
+        (_) => _showHighlight(shown, forwarded),
       );
     }
 
@@ -885,6 +890,7 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
       SliverPadding(
         padding: const EdgeInsets.symmetric(horizontal: Space.l),
         sliver: SliverGrid.builder(
+          key: _filesListKey,
           gridDelegate: _fileGridDelegate,
           itemCount: data.files.length,
           itemBuilder: (context, index) {

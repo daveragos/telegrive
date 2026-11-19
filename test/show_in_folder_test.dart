@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:telegrive/core/platform/app_platform.dart';
 import 'package:telegrive/app/theme/app_theme.dart';
 import 'package:telegrive/core/files/file_kind.dart';
 import 'package:telegrive/features/backup/data/local_media.dart';
@@ -195,7 +196,7 @@ void main() {
     expect(tinted(tester, 'Invoice 0231.pdf'), isTrue);
     expect(tinted(tester, 'Invoice 0230.pdf'), isFalse);
 
-    await tester.pump(const Duration(milliseconds: 1500));
+    await tester.pump(FilesScreen.highlightFor);
     await settle(tester);
     expect(tinted(tester, 'Invoice 0231.pdf'), isFalse);
   });
@@ -213,7 +214,7 @@ void main() {
     expect(location(router), '/files/Clients?highlight=Invoice+0231.pdf');
     expect(find.text('Location'), findsNothing);
     expect(tinted(tester, 'Invoice 0231.pdf'), isTrue);
-    await tester.pump(const Duration(milliseconds: 1500));
+    await tester.pump(FilesScreen.highlightFor);
   });
 
   testWidgets('a file at the root opens Files', (tester) async {
@@ -223,7 +224,7 @@ void main() {
     await settle(tester);
     expect(location(router), '/files?highlight=loose.pdf');
     expect(tinted(tester, 'loose.pdf'), isTrue);
-    await tester.pump(const Duration(milliseconds: 1500));
+    await tester.pump(FilesScreen.highlightFor);
   });
 
   testWidgets('a forwarded file at the root is pointed out under Forwarded', (tester) async {
@@ -245,7 +246,7 @@ void main() {
     expect(find.text('Forwarded · 1'), findsOneWidget);
     expect(tinted(tester, 'contract.pdf'), isTrue);
     expect(tinted(tester, 'loose.pdf'), isFalse);
-    await tester.pump(const Duration(milliseconds: 1500));
+    await tester.pump(FilesScreen.highlightFor);
     await settle(tester);
     expect(tinted(tester, 'contract.pdf'), isFalse);
   });
@@ -278,7 +279,7 @@ void main() {
     expect(rect.top, greaterThanOrEqualTo(screen.top));
     expect(rect.bottom, lessThanOrEqualTo(screen.bottom));
     expect(tinted(tester, 'Scan 64.pdf'), isTrue);
-    await tester.pump(const Duration(milliseconds: 1500));
+    await tester.pump(FilesScreen.highlightFor);
   });
 
   testWidgets('a row already on screen is tinted where it is', (tester) async {
@@ -290,7 +291,37 @@ void main() {
 
     expect(tinted(tester, 'Scan 01.pdf'), isTrue);
     expect(tester.state<ScrollableState>(find.byType(Scrollable).first).position.pixels, 0);
-    await tester.pump(const Duration(milliseconds: 1500));
+    await tester.pump(FilesScreen.highlightFor);
+  });
+
+  testWidgets('in a long grid the card is brought into view', (tester) async {
+    final files = [
+      for (var i = 0; i < 120; i++) file('Scan ${i.toString().padLeft(3, '0')}.pdf', null),
+    ];
+    await pumpFiles(tester, '/files?highlight=Scan+101.pdf', files: files, prefs: {'view_mode': 'grid'});
+    await tester.pump(const Duration(milliseconds: 300));
+
+    final card = find.widgetWithText(FileGridCard, 'Scan 101.pdf');
+    expect(card, findsOneWidget);
+    final screen = tester.getRect(find.byType(FilesScreen));
+    final rect = tester.getRect(card);
+    expect(rect.top, greaterThanOrEqualTo(screen.top));
+    expect(rect.bottom, lessThanOrEqualTo(screen.bottom));
+    expect(tester.widget<FileGridCard>(card).highlighted, isTrue);
+    await tester.pump(FilesScreen.highlightFor);
+  });
+
+  testWidgets('on a computer the file stays highlighted once the tint fades', (tester) async {
+    AppPlatform.debugDesktop = true;
+    addTearDown(() => AppPlatform.debugDesktop = false);
+    await pumpFiles(tester, '/files?highlight=b.pdf', files: [file('a.pdf', null), file('b.pdf', null)]);
+    await tester.pump(FilesScreen.highlightFor);
+    await settle(tester);
+
+    final row = tester.widget<FileListTile>(find.widgetWithText(FileListTile, 'b.pdf'));
+    expect(row.highlighted, isFalse);
+    expect(row.selected, isTrue);
+    expect(tester.widget<FileListTile>(find.widgetWithText(FileListTile, 'a.pdf')).selected, isFalse);
   });
 
   testWidgets('in grid view the card is tinted too', (tester) async {
@@ -302,7 +333,7 @@ void main() {
     );
     final card = find.widgetWithText(FileGridCard, 'b.pdf');
     expect(tester.widget<FileGridCard>(card).highlighted, isTrue);
-    await tester.pump(const Duration(milliseconds: 1500));
+    await tester.pump(FilesScreen.highlightFor);
   });
 
   testWidgets('showing the same folder for another file points that one out', (
@@ -319,7 +350,7 @@ void main() {
     await settle(tester);
     expect(tinted(tester, 'a.pdf'), isFalse);
     expect(tinted(tester, 'b.pdf'), isTrue);
-    await tester.pump(const Duration(milliseconds: 1500));
+    await tester.pump(FilesScreen.highlightFor);
   });
 
   testWidgets("a file that isn't there leaves the folder untinted", (tester) async {
