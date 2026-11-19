@@ -36,6 +36,10 @@ class PointerPlaceRecorder extends StatelessWidget {
   );
 }
 
+/// How much of a phone's screen a sheet may take, at most.
+@visibleForTesting
+const double sheetMaxHeight = 0.88;
+
 /// A sheet from the foot on a phone; on a computer a menu at the pointer or
 /// a dialog, as [kind] says. [builder] draws the same content in each, and
 /// closes it with `Navigator.pop` as a sheet's does.
@@ -45,14 +49,19 @@ Future<T?> showAdaptiveSheet<T>({
   SheetKind kind = SheetKind.menu,
   bool useRootNavigator = true,
   bool isScrollControlled = false,
-  bool useSafeArea = false,
 }) {
   if (!AppPlatform.isDesktop) {
     return showModalBottomSheet<T>(
       context: context,
       useRootNavigator: useRootNavigator,
       isScrollControlled: isScrollControlled,
-      useSafeArea: useSafeArea,
+      // However much it holds, a sheet stays clear of the status bar and
+      // leaves a strip of the screen above it, so its handle is always
+      // where a finger can drag it down, not where the phone's own swipe
+      // from the top edge takes over, and a tap above closes it. What it
+      // holds beyond that scrolls.
+      useSafeArea: true,
+      constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * sheetMaxHeight),
       builder: builder,
     );
   }

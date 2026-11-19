@@ -13,7 +13,7 @@ void main() {
   Widget rows(BuildContext context) => Column(
     mainAxisSize: MainAxisSize.min,
     children: [
-      const Text('Claude test'),
+      const Text('Lease.pdf'),
       ListTile(leading: const Icon(Icons.edit_outlined), title: const Text('Rename'), onTap: () {}),
       ListTile(leading: const Icon(Icons.delete_outline), title: const Text('Move to Trash'), onTap: () {}),
     ],
@@ -48,7 +48,7 @@ void main() {
     final row = tester.getSize(find.widgetWithText(ListTile, 'Rename'));
     expect(row.height, lessThanOrEqualTo(40));
     final card = tester.getTopLeft(find.byType(Material).last);
-    expect(tester.getTopLeft(find.text('Claude test')).dy - card.dy, greaterThanOrEqualTo(4));
+    expect(tester.getTopLeft(find.text('Lease.pdf')).dy - card.dy, greaterThanOrEqualTo(4));
   });
 
   testWidgets('a dialog leaves its first line room at the top', (tester) async {
@@ -57,6 +57,45 @@ void main() {
     await tester.pumpAndSettle();
 
     final dialog = tester.getTopLeft(find.byType(Dialog));
-    expect(tester.getTopLeft(find.text('Claude test')).dy - dialog.dy, greaterThanOrEqualTo(12));
+    expect(tester.getTopLeft(find.text('Lease.pdf')).dy - dialog.dy, greaterThanOrEqualTo(12));
+  });
+
+  testWidgets('on a phone a long sheet stops short of the top, clear of the status bar, and scrolls', (tester) async {
+    AppPlatform.debugDesktop = false;
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    tester.view.padding = const FakeViewPadding(top: 47, bottom: 34);
+    addTearDown(tester.view.reset);
+    late BuildContext context;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.light(),
+        home: Scaffold(
+          body: Builder(
+            builder: (screen) {
+              context = screen;
+              return const SizedBox.expand();
+            },
+          ),
+        ),
+      ),
+    );
+    showAdaptiveSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => SingleChildScrollView(
+        child: Column(children: [for (var i = 0; i < 40; i++) ListTile(title: Text('Row $i'))]),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final sheet = tester.getRect(find.byType(BottomSheet));
+    expect(sheet.top, greaterThanOrEqualTo(844 * (1 - sheetMaxHeight) - 0.5));
+    expect(sheet.top, greaterThan(47));
+
+    // Dragged down by its handle, it closes.
+    await tester.dragFrom(Offset(sheet.center.dx, sheet.top + 12), const Offset(0, 600));
+    await tester.pumpAndSettle();
+    expect(find.byType(BottomSheet), findsNothing);
   });
 }

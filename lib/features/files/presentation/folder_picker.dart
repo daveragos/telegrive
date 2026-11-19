@@ -30,7 +30,6 @@ Future<FolderChoice?> showFolderPicker(
     kind: SheetKind.dialog,
     context: context,
     isScrollControlled: true,
-    useSafeArea: true,
     useRootNavigator: true,
     builder: (_) => FractionallySizedBox(
       heightFactor: 0.85,
