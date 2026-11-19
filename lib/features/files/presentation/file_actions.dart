@@ -1007,8 +1007,8 @@ abstract final class FileActions {
     String? folderId,
   }) async {
     final taken = {
-      for (final file in (await repository.watchFolder(folderId).first).files)
-        file.name.toLowerCase(),
+      // Private files included: they keep their names in the folder.
+      ...await repository.takenNamesIn(folderId),
       for (final item in transfers.items)
         if (item.kind == TransferKind.upload &&
             item.status.isPending &&

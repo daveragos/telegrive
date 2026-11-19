@@ -260,9 +260,23 @@ class AppDatabase extends _$AppDatabase {
 
   Stream<List<FileRow>> watchFilesIn(String? folderId) => (select(
     driveFiles,
-  )..where((f) => _shown(f) & _inFolder(f.folderId, folderId))).watch();
+  )..where((f) => _shown(f) & _inFolder(f.folderId, folderId) & _listedIn(f, folderId))).watch();
 
-  /// What [watchFilesIn] shows for [folderId], read once.
+  /// Whether a file of [folderId] shows in the folder's listing: not when
+  /// it was made private on its own, which Private lists instead, unless
+  /// the folder is in Private itself, where everything in it shows.
+  Expression<bool> _listedIn(DriveFiles f, String? folderId) {
+    final open = f.private.equals(false);
+    if (folderId == null) return open;
+    return open |
+        existsQuery(
+          select(folders)..where((d) => d.id.equals(folderId) & d.inPrivate.equals(true)),
+        );
+  }
+
+  /// Every file [folderId] holds out of the trash, private ones included,
+  /// read once: what a name is checked against, since a private file keeps
+  /// its name in its folder.
   Future<List<FileRow>> filesIn(String? folderId) => (select(
     driveFiles,
   )..where((f) => _shown(f) & _inFolder(f.folderId, folderId))).get();
@@ -799,7 +813,7 @@ class AppDatabase extends _$AppDatabase {
         'GROUP BY t.root '
         'UNION ALL '
         "SELECT NULL, '', COUNT(*), COALESCE(SUM(size), 0) FROM drive_files "
-        'WHERE hidden = 0 AND parts_present >= part_count '
+        'WHERE hidden = 0 AND in_private = 0 AND parts_present >= part_count '
         'AND (folder_id IS NULL OR folder_id NOT IN (SELECT id FROM folders))'
         ') ORDER BY id IS NULL, bytes DESC, name',
         readsFrom: {folders, driveFiles},

@@ -237,6 +237,23 @@ void main() {
       expect((await db.fileById('v'))!.inPrivate, isTrue);
     });
 
+    test('a folder lists a file made private on its own only when the folder is in Private', () async {
+      await seed();
+      await photo('p', folderId: 'open', private: true);
+      await photo('q', private: true);
+      await photo('v', folderId: 'vault', private: true);
+
+      expect({for (final row in await db.watchFilesIn('open').first) row.id}, {'c'});
+      expect({for (final row in await db.watchFilesIn(null).first) row.id}, {'r'});
+      expect({for (final row in await db.watchFilesIn('vault').first) row.id}, {'a', 'v'});
+      // Its name stays taken in the folder.
+      expect({for (final row in await db.filesIn('open')) row.id}, {'c', 'p'});
+      expect(
+        (await db.watchFolderSizes().first).where((s) => s.folderId == null).single.count,
+        1,
+      );
+    });
+
     test('a folder\'s own contents still hold its private files, for name checks', () async {
       await seed();
       expect({for (final row in await db.filesIn('vault')) row.id}, {'a'});
