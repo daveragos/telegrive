@@ -39,6 +39,7 @@ import 'app_phase.dart';
 import 'app_shell.dart';
 import 'desktop_menu_bar.dart';
 import 'desktop_tray.dart';
+import 'desktop_window_title.dart';
 import 'router.dart';
 import 'theme/app_theme.dart';
 import '../features/lock/presentation/lock_gate.dart';
@@ -178,6 +179,8 @@ class _TelegriveAppState extends ConsumerState<TelegriveApp>
     ref.watch(desktopKeepAwakeProvider);
     // The Dock icon's count of transfers under way.
     ref.watch(desktopDockBadgeProvider);
+    // The window's name, for where it is.
+    ref.watch(desktopWindowTitleProvider);
     // The drive as a disk, shown as soon as it opens when that was asked.
     ref.watch(driveMountProvider.select((m) => m.mounted));
     // Opens a drive this phone knows behind Home, as soon as Telegram is
