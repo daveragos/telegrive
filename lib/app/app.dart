@@ -26,6 +26,7 @@ import '../features/settings/data/settings_providers.dart';
 import '../features/setup/data/drive_opener.dart';
 import '../features/setup/data/drive_setup.dart';
 import '../features/takeout/data/takeout_import.dart';
+import '../features/transfers/data/desktop_dock_badge.dart';
 import '../features/transfers/data/desktop_keep_awake.dart';
 import '../features/transfers/data/desktop_transfer_notices.dart';
 import '../features/transfers/data/transfer_keep_alive.dart';
@@ -175,6 +176,8 @@ class _TelegriveAppState extends ConsumerState<TelegriveApp>
     // window does.
     ref.watch(desktopTrayProvider);
     ref.watch(desktopKeepAwakeProvider);
+    // The Dock icon's count of transfers under way.
+    ref.watch(desktopDockBadgeProvider);
     // The drive as a disk, shown as soon as it opens when that was asked.
     ref.watch(driveMountProvider.select((m) => m.mounted));
     // Opens a drive this phone knows behind Home, as soon as Telegram is
