@@ -130,12 +130,12 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/transfers',
         parentNavigatorKey: rootNavigatorKey,
-        builder: (_, _) => _framed(const TransfersScreen()),
+        pageBuilder: (_, state) => _place(state, const TransfersScreen()),
       ),
       GoRoute(
         path: '/settings',
         parentNavigatorKey: rootNavigatorKey,
-        builder: (_, _) => _framed(const SettingsScreen()),
+        pageBuilder: (_, state) => _place(state, const SettingsScreen()),
       ),
       GoRoute(
         path: '/private',
@@ -167,7 +167,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/backup',
         parentNavigatorKey: rootNavigatorKey,
-        builder: (_, _) => _framed(const BackupScreen()),
+        pageBuilder: (_, state) => _place(state, const BackupScreen()),
         routes: [
           GoRoute(
             path: 'not-backed-up',
@@ -203,7 +203,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/albums',
         parentNavigatorKey: rootNavigatorKey,
-        builder: (_, _) => _framed(const AlbumsScreen()),
+        pageBuilder: (_, state) => _place(state, const AlbumsScreen()),
         routes: [
           GoRoute(
             path: ':albumId',
@@ -246,12 +246,12 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/trash',
         parentNavigatorKey: rootNavigatorKey,
-        builder: (_, _) => _framed(const TrashScreen()),
+        pageBuilder: (_, state) => _place(state, const TrashScreen()),
       ),
       GoRoute(
         path: '/offline',
         parentNavigatorKey: rootNavigatorKey,
-        builder: (_, _) => _framed(const OfflineScreen()),
+        pageBuilder: (_, state) => _place(state, const OfflineScreen()),
       ),
       GoRoute(
         path: '/space',
@@ -263,12 +263,12 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/starred',
         parentNavigatorKey: rootNavigatorKey,
-        builder: (_, _) => _framed(const FileListScreen.starred()),
+        pageBuilder: (_, state) => _place(state, const FileListScreen.starred()),
       ),
       GoRoute(
         path: '/recent',
         parentNavigatorKey: rootNavigatorKey,
-        builder: (_, _) => _framed(const FileListScreen.recent()),
+        pageBuilder: (_, state) => _place(state, const FileListScreen.recent()),
       ),
       GoRoute(
         path: '/category/:kind',
@@ -300,6 +300,36 @@ final routerProvider = Provider<GoRouter>((ref) {
 
 /// A page with the sidebar beside it on a computer; as it is on a phone.
 Widget _framed(Widget page) => AppPlatform.isDesktop ? DesktopFrame(child: page) : page;
+
+/// A page the sidebar has a place for. On a computer it opens beside the
+/// sidebar with no back arrow, as a place in a file manager's sidebar
+/// does: the sidebar is the way on, and Escape or Cmd-[ still go back. On
+/// a phone it is a page like any other.
+Page<void> _place(GoRouterState state, Widget page) => AppPlatform.isDesktop
+    ? _PlacePage(key: state.pageKey, name: state.path, restorationId: state.pageKey.value, child: DesktopFrame(child: page))
+    : MaterialPage<void>(key: state.pageKey, name: state.path, restorationId: state.pageKey.value, child: page);
+
+class _PlacePage extends Page<void> {
+  const _PlacePage({super.key, super.name, super.restorationId, required this.child});
+
+  final Widget child;
+
+  @override
+  Route<void> createRoute(BuildContext context) => _PlaceRoute(this);
+}
+
+class _PlaceRoute extends PageRoute<void> with MaterialRouteTransitionMixin<void> {
+  _PlaceRoute(_PlacePage page) : super(settings: page);
+
+  @override
+  Widget buildContent(BuildContext context) => (settings as _PlacePage).child;
+
+  @override
+  bool get maintainState => true;
+
+  @override
+  bool get impliesAppBarDismissal => false;
+}
 
 /// Sign-in steps replace each other with a cross-fade rather than a push:
 /// they are states, not a stack to go back through.
