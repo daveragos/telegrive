@@ -1150,7 +1150,11 @@ and attached to a GitHub release by hand. To release:
    image comes from `tool/build_dmg.sh`: one app for Apple silicon and
    Intel, which stops if any binary in it lacks either, signed ad hoc as
    Flutter signs a build with no Apple team and not notarized, beside a
-   link to Applications.
+   link to Applications. The disk image's window, with an arrow from the
+   app to Applications and a line on opening it the first time, is drawn
+   by `tool/dmg_background.swift` and laid out by dmgbuild from
+   `tool/dmg_settings.py`; the script installs dmgbuild into
+   `build/dmg-tools` the first time it runs.
 5. In `docs/site.js`, set `FALLBACK_VERSION` and the APK, IPA and disk
    image sizes from `build/release`, which the website shows when GitHub
    can't be asked; until a release carries the disk image, the Mac

@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 #
 # Builds Telegrive for macOS into build/macos/dmg/telegrive-<version>-macos.dmg:
-# one app for Apple silicon and Intel Macs, in a disk image with Applications
-# beside it to drag it to.
+# one app for Apple silicon and Intel Macs, in a disk image whose window shows
+# the app, an arrow to Applications beside it, and how to open it the first
+# time. The window is drawn by tool/dmg_background.swift and laid out by
+# dmgbuild from tool/dmg_settings.py; dmgbuild is installed into
+# build/dmg-tools the first time, so that build needs the internet.
 #
 # The app is signed ad hoc, as Flutter signs a build with no Apple team, and
 # isn't notarized, so a Mac asks before opening it the first time; the Mac
@@ -50,14 +53,20 @@ codesign --verify --deep --strict "$app" || fail "$app isn't signed as a whole"
 codesign -d --entitlements - --xml "$app" 2>/dev/null | grep -q 'com.apple.security.files.user-selected.read-write' ||
   fail "$app lacks the user-selected files entitlement"
 
-stage="$(mktemp -d)"
-trap 'rm -rf "$stage"' EXIT
-ditto "$app" "$stage/Telegrive.app"
-ln -s /Applications "$stage/Applications"
+tools="build/dmg-tools"
+if [ ! -x "$tools/bin/dmgbuild" ]; then
+  python3 -m venv "$tools"
+  "$tools/bin/pip" install --quiet --disable-pip-version-check "dmgbuild==2.0.0"
+fi
+
+art="$(mktemp -d)"
+trap 'rm -rf "$art"' EXIT
+swift tool/dmg_background.swift "$art"
 
 mkdir -p "$(dirname "$out")"
 rm -f "$out"
-hdiutil create -quiet -volname Telegrive -srcfolder "$stage" -fs HFS+ -format UDZO "$out"
+"$tools/bin/dmgbuild" -s tool/dmg_settings.py -D app="$app" -D background="$art/background.png" \
+  Telegrive "$out" > /dev/null
 
 echo "$out"
 shasum -a 256 "$out"
