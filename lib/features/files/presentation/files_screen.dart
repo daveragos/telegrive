@@ -189,7 +189,16 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
           FileActions.createFolder(context, ref, parentId: widget.folderId),
         ),
       },
-      child: Focus(autofocus: true, child: child),
+      // The same from the Mac's menu bar, which takes the keys first.
+      child: Actions(
+        actions: {
+          SelectAllTextIntent: CallbackAction<SelectAllTextIntent>(
+            onInvoke: (_) => data == null ? null : _selectAll(data),
+          ),
+          FindIntent: CallbackAction<FindIntent>(onInvoke: (_) => _search()),
+        },
+        child: PageKeys(child: child),
+      ),
     );
   }
 

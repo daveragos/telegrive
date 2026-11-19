@@ -28,6 +28,9 @@ abstract final class AppConfig {
       '© 2026 Dawit Beyene. Telegrive is free software under the GNU General '
       'Public License, version 3, and comes with no warranty.';
 
+  /// The app's site, with the install guides and help.
+  static final Uri website = Uri.parse('https://daveragos.github.io/telegrive/');
+
   /// Where the source code is.
   static final Uri sourceCode = Uri.parse('https://github.com/daveragos/telegrive');
 

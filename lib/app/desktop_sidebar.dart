@@ -57,6 +57,7 @@ abstract final class DesktopNavigation {
       SidebarPlace('Transfers', Icons.swap_vert_rounded, Icons.swap_vert_rounded, '/transfers');
   static const settings =
       SidebarPlace('Settings', Icons.settings_outlined, Icons.settings_rounded, '/settings');
+  static const search = SidebarPlace('Search', Icons.search_rounded, Icons.search_rounded, '/search');
 
   /// Where the app is now: the page on top, which for one pushed over the
   /// shell is the last match, while the matches' own address stays the
@@ -156,13 +157,9 @@ class DesktopSidebar extends ConsumerWidget {
                 ),
                 const SizedBox(height: Space.s),
                 _SidebarRow(
-                  place: const SidebarPlace('Search', Icons.search_rounded, Icons.search_rounded, '/search'),
+                  place: DesktopNavigation.search,
                   selected: here.startsWith('/search'),
-                  onTap: () => DesktopNavigation.go(
-                    context,
-                    ref,
-                    const SidebarPlace('Search', Icons.search_rounded, Icons.search_rounded, '/search'),
-                  ),
+                  onTap: () => DesktopNavigation.go(context, ref, DesktopNavigation.search),
                 ),
                 Expanded(
                   child: ListView(

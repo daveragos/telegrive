@@ -40,6 +40,13 @@ abstract final class DesktopInput {
   static SingleActivator get up => SingleActivator(LogicalKeyboardKey.arrowUp, meta: _mac, alt: !_mac);
 }
 
+/// Find, from the Mac's menu bar: the page with the keys searches what it
+/// shows, as Files searches the folder open in it. Nothing answering it,
+/// the menu opens Search.
+class FindIntent extends Intent {
+  const FindIntent();
+}
+
 /// Tells a double-click from two clicks, by what the last plain click was
 /// on and when, as a computer's file manager does: one click selects an
 /// item there and then, and a second on it within [within] opens it. A
@@ -62,4 +69,57 @@ class DoubleClick {
     _at = second ? null : now;
     return second;
   }
+}
+
+/// Keeps a page's keys with the page on a computer, as a window's file list
+/// has them: it takes them when it shows, again whenever it comes back into
+/// view, as a tab switched to or a folder gone back to does, and when it's
+/// clicked. Its shortcuts and the Mac's menu bar reach it that way, which
+/// they don't while the keys sit with the route around it. A text field
+/// being typed in keeps them.
+class PageKeys extends StatefulWidget {
+  const PageKeys({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  State<PageKeys> createState() => _PageKeysState();
+}
+
+class _PageKeysState extends State<PageKeys> {
+  final _node = FocusNode(debugLabel: 'PageKeys');
+  bool _shown = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final shown = TickerMode.valuesOf(context).enabled;
+    if (shown && !_shown) _take();
+    _shown = shown;
+  }
+
+  /// Takes the keys once the frame is done: by then a click outside a text
+  /// field has taken them from it, and one in it has left them there.
+  void _take() {
+    WidgetsBinding.instance
+      ..addPostFrameCallback((_) {
+        if (!mounted || _node.hasFocus) return;
+        final typing = primaryFocus?.context?.findAncestorStateOfType<EditableTextState>() != null;
+        if (!typing) _node.requestFocus();
+      })
+      ..ensureVisualUpdate();
+  }
+
+  @override
+  void dispose() {
+    _node.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Listener(
+    behavior: HitTestBehavior.translucent,
+    onPointerDown: (_) => _take(),
+    child: Focus(focusNode: _node, child: widget.child),
+  );
 }

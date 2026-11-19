@@ -158,15 +158,20 @@ class _MediaGridState extends ConsumerState<MediaGrid> {
     if (!AppPlatform.isDesktop || !widget.selectable) return child;
     return CallbackShortcuts(
       bindings: {
-        DesktopInput.command(LogicalKeyboardKey.keyA): () =>
-            widget.selection.replace({for (final file in widget.files) file.id}),
+        DesktopInput.command(LogicalKeyboardKey.keyA): _selectAll,
         const SingleActivator(LogicalKeyboardKey.escape): () {
           if (widget.selection.active) widget.selection.clear();
         },
       },
-      child: Focus(autofocus: true, child: child),
+      // Select All from the Mac's menu bar, which takes the keys first.
+      child: Actions(
+        actions: {SelectAllTextIntent: CallbackAction<SelectAllTextIntent>(onInvoke: (_) => _selectAll())},
+        child: PageKeys(child: child),
+      ),
     );
   }
+
+  void _selectAll() => widget.selection.replace({for (final file in widget.files) file.id});
 
   /// The photo last clicked, where a Shift-click's run starts.
   String? _clicked;

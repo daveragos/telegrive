@@ -36,6 +36,7 @@ import '../infrastructure/storage/device_profile.dart';
 import '../infrastructure/telegram/telegram_client.dart';
 import 'app_phase.dart';
 import 'app_shell.dart';
+import 'desktop_menu_bar.dart';
 import 'desktop_tray.dart';
 import 'router.dart';
 import 'theme/app_theme.dart';
@@ -209,17 +210,19 @@ class _TelegriveAppState extends ConsumerState<TelegriveApp>
       darkTheme: AppTheme.dark(),
       themeMode: ref.watch(themeModeProvider),
       routerConfig: router,
-      // Menus on a computer open where the pointer last went down, and
-      // Cmd-Z or Ctrl-Z outside a text field takes back what a snack offers
-      // to undo.
+      // Menus on a computer open where the pointer last went down, a Mac
+      // has its menu bar, and Cmd-Z or Ctrl-Z outside a text field takes
+      // back what a snack offers to undo.
       builder: (context, child) => Actions(
         actions: {UndoTextIntent: PendingUndo.action},
-        child: PointerPlaceRecorder(
-          child: LockGate(
-            child: BulkStripOverShell(
-              router: router,
-              popups: popups,
-              child: child ?? const SizedBox.shrink(),
+        child: DesktopMenuBar(
+          child: PointerPlaceRecorder(
+            child: LockGate(
+              child: BulkStripOverShell(
+                router: router,
+                popups: popups,
+                child: child ?? const SizedBox.shrink(),
+              ),
             ),
           ),
         ),
