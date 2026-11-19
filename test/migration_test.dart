@@ -49,6 +49,22 @@ void main() {
     expect((folder.hiddenFromPhotos, folder.private), (false, false));
   });
 
+  test('a version 2 database gains the files\' Photos and Private choices', () async {
+    final schema = await verifier.schemaAt(2);
+    schema.rawDatabase.execute(
+      'INSERT INTO drive_files (id, name, mime_type, kind, size, created_at, modified_at, '
+      'part_count, parts_present) '
+      "VALUES ('lease', 'Lease.pdf', 'application/pdf', 'document', 3, 0, 0, 1, 1)",
+    );
+    final db = AppDatabase(schema.newConnection());
+    addTearDown(db.close);
+    await verifier.migrateAndValidate(db, latest, options: strict);
+
+    final file = (await db.fileById('lease'))!;
+    expect(file.name, 'Lease.pdf');
+    expect((file.hiddenFromPhotos, file.private, file.inPrivate), (false, false, false));
+  });
+
   // Builds before the first release counted their schema up to 14, which is
   // version 1's tables as they are. Each test below gives version 1's tables
   // the shape an earlier one had.

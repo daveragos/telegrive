@@ -140,7 +140,7 @@ class AppDatabase extends _$AppDatabase {
   }
 
   @override
-  int get schemaVersion => 2;
+  int get schemaVersion => 3;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -161,6 +161,12 @@ class AppDatabase extends _$AppDatabase {
         await m.addColumn(folders, folders.private);
         await m.addColumn(folders, folders.inPrivate);
         await m.addColumn(driveFiles, driveFiles.inPrivate);
+      }
+      if (version < 3) {
+        // Files kept out of Photos one by one, and private ones. No file of
+        // an older database is either.
+        await m.addColumn(driveFiles, driveFiles.hiddenFromPhotos);
+        await m.addColumn(driveFiles, driveFiles.private);
       }
     },
   );
@@ -960,7 +966,8 @@ class AppDatabase extends _$AppDatabase {
       'SELECT id FROM folders WHERE "private" = 1 '
       'UNION SELECT f.id FROM folders f JOIN secret s ON f.parent_id = s.id) ';
 
-  static const String _fileInPrivate = 'COALESCE(folder_id IN secret, 0)';
+  /// A file is in Private when it is private itself or its folder is.
+  static const String _fileInPrivate = '("private" = 1 OR COALESCE(folder_id IN secret, 0))';
 
   /// Works [Folders.hidden], [DriveFiles.hidden] and their [Folders.inPrivate]
   /// and [DriveFiles.inPrivate] out again, after the trash, the folder tree
@@ -1017,6 +1024,33 @@ class AppDatabase extends _$AppDatabase {
           ..addColumns([folders.id])
           ..where(folders.hidden.equals(true)),
       );
+
+  /// The ids of the files made private on their own, wherever they are.
+  Stream<Set<String>> watchPrivateFileIds() =>
+      (selectOnly(driveFiles)
+            ..addColumns([driveFiles.id])
+            ..where(driveFiles.private.equals(true)))
+          .watch()
+          .map((rows) => {for (final row in rows) row.read(driveFiles.id)!});
+
+  /// Files made private on their own, out of the trash, by name: the loose
+  /// ones Private lists at its top. One inside a private folder shows in
+  /// that folder instead.
+  Stream<List<FileRow>> watchPrivateFiles() =>
+      (select(driveFiles)
+            ..where(
+              (f) =>
+                  _shown(f) &
+                  f.private.equals(true) &
+                  (f.folderId.isNull() |
+                      f.folderId.isNotInQuery(
+                        selectOnly(folders)
+                          ..addColumns([folders.id])
+                          ..where(folders.inPrivate.equals(true)),
+                      )),
+            )
+            ..orderBy([(f) => OrderingTerm.asc(f.name.lower())]))
+          .watch();
 
   /// The folders put in the trash, those in Private only with
   /// [includePrivate].

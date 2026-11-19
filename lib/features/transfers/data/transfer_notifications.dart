@@ -125,7 +125,7 @@ class TransferSummary {
       );
     }
 
-    if (batch.length == 1 && !outOfSight.hides(batch.single.row.folderId)) {
+    if (batch.length == 1 && !outOfSight.hidesFile(batch.single.row.fileId, batch.single.row.folderId)) {
       final item = batch.single;
       if (copies.isNotEmpty) {
         return TransferSummary(

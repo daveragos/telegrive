@@ -1,13 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/platform/app_platform.dart';
 import '../../../core/widgets/selection_bar.dart';
 import '../../drive/domain/drive_models.dart';
 import '../../files/presentation/file_actions.dart';
 import 'album_actions.dart';
 import 'media_grid.dart';
 
-enum _More { star, removeFromAlbum, selectAll, deselectAll }
+enum _More { star, photos, private, removeFromAlbum, selectAll, deselectAll }
 
 /// The app bar while photos are selected, on the Photos tab and in albums:
 /// '6 selected · 48 MB', or 'Select photos' ('Select videos' for a [noun]
@@ -41,6 +42,8 @@ Widget mediaSelectionActions(
   final picked = selection.pick(files);
   final none = picked.isEmpty;
   final allStarred = !none && picked.every((f) => f.starred);
+  // Shown with Show beside the grid, a hidden photo can be brought back.
+  final allHidden = !none && picked.every((f) => f.hiddenFromPhotos);
   final allPicked = !none && picked.length == files.length;
 
   Future<void> then(Future<bool> action) async {
@@ -81,6 +84,13 @@ Widget mediaSelectionActions(
           value: _More.star,
           child: Text(allStarred ? 'Remove from Starred' : 'Add to Starred'),
         ),
+      if (!none)
+        PopupMenuItem(
+          value: _More.photos,
+          child: Text(allHidden ? 'Show in Photos' : 'Hide from Photos'),
+        ),
+      if (!none && AppPlatform.canLock)
+        const PopupMenuItem(value: _More.private, child: Text('Move to Private')),
       if (!none && albumId != null)
         const PopupMenuItem(value: _More.removeFromAlbum, child: Text('Remove from album')),
       if (allPicked)
@@ -92,6 +102,10 @@ Widget mediaSelectionActions(
       switch (choice) {
         case _More.star:
           then(FileActions.setStarred(context, ref, picked, starred: !allStarred));
+        case _More.photos:
+          then(FileActions.setFilesHiddenFromPhotos(context, ref, picked, hidden: !allHidden));
+        case _More.private:
+          then(FileActions.setFilesPrivate(context, ref, picked, private: true));
         case _More.removeFromAlbum:
           then(AlbumActions.removeFrom(context, ref, picked, albumId!));
         case _More.selectAll:

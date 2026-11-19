@@ -976,6 +976,36 @@ class $DriveFilesTable extends DriveFiles
     ),
     defaultValue: const Constant(false),
   );
+  static const VerificationMeta _hiddenFromPhotosMeta = const VerificationMeta(
+    'hiddenFromPhotos',
+  );
+  @override
+  late final GeneratedColumn<bool> hiddenFromPhotos = GeneratedColumn<bool>(
+    'hidden_from_photos',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("hidden_from_photos" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  static const VerificationMeta _privateMeta = const VerificationMeta(
+    'private',
+  );
+  @override
+  late final GeneratedColumn<bool> private = GeneratedColumn<bool>(
+    'private',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("private" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
   static const VerificationMeta _inPrivateMeta = const VerificationMeta(
     'inPrivate',
   );
@@ -1068,6 +1098,8 @@ class $DriveFilesTable extends DriveFiles
     takenAt,
     trashedAt,
     hidden,
+    hiddenFromPhotos,
+    private,
     inPrivate,
     manifestExtra,
     durationSeconds,
@@ -1195,6 +1227,21 @@ class $DriveFilesTable extends DriveFiles
         hidden.isAcceptableOrUnknown(data['hidden']!, _hiddenMeta),
       );
     }
+    if (data.containsKey('hidden_from_photos')) {
+      context.handle(
+        _hiddenFromPhotosMeta,
+        hiddenFromPhotos.isAcceptableOrUnknown(
+          data['hidden_from_photos']!,
+          _hiddenFromPhotosMeta,
+        ),
+      );
+    }
+    if (data.containsKey('private')) {
+      context.handle(
+        _privateMeta,
+        private.isAcceptableOrUnknown(data['private']!, _privateMeta),
+      );
+    }
     if (data.containsKey('in_private')) {
       context.handle(
         _inPrivateMeta,
@@ -1315,6 +1362,14 @@ class $DriveFilesTable extends DriveFiles
         DriftSqlType.bool,
         data['${effectivePrefix}hidden'],
       )!,
+      hiddenFromPhotos: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}hidden_from_photos'],
+      )!,
+      private: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}private'],
+      )!,
       inPrivate: attachedDatabase.typeMapping.read(
         DriftSqlType.bool,
         data['${effectivePrefix}in_private'],
@@ -1380,7 +1435,16 @@ class FileRow extends DataClass implements Insertable<FileRow> {
   /// In the trash itself or inside a trashed folder; see [Folders.hidden].
   final bool hidden;
 
-  /// Inside a private folder; see [Folders.inPrivate].
+  /// A photo or video kept out of the Photos tab on its own, and kept in
+  /// the file's own message, as the star is; see [Folders.hiddenFromPhotos].
+  final bool hiddenFromPhotos;
+
+  /// Shown only in Private, and kept in the file's own message, as the star
+  /// is; see [Folders.private].
+  final bool private;
+
+  /// Private itself, or inside a private folder: shown only in Private;
+  /// see [Folders.inPrivate].
   final bool inPrivate;
 
   /// Manifest keys this version doesn't know; see [Folders.manifestExtra].
@@ -1420,6 +1484,8 @@ class FileRow extends DataClass implements Insertable<FileRow> {
     this.takenAt,
     this.trashedAt,
     required this.hidden,
+    required this.hiddenFromPhotos,
+    required this.private,
     required this.inPrivate,
     this.manifestExtra,
     this.durationSeconds,
@@ -1460,6 +1526,8 @@ class FileRow extends DataClass implements Insertable<FileRow> {
       map['trashed_at'] = Variable<DateTime>(trashedAt);
     }
     map['hidden'] = Variable<bool>(hidden);
+    map['hidden_from_photos'] = Variable<bool>(hiddenFromPhotos);
+    map['private'] = Variable<bool>(private);
     map['in_private'] = Variable<bool>(inPrivate);
     if (!nullToAbsent || manifestExtra != null) {
       map['manifest_extra'] = Variable<String>(manifestExtra);
@@ -1505,6 +1573,8 @@ class FileRow extends DataClass implements Insertable<FileRow> {
           ? const Value.absent()
           : Value(trashedAt),
       hidden: Value(hidden),
+      hiddenFromPhotos: Value(hiddenFromPhotos),
+      private: Value(private),
       inPrivate: Value(inPrivate),
       manifestExtra: manifestExtra == null && nullToAbsent
           ? const Value.absent()
@@ -1546,6 +1616,8 @@ class FileRow extends DataClass implements Insertable<FileRow> {
       takenAt: serializer.fromJson<DateTime?>(json['takenAt']),
       trashedAt: serializer.fromJson<DateTime?>(json['trashedAt']),
       hidden: serializer.fromJson<bool>(json['hidden']),
+      hiddenFromPhotos: serializer.fromJson<bool>(json['hiddenFromPhotos']),
+      private: serializer.fromJson<bool>(json['private']),
       inPrivate: serializer.fromJson<bool>(json['inPrivate']),
       manifestExtra: serializer.fromJson<String?>(json['manifestExtra']),
       durationSeconds: serializer.fromJson<int?>(json['durationSeconds']),
@@ -1576,6 +1648,8 @@ class FileRow extends DataClass implements Insertable<FileRow> {
       'takenAt': serializer.toJson<DateTime?>(takenAt),
       'trashedAt': serializer.toJson<DateTime?>(trashedAt),
       'hidden': serializer.toJson<bool>(hidden),
+      'hiddenFromPhotos': serializer.toJson<bool>(hiddenFromPhotos),
+      'private': serializer.toJson<bool>(private),
       'inPrivate': serializer.toJson<bool>(inPrivate),
       'manifestExtra': serializer.toJson<String?>(manifestExtra),
       'durationSeconds': serializer.toJson<int?>(durationSeconds),
@@ -1602,6 +1676,8 @@ class FileRow extends DataClass implements Insertable<FileRow> {
     Value<DateTime?> takenAt = const Value.absent(),
     Value<DateTime?> trashedAt = const Value.absent(),
     bool? hidden,
+    bool? hiddenFromPhotos,
+    bool? private,
     bool? inPrivate,
     Value<String?> manifestExtra = const Value.absent(),
     Value<int?> durationSeconds = const Value.absent(),
@@ -1629,6 +1705,8 @@ class FileRow extends DataClass implements Insertable<FileRow> {
     takenAt: takenAt.present ? takenAt.value : this.takenAt,
     trashedAt: trashedAt.present ? trashedAt.value : this.trashedAt,
     hidden: hidden ?? this.hidden,
+    hiddenFromPhotos: hiddenFromPhotos ?? this.hiddenFromPhotos,
+    private: private ?? this.private,
     inPrivate: inPrivate ?? this.inPrivate,
     manifestExtra: manifestExtra.present
         ? manifestExtra.value
@@ -1666,6 +1744,10 @@ class FileRow extends DataClass implements Insertable<FileRow> {
       takenAt: data.takenAt.present ? data.takenAt.value : this.takenAt,
       trashedAt: data.trashedAt.present ? data.trashedAt.value : this.trashedAt,
       hidden: data.hidden.present ? data.hidden.value : this.hidden,
+      hiddenFromPhotos: data.hiddenFromPhotos.present
+          ? data.hiddenFromPhotos.value
+          : this.hiddenFromPhotos,
+      private: data.private.present ? data.private.value : this.private,
       inPrivate: data.inPrivate.present ? data.inPrivate.value : this.inPrivate,
       manifestExtra: data.manifestExtra.present
           ? data.manifestExtra.value
@@ -1702,6 +1784,8 @@ class FileRow extends DataClass implements Insertable<FileRow> {
           ..write('takenAt: $takenAt, ')
           ..write('trashedAt: $trashedAt, ')
           ..write('hidden: $hidden, ')
+          ..write('hiddenFromPhotos: $hiddenFromPhotos, ')
+          ..write('private: $private, ')
           ..write('inPrivate: $inPrivate, ')
           ..write('manifestExtra: $manifestExtra, ')
           ..write('durationSeconds: $durationSeconds, ')
@@ -1730,6 +1814,8 @@ class FileRow extends DataClass implements Insertable<FileRow> {
     takenAt,
     trashedAt,
     hidden,
+    hiddenFromPhotos,
+    private,
     inPrivate,
     manifestExtra,
     durationSeconds,
@@ -1757,6 +1843,8 @@ class FileRow extends DataClass implements Insertable<FileRow> {
           other.takenAt == this.takenAt &&
           other.trashedAt == this.trashedAt &&
           other.hidden == this.hidden &&
+          other.hiddenFromPhotos == this.hiddenFromPhotos &&
+          other.private == this.private &&
           other.inPrivate == this.inPrivate &&
           other.manifestExtra == this.manifestExtra &&
           other.durationSeconds == this.durationSeconds &&
@@ -1782,6 +1870,8 @@ class DriveFilesCompanion extends UpdateCompanion<FileRow> {
   final Value<DateTime?> takenAt;
   final Value<DateTime?> trashedAt;
   final Value<bool> hidden;
+  final Value<bool> hiddenFromPhotos;
+  final Value<bool> private;
   final Value<bool> inPrivate;
   final Value<String?> manifestExtra;
   final Value<int?> durationSeconds;
@@ -1806,6 +1896,8 @@ class DriveFilesCompanion extends UpdateCompanion<FileRow> {
     this.takenAt = const Value.absent(),
     this.trashedAt = const Value.absent(),
     this.hidden = const Value.absent(),
+    this.hiddenFromPhotos = const Value.absent(),
+    this.private = const Value.absent(),
     this.inPrivate = const Value.absent(),
     this.manifestExtra = const Value.absent(),
     this.durationSeconds = const Value.absent(),
@@ -1831,6 +1923,8 @@ class DriveFilesCompanion extends UpdateCompanion<FileRow> {
     this.takenAt = const Value.absent(),
     this.trashedAt = const Value.absent(),
     this.hidden = const Value.absent(),
+    this.hiddenFromPhotos = const Value.absent(),
+    this.private = const Value.absent(),
     this.inPrivate = const Value.absent(),
     this.manifestExtra = const Value.absent(),
     this.durationSeconds = const Value.absent(),
@@ -1862,6 +1956,8 @@ class DriveFilesCompanion extends UpdateCompanion<FileRow> {
     Expression<DateTime>? takenAt,
     Expression<DateTime>? trashedAt,
     Expression<bool>? hidden,
+    Expression<bool>? hiddenFromPhotos,
+    Expression<bool>? private,
     Expression<bool>? inPrivate,
     Expression<String>? manifestExtra,
     Expression<int>? durationSeconds,
@@ -1887,6 +1983,8 @@ class DriveFilesCompanion extends UpdateCompanion<FileRow> {
       if (takenAt != null) 'taken_at': takenAt,
       if (trashedAt != null) 'trashed_at': trashedAt,
       if (hidden != null) 'hidden': hidden,
+      if (hiddenFromPhotos != null) 'hidden_from_photos': hiddenFromPhotos,
+      if (private != null) 'private': private,
       if (inPrivate != null) 'in_private': inPrivate,
       if (manifestExtra != null) 'manifest_extra': manifestExtra,
       if (durationSeconds != null) 'duration_seconds': durationSeconds,
@@ -1914,6 +2012,8 @@ class DriveFilesCompanion extends UpdateCompanion<FileRow> {
     Value<DateTime?>? takenAt,
     Value<DateTime?>? trashedAt,
     Value<bool>? hidden,
+    Value<bool>? hiddenFromPhotos,
+    Value<bool>? private,
     Value<bool>? inPrivate,
     Value<String?>? manifestExtra,
     Value<int?>? durationSeconds,
@@ -1939,6 +2039,8 @@ class DriveFilesCompanion extends UpdateCompanion<FileRow> {
       takenAt: takenAt ?? this.takenAt,
       trashedAt: trashedAt ?? this.trashedAt,
       hidden: hidden ?? this.hidden,
+      hiddenFromPhotos: hiddenFromPhotos ?? this.hiddenFromPhotos,
+      private: private ?? this.private,
       inPrivate: inPrivate ?? this.inPrivate,
       manifestExtra: manifestExtra ?? this.manifestExtra,
       durationSeconds: durationSeconds ?? this.durationSeconds,
@@ -2002,6 +2104,12 @@ class DriveFilesCompanion extends UpdateCompanion<FileRow> {
     if (hidden.present) {
       map['hidden'] = Variable<bool>(hidden.value);
     }
+    if (hiddenFromPhotos.present) {
+      map['hidden_from_photos'] = Variable<bool>(hiddenFromPhotos.value);
+    }
+    if (private.present) {
+      map['private'] = Variable<bool>(private.value);
+    }
     if (inPrivate.present) {
       map['in_private'] = Variable<bool>(inPrivate.value);
     }
@@ -2045,6 +2153,8 @@ class DriveFilesCompanion extends UpdateCompanion<FileRow> {
           ..write('takenAt: $takenAt, ')
           ..write('trashedAt: $trashedAt, ')
           ..write('hidden: $hidden, ')
+          ..write('hiddenFromPhotos: $hiddenFromPhotos, ')
+          ..write('private: $private, ')
           ..write('inPrivate: $inPrivate, ')
           ..write('manifestExtra: $manifestExtra, ')
           ..write('durationSeconds: $durationSeconds, ')
@@ -10508,6 +10618,8 @@ typedef $$DriveFilesTableCreateCompanionBuilder = DriveFilesCompanion Function({
   Value<DateTime?> takenAt,
   Value<DateTime?> trashedAt,
   Value<bool> hidden,
+  Value<bool> hiddenFromPhotos,
+  Value<bool> private,
   Value<bool> inPrivate,
   Value<String?> manifestExtra,
   Value<int?> durationSeconds,
@@ -10533,6 +10645,8 @@ typedef $$DriveFilesTableUpdateCompanionBuilder = DriveFilesCompanion Function({
   Value<DateTime?> takenAt,
   Value<DateTime?> trashedAt,
   Value<bool> hidden,
+  Value<bool> hiddenFromPhotos,
+  Value<bool> private,
   Value<bool> inPrivate,
   Value<String?> manifestExtra,
   Value<int?> durationSeconds,
@@ -10629,6 +10743,16 @@ class $$DriveFilesTableFilterComposer
 
   ColumnFilters<bool> get hidden => $composableBuilder(
     column: $table.hidden,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get hiddenFromPhotos => $composableBuilder(
+    column: $table.hiddenFromPhotos,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get private => $composableBuilder(
+    column: $table.private,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -10752,6 +10876,16 @@ class $$DriveFilesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<bool> get hiddenFromPhotos => $composableBuilder(
+    column: $table.hiddenFromPhotos,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get private => $composableBuilder(
+    column: $table.private,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<bool> get inPrivate => $composableBuilder(
     column: $table.inPrivate,
     builder: (column) => ColumnOrderings(column),
@@ -10848,6 +10982,14 @@ class $$DriveFilesTableAnnotationComposer
   GeneratedColumn<bool> get hidden =>
       $composableBuilder(column: $table.hidden, builder: (column) => column);
 
+  GeneratedColumn<bool> get hiddenFromPhotos => $composableBuilder(
+    column: $table.hiddenFromPhotos,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<bool> get private =>
+      $composableBuilder(column: $table.private, builder: (column) => column);
+
   GeneratedColumn<bool> get inPrivate =>
       $composableBuilder(column: $table.inPrivate, builder: (column) => column);
 
@@ -10919,6 +11061,8 @@ class $$DriveFilesTableTableManager
                 Value<DateTime?> takenAt = const Value.absent(),
                 Value<DateTime?> trashedAt = const Value.absent(),
                 Value<bool> hidden = const Value.absent(),
+                Value<bool> hiddenFromPhotos = const Value.absent(),
+                Value<bool> private = const Value.absent(),
                 Value<bool> inPrivate = const Value.absent(),
                 Value<String?> manifestExtra = const Value.absent(),
                 Value<int?> durationSeconds = const Value.absent(),
@@ -10943,6 +11087,8 @@ class $$DriveFilesTableTableManager
                 takenAt: takenAt,
                 trashedAt: trashedAt,
                 hidden: hidden,
+                hiddenFromPhotos: hiddenFromPhotos,
+                private: private,
                 inPrivate: inPrivate,
                 manifestExtra: manifestExtra,
                 durationSeconds: durationSeconds,
@@ -10969,6 +11115,8 @@ class $$DriveFilesTableTableManager
                 Value<DateTime?> takenAt = const Value.absent(),
                 Value<DateTime?> trashedAt = const Value.absent(),
                 Value<bool> hidden = const Value.absent(),
+                Value<bool> hiddenFromPhotos = const Value.absent(),
+                Value<bool> private = const Value.absent(),
                 Value<bool> inPrivate = const Value.absent(),
                 Value<String?> manifestExtra = const Value.absent(),
                 Value<int?> durationSeconds = const Value.absent(),
@@ -10993,6 +11141,8 @@ class $$DriveFilesTableTableManager
                 takenAt: takenAt,
                 trashedAt: trashedAt,
                 hidden: hidden,
+                hiddenFromPhotos: hiddenFromPhotos,
+                private: private,
                 inPrivate: inPrivate,
                 manifestExtra: manifestExtra,
                 durationSeconds: durationSeconds,

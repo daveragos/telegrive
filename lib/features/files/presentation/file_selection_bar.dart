@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/files/file_kind.dart';
+import '../../../core/platform/app_platform.dart';
 import '../../../core/widgets/selection_bar.dart';
 import '../../drive/domain/drive_models.dart';
 import 'file_actions.dart';
 
-enum _More { star, selectAll, deselectAll }
+enum _More { star, photos, private, selectAll, deselectAll }
 
 /// What can be done with the selected [files] and [folders], in the bar at
 /// the foot of Files and of Starred, Recent and the categories. Starring is
@@ -25,6 +27,12 @@ Widget fileSelectionActions(
   final none = files.isEmpty && folders.isEmpty;
   final allStarred =
       !none && files.every((f) => f.starred) && folders.every((f) => f.starred);
+  // Files alone, outside the private folders: a folder has its own menu for
+  // both, and a file in a private folder goes with it.
+  final loose = files.isNotEmpty && folders.isEmpty && files.every((f) => f.private || !f.inPrivate);
+  final media = loose && files.every((f) => !f.inPrivate && (f.kind == FileKind.image || f.kind == FileKind.video));
+  final allHidden = media && files.every((f) => f.hiddenFromPhotos);
+  final allPrivate = loose && files.every((f) => f.private);
 
   Future<void> then(Future<bool> action) async {
     if (await action && context.mounted) onDone();
@@ -76,6 +84,16 @@ Widget fileSelectionActions(
           value: _More.star,
           child: Text(allStarred ? 'Remove from Starred' : 'Add to Starred'),
         ),
+      if (media)
+        PopupMenuItem(
+          value: _More.photos,
+          child: Text(allHidden ? 'Show in Photos' : 'Hide from Photos'),
+        ),
+      if (loose && (allPrivate || AppPlatform.canLock))
+        PopupMenuItem(
+          value: _More.private,
+          child: Text(allPrivate ? 'Take out of Private' : 'Move to Private'),
+        ),
       if (allSelected)
         const PopupMenuItem(value: _More.deselectAll, child: Text('Deselect all'))
       else
@@ -93,6 +111,10 @@ Widget fileSelectionActions(
               starred: !allStarred,
             ),
           );
+        case _More.photos:
+          then(FileActions.setFilesHiddenFromPhotos(context, ref, files, hidden: !allHidden));
+        case _More.private:
+          then(FileActions.setFilesPrivate(context, ref, files, private: !allPrivate));
         case _More.selectAll:
           onSelectAll();
         case _More.deselectAll:

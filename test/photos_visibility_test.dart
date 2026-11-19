@@ -44,7 +44,7 @@ void main() {
     starred: false,
   );
 
-  DriveFile photo(String id, {String? folderId, bool starred = false}) => DriveFile(
+  DriveFile photo(String id, {String? folderId, bool starred = false, bool hidden = false}) => DriveFile(
     id: id,
     folderId: folderId,
     name: '$id.jpg',
@@ -55,6 +55,7 @@ void main() {
     modifiedAt: now,
     partCount: 1,
     starred: starred,
+    hiddenFromPhotos: hidden,
   );
 
   DriveFile video(String id) => DriveFile(
@@ -145,6 +146,12 @@ void main() {
     test('keeps everything while revealed', () {
       expect(filterTimeline(media, {'scr'}, reveal: true).map((f) => f.id), ['a', 'b', 'c', 'd']);
     });
+
+    test('drops a photo hidden on its own, at the root as in a folder, until revealed', () {
+      final some = [photo('a', folderId: 'cam', hidden: true), photo('b', hidden: true), photo('c')];
+      expect(filterTimeline(some, const {}, reveal: false).map((f) => f.id), ['c']);
+      expect(filterTimeline(some, const {}, reveal: true).map((f) => f.id), ['a', 'b', 'c']);
+    });
   });
 
   group('oneTilePerPhoto', () {
@@ -204,6 +211,24 @@ void main() {
       expect(
         keptOutSentence(['Screenshots', 'Telegram', 'WhatsApp Images'], revealed: false),
         'Screenshots and 2 other folders are kept out of this view',
+      );
+    });
+
+    test('counts the photos hidden one by one, alone or after the folders', () {
+      expect(keptOutSentence(const [], revealed: false, hiddenFiles: 1), '1 photo you hid is kept out of this view');
+      expect(keptOutSentence(const [], revealed: false, hiddenFiles: 3), '3 photos you hid are kept out of this view');
+      expect(
+        keptOutSentence(['Screenshots'], revealed: false, hiddenFiles: 1),
+        'Screenshots and 1 photo you hid are kept out of this view',
+      );
+      expect(
+        keptOutSentence(['Screenshots', 'WhatsApp Images'], revealed: false, hiddenFiles: 2),
+        'Screenshots and WhatsApp Images, and 2 photos you hid are kept out of this view',
+      );
+      expect(keptOutSentence(const [], revealed: true, hiddenFiles: 2), 'Showing 2 photos you hid');
+      expect(
+        keptOutSentence(['Screenshots'], revealed: true, hiddenFiles: 2),
+        'Showing Screenshots and 2 photos you hid',
       );
     });
 

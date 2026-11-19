@@ -360,7 +360,7 @@ class _KeptOutRow extends ConsumerWidget {
                 const SizedBox(width: Space.m),
                 Expanded(
                   child: Text(
-                    keptOutSentence(keptOut.names, revealed: revealed),
+                    keptOutSentence(keptOut.names, revealed: revealed, hiddenFiles: keptOut.files),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: context.text.bodySmall,

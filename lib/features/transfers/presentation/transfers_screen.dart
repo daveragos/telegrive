@@ -34,7 +34,7 @@ class TransfersScreen extends ConsumerWidget {
         ? queued
         : TransfersState([
             for (final item in queued.items)
-              if (!outOfSight.hides(item.row.folderId)) item,
+              if (!outOfSight.hidesFile(item.row.fileId, item.row.folderId)) item,
           ]);
     // Photo backup, downloads to the phone, copies from chats and a Google
     // Photos import are summarised in a line each rather than listed file

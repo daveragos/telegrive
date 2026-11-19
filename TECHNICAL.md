@@ -186,6 +186,8 @@ under [Ids and numbers](#ids-and-numbers).
 | `parts` | How many parts a split file has; absent when it is whole |
 | `part` | Which part this message is, from 1; only on parts after the first, which carry it when the first part is gone |
 | `star` | `1` when starred |
+| `nophotos` | `1` when this photo or video stays out of the Photos tab on its own |
+| `private` | `1` when it shows only in Private on its own |
 | `taken` | When a photo or video was taken |
 | `trashed` | When it went to the trash |
 | `albums` | Ids of the albums it is in, `,` between them |
@@ -814,14 +816,22 @@ menu, keeps that folder's photos and videos, and those of the folders
 inside it, out of the timeline, Favorites and Videos on every phone; they
 stay in Files, Search and albums. The line above the grid names what is
 kept out, photo backup's Screenshots and chat folders included, with Show,
-which asks for the phone's lock first when app lock is on.
+which asks for the phone's lock first when app lock is on. A photo or
+video can be kept out on its own too, from its menu or with several
+selected, written into its own message (`nophotos`); the line counts
+those as photos you hid.
 
 **Private.** Move to Private, in a folder's menu, takes the folder and
 everything inside it out of Files, Photos, albums, Search, Home, Starred,
 Space and Android's file picker and share targets, on every phone. It is
 written into the folder's message (`private`), and each phone works out
 what is inside a private folder from its tree, as it does for the trash,
-so the index and Android's picker leave it out in SQL. Settings › Private
+so the index and Android's picker leave it out in SQL. A file can go to
+Private on its own, from its menu or with several selected: its own
+message carries `private`, which counts as being in Private wherever the
+file is, and Private lists such files below its folders, unless a
+private folder already shows them. Transfers, Offline and a finished
+batch's notification hide those files by id while Private is closed. Settings › Private
 lists the private folders behind the phone's fingerprint, face or screen
 lock, asked for on the way in whether or not app lock is on; inside, the
 folders work as in Files. Private closes when its last screen is left, or
@@ -1110,7 +1120,7 @@ re-run differs from the stored images by a digit or two. The sample photos
 are dated back from today, so as days pass the Photos screens move photos
 from one month to the next; regenerate the images before a release.
 
-The index's schema is version 2, and `test/drift_schemas/` keeps a copy of
+The index's schema is version 3, and `test/drift_schemas/` keeps a copy of
 each released version, so a migration can be tested against what phones
 really have. A schema version bump dumps the new version there and
 regenerates the helpers `test/migration_test.dart` checks upgrades with;

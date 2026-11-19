@@ -139,6 +139,8 @@ abstract final class MessageIndexer {
         modifiedAt: manifest.modifiedAt,
         partCount: Value(manifest.partCount),
         starred: Value(manifest.starred),
+        hiddenFromPhotos: Value(manifest.hiddenFromPhotos),
+        private: Value(manifest.private),
         takenAt: Value(manifest.takenAt),
         trashedAt: Value(manifest.trashedAt),
         // The caption's length first, then the one Telegram reports for a

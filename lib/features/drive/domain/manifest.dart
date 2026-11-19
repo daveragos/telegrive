@@ -201,6 +201,8 @@ abstract final class ManifestCodec {
     _Field('pc', 'parts', _Value.number),
     _Field('pi', 'part', _Value.partNumber),
     _Field('st', 'star', _Value.number),
+    _Field('hp', 'nophotos', _Value.number),
+    _Field('pr', 'private', _Value.number),
     _Field('tk', 'taken', _Value.number),
     _Field('tr', 'trashed', _Value.number),
     _Field('al', 'albums', _Value.list),
@@ -360,6 +362,8 @@ class FileManifest {
     this.partCount = 1,
     this.partIndex = 0,
     this.starred = false,
+    this.hiddenFromPhotos = false,
+    this.private = false,
     this.takenAt,
     this.trashedAt,
     this.albums = const [],
@@ -373,8 +377,8 @@ class FileManifest {
   /// [extra]. A key toJson writes that is missing here is also copied into
   /// [extra], and comes back after it is cleared.
   static const Set<String> _keys = {
-    'id', 'n', 'f', 'm', 's', 'ct', 'mt', 'pc', 'pi', 'st', 'tk', 'tr', 'al', //
-    'du', 'rb', 'lt',
+    'id', 'n', 'f', 'm', 's', 'ct', 'mt', 'pc', 'pi', 'st', 'hp', 'pr', 'tk', //
+    'tr', 'al', 'du', 'rb', 'lt',
   };
 
   final String id;
@@ -414,6 +418,14 @@ class FileManifest {
   final int partIndex;
   final bool starred;
 
+  /// A photo or video kept out of the Photos tab on its own, as a folder's
+  /// can be with everything in it; omitted from the message otherwise.
+  final bool hiddenFromPhotos;
+
+  /// Shown only in Private, behind the phone's lock, as everything in a
+  /// private folder is; omitted from the message otherwise.
+  final bool private;
+
   /// Keys a newer version wrote that this one doesn't know, kept as they
   /// were. A key [toJson] writes wins over one of the same name here.
   final Map<String, Object?> extra;
@@ -423,6 +435,8 @@ class FileManifest {
     String? folderId,
     bool clearFolder = false,
     bool? starred,
+    bool? hiddenFromPhotos,
+    bool? private,
     int? partIndex,
     DateTime? modifiedAt,
     DateTime? trashedAt,
@@ -441,6 +455,8 @@ class FileManifest {
     partCount: partCount,
     partIndex: partIndex ?? this.partIndex,
     starred: starred ?? this.starred,
+    hiddenFromPhotos: hiddenFromPhotos ?? this.hiddenFromPhotos,
+    private: private ?? this.private,
     takenAt: takenAt,
     trashedAt: restore ? null : (trashedAt ?? this.trashedAt),
     albums: albums ?? this.albums,
@@ -469,6 +485,8 @@ class FileManifest {
     if (partCount > 1) 'pc': partCount,
     if (partIndex > 0) 'pi': partIndex,
     if (starred) 'st': 1,
+    if (hiddenFromPhotos) 'hp': 1,
+    if (private) 'pr': 1,
     if (takenAt != null) 'tk': takenAt!.millisecondsSinceEpoch,
     if (trashedAt != null) 'tr': trashedAt!.millisecondsSinceEpoch,
     if (albums.isNotEmpty) 'al': albums,
@@ -496,6 +514,8 @@ class FileManifest {
       partCount: partCount,
       partIndex: partIndex,
       starred: json['st'] == 1 || json['st'] == true,
+      hiddenFromPhotos: json['hp'] == 1 || json['hp'] == true,
+      private: json['pr'] == 1 || json['pr'] == true,
       takenAt: json['tk'] is int ? _time(json['tk']) : null,
       trashedAt: json['tr'] is int ? _time(json['tr']) : null,
       albums: [

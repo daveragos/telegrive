@@ -11,6 +11,15 @@ import '../../lock/data/app_lock.dart';
 /// inside them, on every phone. Which folders are private lives in each
 /// folder's own message; this phone only keeps whether Private is open.
 
+/// Files made private one by one, outside the private folders, out of the
+/// trash, by name: what Private lists below its folders.
+final privateFilesProvider = StreamProvider.autoDispose<List<DriveFile>>(
+  (ref) => ref
+      .watch(appDatabaseProvider)
+      .watchPrivateFiles()
+      .map((rows) => [for (final row in rows) DriveFile.fromRow(row)]),
+);
+
 /// The private folders themselves, not those inside them, out of the
 /// trash, by name: what Private lists.
 final privateTopFoldersProvider = StreamProvider.autoDispose<List<DriveFolder>>(
@@ -43,35 +52,53 @@ final _privateFolderIdsProvider = StreamProvider<Set<String>>(
 /// it.
 @immutable
 class OutOfSight {
-  const OutOfSight._(this._ids, this._known);
+  const OutOfSight._(this._ids, this._known, [this._files = const {}]);
 
   /// Nothing is out of sight: Private is open.
   static const none = OutOfSight._({}, true);
 
-  /// The folders in Private aren't read yet, so anything in a folder may be
-  /// in one and stays out of sight until they are.
+  /// What is in Private isn't read yet, so any file may be in it and stays
+  /// out of sight until it is.
   static const unknown = OutOfSight._({}, false);
 
-  /// What is in the folders [ids] is out of sight.
-  const OutOfSight.of(Set<String> ids) : this._(ids, true);
+  /// What is in the folders [ids] is out of sight, and so are the [files]
+  /// made private on their own.
+  const OutOfSight.of(Set<String> ids, {Set<String> files = const {}}) : this._(ids, true, files);
 
   final Set<String> _ids;
+  final Set<String> _files;
   final bool _known;
 
-  /// Whether nothing is out of sight, whatever folder it is in.
-  bool get isNone => _known && _ids.isEmpty;
+  /// Whether nothing is out of sight, whatever it is.
+  bool get isNone => _known && _ids.isEmpty && _files.isEmpty;
+
+  /// Whether what is in Private has been read, so anything not in it shows.
+  bool get isKnown => _known;
 
   /// Whether what is in folder [folderId] is out of sight. Nothing at the
   /// root ever is.
   bool hides(String? folderId) => folderId != null && (!_known || _ids.contains(folderId));
+
+  /// Whether file [fileId], in folder [folderId], is out of sight: made
+  /// private on its own, or in a private folder.
+  bool hidesFile(String? fileId, String? folderId) =>
+      !_known || (fileId != null && _files.contains(fileId)) || hides(folderId);
 }
+
+/// The files made private on their own, by id.
+final _privateFileIdsProvider = StreamProvider<Set<String>>(
+  (ref) => ref.watch(appDatabaseProvider).watchPrivateFileIds(),
+);
 
 final privateOutOfSightProvider = Provider<OutOfSight>((ref) {
   if (ref.watch(privateSpaceProvider)) return OutOfSight.none;
   final ids = ref.watch(_privateFolderIdsProvider);
+  final files = ref.watch(_privateFileIdsProvider);
   // An index that can't be read names nothing anywhere.
-  if (ids.hasError) return OutOfSight.none;
-  return ids.hasValue ? OutOfSight.of(ids.requireValue) : OutOfSight.unknown;
+  if (ids.hasError || files.hasError) return OutOfSight.none;
+  return ids.hasValue && files.hasValue
+      ? OutOfSight.of(ids.requireValue, files: files.requireValue)
+      : OutOfSight.unknown;
 });
 
 /// Whether Private is open on this phone. It opens with the phone's

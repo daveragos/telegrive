@@ -367,6 +367,34 @@ void main() {
     expect(await db.albumIdsOf('f2'), unorderedEquals(['a0', 'a1', 'b9']));
   });
 
+  test('a file\'s Photos and Private choices wait, show at once and go', () async {
+    telegram.goOffline();
+    await repository.setFileHiddenFromPhotos([await fileOf('f1')], hidden: true);
+    await repository.setFilePrivate([await fileOf('f1')], private: true);
+
+    final row = (await db.fileById('f1'))!;
+    expect((row.hiddenFromPhotos, row.private, row.inPrivate), (true, true, true));
+    final views = {for (final view in await repository.watchPendingEdits().first) view.id: view};
+    expect(views['f1']!.description, 'Hidden from Photos · Moved to Private');
+    expect(views['f1']!.inPrivate, isTrue);
+
+    // A sync reading the message as Telegram still has it keeps both.
+    await repository.ingest(telegram.messages[10]!);
+    expect((await db.fileById('f1'))!.inPrivate, isTrue);
+
+    telegram.goOnline();
+    await outbox().drain();
+
+    final sent = telegram.lastCaption(10);
+    expect((sent.hiddenFromPhotos, sent.private), (true, true));
+    expect(await db.pendingEditList(), isEmpty);
+    expect((await db.fileById('f1'))!.inPrivate, isTrue);
+
+    await repository.setFilePrivate([await fileOf('f1')], private: false);
+    expect((await db.fileById('f1'))!.inPrivate, isFalse);
+    expect(telegram.lastCaption(10).private, isFalse);
+  });
+
   test('a folder\'s Photos and Private choices wait, show at once and go', () async {
     await postText(
       20,

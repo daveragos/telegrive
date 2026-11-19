@@ -130,6 +130,8 @@ void main() {
       String id, {
       String? folderId,
       bool starred = false,
+      bool private = false,
+      bool hiddenFromPhotos = false,
       DateTime? trashedAt,
     }) => db.upsertFilePart(
           DriveFilesCompanion.insert(
@@ -142,6 +144,8 @@ void main() {
             createdAt: modified,
             modifiedAt: modified,
             starred: Value(starred),
+            private: Value(private),
+            hiddenFromPhotos: Value(hiddenFromPhotos),
             trashedAt: Value(trashedAt),
           ),
           FilePartsCompanion.insert(
@@ -195,6 +199,42 @@ void main() {
         {for (final size in await db.watchFolderSizes().first) size.folderId},
         {'open', null},
       );
+    });
+
+    test('a file made private on its own is in Private wherever it is, and leaves every view', () async {
+      await seed();
+      await photo('p', folderId: 'open', private: true, starred: true);
+      await photo('q', private: true);
+      Set<String> ids(Iterable<dynamic> rows) => {for (final row in rows) row.id as String};
+
+      expect((await db.fileById('p'))!.inPrivate, isTrue);
+      expect((await db.fileById('q'))!.inPrivate, isTrue);
+      expect(ids([for (final lite in await db.watchMediaLite().first) lite.row]), {'c', 'r'});
+      expect(ids(await db.watchStarred().first), {'c'});
+      expect(ids(await db.watchSearch('IMG').first), {'c', 'r'});
+      expect(ids(await db.watchRecent().first), {'c', 'r'});
+      expect({for (final row in await db.watchPrivateFileIds().first) row}, {'p', 'q'});
+    });
+
+    test('Private lists the files made private on their own, but not those its folders show', () async {
+      await seed();
+      await photo('p', folderId: 'open', private: true);
+      await photo('q', private: true);
+      await photo('v', folderId: 'vault', private: true);
+      await photo('t', private: true, trashedAt: modified);
+
+      expect({for (final row in await db.watchPrivateFiles().first) row.id}, {'p', 'q'});
+    });
+
+    test('a file taken out of Private comes back, unless its folder is private', () async {
+      await seed();
+      await photo('p', folderId: 'open', private: true);
+      await photo('v', folderId: 'vault', private: true);
+      await photo('p', folderId: 'open');
+      await photo('v', folderId: 'vault');
+
+      expect((await db.fileById('p'))!.inPrivate, isFalse);
+      expect((await db.fileById('v'))!.inPrivate, isTrue);
     });
 
     test('a folder\'s own contents still hold its private files, for name checks', () async {
@@ -309,6 +349,18 @@ void main() {
     test('hides nothing while Private is open', () {
       expect(OutOfSight.none.hides('vault'), isFalse);
       expect(OutOfSight.none.isNone, isTrue);
+    });
+
+    test('hides a file made private on its own, wherever it is, and any file while unknown', () {
+      const sight = OutOfSight.of({'vault'}, files: {'lease'});
+      expect(sight.hidesFile('lease', null), isTrue);
+      expect(sight.hidesFile('lease', 'docs'), isTrue);
+      expect(sight.hidesFile('notes', 'vault'), isTrue);
+      expect(sight.hidesFile('notes', 'docs'), isFalse);
+      expect(sight.hidesFile('notes', null), isFalse);
+      expect(const OutOfSight.of({}, files: {'lease'}).isNone, isFalse);
+      expect(OutOfSight.unknown.hidesFile('notes', null), isTrue);
+      expect(OutOfSight.none.hidesFile('lease', null), isFalse);
     });
   });
 

@@ -67,6 +67,21 @@ class _Repository extends DriveRepository {
     List<DriveFolder> folders, {
     required bool starred,
   }) async => _record(folders.map((f) => f.id), starred);
+
+  /// Each setFileHiddenFromPhotos and setFilePrivate call, as
+  /// 'photos:ids:on' or 'private:ids:off', in order.
+  final List<String> choices = [];
+
+  @override
+  Future<void> setFileHiddenFromPhotos(List<DriveFile> files, {required bool hidden}) async =>
+      choices.add('photos:${files.map((f) => f.id).join(',')}:${hidden ? 'on' : 'off'}');
+
+  @override
+  Future<void> setFilePrivate(List<DriveFile> files, {required bool private}) async =>
+      choices.add('private:${files.map((f) => f.id).join(',')}:${private ? 'on' : 'off'}');
+
+  @override
+  Future<DriveFile?> fileById(String id) async => files.where((f) => f.id == id).firstOrNull;
 }
 
 DriveFolder _folder(String name, {bool starred = false}) => DriveFolder(
@@ -500,6 +515,78 @@ void main() {
       },
     );
   }
+
+  DriveFile photoFile(String id, {bool hidden = false, bool private = false, bool inPrivate = false}) => DriveFile(
+    id: id,
+    folderId: null,
+    name: '$id.jpg',
+    mimeType: 'image/jpeg',
+    kind: FileKind.image,
+    size: 1024,
+    createdAt: DateTime(2026, 9, 23),
+    modifiedAt: DateTime(2026, 9, 23),
+    partCount: 1,
+    starred: false,
+    hiddenFromPhotos: hidden,
+    private: private,
+    inPrivate: inPrivate || private,
+  );
+
+  Future<void> pumpSheet(WidgetTester tester, DriveFile file) async {
+    await pumpApp(
+      tester,
+      MaterialApp(
+        theme: AppTheme.light(),
+        home: Consumer(
+          builder: (context, ref, _) => Scaffold(
+            body: TextButton(
+              onPressed: () => FileActions.showFileSheet(context, ref, file),
+              child: const Text('More'),
+            ),
+          ),
+        ),
+      ),
+      files: [file],
+    );
+    await tester.tap(find.text('More'));
+    await settle(tester);
+  }
+
+  testWidgets("a photo's sheet hides it from Photos, and offers Private", (tester) async {
+    await pumpSheet(tester, photoFile('beach'));
+    expect(find.text('Hide from Photos'), findsOneWidget);
+    expect(find.text('Move to Private'), findsOneWidget);
+    expect(find.text('Show in folder'), findsOneWidget);
+
+    await tester.tap(find.text('Hide from Photos'));
+    await settle(tester);
+    expect(repository().choices, ['photos:beach:on']);
+    expect(find.text('"beach.jpg" is hidden from Photos'), findsOneWidget);
+  });
+
+  testWidgets("a hidden photo's sheet shows it in Photos again", (tester) async {
+    await pumpSheet(tester, photoFile('beach', hidden: true));
+    expect(find.text('Show in Photos'), findsOneWidget);
+    expect(find.text('Hide from Photos'), findsNothing);
+  });
+
+  testWidgets("a private file's sheet takes it out, with no folder to show it in", (tester) async {
+    await pumpSheet(tester, photoFile('lease', private: true));
+    expect(find.text('Take out of Private'), findsOneWidget);
+    expect(find.text('Hide from Photos'), findsNothing);
+    expect(find.text('Show in folder'), findsNothing);
+
+    await tester.tap(find.text('Take out of Private'));
+    await settle(tester);
+    expect(repository().choices, ['private:lease:off']);
+  });
+
+  testWidgets("a file in a private folder goes with the folder, so its sheet offers neither", (tester) async {
+    await pumpSheet(tester, photoFile('diary', inPrivate: true));
+    expect(find.text('Move to Private'), findsNothing);
+    expect(find.text('Take out of Private'), findsNothing);
+    expect(find.text('Hide from Photos'), findsNothing);
+  });
 
   testWidgets('a folder sheet on a short screen scrolls down to Move to Trash', (
     tester,

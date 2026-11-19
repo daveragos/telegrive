@@ -121,7 +121,7 @@ void main() {
       expect(elsewhere.title, 'Uploaded Lease.pdf');
     });
 
-    test('a lone file in a folder is counted until Private\'s folders are known', () {
+    test('a lone file is counted until what is in Private is known', () {
       expect(
         TransferSummary.of(
           [_item('Lease.pdf', folderId: 'docs')],
@@ -130,9 +130,10 @@ void main() {
         )!.title,
         'Uploaded 1 file',
       );
+      // A file can be private on its own, at the root as anywhere.
       expect(
         TransferSummary.of([_item('Notes.txt')], _since, outOfSight: OutOfSight.unknown)!.title,
-        'Uploaded Notes.txt',
+        'Uploaded 1 file',
       );
     });
 

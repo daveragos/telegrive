@@ -84,7 +84,16 @@ class DriveFiles extends Table {
   /// In the trash itself or inside a trashed folder; see [Folders.hidden].
   BoolColumn get hidden => boolean().withDefault(const Constant(false))();
 
-  /// Inside a private folder; see [Folders.inPrivate].
+  /// A photo or video kept out of the Photos tab on its own, and kept in
+  /// the file's own message, as the star is; see [Folders.hiddenFromPhotos].
+  BoolColumn get hiddenFromPhotos => boolean().withDefault(const Constant(false))();
+
+  /// Shown only in Private, and kept in the file's own message, as the star
+  /// is; see [Folders.private].
+  BoolColumn get private => boolean().withDefault(const Constant(false))();
+
+  /// Private itself, or inside a private folder: shown only in Private;
+  /// see [Folders.inPrivate].
   BoolColumn get inPrivate => boolean().withDefault(const Constant(false))();
 
   /// Manifest keys this version doesn't know; see [Folders.manifestExtra].

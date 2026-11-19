@@ -867,6 +867,33 @@ class DriveRepository {
     }
   }
 
+  /// Keeps [files] out of the Photos tab, or brings them back, on every
+  /// phone, as [setFolderHiddenFromPhotos] does a folder: one message edit
+  /// each, passing over a file already the way it is asked for.
+  Future<void> setFileHiddenFromPhotos(
+    List<DriveFile> files, {
+    required bool hidden,
+  }) async {
+    for (final file in files) {
+      if (file.hiddenFromPhotos == hidden) continue;
+      await _rewriteFile(file, (m) => m.copyWith(hiddenFromPhotos: hidden));
+    }
+  }
+
+  /// Makes [files] private, or brings them back out of Private, on every
+  /// phone, as [setFolderPrivate] does a folder: one message edit each,
+  /// passing over a file already the way it is asked for. A file inside a
+  /// private folder stays in Private as long as the folder is.
+  Future<void> setFilePrivate(
+    List<DriveFile> files, {
+    required bool private,
+  }) async {
+    for (final file in files) {
+      if (file.private == private) continue;
+      await _rewriteFile(file, (m) => m.copyWith(private: private));
+    }
+  }
+
   /// Gives the drive file [fileId] the preview at [thumbnailPath] by sending
   /// its own bytes, the copy at [path], again into the same message, since
   /// Telegram takes a document's preview only with the document. Its caption
@@ -975,6 +1002,8 @@ class DriveRepository {
     modifiedAt: row.modifiedAt,
     partCount: row.partCount,
     starred: row.starred,
+    hiddenFromPhotos: row.hiddenFromPhotos,
+    private: row.private,
     takenAt: row.takenAt,
     trashedAt: row.trashedAt,
     albums: await _db.albumIdsOf(row.id),
@@ -1632,6 +1661,8 @@ class DriveRepository {
         ),
         folderId: Value(next.folderId),
         starred: Value(next.starred),
+        hiddenFromPhotos: Value(next.hiddenFromPhotos),
+        private: Value(next.private),
         trashedAt: Value(next.trashedAt),
         modifiedAt: Value(DateTime.now()),
       ),
@@ -1732,6 +1763,8 @@ class DriveRepository {
           'n': file.name.value,
           'f': file.folderId.value,
           'st': file.starred.value,
+          'hp': file.hiddenFromPhotos.present && file.hiddenFromPhotos.value,
+          'pr': file.private.present && file.private.value,
           'tr': EditPatch.trashedValue(file.trashedAt.value),
           'al': albums,
         });
@@ -1744,6 +1777,8 @@ class DriveRepository {
             ),
             folderId: Value(shown['f'] as String?),
             starred: Value(shown['st']! as bool),
+            hiddenFromPhotos: Value(shown['hp']! as bool),
+            private: Value(shown['pr']! as bool),
             trashedAt: Value(_time(shown['tr'])),
           ),
           part,

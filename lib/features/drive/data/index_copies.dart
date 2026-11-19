@@ -243,6 +243,8 @@ class IndexCopies {
             'mt': ms(f.modifiedAt),
             'pc': f.partCount,
             'st': f.starred,
+            'hp': f.hiddenFromPhotos,
+            'pr': f.private,
             'tk': ms(f.takenAt),
             'tr': ms(f.trashedAt),
             'x': f.manifestExtra,
@@ -289,6 +291,10 @@ class IndexCopies {
             partCount: Value(f['pc'] as int),
             partsPresent: Value(fileParts.length),
             starred: Value(f['st'] as bool),
+            // A copy from a version that knows neither choice for a file
+            // leaves both out.
+            hiddenFromPhotos: Value(f['hp'] as bool? ?? false),
+            private: Value(f['pr'] as bool? ?? false),
             takenAt: Value(maybe(f['tk'])),
             trashedAt: Value(maybe(f['tr'])),
             manifestExtra: Value(f['x'] as String?),

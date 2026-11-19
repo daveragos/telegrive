@@ -10,13 +10,15 @@ import '../../files/presentation/file_tiles.dart';
 import '../../lock/data/app_lock.dart';
 import '../data/private_space.dart';
 
-/// The private folders, from Settings › Private, behind the phone's lock.
+/// The private folders, and the files made private on their own, from
+/// Settings › Private, behind the phone's lock.
 class PrivateScreen extends ConsumerWidget {
   const PrivateScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final folders = ref.watch(privateTopFoldersProvider);
+    final files = ref.watch(privateFilesProvider).value ?? const [];
     return PrivateGate(
       child: Scaffold(
         appBar: AppBar(
@@ -38,12 +40,12 @@ class PrivateScreen extends ConsumerWidget {
         ),
         body: AsyncView(
           value: folders,
-          data: (folders) => folders.isEmpty
+          data: (folders) => folders.isEmpty && files.isEmpty
               ? const EmptyState(
                   title: 'Nothing is private yet',
                   message:
-                      'In Files, open a folder\'s menu and pick Move to Private. '
-                      'It then shows only here.',
+                      'In Files, open a folder\'s or a file\'s menu and pick Move to '
+                      'Private. It then shows only here.',
                 )
               : ListView(
                   padding: const EdgeInsets.only(bottom: Space.xl),
@@ -56,8 +58,8 @@ class PrivateScreen extends ConsumerWidget {
                         Space.s,
                       ),
                       child: Text(
-                        'These folders show only here, on every phone signed in. '
-                        'Telegram still shows their files in your channel.',
+                        'These show only here, on every phone signed in. '
+                        'Telegram still shows the files in your channel.',
                         style: context.text.bodySmall,
                       ),
                     ),
@@ -66,6 +68,12 @@ class PrivateScreen extends ConsumerWidget {
                         folder: folder,
                         onTap: () => context.push('/private/${folder.id}'),
                         onMore: () => FileActions.showFolderSheet(context, ref, folder),
+                      ),
+                    for (final file in files)
+                      FileListTile(
+                        file: file,
+                        onTap: () => FileActions.open(context, ref, file, from: 'private'),
+                        onMore: () => FileActions.showFileSheet(context, ref, file),
                       ),
                   ],
                 ),

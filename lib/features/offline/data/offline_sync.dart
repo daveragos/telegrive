@@ -567,9 +567,12 @@ final _offlineCopyRowsProvider = StreamProvider.autoDispose<Map<String, OfflineC
 /// all the same.
 final offlineOverviewProvider = Provider.autoDispose<AsyncValue<OfflineOverview>>((ref) {
   final outOfSight = ref.watch(privateOutOfSightProvider);
+  // Until what is in Private is read, any file may be in it: the list waits
+  // rather than show empty for a moment.
+  if (!outOfSight.isKnown) return const AsyncLoading();
   final transfers = [
     for (final item in ref.watch(transferQueueProvider).items)
-      if (item.row.saveTo == SaveTarget.offline && !outOfSight.hides(item.row.folderId)) item,
+      if (item.row.saveTo == SaveTarget.offline && !outOfSight.hidesFile(item.row.fileId, item.row.folderId)) item,
   ];
   final copies = ref.watch(_offlineCopyRowsProvider);
   return ref.watch(_keptOfflineProvider).when(
@@ -579,7 +582,7 @@ final offlineOverviewProvider = Provider.autoDispose<AsyncValue<OfflineOverview>
           for (final pin in kept.pins)
             if (!(pin.isFolder
                 ? outOfSight.hides(pin.itemId)
-                : outOfSight.hides(kept.files[pin.itemId]?.folderId)))
+                : outOfSight.hidesFile(pin.itemId, kept.files[pin.itemId]?.folderId)))
               pin,
         ],
         wantedByPin: kept.wantedByPin,

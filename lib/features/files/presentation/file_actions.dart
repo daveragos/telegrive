@@ -1534,6 +1534,106 @@ abstract final class FileActions {
     );
   }
 
+  /// Keeps [files], photos and videos, out of the Photos tab on every phone,
+  /// or brings them back, with Undo, as a folder can be with everything in
+  /// it. They stay in Files, Search and albums.
+  static Future<bool> setFilesHiddenFromPhotos(
+    BuildContext context,
+    WidgetRef ref,
+    List<DriveFile> files, {
+    required bool hidden,
+  }) async {
+    final repository = ref.read(driveRepositoryProvider);
+    String label(int count, {required bool hiding}) => hiding
+        ? 'Hiding ${Formatters.count(count, 'item')} from Photos'
+        : 'Showing ${Formatters.count(count, 'item')} in Photos';
+    final what = _describe(files, const []);
+    final outcome = await runBulk<DriveFile>(
+      context,
+      ref.read(bulkEditsProvider.notifier),
+      label: label(files.length, hiding: hidden),
+      icon: hidden ? Icons.hide_image_outlined : Icons.photo_library_outlined,
+      items: files,
+      apply: (file) => repository.setFileHiddenFromPhotos([file], hidden: hidden),
+      success: offlineAware(
+        ref,
+        files.length == 1
+            ? (hidden ? '$what is hidden from Photos' : '$what shows in Photos again')
+            : (hidden ? '$what are hidden from Photos' : '$what show in Photos again'),
+      ),
+      // Each goes back to how it was.
+      undo: (
+        label: (done) => label(done, hiding: !hidden),
+        apply: (file) async => repository.setFileHiddenFromPhotos(
+          await _current(repository, [file]),
+          hidden: file.hiddenFromPhotos,
+        ),
+      ),
+    );
+    return outcome?.complete ?? false;
+  }
+
+  /// Moves [files] into Private on every phone, or takes them out, with
+  /// Undo, as a folder can be with everything in it. Moving them in says
+  /// first what that does, and needs a device with a lock to open Private
+  /// with.
+  static Future<bool> setFilesPrivate(
+    BuildContext context,
+    WidgetRef ref,
+    List<DriveFile> files, {
+    required bool private,
+  }) async {
+    final repository = ref.read(driveRepositoryProvider);
+    final what = _describe(files, const []);
+    if (private) {
+      if (!await ref.read(appLockProvider.notifier).canConfirm()) {
+        if (context.mounted) {
+          showSnack(
+            context,
+            'Set up ${AppPlatform.unlockMethods} on ${AppPlatform.thisDevice} to use Private.',
+          );
+        }
+        return false;
+      }
+      if (!context.mounted) return false;
+      final one = files.length == 1;
+      final go = await showConfirmDialog(
+        context,
+        title: 'Move $what to Private?',
+        message:
+            '${one ? 'It leaves' : 'They leave'} Files, Photos, Search and Home on every '
+            'device signed in, and ${one ? 'opens' : 'open'} only from Settings › Private '
+            'with ${AppPlatform.unlockMethods}. ${one ? 'It stays' : 'They stay'} in your '
+            'Telegram channel, where Telegram shows ${one ? 'it' : 'them'} as it always does.',
+        confirmLabel: 'Move to Private',
+      );
+      if (!go || !context.mounted) return false;
+    }
+    String label(int count, {required bool moving}) => moving
+        ? 'Moving ${Formatters.count(count, 'item')} to Private'
+        : 'Taking ${Formatters.count(count, 'item')} out of Private';
+    final outcome = await runBulk<DriveFile>(
+      context,
+      ref.read(bulkEditsProvider.notifier),
+      label: label(files.length, moving: private),
+      icon: private ? Icons.lock_outline_rounded : Icons.lock_open_outlined,
+      items: files,
+      apply: (file) => repository.setFilePrivate([file], private: private),
+      success: offlineAware(
+        ref,
+        private ? 'Moved $what to Private' : 'Took $what out of Private',
+      ),
+      undo: (
+        label: (done) => label(done, moving: !private),
+        apply: (file) async => repository.setFilePrivate(
+          await _current(repository, [file]),
+          private: file.private,
+        ),
+      ),
+    );
+    return outcome?.complete ?? false;
+  }
+
   /// Moves [folder] into Private on every phone, or takes it out, with
   /// Undo. Moving it in says first what that does, and needs a phone with a
   /// lock to open Private with.
@@ -1971,6 +2071,41 @@ abstract final class FileActions {
                     ], starred: !file.starred),
                   ),
                 ),
+                // Photos shows photos and videos alone, and nothing in
+                // Private.
+                if ((file.kind == FileKind.image || file.kind == FileKind.video) && !file.inPrivate)
+                  _SheetAction(
+                    icon: file.hiddenFromPhotos
+                        ? Icons.photo_library_outlined
+                        : Icons.hide_image_outlined,
+                    label: file.hiddenFromPhotos ? 'Show in Photos' : 'Hide from Photos',
+                    onTap: () => run(
+                      () => setFilesHiddenFromPhotos(
+                        context,
+                        ref,
+                        [file],
+                        hidden: !file.hiddenFromPhotos,
+                      ),
+                    ),
+                  ),
+                // A file in a private folder is private with it, and goes
+                // in or out with that folder. Private needs a lock the
+                // device can ask for.
+                if (file.private || (!file.inPrivate && AppPlatform.canLock))
+                  _SheetAction(
+                    icon: file.private
+                        ? Icons.lock_open_outlined
+                        : Icons.lock_outline_rounded,
+                    label: file.private ? 'Take out of Private' : 'Move to Private',
+                    onTap: () => run(
+                      () => setFilesPrivate(
+                        context,
+                        ref,
+                        [file],
+                        private: !file.private,
+                      ),
+                    ),
+                  ),
                 _SheetAction(
                   icon: Icons.drive_file_rename_outline_rounded,
                   label: 'Rename',
@@ -1981,11 +2116,14 @@ abstract final class FileActions {
                   label: 'Move',
                   onTap: () => run(() => move(context, ref, files: [file])),
                 ),
-                _SheetAction(
-                  icon: Icons.folder_open_outlined,
-                  label: 'Show in folder',
-                  onTap: () => run(() => showInFolder(context, ref, file)),
-                ),
+                // Files doesn't list a private file, so there is no folder
+                // to show it in.
+                if (!file.private)
+                  _SheetAction(
+                    icon: Icons.folder_open_outlined,
+                    label: 'Show in folder',
+                    onTap: () => run(() => showInFolder(context, ref, file)),
+                  ),
                 _SheetAction(
                   icon: Icons.info_outline_rounded,
                   label: 'Details',

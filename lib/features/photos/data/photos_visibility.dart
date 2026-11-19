@@ -55,17 +55,18 @@ Map<String, String> hiddenBackupFolders(
   };
 }
 
-/// [media] without the files inside [hiddenIds], unless the person asked to
-/// see them. Files at the root have no folder and always stay.
+/// [media] without the files inside [hiddenIds], or kept out of Photos one
+/// by one, unless the person asked to see them. A file at the root has no
+/// folder, so only its own choice keeps it out.
 List<DriveFile> filterTimeline(
   List<DriveFile> media,
   Set<String> hiddenIds, {
   required bool reveal,
 }) {
-  if (reveal || hiddenIds.isEmpty) return media;
+  if (reveal) return media;
   return [
     for (final file in media)
-      if (!hiddenIds.contains(file.folderId)) file,
+      if (!file.hiddenFromPhotos && !hiddenIds.contains(file.folderId)) file,
   ];
 }
 
@@ -93,21 +94,29 @@ List<DriveFile> oneTilePerPhoto(List<DriveFile> media) {
   ];
 }
 
-/// The line above the Photos grid for the kept-out folders [names] (sorted,
-/// at least one). Kept out it names up to two folders; revealed it names the
+/// The line above the Photos grid for the kept-out folders [names] (sorted)
+/// and the [hiddenFiles] photos and videos kept out one by one, at least one
+/// of either. Kept out it names up to two folders; revealed it names the
 /// first and counts the rest, which keeps it short.
-String keptOutSentence(List<String> names, {required bool revealed}) {
+String keptOutSentence(List<String> names, {required bool revealed, int hiddenFiles = 0}) {
   String others(int count) => Formatters.count(count, 'other folder');
-  if (revealed) {
-    return names.length == 1
-        ? 'Showing ${names.first}'
-        : 'Showing ${names.first} and ${others(names.length - 1)}';
-  }
-  return switch (names) {
-    [final only] => '$only is kept out of this view',
-    [final first, final second] => '$first and $second are kept out of this view',
-    _ => '${names.first} and ${others(names.length - 1)} are kept out of this view',
+  final folders = switch (names) {
+    [] => null,
+    [final only] => only,
+    [final first, final second] when !revealed => '$first and $second',
+    _ => '${names.first} and ${others(names.length - 1)}',
   };
+  final files = hiddenFiles == 0 ? null : '${Formatters.count(hiddenFiles, 'photo')} you hid';
+  final what = switch ((folders, files)) {
+    (final folders?, final files?) when folders.contains(' and ') => '$folders, and $files',
+    (final folders?, final files?) => '$folders and $files',
+    (final folders?, null) => folders,
+    (null, final files?) => files,
+    (null, null) => '',
+  };
+  if (revealed) return 'Showing $what';
+  final many = names.length > 1 || hiddenFiles > 1 || (folders != null && files != null);
+  return '$what ${many ? 'are' : 'is'} kept out of this view';
 }
 
 /// Photo backup folders kept out of the Photos view, by id with their
@@ -166,24 +175,28 @@ final photosTimelineProvider = Provider.autoDispose<AsyncValue<List<DriveFile>>>
   return media.whenData((files) => oneTilePerPhoto(filterTimeline(files, ids, reveal: reveal)));
 });
 
-/// How many timeline files are in kept-out folders, and those folders'
-/// names, sorted. The same whether or not they are revealed.
-final keptOutSummaryProvider = Provider.autoDispose<({int count, List<String> names})>((ref) {
+/// How many timeline files are kept out, those folders' names, sorted, and
+/// how many of the files were kept out one by one rather than by their
+/// folder. The same whether or not they are revealed.
+final keptOutSummaryProvider = Provider.autoDispose<({int count, List<String> names, int files})>((ref) {
   final hidden = ref.watch(keptOutFoldersProvider).value ?? const {};
   final media = ref.watch(mediaTimelineProvider).value ?? const [];
   var count = 0;
+  var files = 0;
   // Two backup roots can each hold a Screenshots folder; it is named once.
   final names = <String, String>{};
-  if (hidden.isNotEmpty) {
-    for (final file in media) {
-      final name = hidden[file.folderId];
-      if (name == null) continue;
+  for (final file in media) {
+    final name = hidden[file.folderId];
+    if (name != null) {
       count++;
       names.putIfAbsent(name.toLowerCase(), () => name);
+    } else if (file.hiddenFromPhotos) {
+      count++;
+      files++;
     }
   }
   final sorted = names.keys.toList()..sort();
-  return (count: count, names: [for (final key in sorted) names[key]!]);
+  return (count: count, names: [for (final key in sorted) names[key]!], files: files);
 });
 
 /// What the Photos tab shows of the timeline.

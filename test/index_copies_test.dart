@@ -317,6 +317,39 @@ void main() {
     expect((await db.partsOf('big')).map((p) => p.messageId), [_m(20), _m(21)]);
   });
 
+  test('a file\'s Photos and Private choices come back from the copy', () async {
+    final telegram = _Telegram(stored);
+    final (writer, _, _) = await open(telegram);
+    final repository = writer.read(driveRepositoryProvider);
+    await seed(repository);
+    final created = DateTime.fromMillisecondsSinceEpoch(1_700_000_000_000);
+    await repository.ingest(documentMessage(
+      _m(40),
+      ManifestCodec.encodeFile(
+        FileManifest(
+          id: 'diary',
+          name: 'Diary.jpg',
+          folderId: 'trips',
+          mimeType: 'image/jpeg',
+          size: 18,
+          createdAt: created,
+          modifiedAt: created,
+          hiddenFromPhotos: true,
+          private: true,
+        ),
+      ).text,
+    ));
+    expect(await writer.read(indexCopiesProvider).writeIfDue(testChatId), isTrue);
+
+    final (reader, db, _) = await open(telegram);
+    expect(await reader.read(indexCopiesProvider).restore(testChatId), isTrue);
+
+    final diary = (await db.fileById('diary'))!;
+    expect((diary.hiddenFromPhotos, diary.private, diary.inPrivate), (true, true, true));
+    final photo = (await db.fileById('p'))!;
+    expect((photo.hiddenFromPhotos, photo.private, photo.inPrivate), (false, false, false));
+  });
+
   test('a folder\'s Photos and Private choices come back from the copy', () async {
     final telegram = _Telegram(stored);
     final (writer, _, _) = await open(telegram);

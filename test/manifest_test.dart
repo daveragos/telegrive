@@ -46,6 +46,20 @@ void main() {
       expect(decoded.starred, isTrue);
     });
 
+    test('a file kept out of Photos, or private, says so in its details, and an older one reads as neither', () {
+      final photo = file().copyWith(hiddenFromPhotos: true, private: true);
+      final text = ManifestCodec.encodeFile(photo).text;
+      expect(text, contains('nophotos=1;private=1'));
+      final decoded = ManifestCodec.decodeFile(text)!;
+      expect((decoded.hiddenFromPhotos, decoded.private), (true, true));
+      expect(decoded.extra, isEmpty);
+
+      expect(ManifestCodec.encodeFile(file()).text, isNot(contains('nophotos=')));
+      expect(ManifestCodec.encodeFile(file()).text, isNot(contains('private=')));
+      final plain = ManifestCodec.decodeFile('tgfile2;id=a;name=b;size=1')!;
+      expect((plain.hiddenFromPhotos, plain.private), (false, false));
+    });
+
     test('capture time round-trips and is omitted when unknown', () {
       final taken = DateTime.fromMillisecondsSinceEpoch(1_690_000_000_000);
       final withTime = FileManifest(

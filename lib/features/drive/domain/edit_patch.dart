@@ -15,7 +15,8 @@ class EditField {
 /// A change made on this phone to one file, folder or album that is still
 /// to reach Telegram, field by field, under the manifest's short keys: `n`
 /// the name, `f` a file's folder, `p` a folder's parent, `st` the star,
-/// `hp` and `pr` whether a folder stays out of Photos and is private, `tr`
+/// `hp` and `pr` whether a file or folder stays out of Photos and is
+/// private, `tr`
 /// when it went to the trash (epoch milliseconds cut to the whole second,
 /// null once restored) and `al` the ids of a file's albums, sorted.
 ///
@@ -60,6 +61,8 @@ class EditPatch {
     'n': manifest.name,
     'f': manifest.folderId,
     'st': manifest.starred,
+    'hp': manifest.hiddenFromPhotos,
+    'pr': manifest.private,
     'tr': trashedValue(manifest.trashedAt),
     'al': _ids(manifest.albums),
   };
@@ -93,6 +96,8 @@ class EditPatch {
               ? next.copyWith(clearFolder: true)
               : next.copyWith(folderId: value as String),
         'st' => next.copyWith(starred: value! as bool),
+        'hp' => next.copyWith(hiddenFromPhotos: value! as bool),
+        'pr' => next.copyWith(private: value! as bool),
         'tr' =>
           value == null ? next.copyWith(restore: true) : next.copyWith(trashedAt: _time(value)),
         'al' => next.copyWith(albums: _ids(value)),

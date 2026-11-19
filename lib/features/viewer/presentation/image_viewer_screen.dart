@@ -23,6 +23,7 @@ import '../../files/presentation/file_actions.dart';
 import '../../photos/data/photos_visibility.dart';
 import '../../player/data/stream_server.dart';
 import '../../player/presentation/player_screen.dart';
+import '../../private/data/private_space.dart';
 import '../../transfers/data/transfer_queue.dart';
 import 'decoded_by_phone.dart';
 import 'pinch_zoom.dart';
@@ -131,6 +132,7 @@ class _ImageViewerScreenState extends ConsumerState<ImageViewerScreen> {
             .value,
       ),
       'starred' => _media(ref.watch(starredFilesProvider).value),
+      'private' => _media(ref.watch(privateFilesProvider).value),
       _ => [?ref.watch(fileInfoProvider(widget.fileId)).value],
     };
 

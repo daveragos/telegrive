@@ -104,6 +104,9 @@ class DriveFile {
     this.replacedBy,
     this.adopted = false,
     this.originalSize,
+    this.hiddenFromPhotos = false,
+    this.private = false,
+    this.inPrivate = false,
   }) : hasMinithumbnail = hasMinithumbnail || minithumbnail != null;
 
   /// [hasMinithumbnail] says whether Telegram inlined a preview for a row
@@ -129,6 +132,9 @@ class DriveFile {
     replacedBy: row.replacedBy,
     adopted: row.adopted,
     originalSize: row.originalSize,
+    hiddenFromPhotos: row.hiddenFromPhotos,
+    private: row.private,
+    inPrivate: row.inPrivate,
   );
 
   final String id;
@@ -172,6 +178,18 @@ class DriveFile {
   /// Size of the original photo while only a small copy of it is in the
   /// drive; [size] is the copy's own.
   final int? originalSize;
+
+  /// A photo or video kept out of the Photos tab on its own, on every
+  /// phone; the choice lives in the file's message.
+  final bool hiddenFromPhotos;
+
+  /// Shown only in Private on its own, on every phone; the choice lives in
+  /// the file's message. A file inside a private folder is in Private too,
+  /// without this.
+  final bool private;
+
+  /// [private], or inside a folder that is.
+  final bool inPrivate;
 
   /// Backup sent a small copy of a photo on mobile data, and its original
   /// is still to follow from the phone that took it.
@@ -222,12 +240,15 @@ class DriveFile {
       other.durationSeconds == durationSeconds &&
       other.adopted == adopted &&
       other.size == size &&
-      other.originalSize == originalSize;
+      other.originalSize == originalSize &&
+      other.hiddenFromPhotos == hiddenFromPhotos &&
+      other.private == private &&
+      other.inPrivate == inPrivate;
 
   @override
   int get hashCode => Object.hash(
     id, name, folderId, starred, modifiedAt, thumbnailFileId, durationSeconds, adopted, //
-    size, originalSize,
+    size, originalSize, hiddenFromPhotos, private, inPrivate,
   );
 }
 
