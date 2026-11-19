@@ -420,7 +420,16 @@ value goes back onto the line exactly as it came.
 
 - A queue that survives restarts, with live speed and ETA, pause, resume,
   cancel and retry. On Android a foreground service keeps it going in the
-  background, and its notification can pause it.
+  background, and its notification can pause it. On an iPhone with iOS 26
+  or later, the transfers the person started carry on with the screen
+  locked or another app open: as the first starts while Telegrive is on
+  screen, the runner asks iOS for a continued processing task over
+  `telegrive/background_transfers`, and Dart reports the share done and
+  what is under way, which iOS shows on the Lock Screen and in the
+  Dynamic Island, where it can be stopped. It ends when the last is done,
+  and one iOS ends begins again when Telegrive is back on screen. Before
+  iOS 26 the runner can only ask for the half minute or so any app gets.
+  Photo backup isn't covered there.
 - Split uploads resume at the last finished part; a send TDLib resumed on
   its own after a restart is matched by its caption.
 - A dropped connection waits instead of failing, and a request that times
@@ -1247,7 +1256,7 @@ app, and every feature is there for everyone.
 | Platform | Status |
 | --- | --- |
 | Android (arm64, armv7, x86, x86_64) | Supported |
-| iOS (arm64, and the Apple silicon simulator) | Released as an unsigned IPA to sideload, with TDLib built by `tool/build_tdlib_ios.sh`. Photo backup runs while the app is open; the features below that need Android are off. |
+| iOS (arm64, and the Apple silicon simulator) | Released as an unsigned IPA to sideload, with TDLib built by `tool/build_tdlib_ios.sh`. Photo backup runs while the app is open; transfers you start carry on with the screen locked on iOS 26 or later; the features below that need Android are off. |
 | macOS (Apple silicon and Intel, macOS 12 or later) | A disk image built by `tool/build_dmg.sh`, signed ad hoc and not notarized, with TDLib built by `tool/build_tdlib_macos.sh`. |
 | Windows (x64, arm64) | Built by `tool/build_windows.ps1` on Windows, not released yet, with TDLib built by `tool/build_tdlib_windows.ps1`. |
 | Linux (x64, arm64) | Built by `tool/build_linux.sh`, not released yet, with TDLib built by `tool/build_tdlib_linux.sh`. |

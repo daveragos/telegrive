@@ -29,6 +29,7 @@ import '../features/takeout/data/takeout_import.dart';
 import '../features/transfers/data/desktop_dock_badge.dart';
 import '../features/transfers/data/desktop_keep_awake.dart';
 import '../features/transfers/data/desktop_transfer_notices.dart';
+import '../features/transfers/data/ios_background_transfers.dart';
 import '../features/transfers/data/transfer_keep_alive.dart';
 import '../features/transfers/data/transfer_queue.dart';
 import '../features/trash/data/pending_deletes.dart';
@@ -172,6 +173,8 @@ class _TelegriveAppState extends ConsumerState<TelegriveApp>
     // opens, not the first time someone visits the Transfers tab.
     ref.watch(transferQueueProvider.select((s) => s.activeCount));
     ref.watch(transferKeepAliveProvider);
+    // On an iPhone, iOS's own way of letting them finish off screen.
+    ref.watch(iosBackgroundTransfersProvider);
     ref.watch(desktopTransferNoticesProvider);
     // On a computer, the icon in the menu bar or tray, and what closing the
     // window does.
