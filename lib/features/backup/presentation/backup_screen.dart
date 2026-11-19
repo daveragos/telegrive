@@ -572,7 +572,8 @@ class _FolderSync extends ConsumerWidget {
             child: Text(
               'New files in these folders go up a minute after they land, to Files › '
               '${WatchedFoldersController.rootFolder} unless you pick a drive folder, '
-              'while Telegrive runs. A file that changes goes up again in place of its '
+              'with their subfolders as they are, while Telegrive runs. A file that '
+              'changes goes up again in place of its '
               'copy, which goes to Trash. Deleting a file from this computer never '
               'deletes it from your drive. This list stays on this computer.',
               style: context.text.bodySmall,

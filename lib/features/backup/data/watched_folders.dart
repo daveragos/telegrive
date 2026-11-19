@@ -359,7 +359,8 @@ class WatchState {
 /// On a computer the folders are watched as well, through [FolderWatcher],
 /// so a file saved into one goes up a minute later, and looked through
 /// again every [rescanEvery] for what a watch can miss. Files go up from
-/// where they are, and a file that changes after it went up goes up again
+/// where they are, into drive folders that keep the folder's tree, and a
+/// file that changes after it went up goes up again
 /// in place of the one in the drive, which goes to Trash. Nothing deleted
 /// from the computer is deleted from the drive.
 class WatchedFoldersController extends Notifier<WatchState> {
@@ -406,6 +407,10 @@ class WatchedFoldersController extends Notifier<WatchState> {
   /// Ends once the last upload asked for has its name and its place in the
   /// queue, so two files of one name get names of their own.
   Future<void> _naming = Future.value();
+
+  /// Ends once the last drive folder asked for is made, so two files of one
+  /// subfolder going up at once don't make it twice.
+  Future<void> _foldering = Future.value();
 
   AppDatabase get _db => ref.read(appDatabaseProvider);
   DriveRepository get _repository => ref.read(driveRepositoryProvider);
@@ -928,7 +933,7 @@ class WatchedFoldersController extends Notifier<WatchState> {
     final String id;
     try {
       final source = await _folders.source(rule.treeUri, doc);
-      id = await _enqueue(doc, source, destination, replaces: replaces);
+      id = await _enqueue(doc, source, await _folderFor(destination, doc), replaces: replaces);
     } catch (e) {
       debugPrint('[Folders] ${doc.name}: $e');
       await _failed(rule.id, doc, entry);
@@ -967,6 +972,19 @@ class WatchedFoldersController extends Notifier<WatchState> {
     } finally {
       _following.remove(id);
     }
+  }
+
+  /// The drive folder [doc] goes into: on a computer, which keeps the
+  /// folder's tree, the folder of its subfolder's path inside
+  /// [destination], made when it isn't there; on a phone [destination]
+  /// itself.
+  Future<String> _folderFor(String destination, PhoneDocument doc) {
+    if (!AppPlatform.isDesktop || doc.dir.isEmpty) return Future.value(destination);
+    final made = _foldering.then(
+      (_) => _repository.ensureFolderPath(doc.dir.split('/'), under: destination),
+    );
+    _foldering = made.then((_) {}, onError: (_) {});
+    return made;
   }
 
   /// Queues the upload of [source], read from [doc], into [destination]. A
