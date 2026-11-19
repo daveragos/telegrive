@@ -536,11 +536,13 @@ class _FolderSync extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final paused = ref.watch(watchedFoldersProvider.select((s) => s.paused));
     final folders = ref.read(watchedFoldersProvider.notifier);
+    // Pause has something to pause once a folder is added.
+    final any = ref.watch(watchedFolderViewsProvider.select((v) => v.value?.isNotEmpty ?? false));
     return Scaffold(
       appBar: AppBar(
         title: const Text('Folder sync'),
         actions: [
-          if (!paused)
+          if (!paused && any)
             IconButton(
               onPressed: folders.pause,
               icon: const Icon(Icons.pause_rounded),
