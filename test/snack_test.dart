@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:telegrive/core/widgets/common.dart';
 
@@ -75,5 +76,73 @@ void main() {
     await tester.pump(undoWindow);
     await tester.pumpAndSettle();
     expect(find.text('Couldn\'t move "Trip" to the top of Albums'), findsOneWidget);
+  });
+
+  group('the Undo key', () {
+    /// A screen whose root answers Cmd-Z or Ctrl-Z as the app's does, with
+    /// a text field to type in.
+    Future<BuildContext> pumpWithKeys(WidgetTester tester) async {
+      late BuildContext context;
+      await tester.pumpWidget(
+        MaterialApp(
+          builder: (context, child) => Actions(actions: {UndoTextIntent: PendingUndo.action}, child: child!),
+          home: Scaffold(
+            body: Builder(
+              builder: (screen) {
+                context = screen;
+                return const Column(children: [Focus(autofocus: true, child: SizedBox(height: 40)), TextField()]);
+              },
+            ),
+          ),
+        ),
+      );
+      return context;
+    }
+
+    Future<void> pressUndo(WidgetTester tester) async {
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.control);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyZ);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.control);
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('takes back what the snack offers to undo', (tester) async {
+      final context = await pumpWithKeys(tester);
+      var undone = 0;
+      showUndoSnack(context, 'Moved to Trash', onUndo: () => undone++);
+      await tester.pumpAndSettle();
+
+      await pressUndo(tester);
+      expect(undone, 1);
+      expect(find.text('Moved to Trash'), findsNothing);
+
+      await pressUndo(tester);
+      expect(undone, 1, reason: 'the change was taken back once');
+    });
+
+    testWidgets('does nothing once the snack has gone', (tester) async {
+      final context = await pumpWithKeys(tester);
+      var undone = false;
+      showUndoSnack(context, 'Moved to Trash', onUndo: () => undone = true);
+      await tester.pumpAndSettle();
+      await tester.pump(undoWindow);
+      await tester.pumpAndSettle();
+
+      await pressUndo(tester);
+      expect(undone, isFalse);
+    });
+
+    testWidgets('undoes the typing while a text field has the keys', (tester) async {
+      final context = await pumpWithKeys(tester);
+      var undone = false;
+      showUndoSnack(context, 'Moved to Trash', onUndo: () => undone = true);
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), 'name');
+      await tester.pumpAndSettle();
+
+      await pressUndo(tester);
+      expect(undone, isFalse);
+      expect(find.text('Moved to Trash'), findsOneWidget);
+    });
   });
 }

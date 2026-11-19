@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/config/app_config.dart';
 import '../core/platform/app_platform.dart';
 import '../core/widgets/adaptive_sheet.dart';
+import '../core/widgets/common.dart';
 import '../features/backup/data/background_health.dart';
 import '../features/backup/data/backup_controller.dart';
 import '../features/backup/data/watched_folders.dart';
@@ -208,13 +209,18 @@ class _TelegriveAppState extends ConsumerState<TelegriveApp>
       darkTheme: AppTheme.dark(),
       themeMode: ref.watch(themeModeProvider),
       routerConfig: router,
-      // Menus on a computer open where the pointer last went down.
-      builder: (context, child) => PointerPlaceRecorder(
-        child: LockGate(
-          child: BulkStripOverShell(
-            router: router,
-            popups: popups,
-            child: child ?? const SizedBox.shrink(),
+      // Menus on a computer open where the pointer last went down, and
+      // Cmd-Z or Ctrl-Z outside a text field takes back what a snack offers
+      // to undo.
+      builder: (context, child) => Actions(
+        actions: {UndoTextIntent: PendingUndo.action},
+        child: PointerPlaceRecorder(
+          child: LockGate(
+            child: BulkStripOverShell(
+              router: router,
+              popups: popups,
+              child: child ?? const SizedBox.shrink(),
+            ),
           ),
         ),
       ),

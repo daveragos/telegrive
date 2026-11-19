@@ -304,7 +304,7 @@ ScaffoldFeatureController<SnackBar, SnackBarClosedReason>? showSnack(
   if (messenger == null) return null;
   final screenReader = MediaQuery.maybeAccessibleNavigationOf(context) ?? false;
   if (!queue) messenger.hideCurrentSnackBar();
-  return messenger.showSnackBar(
+  final controller = messenger.showSnackBar(
     SnackBar(
       content: Text(message),
       duration: duration,
@@ -315,6 +315,54 @@ ScaffoldFeatureController<SnackBar, SnackBarClosedReason>? showSnack(
           : SnackBarAction(label: actionLabel, onPressed: onAction ?? () {}),
     ),
   );
+  if (actionLabel == 'Undo' && onAction != null) {
+    PendingUndo._offer(() {
+      messenger.hideCurrentSnackBar(reason: SnackBarClosedReason.action);
+      onAction();
+    }, controller.closed);
+  }
+  return controller;
+}
+
+/// The Undo the snack on screen offers, which Cmd-Z or Ctrl-Z takes too
+/// while no text field has the keys: [UndoTextIntent], which those keys
+/// make anywhere, falls through to [PendingUndo.action] at the app's root.
+/// It lasts as long as its snack.
+abstract final class PendingUndo {
+  static VoidCallback? _undo;
+
+  static void _offer(VoidCallback undo, Future<SnackBarClosedReason> closed) {
+    _undo = undo;
+    closed.then((_) {
+      if (identical(_undo, undo)) _undo = null;
+    });
+  }
+
+  /// Takes the change back, when a snack still offers it.
+  static bool undo() {
+    final undo = _undo;
+    _undo = null;
+    undo?.call();
+    return undo != null;
+  }
+
+  /// The action that answers Cmd-Z or Ctrl-Z outside a text field.
+  static final Action<UndoTextIntent> action = _PendingUndoAction();
+}
+
+/// A text field's own undo asks this first, as the action over it, and
+/// passes as [callingAction]: the typing is undone then, never the snack's
+/// change.
+class _PendingUndoAction extends Action<UndoTextIntent> {
+  @override
+  bool isEnabled(UndoTextIntent intent) => callingAction?.isEnabled(intent) ?? PendingUndo._undo != null;
+
+  @override
+  Object? invoke(UndoTextIntent intent) {
+    final typing = callingAction;
+    if (typing != null) return typing.invoke(intent);
+    return PendingUndo.undo();
+  }
 }
 
 /// A change that can be taken back: [message] says what happened, in the
