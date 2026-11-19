@@ -294,10 +294,16 @@
       '&url=' + encodeURIComponent(pageUrl());
   });
 
+  // The clipboard where the browser lets the page write to it, and else a
+  // selected copy of the text, as older browsers and some webviews need.
   function copyText(text) {
     if (navigator.clipboard && window.isSecureContext) {
-      return navigator.clipboard.writeText(text);
+      return navigator.clipboard.writeText(text).catch(function () { return copySelected(text); });
     }
+    return copySelected(text);
+  }
+
+  function copySelected(text) {
     return new Promise(function (resolve, reject) {
       var t = document.createElement('textarea');
       t.value = text;
@@ -319,6 +325,20 @@
         setTimeout(function () { label.textContent = 'Copy link'; }, 2000);
       }, function () {
         window.prompt('Copy this link:', pageUrl());
+      });
+    });
+  });
+
+  // A command to paste somewhere, such as Terminal.
+  $$('[data-copy-text]').forEach(function (btn) {
+    var label = $('span', btn);
+    var text = btn.getAttribute('data-copy-text');
+    btn.addEventListener('click', function () {
+      copyText(text).then(function () {
+        label.textContent = 'Copied';
+        setTimeout(function () { label.textContent = 'Copy'; }, 2000);
+      }, function () {
+        window.prompt('Copy this command:', text);
       });
     });
   });
