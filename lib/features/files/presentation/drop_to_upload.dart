@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:desktop_drop/desktop_drop.dart';
@@ -6,6 +7,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../app/theme/tokens.dart';
+import '../../../core/widgets/common.dart';
+import '../data/clipboard_files.dart';
 import 'file_actions.dart';
 import 'phone_folder_upload.dart';
 
@@ -14,6 +17,10 @@ import 'phone_folder_upload.dart';
 /// folder [folderOf] names for where the app is, the one open in Files or
 /// Private, or the top of the drive. A folder goes up with the folders
 /// inside it, each file from where it is.
+///
+/// On a Mac, files copied in Finder go up the same way when pasted, with
+/// Edit › Paste or Cmd-V, wherever the keys aren't in a text field, which
+/// pastes its text as ever.
 class DropToUpload extends ConsumerStatefulWidget {
   const DropToUpload({super.key, required this.folderOf, required this.child});
 
@@ -34,15 +41,33 @@ class _DropToUploadState extends ConsumerState<DropToUpload> {
 
   Future<void> _dropped(DropDoneDetails details) async {
     _hover(false);
+    await _upload([
+      for (final item in details.files)
+        if (item.path.isNotEmpty) item.path,
+    ]);
+  }
+
+  /// Uploads what the clipboard holds, as a drop of the same files would.
+  Future<void> _paste() async {
+    final paths = await ClipboardFiles.read();
+    if (!mounted) return;
+    if (paths.isEmpty) {
+      showSnack(context, 'Nothing to paste. Copy files in Finder, then paste them here to upload them.');
+      return;
+    }
+    await _upload(paths);
+  }
+
+  /// Uploads the files and folders at [paths] into the folder open.
+  Future<void> _upload(List<String> paths) async {
     final folderId = widget.folderOf(GoRouter.of(context));
     final files = <String>[];
     final folders = <String>[];
-    for (final item in details.files) {
-      if (item.path.isEmpty) continue;
-      if (item is DropItemDirectory || FileSystemEntity.isDirectorySync(item.path)) {
-        folders.add(item.path);
+    for (final path in paths) {
+      if (FileSystemEntity.isDirectorySync(path)) {
+        folders.add(path);
       } else {
-        files.add(item.path);
+        files.add(path);
       }
     }
     if (files.isNotEmpty) await FileActions.uploadPaths(context, ref, files, folderId: folderId);
@@ -55,7 +80,7 @@ class _DropToUploadState extends ConsumerState<DropToUpload> {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    return DropTarget(
+    final target = DropTarget(
       onDragEntered: (_) => _hover(true),
       onDragExited: (_) => _hover(false),
       onDragDone: _dropped,
@@ -92,5 +117,33 @@ class _DropToUploadState extends ConsumerState<DropToUpload> {
         ],
       ),
     );
+    if (!ClipboardFiles.supported) return target;
+    return Actions(
+      actions: {PasteTextIntent: _PasteFiles(() => unawaited(_paste()))},
+      child: target,
+    );
+  }
+}
+
+/// Paste, anywhere in the window but a text field: the files copied go up.
+/// A text field offers its own Paste to this one first, as Flutter lets a
+/// window's actions stand in for a field's, and gets it straight back, so
+/// its text pastes as ever.
+class _PasteFiles extends Action<PasteTextIntent> {
+  _PasteFiles(this.paste);
+
+  final VoidCallback paste;
+
+  @override
+  bool isEnabled(PasteTextIntent intent) => callingAction?.isEnabled(intent) ?? true;
+
+  @override
+  bool consumesKey(PasteTextIntent intent) => callingAction?.consumesKey(intent) ?? true;
+
+  @override
+  Object? invoke(PasteTextIntent intent) {
+    if (callingAction case final field?) return field.invoke(intent);
+    paste();
+    return null;
   }
 }

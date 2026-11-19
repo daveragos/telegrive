@@ -135,7 +135,9 @@ design.
 - **A Mac's menu bar** has Telegrive, File, Edit, View, Go, Window and
   Help, with the keys a Mac app has: Cmd-, for Settings, Cmd-1 to 3 for
   the places, Cmd-[ to go back, Cmd-F to search where you are, Cmd-Z to
-  take back what the snack offers. Windows and Linux have no menu bar;
+  take back what the snack offers, and Cmd-V to upload files copied in
+  Finder into the folder open, as dropping them does; in a text field
+  Cmd-V pastes its text. Windows and Linux have no menu bar;
   the pages' own keys work there with Ctrl.
 - **Density** is compact, and the phone's own screens stay standard.
 - **Words** say "this computer" where a phone says "this phone", and

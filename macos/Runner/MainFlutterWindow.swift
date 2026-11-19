@@ -15,6 +15,21 @@ class MainFlutterWindow: NSWindow {
 
     RegisterGeneratedPlugins(registry: flutterViewController)
 
+    // The files Finder or another app copied, as paths, for Paste to upload.
+    let clipboard = FlutterMethodChannel(
+      name: "telegrive/clipboard",
+      binaryMessenger: flutterViewController.engine.binaryMessenger)
+    clipboard.setMethodCallHandler { call, result in
+      guard call.method == "files" else {
+        result(FlutterMethodNotImplemented)
+        return
+      }
+      let urls = NSPasteboard.general.readObjects(
+        forClasses: [NSURL.self],
+        options: [.urlReadingFileURLsOnly: true]) as? [URL] ?? []
+      result(urls.map { $0.path })
+    }
+
     super.awakeFromNib()
   }
 
