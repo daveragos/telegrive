@@ -1157,8 +1157,9 @@ and attached to a GitHub release by hand. To release:
    `build/dmg-tools` the first time it runs.
 5. In `docs/site.js`, set `FALLBACK_VERSION` and the APK, IPA and disk
    image sizes from `build/release`, which the website shows when GitHub
-   can't be asked; until a release carries the disk image, the Mac
-   guide's download opens the releases.
+   can't be asked. The download links and sizes written into
+   `index.html`, `iphone.html` and `mac.html`, which show before site.js
+   runs, name the version too.
 6. Commit and push, then draft the release with its notes, attach the
    files in `build/release`, and publish it, which makes the tag:
 
