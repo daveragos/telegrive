@@ -174,6 +174,9 @@ class _MediaGridState extends ConsumerState<MediaGrid> {
   /// Opens [file], or selects it while selecting. On a computer Cmd or
   /// Ctrl adds it to the selection or takes it out, and Shift picks the
   /// run from the photo last clicked.
+  /// On a computer a click selects a photo and a double-click opens it.
+  final _doubleClick = DoubleClick();
+
   void _tap(DriveFile file) {
     if (widget.selectable && DesktopInput.runClick && _clicked != null) {
       final ids = [for (final f in widget.files) f.id];
@@ -189,6 +192,11 @@ class _MediaGridState extends ConsumerState<MediaGrid> {
     }
     _clicked = file.id;
     if (widget.selectable && DesktopInput.addingClick) return widget.selection.toggle(file.id);
+    if (widget.selectable && AppPlatform.isDesktop) {
+      if (!_doubleClick.on(file.id)) return widget.selection.replace({file.id});
+      widget.selection.replace(const {});
+      return widget.onOpen(file);
+    }
     _selecting ? widget.selection.toggle(file.id) : widget.onOpen(file);
   }
 

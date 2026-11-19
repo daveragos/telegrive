@@ -39,3 +39,27 @@ abstract final class DesktopInput {
   /// The keys for the folder above: Cmd-Up on a Mac, Alt-Up elsewhere.
   static SingleActivator get up => SingleActivator(LogicalKeyboardKey.arrowUp, meta: _mac, alt: !_mac);
 }
+
+/// Tells a double-click from two clicks, by what the last plain click was
+/// on and when, as a computer's file manager does: one click selects an
+/// item there and then, and a second on it within [within] opens it. A
+/// tap and double-tap recognizer would hold every click back by the wait.
+class DoubleClick {
+  DoubleClick({this.within = const Duration(milliseconds: 500), DateTime Function()? clock})
+    : _clock = clock ?? DateTime.now;
+
+  final Duration within;
+  final DateTime Function() _clock;
+  Object? _last;
+  DateTime? _at;
+
+  /// Whether this click on [item] is the second of a double-click. A third
+  /// starts over.
+  bool on(Object item) {
+    final now = _clock();
+    final second = _last == item && _at != null && now.difference(_at!) < within;
+    _last = second ? null : item;
+    _at = second ? null : now;
+    return second;
+  }
+}

@@ -103,6 +103,23 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
   /// The row last clicked, where a Shift-click's run starts.
   String? _anchor;
 
+  /// On a computer a click selects a row and a double-click opens it.
+  final _doubleClick = DoubleClick();
+
+  /// Selects [file] or [folder] alone, as a plain click on a computer does.
+  void _selectOnly({String? file, String? folder}) {
+    setState(() {
+      _selectMode = false;
+      _files
+        ..clear()
+        ..addAll([?file]);
+      _folders
+        ..clear()
+        ..addAll([?folder]);
+    });
+    _publish();
+  }
+
   /// Selects everything from the last row clicked to [to], both included.
   void _selectRun(String to) {
     final from = _order.indexOf(_anchor!);
@@ -572,6 +589,11 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
     if (DesktopInput.runClick && _anchor != null) return _selectRun(key);
     _anchor = key;
     if (DesktopInput.addingClick) return _toggleFolder(folder);
+    if (AppPlatform.isDesktop) {
+      if (!_doubleClick.on(key)) return _selectOnly(folder: folder.id);
+      _clearSelection();
+      return _openFolder(folder);
+    }
     _selecting ? _toggleFolder(folder) : _openFolder(folder);
   }
 
@@ -580,6 +602,11 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
     if (DesktopInput.runClick && _anchor != null) return _selectRun(key);
     _anchor = key;
     if (DesktopInput.addingClick) return _toggleFile(file);
+    if (AppPlatform.isDesktop) {
+      if (!_doubleClick.on(key)) return _selectOnly(file: file.id);
+      _clearSelection();
+      return unawaited(FileActions.open(context, ref, file, from: 'folder:${widget.folderId ?? ''}'));
+    }
     _openOrToggleFile(file);
   }
 
