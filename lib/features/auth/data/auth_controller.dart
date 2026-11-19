@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:handy_tdlib/api.dart' as td;
 
+import '../../../core/platform/app_platform.dart';
 import '../../../infrastructure/database/app_database.dart';
 import '../../../infrastructure/storage/preferences.dart';
 import '../../../infrastructure/telegram/telegram_client.dart';
@@ -118,6 +119,26 @@ class AuthController extends Notifier<AuthUiState> {
 
   void cancelEditPhone() => state = state.copyWith(editingPhone: false);
 
+  /// Goes to the phone number from the QR code, wherever TDLib is: still
+  /// waiting for a number, as when a computer has only just asked for a
+  /// code, or already showing one.
+  void usePhoneNumber() => state = state.copyWith(startedSignIn: true, editingPhone: true);
+
+  /// Asks for the QR code a computer opens sign-in on, scanned by a phone
+  /// that has Telegram as Telegram Desktop's is. When none can be had,
+  /// sign-in goes to the phone number instead. A switch to the number made
+  /// while the code was on its way stands.
+  Future<void> openWithQrCode() async {
+    try {
+      await _client.send<td.Ok>(
+        const td.RequestQrCodeAuthentication(otherUserIds: []),
+      );
+    } catch (e) {
+      debugPrint('[Auth] No QR code: $e');
+      startSignIn();
+    }
+  }
+
   Future<void> submitPhone(String phone) async {
     final normalized = phone.replaceAll(RegExp(r'[^\d+]'), '');
     await _client.send<td.Ok>(
@@ -155,12 +176,13 @@ class AuthController extends Notifier<AuthUiState> {
   /// Drops a sign-in that reached the wrong account, one waiting for that
   /// account's password. Telegram ties the session to the account that
   /// took its QR code and turns away a new code as already accepted, so
-  /// the session is ended and a new one starts at the number. The index of
-  /// a drive this phone had stays, as at any other step of signing in.
+  /// the session is ended and a new one starts at the number, or on a
+  /// computer at a new QR code. The index of a drive this device had
+  /// stays, as at any other step of signing in.
   Future<void> startOver() async {
     _signingOut = true;
     try {
-      state = state.copyWith(startedSignIn: true, editingPhone: false);
+      state = AuthUiState(startedSignIn: !AppPlatform.isDesktop);
       await _client.logOut();
     } finally {
       _signingOut = false;

@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 
 import '../../../app/theme/tokens.dart';
+import '../../../core/platform/app_platform.dart';
 
 /// Shared frame for every sign-in step: what is being asked, a line on why,
-/// the field, and one obvious next action pinned above the keyboard.
+/// the field, and one obvious next action, pinned above the keyboard on a
+/// phone and right under the field on a computer, which has no keyboard on
+/// screen to make room for.
 class AuthLayout extends StatelessWidget {
   const AuthLayout({
     super.key,
@@ -13,8 +16,11 @@ class AuthLayout extends StatelessWidget {
     this.primary,
     this.secondary,
     this.onBack,
+    this.header,
   });
 
+  /// Above the title: the app's name, on the screen sign-in opens on.
+  final Widget? header;
   final String title;
   final Widget subtitle;
   final List<Widget> children;
@@ -24,6 +30,19 @@ class AuthLayout extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final inline = AppPlatform.isDesktop;
+    final actions = primary == null && secondary == null
+        ? null
+        : Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              ?primary,
+              if (secondary != null) ...[
+                const SizedBox(height: Space.xs),
+                secondary!,
+              ],
+            ],
+          );
     return Scaffold(
       appBar: AppBar(
         automaticallyImplyLeading: false,
@@ -48,6 +67,7 @@ class AuthLayout extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        if (header case final header?) ...[header, const SizedBox(height: Space.xxl)],
                         Text(title, style: context.text.headlineSmall),
                         const SizedBox(height: Space.s),
                         DefaultTextStyle.merge(
@@ -56,27 +76,19 @@ class AuthLayout extends StatelessWidget {
                         ),
                         const SizedBox(height: Space.xxl),
                         ...children,
+                        if (inline && actions != null) ...[const SizedBox(height: Space.xxl), actions],
                       ],
                     ),
                   ),
                 ),
               ),
             ),
-            if (primary != null || secondary != null)
+            if (!inline && actions != null)
               Padding(
                 padding: const EdgeInsets.fromLTRB(Space.xxl, 0, Space.xxl, Space.l),
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 440),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      ?primary,
-                      if (secondary != null) ...[
-                        const SizedBox(height: Space.xs),
-                        secondary!,
-                      ],
-                    ],
-                  ),
+                  child: actions,
                 ),
               ),
           ],

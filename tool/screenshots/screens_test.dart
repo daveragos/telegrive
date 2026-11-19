@@ -25,6 +25,7 @@ import 'package:telegrive/core/platform/app_platform.dart';
 import 'package:telegrive/core/widgets/adaptive_sheet.dart';
 import 'package:telegrive/app/theme/app_theme.dart';
 import 'package:telegrive/features/auth/presentation/phone_screen.dart';
+import 'package:telegrive/features/auth/presentation/qr_screen.dart';
 import 'package:telegrive/features/auth/presentation/welcome_screen.dart';
 import 'package:telegrive/features/backup/data/background_health.dart';
 import 'package:telegrive/features/backup/data/backup_controller.dart';
@@ -3753,10 +3754,21 @@ void main() {
     Widget screen, {
     Map<String, Object> prefs = const {},
     List<Override> overrides = const [],
+    bool desktop = false,
   }) async {
     debugDisableShadows = false;
-    tester.view.physicalSize = const Size(1080, 2340);
-    tester.view.devicePixelRatio = 2.625;
+    if (desktop) {
+      // A 1440 by 900 window on a Retina Mac.
+      tester.view.physicalSize = const Size(2880, 1800);
+      tester.view.devicePixelRatio = 2;
+      // ignore: invalid_use_of_visible_for_testing_member
+      AppPlatform.debugDesktop = true;
+      // ignore: invalid_use_of_visible_for_testing_member
+      addTearDown(() => AppPlatform.debugDesktop = false);
+    } else {
+      tester.view.physicalSize = const Size(1080, 2340);
+      tester.view.devicePixelRatio = 2.625;
+    }
     addTearDown(tester.view.reset);
     // ignore: invalid_use_of_visible_for_testing_member
     SharedPreferences.setMockInitialValues(prefs);
@@ -3791,6 +3803,24 @@ void main() {
       prefs: {'session_ended_at': DateTime(2026, 9, 29, 19, 32).millisecondsSinceEpoch},
     );
     await snap(tester, 'welcome_session_ended');
+  });
+
+  testWidgets('desktop sign in', (tester) async {
+    await pumpScreen(
+      tester,
+      const QrScreen(),
+      desktop: true,
+      overrides: [
+        authStateProvider.overrideWith(
+          (ref) => Stream.value(
+            const td.AuthorizationStateWaitOtherDeviceConfirmation(
+              link: 'tg://login?token=AQKWkGVo0Vtt1lK4ZXr7tcXgYP0HIZaCXOaS0nNuzrwrXg',
+            ),
+          ),
+        ),
+      ],
+    );
+    await snap(tester, 'desktop_sign_in');
   });
 
   testWidgets('phone', (tester) async {

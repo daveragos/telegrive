@@ -10,6 +10,7 @@ import 'package:handy_tdlib/api.dart' as td;
 import 'package:pdfrx/pdfrx.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:telegrive/app/app_phase.dart';
+import 'package:telegrive/core/platform/app_platform.dart';
 import 'package:telegrive/features/auth/data/auth_controller.dart';
 import 'package:telegrive/features/drive/data/drive_session.dart';
 import 'package:telegrive/features/drive/data/message_indexer.dart';
@@ -239,6 +240,45 @@ void main() {
     // Not taken for a session ended from another device.
     expect(prefs.sessionEndedAt, isNull);
     expect(container.read(appPhaseProvider), AppPhase.phone);
+  });
+
+  group('on a computer', () {
+    setUp(() => AppPlatform.debugDesktop = true);
+    tearDown(() => AppPlatform.debugDesktop = false);
+
+    test('sign-in opens on the QR code, with the number a click away', () async {
+      final (container, _, _, _) = await start({});
+      await emit(const td.AuthorizationStateWaitPhoneNumber());
+      expect(container.read(appPhaseProvider), AppPhase.qr);
+
+      // Before the code has come, as well as once it shows.
+      container.read(authControllerProvider.notifier).usePhoneNumber();
+      expect(container.read(appPhaseProvider), AppPhase.phone);
+
+      // Back from the number, with no code asked for yet, is the QR code.
+      container.invalidate(authControllerProvider);
+      expect(container.read(appPhaseProvider), AppPhase.qr);
+    });
+
+    test('a sign-in that reached the wrong account starts over at a new code', () async {
+      final (container, telegram, _, _) = await start({});
+      await emit(
+        const td.AuthorizationStateWaitPassword(
+          passwordHint: '',
+          hasRecoveryEmailAddress: false,
+          hasPassportData: false,
+          recoveryEmailAddressPattern: '',
+        ),
+      );
+      final startingOver = container.read(authControllerProvider.notifier).startOver();
+      await emit(const td.AuthorizationStateLoggingOut());
+      await emit(const td.AuthorizationStateClosed());
+      telegram.loggedOut.complete();
+      await startingOver;
+      await emit(const td.AuthorizationStateWaitPhoneNumber());
+
+      expect(container.read(appPhaseProvider), AppPhase.qr);
+    });
   });
 
   test('without a saved drive the app starts at the splash', () async {

@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:handy_tdlib/api.dart' as td;
 
+import '../core/platform/app_platform.dart';
 import '../features/auth/data/auth_controller.dart';
 import '../features/drive/data/drive_session.dart';
 import '../features/setup/data/drive_setup.dart';
@@ -76,7 +77,10 @@ final appPhaseProvider = Provider<AppPhase>((ref) {
 
   switch (auth) {
     case td.AuthorizationStateWaitPhoneNumber():
-      return ui.startedSignIn ? AppPhase.phone : AppPhase.welcome;
+      if (ui.startedSignIn) return AppPhase.phone;
+      // A phone opens on Welcome. A computer opens on the QR code, as the
+      // apps signed in to from a phone do there; the QR screen asks for it.
+      return AppPlatform.isDesktop ? AppPhase.qr : AppPhase.welcome;
     case td.AuthorizationStateWaitOtherDeviceConfirmation():
       return ui.editingPhone ? AppPhase.phone : AppPhase.qr;
     case td.AuthorizationStateWaitCode():
