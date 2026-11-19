@@ -190,6 +190,7 @@ class TransferItem {
     this.row, {
     this.bytesPerSecond = 0,
     this.preparing = false,
+    this.pausing = false,
     this.wait,
   });
 
@@ -198,6 +199,10 @@ class TransferItem {
 
   /// Being copied into staging before the upload proper starts.
   final bool preparing;
+
+  /// Asked to pause, and stopping: at once for most, and for one being
+  /// [preparing], once its copy is whole and before anything is sent.
+  final bool pausing;
 
   /// What the transfer is waiting for before it carries on by itself: a
   /// queued one before it starts, a running one for the network to return.
@@ -896,11 +901,18 @@ class TransferQueue extends Notifier<TransfersState> {
 
   /// Stops [id] where it is, to carry on with [resume]. A download keeps
   /// what TDLib has fetched; a split upload keeps its finished parts and
-  /// redoes only the one in flight.
+  /// redoes only the one in flight. One whose picked file is still being
+  /// copied in, from an iPhone's photo library say, which can't stop
+  /// halfway, pauses as the copy is whole, before anything goes up, and
+  /// the copy is kept for when it resumes.
   Future<void> pause(String id) async {
     final row = _rows[id];
-    // Copying a picked file into staging can't stop halfway safely.
-    if (row == null || !row.status.isActive || _preparing.contains(id)) return;
+    if (row == null || !row.status.isActive) return;
+    if (_preparing.contains(id)) {
+      _pausing.add(id);
+      _emit();
+      return;
+    }
     if (!_running.contains(id)) {
       // A paused transfer waits for Resume, not for Telegram's clock, room
       // or another try.
@@ -1418,6 +1430,8 @@ class TransferQueue extends Notifier<TransfersState> {
       await _ensureRoom(Room.forStage(initial.totalBytes));
       _stagers.remove(initial.id);
       initial = await _stage(initial, source, stager);
+      // Paused while the file was being prepared.
+      _stopIfPausing(initial.id);
     }
     // Cancelled while the file was being prepared: nothing has gone yet. The
     // cancel could not delete a copy still being written, so it goes here.
@@ -2479,6 +2493,8 @@ class TransferQueue extends Notifier<TransfersState> {
                 r,
                 bytesPerSecond: _speeds[r.id] ?? 0,
                 preparing: _preparing.contains(r.id),
+                // Until it has stopped: a paused row offers Resume at once.
+                pausing: r.status.isActive && _pausing.contains(r.id),
                 wait: _waitOf(r, now),
               ),
             )

@@ -449,7 +449,9 @@ class _ActiveRow extends ConsumerWidget {
               '${Formatters.number(item.row.partCount)} parts already in your drive'
         : null;
     final String detail;
-    if (item.preparing) {
+    if (item.preparing && item.pausing) {
+      detail = 'Preparing the file · pauses once it\'s ready';
+    } else if (item.preparing) {
       detail = 'Preparing the file';
     } else if (paused) {
       detail = sent == null ? ['Paused', soFar, ?parts].join(' · ') : 'Paused · $sent';
@@ -536,8 +538,9 @@ class _ActiveRow extends ConsumerWidget {
               ],
             ),
           ),
-          // Staging a picked file can't stop halfway, so it can't pause.
-          if (!item.preparing)
+          // A file being prepared pauses once it's ready, so there is
+          // nothing more to press meanwhile.
+          if (!item.pausing)
             IconButton(
               onPressed: () => paused ? queue.resume(item.id) : queue.pause(item.id),
               icon: Icon(

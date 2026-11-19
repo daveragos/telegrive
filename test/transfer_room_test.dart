@@ -371,6 +371,39 @@ void main() {
     expect(telegram.sends, 0);
   });
 
+  test('pausing an upload while its copy is made pauses it once the copy is whole, and keeps the copy', () async {
+    final release = Completer<void>();
+    final telegram = _Telegram('');
+    final (container, queue) = await openQueue(telegram);
+    TransfersState state() => container.read(transferQueueProvider);
+
+    final [id] = await queue.enqueueUploads([
+      UploadRequest(
+        name: 'Wedding.mp4',
+        size: 10,
+        openRead: () async* {
+          await release.future;
+          yield [for (var i = 0; i < 10; i++) i];
+        },
+      ),
+    ]);
+    await until(() => state().items.single.preparing);
+    await queue.pause(id);
+    expect(state().items.single.pausing, isTrue);
+    release.complete();
+    await until(() => state().items.single.status == TransferStatus.paused);
+
+    expect(telegram.sends, 0);
+    final staging = Directory(p.join(dir.path, 'telegrive-staging'));
+    expect(staging.listSync(recursive: true).whereType<File>(), hasLength(1));
+    expect(state().items.single.pausing, isFalse);
+
+    // Resumed, it goes from the copy it has.
+    await queue.resume(id);
+    await queue.whenFinished(id);
+    expect(telegram.sends, 1);
+  });
+
   test('picked files are copied only as their uploads start, and only once there is room', () async {
     final copied = <String>[];
     final telegram = _Telegram('');
