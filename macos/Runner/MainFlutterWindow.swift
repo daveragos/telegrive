@@ -4,6 +4,10 @@ import window_manager
 
 class MainFlutterWindow: NSWindow {
   override func awakeFromNib() {
+    // Telegrive has one window, so View has no Show Tab Bar for it.
+    NSWindow.allowsAutomaticWindowTabbing = false
+    self.tabbingMode = .disallowed
+
     let flutterViewController = FlutterViewController()
     let windowFrame = self.frame
     self.contentViewController = flutterViewController
