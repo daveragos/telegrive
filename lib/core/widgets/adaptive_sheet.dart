@@ -67,7 +67,8 @@ Future<T?> showAdaptiveSheet<T>({
             maxWidth: 520,
             maxHeight: MediaQuery.sizeOf(dialogContext).height * 0.85,
           ),
-          child: builder(dialogContext),
+          // The room a sheet's handle gives its first line on a phone.
+          child: Padding(padding: const EdgeInsets.only(top: Space.m), child: builder(dialogContext)),
         ),
       ),
     );
@@ -131,7 +132,19 @@ class _MenuRoute<T> extends PopupRoute<T> {
               context: context,
               removeTop: true,
               removeBottom: true,
-              child: Builder(builder: builder),
+              // Rows as close as a computer's menus have them, under a
+              // little room at the top where a phone's sheet has its handle.
+              child: Padding(
+                padding: const EdgeInsets.only(top: Space.xs),
+                child: ListTileTheme.merge(
+                  contentPadding: const EdgeInsets.symmetric(horizontal: Space.l),
+                  minVerticalPadding: Space.xs,
+                  minTileHeight: 36,
+                  horizontalTitleGap: Space.m,
+                  minLeadingWidth: 20,
+                  child: IconTheme.merge(data: const IconThemeData(size: 20), child: Builder(builder: builder)),
+                ),
+              ),
             ),
           ),
         ),
