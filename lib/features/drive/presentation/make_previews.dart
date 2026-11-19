@@ -14,7 +14,8 @@ Future<void> confirmMakePreviews(
   BuildContext context,
   WidgetRef ref,
   ({int count, int bytes}) without,
-  Future<({BulkOutcome outcome, int noPicture})> Function({bool onMobileData}) make,
+  Future<({BulkOutcome outcome, int noPicture, int notFetched})> Function({bool onMobileData})
+  make,
 ) async {
   final onMobileData = ref.read(networkStatusProvider).metered;
   final size = Formatters.bytes(without.bytes);
@@ -33,15 +34,21 @@ Future<void> confirmMakePreviews(
   if (!confirmed || !context.mounted) return;
   final BulkOutcome outcome;
   final int noPicture;
+  final int notFetched;
   try {
-    (:outcome, :noPicture) = await make(onMobileData: onMobileData);
+    (:outcome, :noPicture, :notFetched) = await make(onMobileData: onMobileData);
   } on DriveException catch (e) {
     if (context.mounted) showSnack(context, e.message);
     return;
   }
   if (!context.mounted) return;
-  final made = Formatters.count(outcome.done - noPicture, 'preview');
-  final missed = noPicture == 0 ? '' : '. ${Formatters.count(noPicture, 'file')} made no picture';
+  final made = Formatters.count(outcome.done - noPicture - notFetched, 'preview');
+  final missed = [
+    if (noPicture > 0) '. ${Formatters.count(noPicture, 'file')} made no picture',
+    if (notFetched > 0)
+      '. Telegram didn\'t send ${Formatters.count(notFetched, 'file')}; '
+          '${notFetched == 1 ? 'it gets' : 'they get'} another try next time',
+  ].join();
   showSnack(
     context,
     outcome.complete

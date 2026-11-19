@@ -873,8 +873,11 @@ Android, fetches each photo or video without one, smallest first, makes
 a preview from it and sends its bytes again into the same message, since
 Telegram takes a document's preview only with the document. On mobile
 data it says how much data that takes and goes ahead only if asked to.
-A file that makes no picture isn't tried again in that run. The
-previews are in the channel, so every phone shows them.
+A file that makes no picture isn't tried again in that run, and nor is
+one Telegram doesn't hand over within a minute and a second for every
+50 KB: its download is called off and the rest carry on, and the snack
+afterwards counts it. The previews are in the channel, so every phone
+shows them.
 
 ## Known limits
 

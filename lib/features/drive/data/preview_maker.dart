@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -12,6 +13,7 @@ import '../../../infrastructure/database/app_database.dart';
 import '../../../infrastructure/media/media_probe.dart';
 import '../../../infrastructure/network/network_status.dart';
 import '../../../infrastructure/storage/device_storage.dart';
+import '../../../infrastructure/telegram/telegram_exception.dart';
 import '../../files/data/bulk_edits.dart';
 import '../../transfers/data/room.dart';
 import '../../transfers/data/transfer_queue.dart';
@@ -36,22 +38,34 @@ class PreviewMaker {
   /// again doesn't fetch them for nothing.
   final Set<String> _noPicture = {};
 
+  /// Files Telegram didn't hand over this run, by id: tried again after the
+  /// app starts again rather than waited on every time.
+  final Set<String> _notFetched = {};
+
+  /// How long fetching a file of [bytes] may take before it is given up
+  /// on: a minute, and a second more for every 50 KB, so a file Telegram
+  /// sends nothing of doesn't hold up the rest.
+  @visibleForTesting
+  static Duration fetchWithin(int bytes) => Duration(seconds: 60 + bytes ~/ 50000);
+
   /// Whether this phone can make previews at all.
   static bool get canMake => !kIsWeb && Platform.isAndroid;
 
   /// Of [rows], the ones worth a try: those not already found to make no
-  /// picture.
+  /// picture, nor that Telegram didn't hand over this run.
   List<FileRow> worthTrying(List<FileRow> rows) => [
     for (final row in rows)
-      if (!_noPicture.contains(row.id)) row,
+      if (!_noPicture.contains(row.id) && !_notFetched.contains(row.id)) row,
   ];
 
   /// Makes previews for [rows], smallest first, as a bulk change the screen
   /// follows. On Wi-Fi unless [onMobileData] says the person agreed to
-  /// mobile data, since each costs its size twice. Stops when the phone
-  /// runs short of room. Answers how it went, with how many files made no
-  /// picture.
-  Future<({BulkOutcome outcome, int noPicture})> make(
+  /// mobile data, since each costs its size twice. A file Telegram doesn't
+  /// hand over within [fetchWithin] is passed over and the rest carry on.
+  /// Stops when the phone runs short of room or goes offline. Answers how
+  /// it went, with how many files made no picture and how many couldn't
+  /// be fetched.
+  Future<({BulkOutcome outcome, int noPicture, int notFetched})> make(
     List<FileRow> rows, {
     bool onMobileData = false,
   }) async {
@@ -62,6 +76,7 @@ class PreviewMaker {
     final queue = _ref.read(transferQueueProvider.notifier);
     final repository = _ref.read(driveRepositoryProvider);
     var noPicture = 0;
+    var notFetched = 0;
     final cache = await getTemporaryDirectory();
     final outcome = await _ref.read(bulkEditsProvider.notifier).run<FileRow>(
       label: 'Making previews for ${Formatters.count(files.length, 'file')}',
@@ -71,11 +86,19 @@ class PreviewMaker {
         if (await Room.shortfall(_ref.read(deviceStorageProvider), row.size * 2 + _keepFree) != null) {
           throw const DriveException('This phone needs more room to make the rest.');
         }
+        if (!_ref.read(networkStatusProvider).online) {
+          throw const DriveException('This phone went offline. Make the rest once it is back.');
+        }
         final file = DriveFile.fromRow(row);
         // A copy already on the phone, kept offline say, is the person's and
         // stays; one fetched for this goes once it has served.
         final kept = await queue.localPathIfAvailable(file);
-        final local = kept ?? await queue.download(file);
+        final local = kept ?? await _fetch(queue, file);
+        if (local == null) {
+          _notFetched.add(row.id);
+          notFetched++;
+          return;
+        }
         final dir = Directory(p.join(cache.path, 'previews', '${DateTime.now().microsecondsSinceEpoch}'));
         try {
           await dir.create(recursive: true);
@@ -99,7 +122,31 @@ class PreviewMaker {
         }
       },
     );
-    return (outcome: outcome, noPicture: noPicture);
+    return (outcome: outcome, noPicture: noPicture, notFetched: notFetched);
+  }
+
+  /// [file] fetched onto the phone, or null when Telegram didn't hand it
+  /// over: the download failed, or sent nothing in time and was called off.
+  Future<String?> _fetch(TransferQueue queue, DriveFile file) async {
+    try {
+      return await queue.download(file).timeout(fetchWithin(file.size));
+    } on TimeoutException {
+      debugPrint('[Previews] ${file.name} wasn\'t fetched in time');
+      for (final item in _ref.read(transferQueueProvider).items) {
+        if (item.row.kind == TransferKind.download &&
+            item.row.fileId == file.id &&
+            item.status.isPending) {
+          await queue.cancel(item.id);
+        }
+      }
+      return null;
+    } on TelegramException catch (e) {
+      debugPrint('[Previews] ${file.name}: $e');
+      return null;
+    } on DriveException catch (e) {
+      debugPrint('[Previews] ${file.name}: ${e.message}');
+      return null;
+    }
   }
 
   static Future<void> _deleteQuietly(FileSystemEntity entity) async {
