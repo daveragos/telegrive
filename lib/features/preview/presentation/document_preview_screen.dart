@@ -3,12 +3,14 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pdfrx/pdfrx.dart';
 
 import '../../../app/theme/tokens.dart';
 import '../../../core/files/file_kind.dart';
 import '../../../core/format/formatters.dart';
+import '../../../core/platform/app_platform.dart';
 import '../../../core/widgets/common.dart';
 import '../../drive/data/drive_repository.dart';
 import '../../drive/data/previews.dart';
@@ -75,25 +77,34 @@ class DocumentPreviewScreen extends ConsumerWidget {
       body = _Opening(received: progress?.received, total: progress?.total ?? 0);
     }
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(file?.name ?? '', overflow: TextOverflow.ellipsis),
-        actions: [
-          if (file != null) ...[
-            IconButton(
-              onPressed: () => FileActions.openExternally(context, ref, file),
-              icon: const Icon(Icons.open_in_new_rounded),
-              tooltip: 'Open with another app',
-            ),
-            IconButton(
-              onPressed: () => FileActions.showFileSheet(context, ref, file, fromViewer: true),
-              icon: const Icon(Icons.more_vert_rounded),
-              tooltip: 'More',
-            ),
-          ],
-        ],
+    // Escape closes it, as it closes Quick Look.
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.escape): () => Navigator.of(context).maybePop(),
+      },
+      child: Focus(
+        autofocus: AppPlatform.isDesktop,
+        child: Scaffold(
+          appBar: AppBar(
+            title: Text(file?.name ?? '', overflow: TextOverflow.ellipsis),
+            actions: [
+              if (file != null) ...[
+                IconButton(
+                  onPressed: () => FileActions.openExternally(context, ref, file),
+                  icon: const Icon(Icons.open_in_new_rounded),
+                  tooltip: 'Open with another app',
+                ),
+                IconButton(
+                  onPressed: () => FileActions.showFileSheet(context, ref, file, fromViewer: true),
+                  icon: const Icon(Icons.more_vert_rounded),
+                  tooltip: 'More',
+                ),
+              ],
+            ],
+          ),
+          body: body,
+        ),
       ),
-      body: body,
     );
   }
 
