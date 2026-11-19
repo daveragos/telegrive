@@ -340,7 +340,10 @@ class SettingsScreen extends ConsumerWidget {
                   indexer.running && indexer.left > 0
                       ? 'Reading · ${Formatters.count(indexer.left, 'file')} to go'
                       : 'Finds PDFs, scans included, and text files by the words '
-                            'in them. Read on ${AppPlatform.thisDevice}, on Wi-Fi. Keeps no copies'
+                            // A computer's connection never counts as metered, so it
+                            // reads on any.
+                            'in them. Read on ${AppPlatform.thisDevice}${AppPlatform.isDesktop ? '' : ', on Wi-Fi'}. '
+                            'Keeps no copies'
                             '${indexed > 0 ? ' · ${Formatters.count(indexed, 'file')} read' : ''}.',
                 ),
                 value: indexer.enabled,

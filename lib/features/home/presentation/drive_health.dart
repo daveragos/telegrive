@@ -469,6 +469,10 @@ DriveHealth _notStarted(String? error) => DriveHealth(
   topic: HealthTopic.sync,
 );
 
+/// How to try again: pull Home down on a phone, click the line on a
+/// computer, which has nothing to pull.
+String get _tryAgain => AppPlatform.isDesktop ? 'Click to try again.' : 'Pull down to try again.';
+
 /// The failure stays on the line while another try runs, with a bar to show
 /// the try, so a retry that is still offline never reads as in sync.
 DriveHealth _unreachable(DateTime? synced, DateTime now, {required bool retrying}) =>
@@ -477,9 +481,9 @@ DriveHealth _unreachable(DateTime? synced, DateTime now, {required bool retrying
       tone: HealthTone.neutral,
       text: 'Can\'t reach Telegram',
       detail: synced == null
-          ? 'Pull down to try again.'
+          ? _tryAgain
           : 'Showing what was synced ${DateUtils.isSameDay(synced, now) ? 'at' : 'on'} '
-                '${Formatters.date(synced, now: now)}. Pull down to try again.',
+                '${Formatters.date(synced, now: now)}. $_tryAgain',
       progress: retrying ? -1 : null,
       target: HealthTarget.refresh,
       topic: HealthTopic.sync,

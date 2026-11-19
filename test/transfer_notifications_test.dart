@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:telegrive/core/platform/app_platform.dart';
 import 'package:telegrive/app/launch_action.dart';
 import 'package:telegrive/core/files/file_kind.dart';
 import 'package:telegrive/features/backup/data/backup_controller.dart';
@@ -167,6 +168,15 @@ void main() {
       expect(summary.body, 'Tap to open it.');
       expect(summary.payload, 'open:id-report.pdf');
       expect(summary.actionLabel, 'Open');
+    });
+
+    test('on a computer, a notification is clicked', () {
+      AppPlatform.debugDesktop = true;
+      addTearDown(() => AppPlatform.debugDesktop = false);
+      final summary = TransferSummary.of([
+        _item('report.pdf', kind: TransferKind.download, resultPath: '/Users/me/Downloads/report.pdf'),
+      ], _since)!;
+      expect(summary.body, 'Click to open it.');
     });
 
     test('saves to the gallery say so', () {

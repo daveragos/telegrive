@@ -195,14 +195,14 @@ class _PhotosScreenState extends ConsumerState<PhotosScreen> {
                   empty: anything && view.show != PhotosShow.all
                       ? EmptyState(
                           title: view.show == PhotosShow.videos ? 'No videos' : 'No photos',
-                          message: 'Tap All to see everything.',
+                          message: '${AppPlatform.tapWord} All to see everything.',
                           compact: true,
                         )
                       : keptOut.count > 0
-                      ? const EmptyState(
+                      ? EmptyState(
                           title: 'No photos to show',
                           message: 'Everything here is in folders kept out of this view. '
-                              'Tap Show above to see them.',
+                              '${AppPlatform.tapWord} Show above to see them.',
                           compact: true,
                         )
                       : EmptyState(

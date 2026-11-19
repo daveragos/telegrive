@@ -531,7 +531,9 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
                     title: widget.folderId == null
                         ? 'Nothing here yet'
                         : 'This folder is empty',
-                    message: 'Upload files, or tap New to make a folder.',
+                    message: AppPlatform.isDesktop
+                        ? 'Drop files and folders here to upload them, or use New to make a folder.'
+                        : 'Upload files, or tap New to make a folder.',
                     action: FilledButton(
                       onPressed: () => FileActions.upload(
                         context,

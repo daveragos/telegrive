@@ -52,6 +52,10 @@ abstract final class AppPlatform {
     return 'tray';
   }
 
+  /// The word for pressing something on screen, to start a sentence:
+  /// "Tap" on a phone, "Click" on a computer.
+  static String get tapWord => isDesktop ? 'Click' : 'Tap';
+
   /// The file manager's name, for "Show in Finder" and the like.
   static String get fileManager {
     if (debugDesktop == null && !kIsWeb) {

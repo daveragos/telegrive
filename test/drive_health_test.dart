@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart' show Icons;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:telegrive/core/platform/app_platform.dart';
 import 'package:telegrive/core/format/formatters.dart';
 import 'package:telegrive/features/backup/data/background_health.dart';
 import 'package:telegrive/features/backup/data/backup_controller.dart';
@@ -542,6 +543,12 @@ void main() {
         _top(sync: const SyncState(error: 'No connection')).detail,
         'Pull down to try again.',
       );
+    });
+
+    test('on a computer, which has nothing to pull, the line is clicked to try again', () {
+      AppPlatform.debugDesktop = true;
+      addTearDown(() => AppPlatform.debugDesktop = false);
+      expect(_top(sync: const SyncState(error: 'No connection')).detail, 'Click to try again.');
     });
 
     test('off beats all good', () {

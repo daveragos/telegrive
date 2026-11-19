@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
+import '../../../core/platform/app_platform.dart';
 import '../../../core/files/file_kind.dart';
 import '../../../core/format/formatters.dart';
 import '../../../infrastructure/database/app_database.dart';
@@ -146,7 +147,7 @@ class TransferSummary {
       final saved = item.origin == TransferOrigin.save;
       return TransferSummary(
         title: '${saved ? 'Saved' : 'Downloaded'} ${item.name}',
-        body: saved ? 'In $place' : 'Tap to open it.',
+        body: saved ? 'In $place' : '${AppPlatform.tapWord} to open it.',
         payload: opens
             ? TransferNotifications.openPayload(item.id)
             : TransferNotifications.listPayload,
@@ -181,7 +182,7 @@ class TransferSummary {
     }
     return TransferSummary(
       title: 'Downloaded ${Formatters.count(downloads.length, 'file')}',
-      body: 'Tap to see them.',
+      body: '${AppPlatform.tapWord} to see them.',
       payload: TransferNotifications.listPayload,
     );
   }
