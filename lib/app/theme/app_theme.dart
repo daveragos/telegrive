@@ -244,6 +244,9 @@ abstract final class AppTheme {
       ),
       snackBarTheme: SnackBarThemeData(
         behavior: SnackBarBehavior.floating,
+        // On a computer a snack is a note at the foot of the window, as
+        // wide as it reads well, rather than a bar across the sidebar.
+        width: AppPlatform.isDesktop ? 520 : null,
         backgroundColor: scheme.inverseSurface,
         contentTextStyle: text.bodyMedium?.copyWith(color: scheme.onInverseSurface),
         actionTextColor: scheme.inversePrimary,

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:telegrive/app/theme/app_theme.dart';
+import 'package:telegrive/core/platform/app_platform.dart';
 import 'package:telegrive/core/widgets/common.dart';
 
 /// How long snacks stay, with and without a screen reader.
@@ -144,5 +146,32 @@ void main() {
       expect(undone, isFalse);
       expect(find.text('Moved to Trash'), findsOneWidget);
     });
+  });
+
+  testWidgets('on a computer a snack sits at the foot of the window, not across the sidebar', (tester) async {
+    AppPlatform.debugDesktop = true;
+    addTearDown(() => AppPlatform.debugDesktop = false);
+    tester.view.physicalSize = const Size(1280, 820);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    late BuildContext context;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: AppTheme.dark(),
+        home: Scaffold(
+          body: Builder(
+            builder: (screen) {
+              context = screen;
+              return const SizedBox.expand();
+            },
+          ),
+        ),
+      ),
+    );
+    showSnack(context, 'Moved to Trash');
+    await tester.pumpAndSettle();
+    final snack = tester.getRect(find.descendant(of: find.byType(SnackBar), matching: find.byType(Material)).first);
+    expect(snack.width, 520);
+    expect(snack.center.dx, 640);
   });
 }
