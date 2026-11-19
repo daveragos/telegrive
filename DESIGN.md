@@ -131,7 +131,9 @@ design.
   the page as it was: its bar, its menus and a right-click all stay.
   A double-click or Enter opens it. Selecting, with the count and the
   actions in the bar and a check on each row, starts with a second item:
-  Cmd or Ctrl to add, Shift for a run, or Select. The keys a file
+  Cmd or Ctrl to add, Shift for a run, a month's title in Photos, or
+  Select. While selecting, a click adds an item or takes it out, and
+  selecting lasts down to the last one. The keys a file
   manager has work on what is highlighted or selected: Delete, F2,
   Enter, Escape, Cmd or Ctrl with A.
 - **A Mac's menu bar** has Telegrive, File, Edit, View, Go, Window and

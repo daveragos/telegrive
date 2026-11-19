@@ -26,10 +26,20 @@ class MediaSelection extends ChangeNotifier {
   Set<String> get ids => Set.unmodifiable(_ids);
 
   /// Whether the screen is selecting, with the count and the actions in its
-  /// bar. On a computer one photo picked with a plain click is only
-  /// highlighted, as in Finder, and selecting starts with a second, or with
-  /// Select photos.
-  bool get active => _forced || _ids.length > (AppPlatform.isDesktop ? 1 : 0);
+  /// bar, and a click adds a photo or takes it out. On a computer one photo
+  /// picked with a plain click is only highlighted, as in Finder, and
+  /// selecting starts with a second, a month or Select photos. It then
+  /// lasts while any photo is picked, down to the last one.
+  bool get active =>
+      _forced || _ids.length > (AppPlatform.isDesktop ? 1 : 0) || (_many && _ids.isNotEmpty);
+
+  /// Two or more were picked since none were.
+  bool _many = false;
+
+  void _counted() {
+    if (_ids.length > 1) _many = true;
+    if (_ids.isEmpty) _many = false;
+  }
   int get length => _ids.length;
   bool contains(String id) => _ids.contains(id);
 
@@ -42,18 +52,21 @@ class MediaSelection extends ChangeNotifier {
 
   void toggle(String id) {
     _ids.contains(id) ? _ids.remove(id) : _ids.add(id);
+    _counted();
     notifyListeners();
   }
 
   void replace(Set<String> ids) {
     if (setEquals(ids, _ids)) return;
     _ids = {...ids};
+    _counted();
     notifyListeners();
   }
 
   void clear() {
     if (!active && _ids.isEmpty) return;
     _forced = false;
+    _many = false;
     _ids = {};
     notifyListeners();
   }
@@ -210,7 +223,7 @@ class _MediaGridState extends ConsumerState<MediaGrid> {
     }
     _clicked = file.id;
     if (widget.selectable && DesktopInput.addingClick) return widget.selection.toggle(file.id);
-    if (widget.selectable && AppPlatform.isDesktop) {
+    if (widget.selectable && AppPlatform.isDesktop && !_selecting) {
       if (!_doubleClick.on(file.id)) return widget.selection.replace({file.id});
       widget.selection.replace(const {});
       return widget.onOpen(file);

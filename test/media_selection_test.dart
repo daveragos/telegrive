@@ -96,10 +96,18 @@ void main() {
     selection.toggle('b');
     expect(selection.active, isTrue);
 
-    selection.replace({'b'});
+    // A month taken in, then photos taken out one by one: selecting lasts
+    // down to the last one.
+    selection.replace({'a', 'b', 'c'});
+    selection.toggle('a');
+    selection.toggle('b');
+    expect(selection.active, isTrue);
+    selection.toggle('c');
     expect(selection.active, isFalse);
 
-    // Escape lets go of a highlighted photo too.
+    // A highlighted photo is one again, and Escape lets go of it.
+    selection.replace({'d'});
+    expect(selection.active, isFalse);
     selection.clear();
     expect(selection.ids, isEmpty);
   });

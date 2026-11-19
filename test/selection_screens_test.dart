@@ -570,7 +570,7 @@ void main() {
   );
 
   testWidgets(
-    'on a computer a click highlights one file without selecting, and a second item starts selecting',
+    'on a computer a click highlights one file, a second starts selecting, and clicks then add and take out',
     (tester) async {
       AppPlatform.debugDesktop = true;
       addTearDown(() => AppPlatform.debugDesktop = false);
@@ -598,9 +598,15 @@ void main() {
       expect(find.text('2 selected · 4.0 MB'), findsOneWidget);
       expect(selecting(), isTrue);
 
-      // A plain click picks one again, which only highlights it.
+      // While selecting, a plain click takes an item out, and selecting
+      // lasts down to the last one.
       await tester.pump(const Duration(seconds: 1));
       await tester.tap(find.text('b.pdf'));
+      await settle(tester);
+      expect(find.text('1 selected · 2.0 MB'), findsOneWidget);
+      expect(selecting(), isTrue);
+
+      await tester.tap(find.text('a.pdf'));
       await settle(tester);
       expect(find.byType(SelectionActionBar), findsNothing);
       expect(selecting(), isFalse);

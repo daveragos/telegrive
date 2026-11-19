@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:telegrive/core/platform/app_platform.dart';
 import 'package:telegrive/app/theme/app_theme.dart';
 import 'package:telegrive/core/files/file_kind.dart';
 import 'package:telegrive/core/widgets/file_visuals.dart';
@@ -156,6 +157,27 @@ void main() {
     expect(selection.ids, idsOf(months[1]));
     expect(headerIcon(months[1].title, Icons.check_circle_rounded), findsOneWidget);
     expect(headerIcon(months[0].title, Icons.radio_button_unchecked_rounded), findsOneWidget);
+  });
+
+  testWidgets('on a computer a photo clicked after its month is taken out, and the rest stay', (tester) async {
+    AppPlatform.debugDesktop = true;
+    addTearDown(() => AppPlatform.debugDesktop = false);
+    await pumpGrid(tester);
+
+    await tester.tap(header(months[0].title));
+    await tester.pumpAndSettle();
+    final month = idsOf(months[0]);
+    expect(selection.ids, month);
+
+    final first = months[0].files.first;
+    await tester.tap(find.byKey(ValueKey(first.id)));
+    await tester.pumpAndSettle();
+    expect(selection.active, isTrue);
+    expect(selection.ids, month.difference({first.id}));
+
+    await tester.tap(find.byKey(ValueKey(first.id)));
+    await tester.pumpAndSettle();
+    expect(selection.ids, month);
   });
 
   testWidgets('where the grid can\'t select, a title does nothing', (tester) async {

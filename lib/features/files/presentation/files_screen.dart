@@ -58,11 +58,17 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
   bool _selectMode = false;
 
   /// Whether the screen is selecting: its bar shows the count and the
-  /// actions, and each row a check. On a computer one item picked with a
-  /// plain click is only highlighted, as in Finder, and selecting starts
-  /// with a second, or with Select.
+  /// actions, and each row a check, and a click adds a row or takes it out.
+  /// On a computer one item picked with a plain click is only highlighted,
+  /// as in Finder, and selecting starts with a second, or with Select. It
+  /// then lasts while anything is picked, down to the last one.
   bool get _selecting =>
-      _selectMode || _files.length + _folders.length > (AppPlatform.isDesktop ? 1 : 0);
+      _selectMode || _count > (AppPlatform.isDesktop ? 1 : 0) || (_many && _count > 0);
+
+  int get _count => _files.length + _folders.length;
+
+  /// Two or more were picked since nothing was.
+  bool _many = false;
 
   /// Whether anything is picked, highlighted or selected.
   bool get _picking => _files.isNotEmpty || _folders.isNotEmpty;
@@ -73,7 +79,11 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
 
   /// Said in the same turn as the change, so the shell's bar and this one
   /// never show together.
-  void _publish() => _selectionActive.set(_selecting);
+  void _publish() {
+    if (_count > 1) _many = true;
+    if (_count == 0) _many = false;
+    _selectionActive.set(_selecting);
+  }
 
   void _clearSelection() {
     setState(() {
@@ -607,7 +617,7 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
     if (DesktopInput.runClick && _anchor != null) return _selectRun(key);
     _anchor = key;
     if (DesktopInput.addingClick) return _toggleFolder(folder);
-    if (AppPlatform.isDesktop) {
+    if (AppPlatform.isDesktop && !_selecting) {
       if (!_doubleClick.on(key)) return _selectOnly(folder: folder.id);
       _clearSelection();
       return _openFolder(folder);
@@ -620,7 +630,7 @@ class _FilesScreenState extends ConsumerState<FilesScreen> {
     if (DesktopInput.runClick && _anchor != null) return _selectRun(key);
     _anchor = key;
     if (DesktopInput.addingClick) return _toggleFile(file);
-    if (AppPlatform.isDesktop) {
+    if (AppPlatform.isDesktop && !_selecting) {
       if (!_doubleClick.on(key)) return _selectOnly(file: file.id);
       _clearSelection();
       return unawaited(FileActions.open(context, ref, file, from: 'folder:${widget.folderId ?? ''}'));
