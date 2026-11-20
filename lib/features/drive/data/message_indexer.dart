@@ -70,9 +70,11 @@ typedef MediaInfo = ({
 /// manifest onto it.
 abstract final class MessageIndexer {
   /// Bump when what a message becomes in the index changes, including the
-  /// kind FileKind.detect gives it; the next open reads the channel again
-  /// in full.
-  static const int version = 2;
+  /// kind FileKind.detect gives it, or a key it reads; the next open reads
+  /// the channel again in full. 3: a file's own `nophotos` and `private`,
+  /// which an index made before knew nothing of, or missed being set while
+  /// the device was away.
+  static const int version = 3;
 
   static IndexEntry? entryFor(td.Message message) {
     // Still sending: the permanent message will arrive separately.
