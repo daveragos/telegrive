@@ -1,7 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:telegrive/app/desktop_sidebar.dart';
 import 'package:telegrive/app/desktop_window_title.dart';
-import 'package:telegrive/core/platform/app_platform.dart';
 import 'package:telegrive/features/drive/domain/drive_models.dart';
 
 void main() {
@@ -31,13 +29,5 @@ void main() {
     expect(WindowTitle.at('/home', folders), 'Telegrive');
     expect(WindowTitle.at('/viewer/x', folders), 'Telegrive');
     expect(WindowTitle.at('/private/f1', folders), 'Private');
-  });
-
-  test('a computer that can lock has Private in its sidebar and Go menu, just above Trash', () {
-    AppPlatform.debugDesktop = true;
-    addTearDown(() => AppPlatform.debugDesktop = false);
-    final labels = [for (final place in DesktopNavigation.morePlaces) place.label];
-    expect(labels.sublist(labels.length - 2), ['Private', 'Trash']);
-    expect(WindowTitle.at('/private', const {}), 'Private');
   });
 }

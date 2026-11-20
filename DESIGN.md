@@ -117,9 +117,9 @@ The same screens, made for a pointer and a keyboard rather than a second
 design.
 
 - **Sidebar.** New, Search, the three places, then Starred, Recent,
-  Albums, Available offline, Folder sync, Private and Trash, and
-  Transfers and Settings at the foot. Private, which a phone keeps in
-  Settings, has a place of its own where the computer can lock it. It sits beside every page but the viewer, the player and
+  Albums, Available offline, Folder sync and Trash, and Transfers and
+  Settings at the foot. Private stays in Settings, as on a phone, so the
+  sidebar never names it. It sits beside every page but the viewer, the player and
   document previews, which take the window; pages change at once beside
   it, without a transition.
 - **Menus where you click.** A right-click, or ⋮, opens the sheet a phone
