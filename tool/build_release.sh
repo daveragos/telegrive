@@ -23,6 +23,32 @@ fail() {
   exit 1
 }
 
+sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/Library/Android/sdk}}"
+
+# Stops unless every native library in the app bundle it is given has its
+# debug symbols stripped, as Flutter checks after building it. Flutter asks apkanalyzer,
+# from the SDK's cmdline-tools; an SDK without them fails that check though
+# the bundle is fine, so the libraries are read here with the NDK's
+# llvm-readelf instead.
+check_bundle_symbols() {
+  local readelf libs so sections
+  readelf="$(printf '%s\n' "$sdk"/ndk/*/toolchains/llvm/prebuilt/*/bin/llvm-readelf | sort -V | tail -1)"
+  [ -x "$readelf" ] || fail "There is no NDK llvm-readelf in $sdk to check $1 for debug symbols"
+  libs="$(mktemp -d)"
+  unzip -q -o "$1" 'base/lib/*' -d "$libs"
+  for so in "$libs"/base/lib/*/*.so; do
+    # Read in full first: grep -q stops at the first match, and with
+    # pipefail llvm-readelf cut off mid-write would make a match a pass.
+    sections="$("$readelf" -S "$so")"
+    if grep -q '\.debug_' <<<"$sections"; then
+      rm -rf "$libs"
+      fail "${so#"$libs/base/"} in $1 still has its debug symbols"
+    fi
+  done
+  rm -rf "$libs"
+  echo "Checked $1 with llvm-readelf: no native library keeps its debug symbols."
+}
+
 abis=(arm64-v8a armeabi-v7a x86_64)
 
 [ -f android/key.properties ] || fail "android/key.properties is missing; release builds need the upload key"
@@ -38,7 +64,14 @@ rm -rf "$out"
 mkdir -p "$out"
 
 flutter build apk --release --split-per-abi "$@"
-flutter build appbundle --release "$@"
+aab="build/app/outputs/bundle/release/app-release.aab"
+rm -f "$aab"
+log="$(mktemp)"
+if ! flutter build appbundle --release "$@" 2>&1 | tee "$log"; then
+  grep -q 'failed to strip debug symbols' "$log" && [ -f "$aab" ] || fail "The app bundle didn't build"
+  check_bundle_symbols "$aab"
+fi
+rm -f "$log"
 
 # keytool and apksigner need a JDK, and macOS's own java is a stub without
 # one: take the one Flutter is set to, or else Android Studio's.
@@ -56,7 +89,6 @@ if [ -f "$HOME/.android/debug.keystore" ]; then
   debug="$(keytool -exportcert -keystore "$HOME/.android/debug.keystore" \
     -storepass android -alias androiddebugkey | shasum -a 256 | cut -d' ' -f1)"
 fi
-sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/Library/Android/sdk}}"
 apksigner="$(printf '%s\n' "$sdk"/build-tools/*/apksigner | sort -V | tail -1)"
 
 for abi in "${abis[@]}"; do
@@ -68,7 +100,6 @@ for abi in "${abis[@]}"; do
   cp "$apk" "$out/telegrive-$version-$abi.apk"
 done
 
-aab="build/app/outputs/bundle/release/app-release.aab"
 if [ -n "$debug" ]; then
   fingerprint="$(tr a-f A-F <<<"$debug" | sed 's/../&:/g; s/:$//')"
   if keytool -printcert -jarfile "$aab" | grep "SHA256: $fingerprint" > /dev/null; then

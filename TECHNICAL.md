@@ -1165,7 +1165,12 @@ and attached to a GitHub release by hand. To release:
 4. Build every file into `build/release` with `tool/build_release.sh`.
    It builds an APK for each ABI, the app bundle, the unsigned IPA and
    the Mac's disk image, stops if an Android file is signed with the
-   debug key or the IPA lacks TDLib, and writes `SHA256SUMS.txt`. The disk
+   debug key or the IPA lacks TDLib, and writes `SHA256SUMS.txt`. Flutter
+   checks that the bundle's native libraries have their debug symbols
+   stripped with apkanalyzer, from the SDK's cmdline-tools; where the SDK
+   has none, that check fails though the bundle is fine, and the script
+   reads the libraries with the NDK's llvm-readelf instead, stopping if
+   any keeps its symbols. The disk
    image comes from `tool/build_dmg.sh`: one app for Apple silicon and
    Intel, which stops if any binary in it lacks either, signed ad hoc as
    Flutter signs a build with no Apple team and not notarized, beside a
