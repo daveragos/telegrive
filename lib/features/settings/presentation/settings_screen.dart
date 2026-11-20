@@ -390,7 +390,7 @@ class SettingsScreen extends ConsumerWidget {
                   ),
                 ListTile(
                   title: const Text('Private'),
-                  subtitle: Text('Folders that open only with ${AppPlatform.unlockMethods}'),
+                  subtitle: Text('Folders and files that open only with ${AppPlatform.unlockMethods}'),
                   trailing: Icon(Icons.chevron_right_rounded, color: colors.text3),
                   onTap: () => context.push('/private'),
                 ),

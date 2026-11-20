@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../core/format/formatters.dart';
+import '../core/platform/app_platform.dart';
 import '../core/widgets/brand_mark.dart';
 import '../core/widgets/selection_bar.dart';
 import '../features/files/presentation/drop_to_upload.dart';
@@ -44,13 +45,17 @@ abstract final class DesktopNavigation {
     SidebarPlace('Photos', Icons.photo_library_outlined, Icons.photo_library_rounded, '/photos', branch: 2),
   ];
 
-  static const morePlaces = [
-    SidebarPlace('Starred', Icons.star_outline_rounded, Icons.star_rounded, '/starred'),
-    SidebarPlace('Recent', Icons.schedule_outlined, Icons.schedule_rounded, '/recent'),
-    SidebarPlace('Albums', Icons.photo_album_outlined, Icons.photo_album_rounded, '/albums'),
-    SidebarPlace('Available offline', Icons.offline_pin_outlined, Icons.offline_pin_rounded, '/offline'),
-    SidebarPlace('Folder sync', Icons.drive_folder_upload_outlined, Icons.drive_folder_upload_rounded, '/backup'),
-    SidebarPlace('Trash', Icons.delete_outline_rounded, Icons.delete_rounded, '/trash'),
+  static List<SidebarPlace> get morePlaces => [
+    const SidebarPlace('Starred', Icons.star_outline_rounded, Icons.star_rounded, '/starred'),
+    const SidebarPlace('Recent', Icons.schedule_outlined, Icons.schedule_rounded, '/recent'),
+    const SidebarPlace('Albums', Icons.photo_album_outlined, Icons.photo_album_rounded, '/albums'),
+    const SidebarPlace('Available offline', Icons.offline_pin_outlined, Icons.offline_pin_rounded, '/offline'),
+    const SidebarPlace('Folder sync', Icons.drive_folder_upload_outlined, Icons.drive_folder_upload_rounded, '/backup'),
+    // A phone keeps Private in Settings, behind its lock; a computer gives
+    // it a place of its own, where it opens with Touch ID or Windows Hello.
+    // Linux has no lock to ask, so no Private.
+    if (AppPlatform.canLock) const SidebarPlace('Private', Icons.lock_outline_rounded, Icons.lock_rounded, '/private'),
+    const SidebarPlace('Trash', Icons.delete_outline_rounded, Icons.delete_rounded, '/trash'),
   ];
 
   static const transfers =
