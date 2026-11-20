@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:handy_tdlib/api.dart' as td;
 
+import '../../../infrastructure/network/network_status.dart';
 import '../../../infrastructure/storage/preferences.dart';
 import '../../../infrastructure/telegram/telegram_client.dart';
 import '../../../infrastructure/telegram/telegram_exception.dart';
@@ -92,6 +93,50 @@ class DriveSync extends Notifier<SyncState> {
 
   static const Duration _fullSyncInterval = Duration(hours: 24);
 
+  /// Away from the channel for longer than this, a device reads it again in
+  /// full when it comes back, rather than catching up on what is new.
+  /// Telegram replays the changes a channel had meanwhile only up to about a
+  /// hundred, and past that sends none of them, so a batch made on another
+  /// device, files made private say, would otherwise wait for the daily
+  /// full read. A full read of a few thousand files takes seconds.
+  @visibleForTesting
+  static const Duration awayForFullRead = Duration(minutes: 30);
+
+  /// [awayForFullRead] on mobile data, where a full read costs the plan.
+  @visibleForTesting
+  static const Duration awayForFullReadOnMobileData = Duration(hours: 6);
+
+  /// How often being in touch is noted while connected, so the time away
+  /// is known to within this when the connection or the app comes back.
+  static const Duration _inTouchEvery = Duration(minutes: 5);
+
+  Timer? _inTouchTimer;
+  StreamSubscription<td.ConnectionState>? _connection;
+  DateTime? _notedAt;
+
+  /// The connection went down since the live updates began.
+  bool _wentOffline = false;
+
+  /// Notes that this device has [chatId] as Telegram has it, at most once a
+  /// minute unless [now] is asked for.
+  void _noteInTouch(int chatId, {bool now = false}) {
+    final at = DateTime.now();
+    final noted = _notedAt;
+    if (!now && noted != null && at.difference(noted) < const Duration(minutes: 1)) return;
+    _notedAt = at;
+    unawaited(_prefs.setLastInTouch(chatId, at));
+  }
+
+  /// Whether this device has been out of touch with [chatId] long enough to
+  /// have missed changes Telegram won't replay. A device that has never
+  /// noted being in touch has read the channel in full by other rules.
+  bool _awayTooLong(int chatId) {
+    final last = _prefs.lastInTouch(chatId);
+    if (last == null) return false;
+    final limit = ref.read(networkStatusProvider).metered ? awayForFullReadOnMobileData : awayForFullRead;
+    return DateTime.now().difference(last) > limit;
+  }
+
   /// How many messages a read gathers before writing them into the index
   /// together: a few seconds of reading on a phone, so the drive still
   /// fills in as it is read.
@@ -129,8 +174,18 @@ class DriveSync extends Notifier<SyncState> {
     final stale =
         lastFull == null ||
         DateTime.now().difference(lastFull) > _fullSyncInterval ||
-        _prefs.indexedWith(chatId) != MessageIndexer.version;
+        _prefs.indexedWith(chatId) != MessageIndexer.version ||
+        _awayTooLong(chatId);
     return stale ? fullSync() : refresh();
+  }
+
+  /// Catches up as the app comes back to the screen: in full after being
+  /// away long enough to have missed changes Telegram won't replay,
+  /// otherwise on what is new.
+  Future<void> catchUp() {
+    final chatId = ref.read(driveSessionProvider)?.chatId;
+    if (chatId == null) return Future.value();
+    return _awayTooLong(chatId) ? fullSync() : refresh();
   }
 
   /// Completes once no sync is running. Photo backup waits on this so it
@@ -256,6 +311,7 @@ class DriveSync extends Notifier<SyncState> {
       }
 
       _failedFullSyncs = 0;
+      _noteInTouch(chatId, now: true);
       debugPrint(
         '[DriveSync] ${full ? 'Full read' : 'Catch-up'}: '
         '${seen.length} messages in ${took.elapsedMilliseconds} ms',
@@ -412,22 +468,43 @@ class DriveSync extends Notifier<SyncState> {
           .send<td.Ok>(td.OpenChat(chatId: chatId))
           .then<void>((_) {}, onError: (Object e) => debugPrint('[DriveSync] openChat: $e')),
     );
+    // Back after a while without a connection, a computer woken from sleep
+    // say, what changed meanwhile may be more than Telegram replays.
+    _wentOffline = false;
+    _connection = _client.connectionStates.listen((connection) {
+      if (connection is! td.ConnectionStateReady) {
+        _wentOffline = true;
+        _inTouchTimer?.cancel();
+        _inTouchTimer = null;
+        return;
+      }
+      if (_wentOffline && _awayTooLong(chatId)) {
+        unawaited(fullSync());
+      } else {
+        _noteInTouch(chatId);
+      }
+      _wentOffline = false;
+      _inTouchTimer ??= Timer.periodic(_inTouchEvery, (_) => _noteInTouch(chatId, now: true));
+    });
     _live = _client.updates.listen((update) async {
       try {
         switch (update) {
           case td.UpdateNewMessage(:final message) when message.chatId == chatId:
             await _repository.ingest(message);
             _noteArrival(message);
+            _noteInTouch(chatId);
           case td.UpdateMessageSendSucceeded(:final message)
               when message.chatId == chatId:
             await _repository.ingest(message);
             _noteArrival(message);
+            _noteInTouch(chatId);
           case td.UpdateMessageContent(chatId: final id, :final messageId)
               when id == chatId:
             final message = await _client.send<td.Message>(
               td.GetMessage(chatId: chatId, messageId: messageId),
             );
             await _repository.ingest(message);
+            _noteInTouch(chatId);
           case td.UpdateDeleteMessages(
                 chatId: final id,
                 :final messageIds,
@@ -461,6 +538,10 @@ class DriveSync extends Notifier<SyncState> {
   void _stopLive() {
     _live?.cancel();
     _live = null;
+    _connection?.cancel();
+    _connection = null;
+    _inTouchTimer?.cancel();
+    _inTouchTimer = null;
     _arrivedTimer?.cancel();
     _arrivedTimer = null;
     _arrived.clear();

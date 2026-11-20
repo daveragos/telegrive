@@ -98,11 +98,12 @@ class _TelegriveAppState extends ConsumerState<TelegriveApp>
     }
     if (state == AppLifecycleState.resumed &&
         ref.read(driveSessionProvider) != null) {
-      // Catch up on anything added from another device while away, back up
+      // Catch up on anything added or changed from another device while
+      // away, in full after long enough for Telegram not to replay it, back up
       // whatever the camera took meanwhile, send what other apps saved into
       // the watched folders and the changes made without a connection, and
       // let go transfers waiting for room that was made in another app.
-      ref.read(driveSyncProvider.notifier).refresh();
+      ref.read(driveSyncProvider.notifier).catchUp();
       ref.read(editOutboxProvider.notifier).soon();
       ref.read(backupControllerProvider.notifier).scheduleOnResume();
       ref.read(watchedFoldersProvider.notifier).schedule(immediate: true);

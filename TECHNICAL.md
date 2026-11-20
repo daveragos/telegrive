@@ -384,7 +384,15 @@ value goes back onto the line exactly as it came.
   messages flow straight in), catches up incrementally on open and on
   pull-to-refresh, and reads the channel in full daily, once after an
   update that changes how messages are indexed (`MessageIndexer.version`),
-  and from Settings › Rebuild index. A full read drops what the channel no
+  and from Settings › Rebuild index. It also reads in full when the device
+  comes back after more than half an hour out of touch, six hours on
+  mobile data: when the app opens, comes back to the screen, or gets its
+  connection back, a computer woken from sleep say. Telegram replays the
+  changes a channel had meanwhile only up to about a hundred and past
+  that sends none of them, so a batch made on another device, files made
+  private say, would otherwise wait for the daily read. Being in touch is
+  noted after each read, on each live update, and every five minutes
+  while connected. A full read drops what the channel no
   longer has and empties what has been in the trash for 30 days. A read
   writes what it has read into the index 500 messages at a time, each lot
   in one transaction, so the screens open meanwhile look again once a lot

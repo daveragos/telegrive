@@ -160,6 +160,17 @@ class Preferences {
   Future<void> setLastFullSync(int chatId, DateTime at) =>
       _prefs.setInt('full_sync_$chatId', at.millisecondsSinceEpoch);
 
+  /// When this device last had [chatId] as Telegram has it: a read of it
+  /// finished, a live update came in, or its connection was up. How long it
+  /// has been away since tells whether catching up on what is new is enough.
+  DateTime? lastInTouch(int chatId) {
+    final millis = _prefs.getInt('in_touch_$chatId');
+    return millis == null ? null : DateTime.fromMillisecondsSinceEpoch(millis);
+  }
+
+  Future<void> setLastInTouch(int chatId, DateTime at) =>
+      _prefs.setInt('in_touch_$chatId', at.millisecondsSinceEpoch);
+
   /// The MessageIndexer.version of the last full read of the channel, or
   /// null before one has finished.
   int? indexedWith(int chatId) => _prefs.getInt('indexed_with_$chatId');
@@ -202,6 +213,7 @@ class Preferences {
   static const List<String> _syncKeys = [
     'synced_upto_',
     'full_sync_',
+    'in_touch_',
     'indexed_with_',
     'forward_filing_from_',
   ];

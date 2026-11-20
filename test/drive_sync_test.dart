@@ -1,6 +1,7 @@
 import 'package:drift/drift.dart' show TableUpdateQuery;
 import 'package:drift/native.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:handy_tdlib/api.dart' as td;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -10,6 +11,7 @@ import 'package:telegrive/features/drive/data/forward_filer.dart';
 import 'package:telegrive/features/drive/data/message_indexer.dart';
 import 'package:telegrive/features/drive/domain/manifest.dart';
 import 'package:telegrive/infrastructure/database/app_database.dart';
+import 'package:telegrive/infrastructure/network/network_status.dart';
 import 'package:telegrive/infrastructure/storage/preferences.dart';
 import 'package:telegrive/infrastructure/telegram/secure_store.dart';
 import 'package:telegrive/infrastructure/telegram/telegram_client.dart';
@@ -104,11 +106,17 @@ class _Paged extends TelegramClient {
   }
 }
 
+class _MobileData extends NetworkStatus {
+  @override
+  NetworkState build() => const NetworkState(online: true, metered: true);
+}
+
 void main() {
   Future<(ProviderContainer, _FakeTelegram, Preferences)> start(
     List<TelegramException> failures, {
     Map<String, Object> stored = const {},
     List<td.Message> history = const [],
+    List<Override> overrides = const [],
   }) async {
     // ignore: invalid_use_of_visible_for_testing_member
     SharedPreferences.setMockInitialValues(stored);
@@ -121,6 +129,7 @@ void main() {
         appDatabaseProvider.overrideWithValue(db),
         telegramClientProvider.overrideWithValue(telegram),
         driveSessionProvider.overrideWith(_Session.new),
+        ...overrides,
       ],
     );
     addTearDown(() async {
@@ -129,6 +138,70 @@ void main() {
     });
     return (container, telegram, container.read(preferencesProvider));
   }
+
+  group('after time away', () {
+    final readToday = DateTime.now().subtract(const Duration(minutes: 5));
+    // Read in full today by this indexer, up to message 10, and last in
+    // touch [away] ago.
+    Map<String, Object> stored(Duration away) => {
+      'full_sync_$_chatId': readToday.millisecondsSinceEpoch,
+      'indexed_with_$_chatId': MessageIndexer.version,
+      'synced_upto_$_chatId': 10,
+      'in_touch_$_chatId': DateTime.now().subtract(away).millisecondsSinceEpoch,
+    };
+    bool readInFull(Preferences prefs) => prefs.lastFullSync(_chatId)!.isAfter(readToday);
+    final history = [documentMessage(10, '')];
+
+    test('opening after more than half an hour away reads in full', () async {
+      final (container, _, prefs) = await start([], stored: stored(const Duration(hours: 1)), history: history);
+      await container.read(driveSyncProvider.notifier).syncOnOpen();
+      expect(readInFull(prefs), isTrue);
+      expect(DateTime.now().difference(prefs.lastInTouch(_chatId)!), lessThan(const Duration(minutes: 1)));
+    });
+
+    test('opening after a few minutes away only catches up', () async {
+      final (container, _, prefs) = await start([], stored: stored(const Duration(minutes: 10)), history: history);
+      await container.read(driveSyncProvider.notifier).syncOnOpen();
+      expect(readInFull(prefs), isFalse);
+    });
+
+    test('back on screen after long away reads in full, but mobile data waits longer', () async {
+      final (wifi, _, wifiPrefs) = await start([], stored: stored(const Duration(hours: 1)), history: history);
+      await wifi.read(driveSyncProvider.notifier).catchUp();
+      expect(readInFull(wifiPrefs), isTrue);
+
+      final (mobile, _, mobilePrefs) = await start(
+        [],
+        stored: stored(const Duration(hours: 1)),
+        history: history,
+        overrides: [networkStatusProvider.overrideWith(_MobileData.new)],
+      );
+      await mobile.read(driveSyncProvider.notifier).catchUp();
+      expect(readInFull(mobilePrefs), isFalse);
+    });
+
+    test('a connection back after long away reads in full; a short drop does not', () async {
+      final (container, telegram, prefs) = await start([], stored: stored(const Duration(hours: 1)), history: history);
+      container.read(driveSyncProvider);
+      // The live updates listen for the connection once they have begun.
+      await pumpEventQueue();
+      telegram.receive(const td.UpdateConnectionState(state: td.ConnectionStateConnecting()).toJson());
+      telegram.receive(const td.UpdateConnectionState(state: td.ConnectionStateReady()).toJson());
+      await pumpEventQueue();
+      await container.read(driveSyncProvider.notifier).whenIdle();
+      expect(readInFull(prefs), isTrue);
+
+      final (other, otherTelegram, otherPrefs) = await start([], stored: stored(const Duration(minutes: 3)), history: history);
+      other.read(driveSyncProvider);
+      // The live updates listen for the connection once they have begun.
+      await pumpEventQueue();
+      otherTelegram.receive(const td.UpdateConnectionState(state: td.ConnectionStateConnecting()).toJson());
+      otherTelegram.receive(const td.UpdateConnectionState(state: td.ConnectionStateReady()).toJson());
+      await pumpEventQueue();
+      expect(readInFull(otherPrefs), isFalse);
+      expect(DateTime.now().difference(otherPrefs.lastInTouch(_chatId)!), lessThan(const Duration(minutes: 1)));
+    });
+  });
 
   test('a rate limit halfway through reading is waited out, not fatal', () async {
     final (container, telegram, prefs) = await start([
