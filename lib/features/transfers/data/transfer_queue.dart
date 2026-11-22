@@ -2269,9 +2269,12 @@ class TransferQueue extends Notifier<TransfersState> {
               ? _copy(running, resume: resumable)
               : _upload(running, resume: resumable),
         );
-      } else if (row.origin == TransferOrigin.backup || row.origin == TransferOrigin.takeout) {
+      } else if ((row.origin == TransferOrigin.backup || row.origin == TransferOrigin.takeout) &&
+          !_finished.containsKey(row.id)) {
         // Photo backup and the Google Photos import re-queue these
-        // themselves on their next pass.
+        // themselves on their next pass. One they are still waiting on, as
+        // the drive opens again in the same run, goes back in the queue
+        // instead, so they hear how it ends and their pass can.
         _rows.remove(row.id);
         await _db.deleteTransfers([row.id]);
       } else {

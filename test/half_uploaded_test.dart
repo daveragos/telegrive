@@ -156,4 +156,57 @@ void main() {
     final ended = await queue.whenFinished('upload-half').timeout(const Duration(seconds: 5));
     expect(ended.status, TransferStatus.failed);
   });
+
+  group('a photo backup upload cut short', () {
+    /// A backup upload of one photo that was going up, with nothing of it
+    /// in TDLib's hands to carry on.
+    TransferRow photo(String fileId) => TransferRow(
+      id: 'backup-$fileId',
+      kind: TransferKind.upload,
+      status: TransferStatus.running,
+      name: '$fileId.heic',
+      mimeType: 'image/heic',
+      fileId: fileId,
+      sourcePath: '/gone/$fileId.heic',
+      ownsSource: true,
+      wifiOnly: false,
+      totalBytes: 900,
+      doneBytes: 300,
+      partCount: 1,
+      completedParts: 0,
+      createdAt: DateTime(2026, 11, 22),
+      origin: TransferOrigin.backup,
+      assetId: 'asset-$fileId',
+    );
+
+    test('after a restart, is left for backup\'s next pass', () async {
+      await db.saveTransfers([photo('left')]);
+      final container = open();
+      container.read(transferQueueProvider);
+      await container.read(transferQueueProvider.notifier).loaded;
+
+      expect(container.read(transferQueueProvider).byId('backup-left'), isNull);
+      expect(await db.allTransfers(), isEmpty);
+    });
+
+    test('that backup still waits on as the drive opens again goes on, and says how it ended', () async {
+      final container = open();
+      container.read(transferQueueProvider);
+      final queue = container.read(transferQueueProvider.notifier);
+      await queue.loaded;
+      // Backup is following the upload as the drive closes and opens again
+      // in the same run.
+      await db.saveTransfers([photo('followed')]);
+      final ended = queue.whenFinished('backup-followed');
+      container.read(driveSessionProvider.notifier).close();
+      container.read(driveSessionProvider.notifier).open(testSession);
+      await queue.loaded;
+
+      // With its copy gone from the phone it fails, and backup hears so,
+      // rather than wait for an upload that is no longer anywhere.
+      final row = await ended.timeout(const Duration(seconds: 5));
+      expect(row.status, TransferStatus.failed);
+      expect(row.error, 'The original file is no longer available.');
+    });
+  });
 }
