@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:path/path.dart' as p;
 
 import '../../../infrastructure/storage/app_dirs.dart';
@@ -37,8 +38,13 @@ const leftoverFiles = ['telegrive-channel-photo.jpg'];
 class CopyFolders {
   const CopyFolders({required this.cache, this.iosTemp});
 
+  /// Stands in for what [find] answers, for tests, which don't run on iOS.
+  @visibleForTesting
+  static CopyFolders? debugFolders;
+
   /// This device's.
   static Future<CopyFolders> find() async {
+    if (debugFolders case final folders?) return folders;
     final cache = (await scratchDirectory()).path;
     return CopyFolders(
       cache: cache,
@@ -58,6 +64,18 @@ class CopyFolders {
     final place = canonicalPath(path);
     return p.isWithin(canonicalPath(cache), place) ||
         (iosTemp != null && p.isWithin(canonicalPath(iosTemp!), place));
+  }
+
+  /// Whether [path] is a copy the iOS photo library made, in the folders
+  /// of the temporary folder it writes them into. It copies a photo out to
+  /// the same path every time, until the photo is edited.
+  bool isPhotoLibraryCopy(String path) {
+    final temp = iosTemp;
+    if (temp == null) return false;
+    final place = canonicalPath(path);
+    return const ['.image', '.video'].any(
+      (folder) => p.isWithin(canonicalPath(p.join(temp, folder)), place),
+    );
   }
 }
 

@@ -596,9 +596,11 @@ class TransferQueue extends Notifier<TransfersState> {
       final int size;
       final direct = request.path == null ? null : File(request.path!);
       if (direct != null && await direct.exists()) {
-        sourcePath = direct.path;
+        sourcePath = request.ownsSource
+            ? await _ownPath(direct, staging, id, request.name)
+            : direct.path;
         ownsSource = request.ownsSource;
-        size = await direct.length();
+        size = await File(sourcePath).length();
       } else if (request.copyTo ?? _piping(request.openRead) case final copyTo?) {
         sourcePath = p.join(staging.path, id, request.name);
         ownsSource = true;
@@ -1865,6 +1867,24 @@ class TransferQueue extends Notifier<TransfersState> {
   static Future<Directory> _stagingDir() async {
     final temp = await scratchDirectory();
     return Directory(p.join(temp.path, 'telegrive-staging'));
+  }
+
+  /// Where upload [id] sends [copy], a copy the app owns, from: a copy the
+  /// photo library made is moved into the upload's own folder in [staging]
+  /// as [name], and any other stays where it is. The library copies a
+  /// photo out to the same path every time, and TDLib keeps what it learnt
+  /// of a path from one upload to the next: a copy made there again after
+  /// the last one went reads to it as a changed file, which it won't send.
+  /// A copy that can't be moved goes from where it is.
+  static Future<String> _ownPath(File copy, Directory staging, String id, String name) async {
+    if (!(await CopyFolders.find()).isPhotoLibraryCopy(copy.path)) return copy.path;
+    try {
+      final folder = await Directory(p.join(staging.path, id)).create(recursive: true);
+      return (await copy.rename(p.join(folder.path, name))).path;
+    } on FileSystemException catch (e) {
+      debugPrint('[Transfers] Could not move ${copy.path} to upload it: $e');
+      return copy.path;
+    }
   }
 
   void _trackMessage(td.Message pending, String transferId, int base) {
