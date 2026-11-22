@@ -197,6 +197,24 @@ void main() {
     expect(telegram.arrivedIn(_family.id), arrived);
   });
 
+  test('files go in the bundle\'s order where the channel has them in another', () async {
+    final chats = await open();
+    // The film was uploaded last, and the second photo before the fourth.
+    final bundle = SendBundle([
+      SendGroup(files: [files[228], files[3], files[1]]),
+    ]);
+
+    await chats.sendBundle(bundle, const [_selam]);
+
+    final film = channelIds.sublist(228);
+    expect(telegram.forwards.map((f) => f.messageIds), [
+      film,
+      [channelIds[3]],
+      [channelIds[1]],
+    ]);
+    expect(telegram.arrivedIn(_selam.id), [...film, channelIds[3], channelIds[1]]);
+  });
+
   test('a short flood wait between requests is waited out', () async {
     final chats = await open(floods: {2});
     final bundle = SendBundle([SendGroup(header: 'Day 1', files: files)]);

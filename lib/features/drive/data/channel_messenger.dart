@@ -205,19 +205,19 @@ class ChannelMessenger {
     );
   }
 
-  /// Sends copies of [messageIds] from [fromChatId] to [chatId], the way
-  /// files leave the drive for a chat: Telegram already has them, so nothing
-  /// is uploaded, and the drive's captions stay behind. Telegram forwards at
-  /// most 100 messages at a time, and a flood wait of up to [longestWait]
-  /// between requests is sat out before the same slice goes again, so
-  /// nothing already sent is sent twice.
+  /// Sends copies of [messageIds] from [fromChatId] to [chatId], in the
+  /// order given, the way files leave the drive for a chat: Telegram already
+  /// has them, so nothing is uploaded, and the drive's captions stay behind.
+  /// Telegram forwards at most 100 messages at a time, and a flood wait of
+  /// up to [longestWait] between requests is sat out before the same slice
+  /// goes again, so nothing already sent is sent twice.
   Future<void> forwardCopies(
     int chatId, {
     required int fromChatId,
     required List<int> messageIds,
     required Duration longestWait,
   }) async {
-    for (final batch in _batches(messageIds)) {
+    for (final batch in _ascendingBatches(messageIds)) {
       await patiently(
         () => _client.send<td.Messages>(
           td.ForwardMessages(
@@ -388,6 +388,20 @@ class ChannelMessenger {
   static Iterable<List<int>> _batches(List<int> ids) sync* {
     for (var i = 0; i < ids.length; i += 100) {
       yield ids.sublist(i, math.min(i + 100, ids.length));
+    }
+  }
+
+  /// [ids] in order, cut wherever an id is not above the one before it, and
+  /// at 100: TDLib forwards only ids in strictly increasing order, and a
+  /// file's place in the channel follows when it was uploaded, not the
+  /// order it is sent in.
+  static Iterable<List<int>> _ascendingBatches(List<int> ids) sync* {
+    var start = 0;
+    for (var i = 1; i <= ids.length; i++) {
+      if (i == ids.length || i - start == 100 || ids[i] <= ids[i - 1]) {
+        yield ids.sublist(start, i);
+        start = i;
+      }
     }
   }
 

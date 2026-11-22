@@ -122,6 +122,14 @@ class FakeTelegram extends TelegramClient {
         sendCopy: true,
         removeCaption: true,
       ):
+        for (var i = 1; i < messageIds.length; i++) {
+          if (messageIds[i] <= messageIds[i - 1]) {
+            throw const TelegramException(
+              400,
+              'Message identifiers must be in a strictly increasing order',
+            );
+          }
+        }
         const none = td.FormattedText(text: '', entities: []);
         return td.Messages(
           totalCount: messageIds.length,

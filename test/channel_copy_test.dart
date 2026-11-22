@@ -267,6 +267,32 @@ void main() {
       expect(container.read(telegramWaitProvider), isNull);
     });
 
+    test('ids out of channel order go as given, a request for each rising run', () async {
+      final telegram = channel();
+      final messenger = open(telegram);
+      final order = [...ids.sublist(100, 230), 3, 2, 1];
+
+      await messenger.forwardCopies(
+        _chatId,
+        fromChatId: testChatId,
+        messageIds: order,
+        longestWait: allowed,
+      );
+
+      expect(telegram.forwards.map((f) => f.messageIds), [
+        ids.sublist(100, 200),
+        ids.sublist(200, 230),
+        [3],
+        [2],
+        [1],
+      ]);
+      final arrived = [
+        for (final copy in sentTo(telegram))
+          (copy.content as td.MessageDocument).document.document.id,
+      ];
+      expect(arrived, order);
+    });
+
     test('a third refusal in a row is thrown', () async {
       final telegram = channel(floods: {1, 2, 3});
       final messenger = open(telegram);
