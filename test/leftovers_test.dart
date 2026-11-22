@@ -97,6 +97,19 @@ void main() {
       expect(Directory(p.join(tmp.path, '.video')).existsSync(), isTrue);
     });
 
+    test('a copy a backup still sends stays when its path is written through /private', () async {
+      // The folder is listed as the app finds it and the copy kept as the
+      // photo library handed it over: one with /private and one without.
+      String otherSpelling(String path) =>
+          path.startsWith('/private/') ? path.substring('/private'.length) : '/private$path';
+      final sending = file('tmp/.video/E_o_IMG_0005.MOV', 80);
+      final sent = file('tmp/.video/F_o_IMG_0006.MOV', 30);
+
+      expect(await sweepFiles({otherSpelling(sending.path)}), 30);
+      expect(sending.existsSync(), isTrue);
+      expect(sent.existsSync(), isFalse);
+    });
+
     test('a picked copy goes, and one just made stays', () async {
       final picked = file('tmp/9F2C/report.pdf', 40);
       final copying = file('tmp/.video/D_o_IMG_0004.MOV', 60)
@@ -123,6 +136,25 @@ void main() {
       expect(ios.holds('$container/tmp/9F2C/report.pdf'), isTrue);
       expect(ios.holds('$container/Library/Caches/file_picker/a.txt'), isTrue);
       expect(ios.holds('$container/Documents/notes.txt'), isFalse);
+    });
+
+    test('on iOS, a copy handed over under /private/var is the app\'s too', () {
+      expect(ios.holds('/private$container/tmp/.image/A_o_IMG_0001.HEIC'), isTrue);
+      expect(ios.holds('/private$container/tmp/9F2C/report.pdf'), isTrue);
+      expect(ios.holds('/private$container/Documents/notes.txt'), isFalse);
+      const throughPrivate = CopyFolders(
+        cache: '/private$container/Library/Caches',
+        iosTemp: '/private$container/tmp',
+      );
+      expect(throughPrivate.holds('$container/tmp/.video/C_o_IMG_0003.MOV'), isTrue);
+    });
+
+    test('a path is written without the /private that /var and /tmp link to', () {
+      expect(canonicalPath('/private/var/mobile/a.heic'), '/var/mobile/a.heic');
+      expect(canonicalPath('/private/tmp/a.txt'), '/tmp/a.txt');
+      expect(canonicalPath('/var/mobile/x/../a.heic'), '/var/mobile/a.heic');
+      expect(canonicalPath('/private/varnish/a'), '/private/varnish/a');
+      expect(canonicalPath('/data/user/0/app/cache/a'), '/data/user/0/app/cache/a');
     });
 
     test('on Android, the photo itself is not', () {

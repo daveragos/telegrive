@@ -54,8 +54,23 @@ class CopyFolders {
 
   /// Whether [path], a file the gallery or the file picker handed over, is
   /// a copy the app deletes once it is sent, rather than the original.
-  bool holds(String path) =>
-      p.isWithin(cache, path) || (iosTemp != null && p.isWithin(iosTemp!, path));
+  bool holds(String path) {
+    final place = canonicalPath(path);
+    return p.isWithin(canonicalPath(cache), place) ||
+        (iosTemp != null && p.isWithin(canonicalPath(iosTemp!), place));
+  }
+}
+
+/// [path] written the one way for wherever it points. On iOS `/var` is a
+/// link to `/private/var`: the app's own folders come as the one, while
+/// the photo library and the file picker hand their copies over as the
+/// other, so the two only match once the `/private` is gone.
+String canonicalPath(String path) {
+  final normal = p.normalize(path);
+  for (final linked in const ['/private/var/', '/private/tmp/']) {
+    if (normal.startsWith(linked)) return normal.substring('/private'.length);
+  }
+  return normal;
 }
 
 /// The temporary folder of an iOS app whose cache is [cache]: `tmp`, beside
@@ -97,11 +112,11 @@ Future<List<Leftover>> findLeftovers({
   DateTime? now,
 }) async {
   final cutoff = (now ?? DateTime.now()).subtract(minAge);
-  final kept = {for (final path in keep) p.normalize(path)};
+  final kept = {for (final path in keep) canonicalPath(path)};
   bool needed(String path) => kept.any((k) => k == path || p.isWithin(path, k));
   final found = <Leftover>[];
   Future<void> consider(FileSystemEntity entry) async {
-    if (needed(p.normalize(entry.path))) return;
+    if (needed(canonicalPath(entry.path))) return;
     try {
       final (bytes, changed) = await _measure(entry);
       if (!changed.isAfter(cutoff)) found.add((entry: entry, bytes: bytes));
