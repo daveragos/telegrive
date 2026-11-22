@@ -87,7 +87,7 @@
   // below, so bump FALLBACK_VERSION when publishing.
 
   var REPO = 'daveragos/telegrive';
-  var FALLBACK_VERSION = '1.2.1';
+  var FALLBACK_VERSION = '1.2.2';
 
   function fallbackFile(abi, size) {
     var name = 'telegrive-' + FALLBACK_VERSION + '-' + abi + '.apk';
@@ -99,17 +99,17 @@
     url: 'https://github.com/' + REPO + '/releases/tag/v' + FALLBACK_VERSION,
     files: {
       arm64: fallbackFile('arm64-v8a', 59032898),
-      v7a: fallbackFile('armeabi-v7a', 48769660),
+      v7a: fallbackFile('armeabi-v7a', 48769664),
       x86: fallbackFile('x86_64', 62645269),
       ipa: {
         name: 'telegrive-' + FALLBACK_VERSION + '.ipa',
         url: DL + 'telegrive-' + FALLBACK_VERSION + '.ipa',
-        size: 25315463
+        size: 25315780
       },
       dmg: {
         name: 'telegrive-' + FALLBACK_VERSION + '-macos.dmg',
         url: DL + 'telegrive-' + FALLBACK_VERSION + '-macos.dmg',
-        size: 71866368
+        size: 72397824
       },
       sums: { name: 'SHA256SUMS.txt', url: DL + 'SHA256SUMS.txt', size: 0 }
     }
